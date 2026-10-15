@@ -49,16 +49,28 @@ and a Rust toolchain (1.80 or newer) to build from source.
 
 ```sh
 cargo install --git https://github.com/larrykoo711/cc-moss cc-moss
-cc-moss setup
+cc-moss install     # shows every change and asks first
+cc-moss doctor      # checks that everything is in place
 ```
 
-`cc-moss setup` shows a diff and asks before it changes anything:
+`cc-moss install` sets up the whole terminal, without overwriting anything of yours:
 
-- it adds four hooks to `~/.claude/settings.json`, so Claude Code reports session events to cc-moss;
-- it adds a small, clearly marked block to `~/.zshrc` that defines the `t` shortcut.
+| Part | What it does |
+|---|---|
+| `hooks` | Four hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` shortcut in `~/.zshrc` |
+| `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf` (your own settings below it win); `prefix + t` opens the picker |
+| `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
+| `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
+| `aliases` | Optional (`--with aliases`): short names for eza, bat and fd; `ls`, `cat` and `grep` keep their usual behaviour |
 
-A timestamped backup is kept next to each file. `cc-moss setup --uninstall` removes both again and leaves the rest of
-your settings untouched.
+Leave a part out with `--skip <part>`. Shell additions live in clearly marked blocks, and each changed file gets a
+timestamped backup with the same permissions. Missing tools are listed with the command that installs them and run
+only if you agree: Homebrew on macOS; apt on Debian and Ubuntu, plus starship's official installer (downloaded over
+HTTPS, then run) into `~/.local/bin`. Elsewhere cc-moss names the tools and leaves installing them to you.
+
+Only want session tracking? `cc-moss setup` installs just the hooks and `t`. To undo, `cc-moss setup --uninstall`
+removes those two; the other additions are the `# >>> cc-moss… >>>` blocks (delete them) and
+`~/.config/cc-moss/tmux.conf`, or restore the backups next to each file.
 
 ## Usage
 
@@ -102,7 +114,9 @@ In the picker:
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
-| `cc-moss setup [--dry-run] [--uninstall]` | Install or remove the hooks and the `t` shortcut |
+| `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--dry-run] [--yes]` | Set up hooks, tmux, starship and shell blocks, then the tools they need |
+| `cc-moss doctor` | Check every piece and say how to fix what is off |
+| `cc-moss setup [--dry-run] [--uninstall]` | Install or remove only the hooks and the `t` shortcut |
 
 ## How it works
 
@@ -145,7 +159,7 @@ language = "auto"         # "auto" (your system language), "en" or "zh"; CC_MOSS
 
 - [x] Session registry, hooks, restore and notes
 - [x] The `t` picker
-- [ ] `cc-moss install` / `doctor`: a curated tmux and starship setup
+- [x] `cc-moss install` / `doctor`: a curated tmux and starship setup
 - [ ] Prebuilt binaries and a Homebrew tap
 - [ ] A native macOS menu bar app
 
@@ -154,6 +168,7 @@ language = "auto"         # "auto" (your system language), "en" or "zh"; CC_MOSS
 ```sh
 cargo test --all          # end-to-end tests run on a private tmux socket and a throwaway HOME
 cargo clippy --all-targets -- -D warnings
+scripts/clean-room.sh <linux binary>   # install + doctor on a fresh Ubuntu in Docker, with real apt
 ```
 
 The design notes, plan and specs live in [`.sdd/`](.sdd/) (in Chinese).

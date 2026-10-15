@@ -46,15 +46,26 @@
 
 ```sh
 cargo install --git https://github.com/larrykoo711/cc-moss cc-moss
-cc-moss setup
+cc-moss install     # 每处改动都先展示、问过再写
+cc-moss doctor      # 体检，看看是否都装好了
 ```
 
-`cc-moss setup` 会先展示改动的 diff，确认后才写入：
+`cc-moss install` 一次装好整套终端环境，不覆盖你自己的任何配置：
 
-- 在 `~/.claude/settings.json` 中加入 4 个钩子，让 Claude Code 把会话事件告诉 cc-moss；
-- 在 `~/.zshrc` 中加入一段带明确标记的小区块，定义 `t` 快捷命令。
+| 部分 | 做什么 |
+|---|---|
+| `hooks` | 在 `~/.claude/settings.json` 加 4 个钩子，让 Claude Code 报告会话事件；在 `~/.zshrc` 加 `t` 快捷命令 |
+| `tmux` | 一份调好的配置放在 `~/.config/cc-moss/tmux.conf`，只在你的 `~/.tmux.conf` 顶部加一行加载它（你写在下面的设置优先）；`prefix + t` 打开选择器 |
+| `starship` | starship 提示符，只在你还没有 starship 配置时安装（想换掉自己的，加 `--replace-starship`） |
+| `shell` | ssh 断线后复位终端；让非交互 shell（`ssh 主机 命令`、cron）也能找到 Homebrew 装的工具 |
+| `aliases` | 可选（`--with aliases`）：给 eza、bat、fd 起短名字；`ls`、`cat`、`grep` 保持原样 |
 
-每个文件旁都会留一份带时间戳的备份。`cc-moss setup --uninstall` 会把两处都移除，其余设置原样保留。
+不想要某一部分，用 `--skip <部分>`。对 shell 的改动都放在带标记的区块里，每个改动的文件都会留带时间戳、权限不变的备份。
+缺的工具会列出安装命令，你同意了才执行：macOS 用 Homebrew；Debian 和 Ubuntu 用 apt，starship 则用官方安装脚本（经 HTTPS
+先下载、再执行）装到 `~/.local/bin`。其他系统只列出工具名，由你自己安装。
+
+只想要会话管理？`cc-moss setup` 只装钩子和 `t`。想撤销：`cc-moss setup --uninstall` 移除这两项；其余改动是带
+`# >>> cc-moss… >>>` 标记的区块（删掉即可）和 `~/.config/cc-moss/tmux.conf`，也可以直接用各文件旁的备份恢复。
 
 ## 用法
 
@@ -98,7 +109,9 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss attach NAME` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | 查看或设置会话备注 |
 | `cc-moss close NAMES` | 不再提示恢复这些会话 |
-| `cc-moss setup [--dry-run] [--uninstall]` | 安装或移除钩子与 `t` 快捷命令 |
+| `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--dry-run] [--yes]` | 装好钩子、tmux、starship 和 shell 区块，以及它们需要的工具 |
+| `cc-moss doctor` | 逐项体检，并告诉你怎么修 |
+| `cc-moss setup [--dry-run] [--uninstall]` | 只安装或移除钩子与 `t` 快捷命令 |
 
 ## 工作原理
 
@@ -140,7 +153,7 @@ language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"；环
 
 - [x] 会话登记、钩子、恢复与备注
 - [x] `t` 选择器
-- [ ] `cc-moss install` / `doctor`：一套精选的 tmux 与 starship 配置
+- [x] `cc-moss install` / `doctor`：一套精选的 tmux 与 starship 配置
 - [ ] 预编译二进制与 Homebrew tap
 - [ ] macOS 原生菜单栏 App
 
@@ -149,6 +162,7 @@ language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"；环
 ```sh
 cargo test --all          # 端到端测试跑在独立的 tmux socket 和临时 HOME 上
 cargo clippy --all-targets -- -D warnings
+scripts/clean-room.sh <Linux 二进制>   # 在 Docker 里的全新 Ubuntu 上用真实 apt 跑 install + doctor
 ```
 
 设计说明、计划与 spec 位于 [`.sdd/`](.sdd/)。
