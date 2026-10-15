@@ -15,6 +15,7 @@
 | R6 | 档案随仓库公开 | 用户，2026-10-15 |
 | R7 | 名字以 Claude 会话名为唯一来源，单向同步到 tmux | 用户认可，2026-10-15 |
 | R8 | 不常驻、不自动回答提示；恢复由用户执行，执行前先列出待恢复的会话 | 用户认可，2026-10-15 |
+| R9 | 一个 tmux 会话只有一个窗口：`new` 和 `restore` 建出的会话里只跑 claude，claude 退出即会话结束；不再支持 tmuxinator 多窗口模板，选择器不设 Windows 标签页 | 用户，2026-10-15（旧 `t.zsh` 的内置多窗口没用上，反而让切换和退出变麻烦） |
 
 ## 1. Capability map
 
@@ -41,7 +42,7 @@ Cargo workspace 分两个 crate：
 - `crates/cc-moss`（二进制）：clap 命令行、`hook`、`setup`、`picker`（ratatui + nucleo）、`assets`
   （用 `include_str!` 内嵌）。
 
-外部依赖只有 `tmux` 和 `claude`；`zoxide` 和 `tmuxinator` 装了就用，没装就跳过对应功能。
+外部依赖只有 `tmux` 和 `claude`；`zoxide` 装了就用，没装就跳过 Folders 标签页。不支持 tmuxinator（R9）。
 
 ## 3. 数据模型
 
@@ -72,18 +73,22 @@ slot
 
 | 事件 | 处理 |
 |------|------|
-| `SessionStart source=startup` | 按 `CLAUDE_PID` 找正在运行的槽位；找不到就新建。记下 cwd、启动参数、tmux 信息（来自 `TMUX` 和 `TMUX_PANE`，F1）、名字（`session_title`，F2） |
+| `SessionStart source=startup` | 按 `session_id` 找槽位（`new` 预先指定了 id）；找不到就新建。记下 cwd、启动参数、tmux 信息（来自 `TMUX` 和 `TMUX_PANE`，F1）、名字（`session_title`，F2） |
 | `SessionStart source=clear\|compact` | 按 `CLAUDE_PID` 找到槽位，把新 id 追加到历史并设为当前 id（F4） |
-| `SessionStart source=resume` | 按 `session_id` 在历史里找到槽位，更新 pid 和 tmux 信息，状态改为 running（F9） |
-| `UserPromptSubmit` | 更新 `last_active_at`；`session_title` 变了就更新名字，并同步改 tmux 会话名（F2、F3） |
+| `SessionStart source=resume` | 按 `session_id` 在历史里找到槽位，更新 pid 和 tmux 信息，状态改为 running（F9）。若该槽位自己的进程仍活着，则新建槽位，不抢 |
+| 任意 `SessionStart` 之后 | 同一进程（pid + 启动时间）的其他 running 槽位记为 closed（`switched`，F11） |
+| `UserPromptSubmit` / `Stop` | 更新 `last_active_at`；`session_title` 变了就更新名字，并同步改 tmux 会话名（F2、F3）。事件来自另一个进程或槽位不是 running 时，说明 resume 的 SessionStart 丢了，就地修回 running |
 | `SessionEnd reason=clear` | 忽略，后面会紧跟 `SessionStart source=clear`（F4） |
-| `SessionEnd reason=prompt_input_exit\|logout` | 状态改为 closed |
+| `SessionEnd reason=prompt_input_exit\|logout\|resume` | 状态改为 closed（`resume` = 会话内切走，F11） |
 | `SessionEnd` 其他 reason（包括 `other`） | 状态改为 interrupted（F6） |
 | 没有 SessionEnd，进程已经不在 | 执行 `ls` 或 `restore` 时检测：pid 不存在，或 pid 被其他进程复用（比较进程启动时间），就判为 interrupted（F7） |
 
 钩子的硬约束：
 - 永远 `exit 0`，不往 stdout 输出（避免 Claude 把输出当成上下文），错误写到 `$XDG_STATE_HOME/cc-moss/hook.log`
-- 单次执行 p95 < 30ms，SQLite 忙等超时 200ms，超时就放弃本次写入
+- 外部命令（`ps`、`tmux`）500ms 超时；进程启动时间在 `LC_ALL=C`、`TZ=UTC0` 下取（F13）
+- 进程身份 = pid 且两侧启动时间都已知且相等；任一未知时不关闭、不接管任何槽位（宁可多留一个待人工判断的槽位，也不静默丢掉一个崩溃会话）
+- 交互式判断只看每进程重算的 `CLAUDE_CODE_SESSION_ATTENDED`；`ENTRYPOINT` 会被继承，仅在前者缺失时参考
+- 单次执行 p95 < 30ms，SQLite 忙等超时 1s，超时就放弃本次写入（下一次事件会修复状态）
 - 不在 tmux 里时，SessionStart 只输出一句提示（通过钩子的 `systemMessage`），说明本会话不受终端崩溃保护
 
 ## 5. 启动参数与恢复
@@ -104,22 +109,20 @@ slot
   其他平台用 `hostname -s`），可在配置里关掉
 - sanitize：只保留 `a-z0-9-_`，转小写，`.` 和 `:` 改成 `-`
 - 同一 tmux socket 里重名就加 `-2`、`-3`
-- 一个 tmux 会话里有多个 claude：会话名跟着最早登记的那个，其余的用窗口名区分
-- 手动改的 tmux 名不会反向同步，用户下次发消息时会被改回来；`cc-moss rename` 会同时改两边（发送 `/rename`
-  做不到，所以该命令只改登记表和 tmux，并提示用户在会话里 `/rename`）
+- 一个 tmux 会话只有一个窗口（R9）。用户手动在同一会话里再开 claude 时，只有最早登记的那个同步会话名，其余不处理
+- 手动改的 tmux 名不会反向同步，用户下次发消息时会被改回来；改名只用 Claude 的 `/rename`（不提供 `cc-moss rename`，见 T1.3 spec）
 
 ## 7. 用户入口
 
 | 命令 | 作用 |
 |------|------|
-| `cc-moss new [name] [-C dir] [-m note] [-- claude 参数]` | 新建 tmux 会话，在里面启动 `claude -n <name> --session-id <uuid> <默认参数>`，然后 attach（已在 tmux 里就 switch-client） |
+| `cc-moss new [name] [-C dir] [--detach] [-- claude 参数]` | 新建 tmux 会话，在里面启动 `claude -n <name> --session-id <uuid> <默认参数>`，然后 attach（已在 tmux 里就 switch-client） |
 | `cc-moss ls [--all] [--json]` | 列出槽位：名字、状态、备注、cwd、最后活动时间、tmux 名 |
 | `cc-moss note <name> [--goal …] [--state …] [text]` | 写备注 |
-| `cc-moss rename <old> <new>` | 见 §6 |
 | `cc-moss close <name>` | 标为 closed，不再列为待恢复 |
 | `cc-moss restore [--yes] [name…]` | 见 §5 |
 | `cc-moss attach <name>` | attach 或 switch 到该会话所在的 tmux |
-| `cc-moss pick` | 全屏选择器 |
+| `cc-moss pick` | 全屏选择器：Sessions / Folders / Interrupted 三个标签页 |
 | `cc-moss setup` / `install` / `doctor` | 见 capability map |
 
 配置文件 `~/.config/cc-moss/config.toml`：`claude.default_args`（例如 `["--dangerously-skip-permissions"]`）、

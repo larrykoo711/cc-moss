@@ -1,4 +1,4 @@
-# PLAN — 001-cli：cc-moss Stage 1 终端版（4 Phase × 8 Task）
+# PLAN — 001-cli：cc-moss Stage 1 终端版（4 Phase × 9 Task）
 
 ## 配套文档
 
@@ -21,7 +21,7 @@
 
 | Phase | 主题 | Task | 价值 |
 |-------|------|------|------|
-| P1 | MVP：重启后能列出并恢复会话 | T1.1–T1.4 | 直接解决立项的 D1–D3 |
+| P1 | MVP：重启后能列出并恢复会话 | T1.1–T1.5 | 直接解决立项的 D1–D3 |
 | P2 | 会话选择器（替代 `t`） | T2.1 | 日常入口；列表里能看到名字、状态、备注 |
 | P3 | 终端资产并入 | T3.1–T3.2 | 解决 D4；本仓成为 tmux / starship / zsh 资产的正本 |
 | P4 | 开源发布 | T4.1 | CI、README、Release、Homebrew，仓库公开 |
@@ -29,12 +29,12 @@
 ## 依赖图
 
 ```text
-T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────────┬─> T3.1 终端资产 install/doctor ─┐
-                 └─> T1.3 新建与名字同步 ─> T1.4 恢复 ─> T2.1 选择器 ──────────────┴─> T3.2 私有仓切换 ─> T4.1 开源发布
+T1.1 登记与列出 ─┬─> T1.2 钩子安装 ─────────────────────────────┐
+                 └─> T1.3 新建与名字同步 ─> T1.4 恢复 ─> T2.1 选择器 ─┴─> T3.1 终端资产 ─> T3.2 私有仓切换 ─> T4.1 开源发布
 ```
 
-- 关键路径：T1.1 → T1.3 → T1.4 → T2.1 → T3.2 → T4.1
-- 并行窗口：T1.1 完成后，T1.2 与 T1.3 可并行；T1.2 完成后，T3.1 可与 T1.3 / T1.4 / T2.1 并行
+- 关键路径：T1.1 → T1.3 → T1.4 → T2.1 → T3.1 → T3.2 → T4.1
+- 并行窗口：T1.1 完成后，T1.2 与 T1.3 可并行；T3.1 在 T1.2 和 T2.1 都完成后开工（复用 T2.1 的受管区块）
 - P1 完成即可在本机真实使用（MVP 验收点）
 
 ## 任务
@@ -57,14 +57,14 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 ### T1.2 钩子安装
 
 - 仓：cc-moss
-- 目标：`cc-moss setup` 一条命令接好钩子和 zsh 集成，`--uninstall` 能干净移除
-- 文件：`crates/cc-moss/src/cmd/setup.rs`、`crates/moss-core/src/{settings_json,managed_block}.rs`、`assets/zsh/cc-moss.zsh`
-- 内容：合并写入 `~/.claude/settings.json` 的 SessionStart / UserPromptSubmit / SessionEnd 钩子（带标记，
-  只增不改用户已有条目）；写入 zsh 受管区块（插在 starship init 之前，坑 #8）；写之前先显示 diff、确认后写、
-  带时间戳备份；`--dry-run`、`--yes`、`--uninstall`
-- TDD：settings.json 合并（空文件、已有其他钩子、已装过、格式错误时拒绝写入）；受管区块的插入、替换、移除
+- 目标：`cc-moss setup` 一条命令接好 Claude Code 钩子，`--uninstall` 能干净移除
+- 文件：`crates/cc-moss/src/cmd/setup.rs`、`crates/moss-core/src/settings_json.rs`
+- 内容：合并写入 `~/.claude/settings.json` 的 SessionStart / UserPromptSubmit / Stop / SessionEnd 钩子
+  （按命令识别，只增不改用户已有条目）；写之前先显示 diff、确认后写、带时间戳备份；
+  `--dry-run`、`--yes`、`--uninstall`。zsh 集成挪到 T2.1（见日志 2026-10-15）
+- TDD：settings.json 合并（文件不存在、空对象、已有其他钩子、已装过、旧路径升级、格式错误时拒绝写入）
 - 验收：在临时 HOME 下 setup → 再次 setup 显示无变化 → uninstall 后文件与原来逐字节一致
-- commit：`feat(setup): install and remove Claude Code hooks and zsh integration`
+- commit：`feat(setup): install and remove Claude Code hooks`
 - 依赖：T1.1
 
 ### T1.3 新建与名字同步
@@ -74,7 +74,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - 文件：`crates/moss-core/src/{tmux,naming,launch_args,config}.rs`、`crates/cc-moss/src/cmd/new.rs`、
   `crates/cc-moss/src/cmd/hook.rs`（扩展）
 - 内容：tmux 适配层（命令执行可注入，支持 socket）；命名（主机前缀、sanitize、重名加后缀）；
-  `cc-moss new [name] [-C dir] [-m note] [-- args]`，读 `config.toml` 的默认参数，用 `--session-id` 固定 id；
+  `cc-moss new [name] [-C dir] [--detach] [-- args]`（备注走 T1.4 的 `note`），读 `config.toml` 的默认参数，用 `--session-id` 固定 id；
   UserPromptSubmit 同步名字并 `rename-session`；启动参数白名单采集；不在 tmux 中时 SessionStart 返回提示
 - TDD：sanitize 与重名；参数白名单（含凭据样式值被丢弃）；用假 `claude` 脚本在独立 socket 上跑 new → 改名
 - 验收：独立 socket 上 `new em-a` 后 tmux 名为 `<prefix>_em-a`；模拟 `session_title=em-b` 的 UserPromptSubmit 后
@@ -95,16 +95,26 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - commit：`feat(session): restore, attach, close and notes`
 - 依赖：T1.1、T1.3
 
+### T1.5 会话名唯一
+
+- 仓：cc-moss
+- 目标：一个名字只对应一个未关闭的会话；`mycc xxxx` 遇到同名在运行就进入、已中断就提示恢复，不再新建
+- 文件：`crates/cc-moss/src/cmd/{new,restore,hook}.rs`、`crates/cc-moss/tests/unique_names_e2e.rs`
+- 来源：用户 2026-10-16 试用前反馈（见 spec Source）
+- commit：`feat(session): one open session per name`
+- 依赖：T1.3、T1.4
+
 ### T2.1 会话选择器
 
 - 仓：cc-moss
 - 目标：`cc-moss pick`（`t` 指向它）替代 `t.zsh`，并修掉盘点出的 4 个 ⚠️
-- 文件：`crates/cc-moss/src/pick/{mod,app,source,keys}.rs`
-- 内容：ratatui + nucleo；四个标签页（Sessions：tmux 会话合并 Claude 槽位，显示名字、状态、备注；Windows；
-  Folders：有 zoxide 就用；Interrupted：一键恢复）；快捷键改为 `ctrl-*`，不占用可搜索字符；删除前确认；
-  tmuxinator 模板装了就列出；macOS 隐私权限（TCC）检测覆盖所有建会话路径
+- 文件：`crates/cc-moss/src/pick/{mod,app,source,keys}.rs`、`crates/moss-core/src/managed_block.rs`、`assets/zsh/cc-moss.zsh`
+- 内容：zsh 受管区块（`t` 指向 `cc-moss pick`，插在 starship init 之前，坑 #8；由 `cc-moss setup` 写入）；
+  ratatui + nucleo；三个标签页（Sessions：tmux 会话合并 Claude 槽位，显示名字、状态、备注；
+  Folders：有 zoxide 就用，选中目录即 `cc-moss new`；Interrupted：一键恢复）；快捷键改为 `ctrl-*`，不占用可搜索字符；
+  删除前确认；一会话一窗口（R9），不设 Windows 标签页、不支持 tmuxinator；macOS 隐私权限（TCC）检测覆盖所有建会话路径
 - TDD：键位映射、各数据源的合并与排序、删除确认流程（纯逻辑单测，不依赖终端）
-- 验收：独立 socket 上手工走查四个标签页；盘点里的 4 个 ⚠️ 逐条复测不再出现
+- 验收：独立 socket 上手工走查三个标签页；盘点里的 4 个 ⚠️ 逐条复测不再出现（tmuxinator 相关的两条随 R9 一并消失）
 - commit：`feat(pick): native session picker`
 - 依赖：T1.4
 
@@ -114,7 +124,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - 目标：`cc-moss install` 在新机器上一条命令装好 tmux.conf、starship.toml、zsh 区块；`doctor` 能体检
 - 文件：`assets/{tmux.conf,starship.toml,zsh/*.block}`、`crates/cc-moss/src/cmd/{install,doctor}.rs`、
   `crates/moss-core/src/platform.rs`
-- 内容：资产脱敏后迁入并内嵌；整文件推送与受管区块替换（复用 T1.2）；先 diff 后写、备份、`--dry-run`；
+- 内容：资产脱敏后迁入并内嵌（tmuxinator 模板不迁，R9）；整文件推送与受管区块替换（复用 T2.1 的 `managed_block`）；先 diff 后写、备份、`--dry-run`；
   平台检测（macOS / Debian 系）并列出缺失依赖及安装命令；`doctor` 覆盖全部资产与依赖
 - TDD：临时 HOME 下 install 幂等；区块永远在 starship init 之前；坑 #8 #10 #11 #12 #13 转为测试
 - 验收：临时 HOME 全量 install → doctor 全绿；私有词表扫描 `assets/` 零命中
@@ -125,7 +135,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 
 - 仓：私有终端标准 skill（不在本仓，仅在本仓档案记录结果）
 - 目标：私有仓只保留多主机下发，安装动作改为调用 `cc-moss install`；旧的 `t.zsh` 和模板退役
-- 内容：私有 skill 的同步脚本改为远程执行 `cc-moss install --yes`；删除迁走的模板；在本机切到 `cc-moss`
+- 内容：私有 skill 的同步脚本改为远程执行 `cc-moss install --yes`；删除迁走的模板和 tmuxinator 安装步骤；在本机切到 `cc-moss`
   （`t` → `cc-moss pick`，启动别名改为 `cc-moss new`）
 - 验收：本机走一遍完整日常流程；私有 skill 的体检脚本全绿
 - commit（私有仓）：按该仓规范
@@ -146,18 +156,33 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
-| **T1.1** 登记与列出 | cc-moss | — | 🟦 Ready | — | 状态机测试 + hook p95 |
-| **T1.2** 钩子安装 | cc-moss | T1.1 | ⬜ Backlog | — | setup/uninstall 逐字节还原 |
-| **T1.3** 新建与名字同步 | cc-moss | T1.1 | ⬜ Backlog | — | 独立 socket 改名同步 |
-| **T1.4** 恢复 | cc-moss | T1.1,T1.3 | ⬜ Backlog | — | 假 claude 全流程 e2e + 真机 |
-| **T2.1** 会话选择器 | cc-moss | T1.4 | ⬜ Backlog | — | 4 个 ⚠️ 复测消失 |
-| **T3.1** 终端资产 install/doctor | cc-moss | T1.2 | ⬜ Backlog | — | 临时 HOME 幂等 + doctor 绿 |
+| **T1.1** 登记与列出 | cc-moss | — | ✅ Done | done/T1.1-registry-hook-ls.spec.md | 状态机测试 + hook p95 |
+| **T1.2** 钩子安装 | cc-moss | T1.1 | ✅ Done | done/T1.2-setup-hooks.spec.md | setup/uninstall 逐字节还原 |
+| **T1.3** 新建与名字同步 | cc-moss | T1.1 | ✅ Done | done/T1.3-new-and-name-sync.spec.md | 独立 socket 改名同步 |
+| **T1.4** 恢复 | cc-moss | T1.1,T1.3 | ✅ Done | done/T1.4-restore.spec.md | 假 claude 全流程 e2e + 真机 |
+| **T1.5** 会话名唯一 | cc-moss | T1.3,T1.4 | ✅ Done | done/T1.5-unique-names.spec.md | 同名进入或恢复 e2e |
+| **T2.1** 会话选择器 | cc-moss | T1.4 | 🟦 Ready | — | 4 个 ⚠️ 复测消失 |
+| **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 临时 HOME 幂等 + doctor 绿 |
 | **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | ⬜ Backlog | — | 本机日常流程走通 |
 | **T4.1** 开源发布 | cc-moss | T3.2 | ⬜ Backlog | — | 干净机器 brew 全流程 |
 
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- DONE 2026-10-15 T1.4: 两轮独立评审（reports/T1.4-review-1.md，共 2 Critical / 9 Important 全部修复）；L2 全绿；e2e 5/5；变异 8/8；三次真机复验（暗号 PELICAN-42 / HERON-7 / OTTER-3）
+- DONE 2026-10-16 T1.5: controller 抽查（risk logic）；e2e 5/5；变异 2/2；全部 verify 原样通过
+- PLAN-CHANGE 2026-10-16: 新增 T1.5 会话名唯一（用户：不可能开第二个同名会话），P1 由 4 个任务变为 5 个
+- MILESTONE 2026-10-15 P1 MVP 闭环：T1.1–T1.4 全部 Done。按推进节奏，先由用户在本机真实使用一段时间，再开 T2.1
+- AMEND 2026-10-15 T1.4: 评审第 2 轮新增 4 条验收项（认领快照、标记豁免时限、开机前 pid、去重挑可恢复的最新副本），均为加强 approved-by=controller
+- AMEND 2026-10-15 T1.4: 评审第 1 轮（reports/T1.4-review-1.md）后，「恢复中」保护从 60 秒计时器改为记录被拉起进程的 pid（计时器只兜底拿不到 pid 的情况），可观测行为变化：运行中的会话再次 restore 显示 Nothing to restore 而不是「恢复中」；新增 6 条验收项、变异清单相应更新，均为加强 approved-by=controller
+- DONE 2026-10-15 T1.2: 子 agent 在独立 worktree 实施；controller 抽查 diff 后补修 `CLAUDE_CONFIG_DIR`（先红后绿）；全部 verify 在 main 上原样通过；变异 3/3 变红
+- DONE 2026-10-15 T1.3: e2e 跑在独立 tmux socket + 假 claude 上（连跑 5/5）；tmux 内 hook p95 21–24ms（首版 28ms，合并 tmux 查询、缓存主机名后降下来）；变异 3/3 变红；全部 verify 在 main 上原样通过
+- DONE 2026-10-15 T1.1: 两轮独立评审（reports/T1.1-review-1.md）；L2 全绿；并发 debug/release 各 10/10；hook p95 7.1ms；变异 6/6 变红；spec 全部 verify 原样执行通过
+- AMEND 2026-10-15 T1.1: busy_timeout 200ms → 1s（hook 设置里有 10s 超时，200ms 下首次并发打开会丢事件，评审 C1）；新增 6 条验收项（F10/F11、评审 I1–I5），全部为加强；并发验收改为 debug/release 各连跑 10 次 approved-by=controller（加强型 AMEND，不需用户批准）
+- AMEND 2026-10-15 T1.1: 评审第 2 轮新增 3 条验收项（R1–R3），均为加强 approved-by=controller
+- PLAN-CHANGE 2026-10-15: 用户定 R9「一个 tmux 会话一个窗口」：T1.3 去掉第二个 claude 改窗口名；T2.1 去掉 Windows 标签页与 tmuxinator；T3.1 不迁 tmuxinator 模板
+- PLAN-CHANGE 2026-10-15: T1.3 去掉 `new -m`（槽位尚未登记，预登记会留下幽灵槽位），备注统一走 T1.4 `note`
+- PLAN-CHANGE 2026-10-15: zsh 集成与 `managed_block` 从 T1.2 挪到 T2.1（T2.1 之前区块里没有可指向的命令，YAGNI）；T3.1 依赖相应加上 T2.1。T1.2 只装钩子
 
 ## 推进节奏
 

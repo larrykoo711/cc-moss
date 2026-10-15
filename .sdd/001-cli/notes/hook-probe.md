@@ -18,9 +18,18 @@ stdin JSON 和 `CLAUDE*`、`TMUX*` 环境变量追加写进日志。claude 跑�
 | F8 | 会话启动后、发第一条消息前就被杀掉的，没有会话记录，`--resume` 报 `No conversation found` | probe-kill 恢复失败 | 恢复前先检查会话记录文件是否存在；不存在的直接标记为「空会话」，不尝试恢复 |
 | F9 | `--resume <id>` 沿用原 id，发 `SessionStart source=resume`，名字自动带回 | `SessionStart ce42… resume probe-term` | 恢复后登记表的主键不变，只更新 pid 和窗格 |
 
+## 补测（2026-10-15 下午，T1.1 评审后）
+
+| # | 事实 | 证据 | 对设计的影响 |
+|---|------|------|--------------|
+| F10 | `claude -p` 也触发全部四个钩子，结束时 `SessionEnd reason=other` | `-p` 探针：Start(startup) → Prompt → Stop → End(other)，env `CLAUDE_CODE_ENTRYPOINT=sdk-cli`、`CLAUDE_CODE_SESSION_ATTENDED=0`；交互式会话为 `cli` / `1` | 不过滤就会把每次 `-p` 调用登记成「意外中断」。hook 只处理 `ENTRYPOINT=cli`（缺省视为交互式）且 `ATTENDED≠0` 的会话 |
+| F11 | 会话内 `/resume <id>`：旧会话收到 `SessionEnd reason=resume`，同一 pid 随即发 `SessionStart source=resume`（目标 id） | `second` 会话里 `/resume <first 的 id>`：`End 4635… resume` → `Start 97c6… resume`，pid 都是 5692 | `reason=resume` 是用户主动离开，算关闭；同一 pid 上只保留一个运行中的槽位 |
+| F12 | 已 `/exit` 的会话被另一个进程 `/resume` 后，沿用原 id 继续收事件 | `97c6…` 先在 pid 4561 `prompt_input_exit`，后在 pid 5692 resume 并正常 Prompt / End | 与 F9 一致：按历史 id 找回槽位 |
+| F13 | `ps -o lstart=` 的输出随 locale 和时区变化（`zh_CN` 下为 `四 10月/15 …`） | 同一进程在 `LC_ALL=C` 与 `zh_CN.UTF-8` 下输出不同 | 进程启动时间只在固定 `LC_ALL=C`、`TZ=UTC0` 下取，否则跨环境比较会把活进程判死 |
+
 ## 未覆盖（实施时补测）
 
 - `source=compact`：压缩后 id 会不会变（Quil 文档说会）
 - 上下文用完后自动换 id 的情况（ccmux 文档描述的分叉），以及 `--fork-session`
-- `SessionEnd` 其他 reason 的取值（如 `logout`）
+- `SessionEnd` 其他 reason 的取值（`logout` 等；已知 `resume` 见 F11）
 - 真实关机（launchd 发 SIGTERM，系统随后发 SIGKILL）时，钩子是否来得及执行完
