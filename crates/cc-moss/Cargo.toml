@@ -10,7 +10,11 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 clap.workspace = true
+crossterm.workspace = true
 moss-core = { path = "../moss-core" }
+nucleo-matcher.workspace = true
+ratatui.workspace = true
+unicode-width = "0.2"
 serde_json.workspace = true
 uuid.workspace = true
 

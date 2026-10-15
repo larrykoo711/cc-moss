@@ -205,3 +205,40 @@ fn honours_claude_config_dir() {
     assert!(config_dir.path().join("settings.json").exists());
     assert!(!home.path().join(".claude/settings.json").exists());
 }
+
+#[test]
+fn zsh_block_round_trip() {
+    let home = tempfile::tempdir().unwrap();
+    let zshrc = home.path().join(".zshrc");
+    let original = "export A=1\nsource ~/.zsh/t.zsh\neval \"$(starship init zsh)\"\n";
+    std::fs::write(&zshrc, original).unwrap();
+    let settings = home.path().join("settings.json");
+    let run = |args: &[&str]| {
+        let out = common::bin()
+            .env("HOME", home.path())
+            .arg("setup")
+            .args(args)
+            .arg("--settings")
+            .arg(&settings)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+
+    run(&["--yes"]);
+    let text = std::fs::read_to_string(&zshrc).unwrap();
+    let block = text.find("# >>> cc-moss >>>").expect("block written");
+    assert!(block < text.find("starship init").unwrap(), "{text}");
+    assert!(
+        text.contains("function t { cc-moss pick \"$@\"; }"),
+        "{text}"
+    );
+
+    let again = run(&["--yes"]);
+    assert!(again.contains("up to date"), "{again}");
+    assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), text);
+
+    run(&["--yes", "--uninstall"]);
+    assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), original);
+}

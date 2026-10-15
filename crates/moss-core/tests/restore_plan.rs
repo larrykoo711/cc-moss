@@ -27,6 +27,8 @@ fn slot(name: &str, status: Status) -> Slot {
         launch_args: vec![],
         transcript_path: Some(format!("/t/{name}.jsonl")),
         restore_started_at_ms: None,
+        busy: false,
+        last_prompt: None,
         created_at_ms: 0,
         last_active_at_ms: 0,
         ended_at_ms: None,

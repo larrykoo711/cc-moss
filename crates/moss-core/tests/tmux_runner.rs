@@ -77,3 +77,22 @@ fn session_names_parses_lines() {
     });
     assert_eq!(t.session_names().unwrap(), vec!["a", "b"]);
 }
+
+#[test]
+fn access_probe_command() {
+    let t = Tmux::new(Recorder {
+        reply: "$0\tmain\n".into(),
+        ..Default::default()
+    });
+    assert_eq!(
+        t.probe_access("/a/it's here"),
+        moss_core::tmux::Access::Readable
+    );
+    let calls = t.runner().calls.borrow();
+    // The probe runs inside the server, whose macOS privacy grants are what matter.
+    assert_eq!(calls[1][0], "run-shell");
+    assert_eq!(
+        calls[1][1],
+        r#"test -r '/a/it'\''s here' && test -x '/a/it'\''s here'"#
+    );
+}

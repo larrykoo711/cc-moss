@@ -52,6 +52,10 @@ pub struct Slot {
     pub launch_args: Vec<String>,
     /// Transcript of the current session id, as reported by the agent.
     pub transcript_path: Option<String>,
+    /// Between a prompt and the end of Claude's reply.
+    pub busy: bool,
+    /// First line of the last prompt, for previews.
+    pub last_prompt: Option<String>,
     /// When `cc-moss restore` last started this slot; cleared by SessionStart.
     pub restore_started_at_ms: Option<i64>,
     pub created_at_ms: i64,

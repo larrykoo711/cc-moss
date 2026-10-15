@@ -44,6 +44,8 @@ pub enum Event {
     Prompt {
         session_id: String,
         title: Option<String>,
+        /// What the user typed (UserPromptSubmit's `prompt`).
+        prompt: Option<String>,
     },
     Stop {
         session_id: String,

@@ -21,6 +21,10 @@ pub fn bin() -> Command {
     ] {
         cmd.env_remove(var);
     }
+    // Never let a test reach the real ~/.zshrc, ~/.claude or ~/.config.
+    cmd.env("HOME", "/nonexistent/cc-moss-test-home")
+        .env_remove("ZDOTDIR")
+        .env_remove("XDG_CONFIG_HOME");
     cmd
 }
 

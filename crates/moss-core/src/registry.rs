@@ -104,7 +104,7 @@ impl Registry {
                             "UPDATE slots SET session_id=?2, cwd=?3,
                                pid=COALESCE(?4, pid), pid_start=COALESCE(?5, pid_start),
                                status='running', end_reason=NULL, ended_at=NULL, last_active_at=?6,
-                               restore_started_at=NULL
+                               restore_started_at=NULL, busy=0
                              WHERE slot_id=?1",
                             params![id, session_id, cwd, ctx.pid, ctx.pid_start, ctx.now_ms],
                         )?;
@@ -141,9 +141,20 @@ impl Registry {
                 // running for this exact process was switched away from (F11).
                 close_other_slots_of_process(&tx, &slot_id, ctx)?;
             }
-            Event::Prompt { session_id, title } => {
+            Event::Prompt {
+                session_id,
+                title,
+                prompt,
+            } => {
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
                     touch_and_repair(&tx, &id, ctx, is_alive)?;
+                    tx.execute("UPDATE slots SET busy = 1 WHERE slot_id = ?1", [&id])?;
+                    if let Some(preview) = prompt.as_deref().and_then(preview) {
+                        tx.execute(
+                            "UPDATE slots SET last_prompt = ?2 WHERE slot_id = ?1",
+                            params![id, preview],
+                        )?;
+                    }
                     if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
                         tx.execute("UPDATE slots SET name=?2 WHERE slot_id=?1", params![id, t])?;
                     }
@@ -152,20 +163,25 @@ impl Registry {
             Event::Stop { session_id } => {
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
                     touch_and_repair(&tx, &id, ctx, is_alive)?;
+                    tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
                 }
             }
             Event::End { session_id, reason } => {
                 // Only the slot's current id may end it; a late End for a
                 // pre-/clear id must not close the live process.
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
+                    tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
                     let (status, raw) = match reason {
                         EndReason::Clear => (None, None),
                         EndReason::Closed(r) => (Some(Status::Closed), Some(r)),
                         EndReason::Abnormal(r) => (Some(Status::Interrupted), Some(r)),
                     };
                     if let Some(status) = status {
+                        // A slot the user closed stays closed: killing its tmux
+                        // session makes claude report SessionEnd(other) afterwards.
                         tx.execute(
-                            "UPDATE slots SET status=?2, end_reason=?3, ended_at=?4 WHERE slot_id=?1",
+                            "UPDATE slots SET status=?2, end_reason=?3, ended_at=?4
+                             WHERE slot_id=?1 AND status <> 'closed'",
                             params![id, status.as_str(), raw, ctx.now_ms],
                         )?;
                     }
@@ -342,7 +358,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
         "SELECT slot_id, agent, session_id, name, cwd, pid, pid_start,
                     tmux_socket, tmux_session_id, tmux_session_name, tmux_pane,
                     status, end_reason, created_at, last_active_at, ended_at,
-                    note_goal, note_state, note_text, launch_args, restore_started_at,
+                    note_goal, note_state, note_text, launch_args, restore_started_at, busy, last_prompt,
                     (SELECT transcript_path FROM slot_sessions ss
                       WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id)
              FROM slots ORDER BY created_at, slot_id",
@@ -379,7 +395,9 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             },
             launch_args: serde_json::from_str(&r.get::<_, String>(19)?).unwrap_or_default(),
             restore_started_at_ms: r.get(20)?,
-            transcript_path: r.get(21)?,
+            busy: r.get(21)?,
+            last_prompt: r.get(22)?,
+            transcript_path: r.get(23)?,
             created_at_ms: r.get(13)?,
             last_active_at_ms: r.get(14)?,
             ended_at_ms: r.get(15)?,
@@ -421,15 +439,21 @@ fn enable_wal(conn: &Connection) -> Result<()> {
         .context("enable WAL"))
 }
 
-/// Builds from before T1.4 created schema v1 without `restore_started_at`;
-/// v1 was never released, so the column is added in place.
+/// Earlier builds created schema v1 without later columns; v1 was never
+/// released, so missing columns are added in place.
 fn ensure_columns(conn: &Connection) -> Result<()> {
-    let present = conn
-        .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = 'restore_started_at'")?
-        .exists([])?;
-    if !present {
-        // Another process may add it first; that is fine.
-        let _ = conn.execute_batch("ALTER TABLE slots ADD COLUMN restore_started_at INTEGER");
+    for (column, ddl) in [
+        ("restore_started_at", "restore_started_at INTEGER"),
+        ("busy", "busy INTEGER NOT NULL DEFAULT 0"),
+        ("last_prompt", "last_prompt TEXT"),
+    ] {
+        let present = conn
+            .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
+            .exists([column])?;
+        if !present {
+            // Another process may add it first; that is fine.
+            let _ = conn.execute_batch(&format!("ALTER TABLE slots ADD COLUMN {ddl}"));
+        }
     }
     Ok(())
 }
@@ -462,6 +486,8 @@ fn migrate(conn: &mut Connection) -> Result<()> {
                note_text TEXT,
                status TEXT NOT NULL CHECK (status IN ('running','closed','interrupted')),
                restore_started_at INTEGER,
+               busy INTEGER NOT NULL DEFAULT 0,
+               last_prompt TEXT,
                end_reason TEXT,
                created_at INTEGER NOT NULL,
                last_active_at INTEGER NOT NULL,
@@ -679,4 +705,10 @@ fn record_session(
         params![session_id, slot_id, transcript_path],
     )?;
     Ok(())
+}
+
+/// The first non-empty line of a prompt, at most 200 characters.
+fn preview(prompt: &str) -> Option<String> {
+    let line = prompt.lines().map(str::trim).find(|l| !l.is_empty())?;
+    Some(line.chars().take(200).collect())
 }

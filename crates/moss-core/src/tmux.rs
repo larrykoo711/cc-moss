@@ -84,6 +84,36 @@ impl Tmux<ProcessRunner> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    Readable,
+    Denied,
+    NoServer,
+}
+
+/// Fails with an actionable message when the tmux server cannot read `dir`
+/// (macOS privacy). Never restarts the server: that would end every session.
+pub fn ensure_access<R: Runner>(tmux: &Tmux<R>, dir: &str) -> Result<()> {
+    if cfg!(target_os = "macos") && tmux.probe_access(dir) == Access::Denied {
+        bail!(
+            "the tmux server cannot read {dir} (macOS privacy settings). \
+             Restart tmux to fix it: `tmux kill-server` (this ends all tmux sessions)"
+        );
+    }
+    Ok(())
+}
+
+/// One row of `tmux list-sessions`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionInfo {
+    pub id: String,
+    pub name: String,
+    pub activity_ms: i64,
+    pub attached: bool,
+    /// The session's start directory.
+    pub path: String,
+}
+
 /// Where a new session's only pane runs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Pane {
@@ -155,6 +185,22 @@ impl<R: Runner> Tmux<R> {
         parse_pane(&out).ok_or_else(|| anyhow::anyhow!("tmux new-session printed no pane"))
     }
 
+    /// Whether the running server can read `dir`. A long-running tmux server
+    /// on macOS can lose access to protected folders (Documents, Desktop…)
+    /// that a fresh terminal still has; sessions it starts there then land in
+    /// the wrong directory. No server means a new one will be started by us,
+    /// with our own access.
+    pub fn probe_access(&self, dir: &str) -> Access {
+        if self.run(&["list-sessions", "-F", "#{session_id}"]).is_err() {
+            return Access::NoServer;
+        }
+        let q = format!("'{}'", dir.replace('\'', r"'\''"));
+        match self.run(&["run-shell", &format!("test -r {q} && test -x {q}")]) {
+            Ok(_) => Access::Readable,
+            Err(_) => Access::Denied,
+        }
+    }
+
     /// The server's socket path.
     pub fn socket_path(&self) -> Option<String> {
         self.run(&["display-message", "-p", "#{socket_path}"])
@@ -200,6 +246,31 @@ impl<R: Runner> Tmux<R> {
                     .collect()
             })
             .unwrap_or_default()
+    }
+
+    /// Every session with its last activity; empty when no server runs.
+    pub fn session_infos(&self) -> Vec<SessionInfo> {
+        let fmt = "#{session_id}\t#{session_name}\t#{session_activity}\t#{session_attached}\t#{session_path}";
+        let Ok(out) = self.run(&["list-sessions", "-F", fmt]) else {
+            return Vec::new();
+        };
+        out.lines()
+            .filter_map(|l| {
+                let mut f = l.splitn(5, '\t');
+                Some(SessionInfo {
+                    id: f.next()?.to_string(),
+                    name: f.next()?.to_string(),
+                    activity_ms: f.next()?.parse::<i64>().ok()? * 1000,
+                    attached: f.next()? != "0",
+                    path: f.next().unwrap_or_default().to_string(),
+                })
+            })
+            .collect()
+    }
+
+    /// End session `$N` (its programs get SIGHUP).
+    pub fn kill_session(&self, session_id: &str) -> Result<()> {
+        self.run(&["kill-session", "-t", session_id]).map(drop)
     }
 
     /// The current name of session `$N`.

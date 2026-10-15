@@ -79,7 +79,9 @@ fn handle(event: &str) -> Result<()> {
                 warn_outside_tmux();
             }
         }
-        Event::Prompt { session_id, title } => {
+        Event::Prompt {
+            session_id, title, ..
+        } => {
             if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
                 log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }

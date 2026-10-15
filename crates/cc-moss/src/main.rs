@@ -1,6 +1,7 @@
 //! cc-moss: crashes happen, your Claude Code sessions carry on.
 
 mod cmd;
+mod pick;
 
 use clap::{Parser, Subcommand};
 
@@ -11,8 +12,9 @@ use clap::{Parser, Subcommand};
     about = "Recoverable Claude Code sessions in tmux"
 )]
 struct Cli {
+    /// Without a command, open the session picker (same as `t`).
     #[command(subcommand)]
-    command: Command,
+    command: Option<Command>,
 }
 
 #[derive(Subcommand)]
@@ -60,7 +62,12 @@ enum Command {
         /// Settings file to edit [default: ~/.claude/settings.json].
         #[arg(long, value_name = "PATH")]
         settings: Option<std::path::PathBuf>,
+        /// zsh startup file for the `t` shortcut [default: ~/.zshrc].
+        #[arg(long, value_name = "PATH")]
+        zshrc: Option<std::path::PathBuf>,
     },
+    /// Pick a session, folder or interrupted session (the `t` shortcut).
+    Pick,
     /// Bring interrupted sessions back, each in its own tmux session.
     Restore {
         /// Restore without asking.
@@ -104,7 +111,10 @@ enum Command {
 
 fn main() -> std::process::ExitCode {
     let cli = Cli::parse();
-    match cli.command {
+    let Some(command) = cli.command else {
+        return report(pick::run());
+    };
+    match command {
         Command::Hook { event } => {
             cmd::hook::run(&event);
             std::process::ExitCode::SUCCESS
@@ -123,6 +133,7 @@ fn main() -> std::process::ExitCode {
             claude_args,
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),
+        Command::Pick => report(pick::run()),
         Command::Restore {
             yes,
             dry_run,
@@ -152,11 +163,13 @@ fn main() -> std::process::ExitCode {
             yes,
             uninstall,
             settings,
+            zshrc,
         } => report(cmd::setup::run(cmd::setup::Options {
             dry_run,
             yes,
             uninstall,
             settings,
+            zshrc,
         })),
     }
 }

@@ -74,6 +74,7 @@ pub fn run(args: NewArgs) -> Result<()> {
     argv.extend(args.claude_args);
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
 
+    moss_core::tmux::ensure_access(&tmux, &cwd.to_string_lossy())?;
     tmux.new_session(&tmux_name, &cwd.to_string_lossy(), &argv)
         .context("start tmux session")?;
     // The registry learns about the session from its SessionStart hook.

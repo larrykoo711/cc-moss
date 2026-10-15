@@ -200,6 +200,7 @@ fn prompt_updates_name_and_activity() {
         &Event::Prompt {
             session_id: "U1".into(),
             title: Some("em-b".into()),
+            prompt: None,
         },
         &ctx(100, 4_000),
     )
@@ -221,6 +222,7 @@ fn prompt_without_title_keeps_name() {
         &Event::Prompt {
             session_id: "U1".into(),
             title: None,
+            prompt: None,
         },
         &ctx(100, 4_000),
     )
@@ -445,6 +447,7 @@ fn prompt_repairs_a_lost_resume() {
         &Event::Prompt {
             session_id: "A".into(),
             title: None,
+            prompt: None,
         },
         &ctx(400, 5_000),
     )
@@ -533,6 +536,7 @@ fn two_live_processes_on_one_conversation_stay_separate() {
         &Event::Prompt {
             session_id: "A".into(),
             title: None,
+            prompt: None,
         },
         &p3,
         &alive,
@@ -597,6 +601,7 @@ fn unprovable_caller_does_not_steal_a_live_slot() {
         &Event::Prompt {
             session_id: "A".into(),
             title: None,
+            prompt: None,
         },
         &proc_ctx(100, None, 3),
         &alive,
@@ -683,6 +688,7 @@ fn restore_mark_adopts_only_on_resume_start_within_window() {
         &Event::Prompt {
             session_id: "X".into(),
             title: None,
+            prompt: None,
         },
         &proc_ctx(400, Some("s400"), 10_000_500),
         &alive,
@@ -740,4 +746,70 @@ fn pid_recorded_before_boot_is_dead() {
         s.effective_status_since(|_, _| true, Some(500)),
         Status::Running
     );
+}
+
+#[test]
+fn end_after_user_close_keeps_closed() {
+    // T2.1: the picker kills a session (Ctrl-X) and closes its slot; claude
+    // then gets SIGHUP and reports SessionEnd(other) a moment later.
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "A", Some("a")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    let id = only_slot(&reg).slot_id;
+    reg.close_by_user(&id, 2_000).unwrap();
+    reg.apply(&end("A", "other"), &ctx(100, 2_001)).unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(s.status, Status::Closed);
+    assert_eq!(s.end_reason.as_deref(), Some("closed-by-user"));
+}
+
+#[test]
+fn prompt_and_stop_track_busy() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "A", Some("a")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    assert!(!only_slot(&reg).busy);
+    let long = format!("  fix the {} bug\nsecond line ignored", "x".repeat(300));
+    reg.apply(
+        &Event::Prompt {
+            session_id: "A".into(),
+            title: None,
+            prompt: Some(long),
+        },
+        &ctx(100, 2_000),
+    )
+    .unwrap();
+    let s = only_slot(&reg);
+    assert!(s.busy);
+    let preview = s.last_prompt.unwrap();
+    assert!(preview.starts_with("fix the xxx"), "{preview}");
+    assert_eq!(preview.chars().count(), 200);
+    reg.apply(
+        &Event::Stop {
+            session_id: "A".into(),
+        },
+        &ctx(100, 3_000),
+    )
+    .unwrap();
+    assert!(!only_slot(&reg).busy);
+    // A prompt without text keeps the previous preview.
+    reg.apply(
+        &Event::Prompt {
+            session_id: "A".into(),
+            title: None,
+            prompt: None,
+        },
+        &ctx(100, 4_000),
+    )
+    .unwrap();
+    assert!(only_slot(&reg).busy);
+    assert!(only_slot(&reg).last_prompt.is_some());
+    reg.apply(&end("A", "other"), &ctx(100, 5_000)).unwrap();
+    assert!(!only_slot(&reg).busy);
 }

@@ -169,6 +169,11 @@ impl Launcher {
         let mut argv: Vec<&str> = vec![&self.claude, "--resume", &slot.session_id];
         argv.extend(name_arg.as_deref());
         argv.extend(slot.launch_args.iter().map(String::as_str));
+        if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
+            eprintln!("cc-moss: could not restore {label}: {e:#}");
+            registry.clear_restore_started(&slot.slot_id)?;
+            return Ok(Launched::Failed);
+        }
         // A timeout or error does not prove the session was not created:
         // look for it before deciding.
         let pane = match self.tmux.new_session(&tmux_name, &slot.cwd, &argv) {

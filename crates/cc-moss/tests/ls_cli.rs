@@ -131,3 +131,21 @@ fn empty_registry_prints_hint() {
         .unwrap()
         .contains("No sessions"));
 }
+
+#[test]
+fn json_has_busy_and_preview() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("A", "startup", Some("a")),
+        p.pid(),
+    );
+    let prompt =
+        serde_json::json!({"session_id": "A", "prompt": "deploy the gateway\nplease"}).to_string();
+    hook(dir.path(), "user-prompt-submit", &prompt, p.pid());
+    let s = &ls_json(dir.path(), false)["slots"][0];
+    assert_eq!(s["busy"], true);
+    assert_eq!(s["last_prompt"], "deploy the gateway");
+}

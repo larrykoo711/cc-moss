@@ -10,6 +10,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
+use moss_core::managed_block;
 use moss_core::settings_json::{self, to_claude_string};
 use moss_core::slot::now_ms;
 use serde_json::{json, Value};
@@ -21,22 +22,82 @@ pub struct Options {
     pub yes: bool,
     pub uninstall: bool,
     pub settings: Option<PathBuf>,
+    pub zshrc: Option<PathBuf>,
+}
+
+/// The `t` shortcut, kept in a managed block of the user's `.zshrc`.
+const ZSH_TAG: &str = "cc-moss";
+const ZSH_BODY: &str = "\
+# Managed by `cc-moss setup`; remove with `cc-moss setup --uninstall`.
+unalias t 2>/dev/null
+function t { cc-moss pick \"$@\"; }
+";
+
+/// One file setup wants to change.
+struct Change {
+    path: PathBuf,
+    original: Option<String>,
+    new_text: String,
+    done: &'static str,
 }
 
 pub fn run(opts: Options) -> Result<()> {
-    let path = match opts.settings {
-        Some(p) => p,
+    let mut changes = Vec::new();
+    if let Some(c) = settings_change(&opts)? {
+        changes.push(c);
+    }
+    if let Some(c) = zshrc_change(&opts)? {
+        changes.push(c);
+    }
+    if changes.is_empty() {
+        return Ok(());
+    }
+
+    for c in &changes {
+        println!("--- {}", c.path.display());
+        println!("+++ {} (after setup)", c.path.display());
+        print!(
+            "{}",
+            unified_diff(c.original.as_deref().unwrap_or(""), &c.new_text, 3)
+        );
+    }
+    if opts.dry_run {
+        println!("Dry run: nothing written.");
+        return Ok(());
+    }
+    let question = if changes.len() == 1 {
+        format!("Apply this change to {}?", changes[0].path.display())
+    } else {
+        format!("Apply these changes to {} files?", changes.len())
+    };
+    if !confirm::ask(
+        opts.yes,
+        &question,
+        "re-run with --yes to apply the diff above",
+    )? {
+        println!("Aborted: nothing written.");
+        return Ok(());
+    }
+    for c in &changes {
+        if let Some(text) = &c.original {
+            let backup = write_backup(&c.path, text.as_bytes())?;
+            println!("Backup: {}", backup.display());
+        }
+        write_atomically(&c.path, c.new_text.as_bytes())?;
+        println!("{} {}", c.done, c.path.display());
+    }
+    Ok(())
+}
+
+fn settings_change(opts: &Options) -> Result<Option<Change>> {
+    let path = match &opts.settings {
+        Some(p) => p.clone(),
         None => default_settings_path()?,
     };
     // Dotfile managers often symlink settings.json; write through the link
     // instead of replacing it with a regular file.
     let path = fs::canonicalize(&path).unwrap_or(path);
-
-    let original = match fs::read_to_string(&path) {
-        Ok(text) => Some(text),
-        Err(e) if e.kind() == io::ErrorKind::NotFound => None,
-        Err(e) => return Err(e).with_context(|| format!("cannot read {}", path.display())),
-    };
+    let original = read_optional(&path)?;
     let old_doc: Value = match &original {
         Some(text) => serde_json::from_str(text).with_context(|| {
             format!(
@@ -46,7 +107,6 @@ pub fn run(opts: Options) -> Result<()> {
         })?,
         None => json!({}),
     };
-
     let new_doc = if opts.uninstall {
         settings_json::uninstall(&old_doc)?
     } else {
@@ -56,7 +116,6 @@ pub fn run(opts: Options) -> Result<()> {
             .context("the cc-moss executable path is not valid UTF-8")?;
         settings_json::install(&old_doc, exe)?
     };
-
     // Compare documents, not text: a file the user formatted differently
     // should not be rewritten when nothing changes semantically.
     if new_doc == old_doc && (original.is_some() || opts.uninstall) {
@@ -65,43 +124,72 @@ pub fn run(opts: Options) -> Result<()> {
         } else {
             println!("cc-moss hooks in {} are up to date.", path.display());
         }
-        return Ok(());
+        return Ok(None);
     }
+    Ok(Some(Change {
+        path,
+        original,
+        new_text: to_claude_string(&new_doc),
+        done: if opts.uninstall {
+            "Removed the cc-moss hooks from"
+        } else {
+            "Installed the cc-moss hooks (new Claude Code sessions register with cc-moss) in"
+        },
+    }))
+}
 
-    let new_text = to_claude_string(&new_doc);
-    let old_text = original.as_deref().unwrap_or("");
-    println!("--- {}", path.display());
-    println!("+++ {} (after setup)", path.display());
-    print!("{}", unified_diff(old_text, &new_text, 3));
-
-    if opts.dry_run {
-        println!("Dry run: nothing written.");
-        return Ok(());
-    }
-    let question = format!("Apply this change to {}?", path.display());
-    if !confirm::ask(
-        opts.yes,
-        &question,
-        "re-run with --yes to apply the diff above",
-    )? {
-        println!("Aborted: nothing written.");
-        return Ok(());
-    }
-
-    if let Some(text) = &original {
-        let backup = write_backup(&path, text.as_bytes())?;
-        println!("Backup: {}", backup.display());
-    }
-    write_atomically(&path, new_text.as_bytes())?;
-    if opts.uninstall {
-        println!("Removed the cc-moss hooks from {}.", path.display());
+fn zshrc_change(opts: &Options) -> Result<Option<Change>> {
+    let Some(path) = opts.zshrc.clone().or_else(default_zshrc_path) else {
+        return Ok(None);
+    };
+    let path = fs::canonicalize(&path).unwrap_or(path);
+    let Some(original) = read_optional(&path)? else {
+        if !opts.uninstall {
+            println!(
+                "No {}; skipping the `t` shortcut (add `function t {{ cc-moss pick \"$@\"; }}` to your shell yourself).",
+                path.display()
+            );
+        }
+        return Ok(None);
+    };
+    let new_text = if opts.uninstall {
+        managed_block::remove(&original, ZSH_TAG)
     } else {
-        println!(
-            "Installed the cc-moss hooks in {}. New Claude Code sessions will register with cc-moss.",
-            path.display()
-        );
+        managed_block::upsert(&original, ZSH_TAG, ZSH_BODY)
     }
-    Ok(())
+    .with_context(|| format!("cannot update {}", path.display()))?;
+    if new_text == original {
+        if !opts.uninstall {
+            println!("The `t` shortcut in {} is up to date.", path.display());
+        }
+        return Ok(None);
+    }
+    Ok(Some(Change {
+        path,
+        original: Some(original),
+        new_text,
+        done: if opts.uninstall {
+            "Removed the `t` shortcut from"
+        } else {
+            "Added the `t` shortcut (open a new shell or `source` it) to"
+        },
+    }))
+}
+
+fn read_optional(path: &Path) -> Result<Option<String>> {
+    match fs::read_to_string(path) {
+        Ok(text) => Ok(Some(text)),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(e).with_context(|| format!("cannot read {}", path.display())),
+    }
+}
+
+/// `$ZDOTDIR/.zshrc`, else `~/.zshrc`.
+fn default_zshrc_path() -> Option<PathBuf> {
+    let dir = std::env::var_os("ZDOTDIR")
+        .filter(|d| !d.is_empty())
+        .or_else(|| std::env::var_os("HOME"))?;
+    Some(PathBuf::from(dir).join(".zshrc"))
 }
 
 /// Claude Code's user settings: `$CLAUDE_CONFIG_DIR/settings.json` when that

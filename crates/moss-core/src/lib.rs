@@ -5,6 +5,7 @@ pub mod command;
 pub mod config;
 pub mod event;
 pub mod launch_args;
+pub mod managed_block;
 pub mod naming;
 pub mod proc;
 pub mod registry;

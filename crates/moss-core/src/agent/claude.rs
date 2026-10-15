@@ -22,6 +22,8 @@ struct Payload {
     reason: Option<String>,
     #[serde(default)]
     session_title: Option<String>,
+    #[serde(default)]
+    prompt: Option<String>,
 }
 
 impl Agent for ClaudeAgent {
@@ -50,6 +52,7 @@ impl Agent for ClaudeAgent {
             HookKind::UserPromptSubmit => Event::Prompt {
                 session_id: p.session_id,
                 title: p.session_title,
+                prompt: p.prompt,
             },
             HookKind::Stop => Event::Stop {
                 session_id: p.session_id,
