@@ -22,7 +22,7 @@
 | Phase | 主题 | Task | 价值 |
 |-------|------|------|------|
 | P1 | MVP：重启后能列出并恢复会话 | T1.1–T1.5 | 直接解决立项的 D1–D3 |
-| P2 | 会话选择器（替代 `t`） | T2.1–T2.4 | 日常入口；列表里能看到名字、状态、备注 |
+| P2 | 会话选择器（替代 `t`） | T2.1–T2.5 | 日常入口；列表里能看到名字、状态、备注 |
 | P3 | 终端资产并入 | T3.1–T3.2 | 解决 D4；本仓成为 tmux / starship / zsh 资产的正本 |
 | P4 | 开源发布 | T4.1 | CI、README、Release、Homebrew，仓库公开 |
 
@@ -142,6 +142,11 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - commit：`feat(pick): project-grouped list with a detail card`
 - 依赖：T2.3
 
+### T2.5 中英文国际化 + 友好文案
+
+- 目标：界面、命令输出、帮助与钩子提示都有中英两种文案，按系统语言自动选择；文案口语、友好、带一点小幽默
+- spec：`tasks/done/T2.5-i18n-and-copy.spec.md`
+
 ### T3.1 终端资产 install / doctor
 
 - 仓：cc-moss
@@ -170,7 +175,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - 仓：cc-moss
 - 目标：仓库公开，别人能用 `brew install` 装上
 - 文件：`README.md`、`LICENSE`、`.github/workflows/{ci,release}.yml`、homebrew tap 的 formula
-- 内容：**公开前清理 git 历史**：T2.2–T2.3 期间的提交曾把本机主机名、工作区名与供应商名写进测试夹具（已在 main 上清除，但历史里还在），公开前用私有词表（仓外 `~/.config/cc-moss-dev/private-words.txt`）扫描全部历史，并重写或压平历史；README（MOSS 叙事、30 秒上手、和其他方案的区别）；CI 在 macOS 与 Ubuntu 跑 L3；打 tag 后构建
+- 内容：~~公开前清理 git 历史~~ ✅ 2026-10-16 提前完成（filter-repo 按私有词表替换全部历史、整理为规范提交，GitHub 仓库删除重建后推送）；README ✅ 2026-10-16 中英双语初版（发布时补「和其他方案的区别」）；CI 在 macOS 与 Ubuntu 跑 L3；打 tag 后构建
   多平台二进制发 GitHub Release；tap 仓加 formula；全仓私有词表扫描
 - 验收：干净机器上 `brew install` → `cc-moss setup` → `new` → kill tmux → `restore` 走通
 - commit：`docs: readme and license`、`ci: build, test and release workflows`
@@ -189,6 +194,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 | **T2.2** 选择器对齐 claude agents | cc-moss | T2.1 | ✅ Done | done/T2.2-picker-look.spec.md | 分组列表 + agents 皮肤 |
 | **T2.3** 选择器第二轮打磨 | cc-moss | T2.2 | ✅ Done | done/T2.3-picker-polish.spec.md | 状态分组 + 预览 + 高亮 |
 | **T2.4** 选择器重新设计（列表 + 详情卡片） | cc-moss | T2.3 | ✅ Done | done/T2.4-picker-master-detail.spec.md | 项目分组单行 + 详情卡片 |
+| **T2.5** 中英文国际化 + 友好文案 | cc-moss | T2.4 | ✅ Done | done/T2.5-i18n-and-copy.spec.md | 按系统语言自动中英；文案友好 |
 | **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | 🟦 Ready | — | 临时 HOME 幂等 + doctor 绿 |
 | **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | ⬜ Backlog | — | 本机日常流程走通 |
 | **T4.1** 开源发布 | cc-moss | T3.2 | ⬜ Backlog | — | 干净机器 brew 全流程 |
@@ -196,6 +202,13 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- CHANGE 2026-10-16 slogan 定为「文明会延续，对话也是。/ Civilizations carry on. So do conversations.」（用户从三轮候选中选定，呼应 MOSS 的使命）；`--version` 去掉功能说明行，只留名字版本、slogan、仓库地址
+- DONE 2026-10-16 T2.5: 中英文国际化（判定顺序 CC_MOSS_LANG → 配置 → LC_ALL → LC_MESSAGES → macOS 系统语言 → LANG；只在要显示文字时判定，钩子热路径不受影响）；选择器、命令输出、`--help`（含 help 子命令）、钩子提示全覆盖，文案改为口语、友好、带一点小幽默；`moss-core` 的 resolve 改为带类型的错误，由 cc-moss 翻译；表格按显示宽度对齐中文；页头标志改为两格盲文 ⢎⡱（检查运行中会话时有点在游走）；`--version` 在终端里显示盲文字符画标志 + slogan（管道输出仍是 `cc-moss <版本>`）。192 测试全绿；变异 2/2；真实环境中文选择器截屏核对
+- PLAN-CHANGE 2026-10-16: 新增 T2.5（中英文国际化 + 面向 C 端的友好文案），用户提出；页头标志改为两格盲文 ⢎⡱（用户：单字符 ∞ 太小）并入本任务
+- CHANGE 2026-10-16 标志改版（用户：上一版太具象，参考 Claude/OpenAI 的抽象标志与终端动态小图形）：三个抽象方向中用户选 C「Continuum」——伯努利双纽线画成的 ∞，中心交叉处一条线从下方穿过；动画版光带沿环流动；终端里页头用品牌色 `∞`，「工作中」改为 4 个盲文点沿 8 字轨迹游走（测试锁定每帧 4 点、相邻帧共用 3 点）。旧的具象图标作废
+- FIX 2026-10-16 选择器反馈三项（反馈车道）：(1) `t` 启动卡 1–2s：对账（`claude agents` 冷启动 1.1s+）挡在首帧前，改为后台线程，跑完立即无感刷新，首帧约 55ms；(2) git worktree 标记：按 `.git` 文件的 gitdir 识别（不限 `.claude/worktrees`），分组标题显示「worktree · 主仓名」，详情卡显示主仓路径 + worktree 名；用户选「图标 + 文字」，Nerd Font 图标由 `[ui] icons`（默认 auto = 检测 starship）控制；(3) Working 动画去掉形似「+」的帧。另：项目图标定稿（MOSS 之眼 + 地球轨道，16/32px 用简化版），横幅改用该图标
+- FIX 2026-10-16 选择器「New session here」（反馈车道，用户：选中后会自动跳走、放在末尾不好用）：每 2 秒刷新时选中项保持特意排除了新建行，改为一并保持；新建行移到列表顶部，打开时仍落在第一个会话上，按一次 ↑ 即到。tmux 实测选中后跨两次刷新不跳；README 截图同步重拍
+- FIX 2026-10-16 「工作中」误报（反馈车道，用户截图：显示 Working 的会话点进去并没在工作）：根因是对账用 `claude agents` 的 busy 覆盖了钩子状态，而它把一轮结束后仍在跑的后台 shell/agent 也算作 busy。改为钩子为准，只纠正卡住的标记：`claude agents` 报 idle 即清除（Esc 中断不发 Stop 钩子）；报 busy 时以会话记录末尾为准（`turn_duration`/`stop_hook_summary`/`end_turn`/用户中断 = 已结束，跳过元信息与本地斜杠命令）。变异 11/11；真实数据副本上只剩真正在跑的会话显示工作中
 - FIX 2026-10-16 自动对账（反馈车道，用户：最好是自动的）：`ls` 与选择器每次打开时先对账——(1) 认领 `claude agents --json` 里在运行但未登记的交互会话（沿父进程找到 tmux 窗格，丢弃「目录名-两位十六进制」的自动名）；(2) 无名会话从会话记录的最后一次 `/rename` 补名字（`--resume` 后钩子不带名字），只读上次之后新增的部分；选择器名字兜底改为 Claude 名 → tmux 名 → id。测试不再可能调用真实 claude（helper 默认指向不存在的路径，假 claude 识别 `agents`）；变异 9 个杀 8 个，剩 1 个是纯性能等价变异；真实数据副本上认领 9 个会话，稳态 0.26s
 - DONE 2026-10-15 T1.4: 两轮独立评审（reports/T1.4-review-1.md，共 2 Critical / 9 Important 全部修复）；L2 全绿；e2e 5/5；变异 8/8；三次真机复验（暗号 PELICAN-42 / HERON-7 / OTTER-3）
 - DONE 2026-10-16 T2.4: 143 测试全绿；e2e 连跑 10/10（排查 flake 时发现搜索会命中长路径、选中不在最佳匹配，已修并补测试）；变异 2/2；宽窄两种布局截图核对
