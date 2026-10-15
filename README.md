@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.svg" alt="cc-moss — crashes happen, your Claude Code sessions carry on" width="100%">
+  <img src="docs/assets/banner.svg" alt="cc-moss — Civilizations carry on. So do conversations." width="100%">
 </p>
 
 <p align="center">
@@ -37,7 +37,9 @@ conversation.
   session too.
 - **Notes that survive.** Write down what a session is for and where it stopped, and see it the next morning.
 - **A picker for humans.** Type to search or to name a new session, arrow keys to move, Enter to open, → for more,
-  Esc to go back. The mouse works too. No shortcuts to learn.
+  Esc to go back. The mouse works too. No shortcuts to learn. Git worktrees are marked with the repository they
+  belong to.
+- **Speaks your language.** English or Simplified Chinese, picked from your system language.
 - **Local and private.** One SQLite file on your machine. cc-moss never talks to the network.
 
 ## Install
@@ -73,7 +75,7 @@ In the picker:
 
 | Mark | Meaning |
 |:---:|---|
-| ✶ | Claude is working (animated) |
+| ⣤ | Claude is working (dots run along a figure eight) |
 | ● | Waiting for you |
 | ↺ | Interrupted: press Enter to restore it |
 | ○ | A plain tmux session, without Claude Code |
@@ -133,6 +135,10 @@ host_prefix = true        # name tmux sessions <host>_<name>, handy when you ssh
 
 [tmux]
 socket = "work"           # a tmux -L name or a socket path; the default server if unset
+
+[ui]
+icons = "auto"            # Nerd Font icons: "auto" (when starship is loaded), "nerd" or "text"
+language = "auto"         # "auto" (your system language), "en" or "zh"; CC_MOSS_LANG overrides it
 ```
 
 ## Roadmap

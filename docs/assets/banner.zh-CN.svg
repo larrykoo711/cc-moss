@@ -1,33 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="cc-moss — 崩溃会发生，你的 Claude Code 会话会延续。">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="cc-moss — 文明会延续，对话也是。">
 <style>
-  .bg{fill:#fafafa} .grid{stroke:#e4e4e7} .ring{stroke:#d4d4d8} .ink{fill:#18181b} .sub{fill:#52525b} .dim{fill:#a1a1aa} .earth{fill:#2563eb} .chip{fill:#f4f4f5;stroke:#e4e4e7}
-  @media (prefers-color-scheme: dark) {
-    .bg{fill:#0d1117} .grid{stroke:#161b22} .ring{stroke:#30363d} .ink{fill:#f0f6fc} .sub{fill:#9198a1} .dim{fill:#6e7681} .earth{fill:#58a6ff} .chip{fill:#161b22;stroke:#30363d}
-  }
+  .bg{fill:#fafafa} .ink{fill:#18181b} .sub{fill:#52525b} .dim{fill:#a1a1aa} .trail{stroke:#18181b}
+  @media (prefers-color-scheme: dark) { .bg{fill:#0d1117} .ink{fill:#f0f6fc} .sub{fill:#9198a1} .dim{fill:#6e7681} .trail{stroke:#f0f6fc} }
 </style>
-<defs>
-  <radialGradient id="eye" cx="50%" cy="50%" r="50%">
-    <stop offset="0" stop-color="#ffd9cf"/><stop offset=".18" stop-color="#ff6b4a"/><stop offset=".55" stop-color="#d4372a"/><stop offset="1" stop-color="#5c0f0f"/>
-  </radialGradient>
-  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
-    <stop offset="0" stop-color="#ff5a3c" stop-opacity=".35"/><stop offset="1" stop-color="#ff5a3c" stop-opacity="0"/>
-  </radialGradient>
-  <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" class="dim" opacity=".35"/></pattern>
-</defs>
 <rect class="bg" width="1280" height="320" rx="20"/>
-<rect fill="url(#dots)" width="1280" height="320" rx="20"/>
-<g transform="translate(230 160)">
-  <circle r="120" fill="url(#glow)"/>
-  <ellipse rx="150" ry="46" fill="none" class="ring" stroke-width="1.5" transform="rotate(-18)"/>
-  <ellipse rx="108" ry="108" fill="none" class="ring" stroke-width="1" stroke-dasharray="2 6"/>
-  <circle r="64" fill="#1c1c1f"/>
-  <circle r="64" fill="none" stroke="#3f3f46" stroke-width="3"/>
-  <circle r="50" fill="none" stroke="#27272a" stroke-width="6"/>
-  <circle r="40" fill="url(#eye)"/>
-  <circle cx="-12" cy="-13" r="7" fill="#fff" opacity=".55"/>
-  <circle cx="129" cy="-58" r="9" class="earth"/>
+<g transform="translate(96 72) scale(4)">
+  <path d="M59.00 32.00 L58.94 33.43 L58.75 34.83 L58.45 36.20 L58.03 37.50 L57.51 38.72 L56.90 39.85 L56.20 40.87 L55.44 41.78 L54.62 42.57 L53.76 43.24 L52.86 43.79 L51.95 44.22 L51.02 44.54 L50.08 44.76 L49.15 44.87 L48.23 44.88 L47.33 44.81 L46.44 44.66 L45.57 44.44 L44.73 44.15 L43.91 43.80 L43.11 43.41 L42.34 42.96 L41.59 42.48 L40.87 41.96 L40.17 41.40 L39.49 40.82 L38.83 40.22 L38.19 39.59 L37.57 38.95 L36.97 38.30 L36.38 37.62 L35.80 36.94 L35.24 36.25 L34.68 35.55 L34.14 34.85 L33.60 34.14 L33.06 33.43 L32.53 32.72 L32.00 32.00 L31.47 31.28 L30.94 30.57 L30.40 29.86 L29.86 29.15 L29.32 28.45 L28.76 27.75 L28.20 27.06 L27.62 26.38 L27.03 25.70 L26.43 25.05 L25.81 24.41 L25.17 23.78 L24.51 23.18 L23.83 22.60 L23.13 22.04 L22.41 21.52 L21.66 21.04 L20.89 20.59 L20.09 20.20 L19.27 19.85 L18.43 19.56 L17.56 19.34 L16.67 19.19 L15.77 19.12 L14.85 19.13 L13.92 19.24 L12.98 19.46 L12.05 19.78 L11.14 20.21 L10.24 20.76 L9.38 21.43 L8.56 22.22 L7.80 23.13 L7.10 24.15 L6.49 25.28 L5.97 26.50 L5.55 27.80 L5.25 29.17 L5.06 30.57 L5.00 32.00 L5.06 33.43 L5.25 34.83 L5.55 36.20 L5.97 37.50 L6.49 38.72 L7.10 39.85 L7.80 40.87 L8.56 41.78 L9.38 42.57 L10.24 43.24 L11.14 43.79 L12.05 44.22 L12.98 44.54 L13.92 44.76 L14.85 44.87 L15.77 44.88 L16.67 44.81 L17.56 44.66 L18.43 44.44 L19.27 44.15 L20.09 43.80 L20.89 43.41 L21.66 42.96 L22.41 42.48 L23.13 41.96 L23.83 41.40 L24.51 40.82 L25.17 40.22 L25.81 39.59 L26.43 38.95 L27.03 38.30 L27.62 37.62 L28.20 36.94 L28.76 36.25 L29.32 35.55 L29.86 34.85 L30.40 34.14 L30.94 33.43 L31.47 32.72 L32.00 32.00 L32.53 31.28 L33.06 30.57 L33.60 29.86 L34.14 29.15 L34.68 28.45 L35.24 27.75 L35.80 27.06 L36.38 26.38 L36.97 25.70 L37.57 25.05 L38.19 24.41 L38.83 23.78 L39.49 23.18 L40.17 22.60 L40.87 22.04 L41.59 21.52 L42.34 21.04 L43.11 20.59 L43.91 20.20 L44.73 19.85 L45.57 19.56 L46.44 19.34 L47.33 19.19 L48.23 19.12 L49.15 19.13 L50.08 19.24 L51.02 19.46 L51.95 19.78 L52.86 20.21 L53.76 20.76 L54.62 21.43 L55.44 22.22 L56.20 23.13 L56.90 24.15 L57.51 25.28 L58.03 26.50 L58.45 27.80 L58.75 29.17 L58.94 30.57 L59.00 32.00 Z" fill="none" class="trail" stroke-opacity=".08" stroke-width="7.5" stroke-linejoin="round"/>
+  <path d="M59.00 32.00 L58.94 33.43 L58.75 34.83 L58.45 36.20 L58.03 37.50 L57.51 38.72 L56.90 39.85 L56.20 40.87 L55.44 41.78 L54.62 42.57 L53.76 43.24 L52.86 43.79 L51.95 44.22 L51.02 44.54 L50.08 44.76 L49.15 44.87 L48.23 44.88 L47.33 44.81 L46.44 44.66 L45.57 44.44 L44.73 44.15 L43.91 43.80 L43.11 43.41 L42.34 42.96 L41.59 42.48 L40.87 41.96 L40.17 41.40 L39.49 40.82 L38.83 40.22 L38.19 39.59 L37.57 38.95 L36.97 38.30 L36.38 37.62 L35.80 36.94 L35.24 36.25 L34.68 35.55 L34.14 34.85 L33.60 34.14 L33.06 33.43 L32.53 32.72 L32.00 32.00 L31.47 31.28 L30.94 30.57 L30.40 29.86 L29.86 29.15 L29.32 28.45 L28.76 27.75 L28.20 27.06 L27.62 26.38 L27.03 25.70 L26.43 25.05 L25.81 24.41 L25.17 23.78 L24.51 23.18 L23.83 22.60 L23.13 22.04 L22.41 21.52 L21.66 21.04 L20.89 20.59 L20.09 20.20 L19.27 19.85 L18.43 19.56 L17.56 19.34 L16.67 19.19 L15.77 19.12 L14.85 19.13 L13.92 19.24 L12.98 19.46 L12.05 19.78 L11.14 20.21 L10.24 20.76 L9.38 21.43 L8.56 22.22 L7.80 23.13 L7.10 24.15 L6.49 25.28 L5.97 26.50 L5.55 27.80 L5.25 29.17 L5.06 30.57 L5.00 32.00 L5.06 33.43 L5.25 34.83 L5.55 36.20 L5.97 37.50 L6.49 38.72 L7.10 39.85 L7.80 40.87 L8.56 41.78 L9.38 42.57 L10.24 43.24 L11.14 43.79 L12.05 44.22 L12.98 44.54 L13.92 44.76 L14.85 44.87 L15.77 44.88 L16.67 44.81 L17.56 44.66 L18.43 44.44 L19.27 44.15 L20.09 43.80 L20.89 43.41 L21.66 42.96 L22.41 42.48 L23.13 41.96 L23.83 41.40 L24.51 40.82 L25.17 40.22 L25.81 39.59 L26.43 38.95 L27.03 38.30 L27.62 37.62 L28.20 36.94 L28.76 36.25 L29.32 35.55 L29.86 34.85 L30.40 34.14 L30.94 33.43 L31.47 32.72 L32.00 32.00 L32.53 31.28 L33.06 30.57 L33.60 29.86 L34.14 29.15 L34.68 28.45 L35.24 27.75 L35.80 27.06 L36.38 26.38 L36.97 25.70 L37.57 25.05 L38.19 24.41 L38.83 23.78 L39.49 23.18 L40.17 22.60 L40.87 22.04 L41.59 21.52 L42.34 21.04 L43.11 20.59 L43.91 20.20 L44.73 19.85 L45.57 19.56 L46.44 19.34 L47.33 19.19 L48.23 19.12 L49.15 19.13 L50.08 19.24 L51.02 19.46 L51.95 19.78 L52.86 20.21 L53.76 20.76 L54.62 21.43 L55.44 22.22 L56.20 23.13 L56.90 24.15 L57.51 25.28 L58.03 26.50 L58.45 27.80 L58.75 29.17 L58.94 30.57 L59.00 32.00 Z" fill="none" stroke="#FF5A3C" stroke-width="7.5" stroke-linecap="round" stroke-linejoin="round" pathLength="100" stroke-dasharray="58 42">
+    <animate attributeName="stroke-dashoffset" from="0" to="-100" dur="2.4s" repeatCount="indefinite"/>
+  </path>
 </g>
-<text x="440" y="150" class="ink" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="84" font-weight="700" letter-spacing="-2">cc-moss</text>
-<text x="444" y="202" class="sub" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="30">崩溃会发生，你的 Claude Code 会话会延续。</text>
-<text x="444" y="246" class="dim" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="21">自动登记 · 命名 · 备注 · 一键恢复，全在 tmux 里。</text>
+<text x="420" y="150" class="ink" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="84" font-weight="700" letter-spacing="-2">cc-moss</text>
+<text x="424" y="202" class="sub" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="30">文明会延续，对话也是。</text>
+<text x="424" y="246" class="dim" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="21">自动登记 · 命名 · 备注 · 一键恢复，全在 tmux 里。</text>
 </svg>

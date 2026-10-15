@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/banner.zh-CN.svg" alt="cc-moss：崩溃会发生，你的 Claude Code 会话会延续" width="100%">
+  <img src="docs/assets/banner.zh-CN.svg" alt="cc-moss：文明会延续，对话也是。" width="100%">
 </p>
 
 <p align="center">
@@ -35,7 +35,8 @@
   都没有才新建。在 Claude Code 里 `/rename` 改名，tmux 会话名也会跟着改。
 - **备注不会丢**：写下会话在做什么、停在哪里，第二天打开还在。
 - **人人都会用的选择器**：打字即搜索（或输入新会话的名字），方向键移动，回车打开，→ 更多操作，Esc 返回，
-  也支持鼠标。没有要背的快捷键。
+  也支持鼠标。没有要背的快捷键。git worktree 会标出它所属的主仓。
+- **说你的语言**：界面支持英文和简体中文，自动跟随系统语言。
 - **本地、私密**：数据只是本机上的一个 SQLite 文件，cc-moss 不会联网。
 
 ## 安装
@@ -70,7 +71,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 | 标记 | 含义 |
 |:---:|---|
-| ✶ | Claude 正在工作（带动画） |
+| ⣤ | Claude 正在工作（点沿 8 字轨迹游走） |
 | ● | 在等你回复 |
 | ↺ | 已中断：回车即可恢复 |
 | ○ | 普通 tmux 会话，没有 Claude Code |
@@ -129,6 +130,10 @@ host_prefix = true        # tmux 会话名为 <主机名>_<名字>，在多台�
 
 [tmux]
 socket = "work"           # tmux -L 的名字或 socket 路径；不设置则用默认 server
+
+[ui]
+icons = "auto"            # Nerd Font 图标："auto"（检测到 starship 时启用）、"nerd" 或 "text"
+language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"；环境变量 CC_MOSS_LANG 优先
 ```
 
 ## 路线图
