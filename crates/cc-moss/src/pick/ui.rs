@@ -32,7 +32,10 @@ const ORANGE: Color = Color::Rgb(215, 119, 87);
 /// Waiting for you; notes.
 const AMBER: Color = Color::Rgb(240, 186, 70);
 
-const SPINNER: [&str; 6] = ["·", "✢", "✳", "✶", "✻", "✽"];
+// No frame may look like the "+" of "New session".
+const SPINNER: [&str; 6] = ["✶", "✳", "✻", "✽", "✻", "✳"];
+/// Nerd Font "file-tree", shown next to the word "worktree".
+const WORKTREE_ICON: &str = "\u{f0645}";
 /// Below this width the card goes under the list.
 pub const SPLIT_MIN_WIDTH: u16 = 90;
 
@@ -45,6 +48,19 @@ pub struct View<'a> {
     /// Where a new session would start.
     pub cwd: &'a str,
     pub version: &'a str,
+    /// The terminal font has Nerd Font icons.
+    pub nerd_icons: bool,
+}
+
+impl View<'_> {
+    /// "worktree", with its icon when the font has one.
+    fn worktree_word(&self) -> String {
+        if self.nerd_icons {
+            format!("{WORKTREE_ICON} worktree")
+        } else {
+            "worktree".into()
+        }
+    }
 }
 
 /// Which list row each screen line shows, for mouse clicks.
@@ -200,11 +216,18 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
                         row: None,
                     });
                 }
+                let mut title = vec![Span::styled(
+                    format!(" {}", labels[*p]),
+                    Style::new().fg(GREY).add_modifier(Modifier::BOLD),
+                )];
+                if let Some(wt) = &app.projects()[*p].worktree {
+                    title.push(Span::styled(
+                        format!("  {} · {}", view.worktree_word(), basename(&wt.repo)),
+                        Style::new().fg(FAINT),
+                    ));
+                }
                 lines.push(ListLine {
-                    line: Line::from(Span::styled(
-                        format!(" {}", labels[*p]),
-                        Style::new().fg(GREY).add_modifier(Modifier::BOLD),
-                    )),
+                    line: Line::from(title),
                     row: None,
                 });
             }
@@ -259,6 +282,10 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
 
 /// Folder names for the group titles; the full (short) path where two
 /// projects share a folder name.
+fn basename(path: &str) -> &str {
+    path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path)
+}
+
 fn project_labels(app: &App, view: &View) -> Vec<String> {
     let base = |p: &str| {
         let t = tilde(p, view.home);
@@ -461,7 +488,23 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
             }
             lines.push(Line::raw(""));
             lines.push(label("Folder"));
-            lines.push(Line::raw(tilde(item.dir().unwrap_or_default(), view.home)));
+            let dir = item.dir().unwrap_or_default();
+            let worktree = app
+                .projects()
+                .iter()
+                .find(|p| p.path == dir)
+                .and_then(|p| p.worktree.clone());
+            match worktree {
+                Some(wt) => {
+                    lines.push(Line::raw(tilde(&wt.repo, view.home)));
+                    let inside = dir.strip_prefix(wt.root.as_str()).unwrap_or_default();
+                    lines.push(Line::styled(
+                        format!("{} {}{inside}", view.worktree_word(), basename(&wt.root)),
+                        grey(),
+                    ));
+                }
+                None => lines.push(Line::raw(tilde(dir, view.home))),
+            }
             lines.push(Line::raw(""));
             let open = if state == State::Interrupted {
                 " Restore"
@@ -722,7 +765,12 @@ mod tests {
     use ratatui::Terminal;
 
     fn render(app: &App, w: u16, h: u16) -> (String, Buffer) {
+        render_icons(app, w, h, false)
+    }
+
+    fn render_icons(app: &App, w: u16, h: u16, nerd_icons: bool) -> (String, Buffer) {
         let view = View {
+            nerd_icons,
             now_ms: 600_000,
             home: Some("/home/u"),
             host_prefix: Some("host-a"),
@@ -963,6 +1011,34 @@ mod tests {
         let (text, _) = render(&a, 110, 20);
         assert!(text.contains("● em-api-gw"), "{text}");
         assert!(!text.contains("x-id"), "{text}");
+    }
+
+    #[test]
+    fn worktrees_name_their_repository() {
+        let tmp = tempfile::tempdir().unwrap();
+        let repo = tmp.path().join("acme");
+        std::fs::create_dir_all(repo.join(".git/worktrees/97-t7.1")).unwrap();
+        let wt = repo.join(".claude/worktrees/97-t7.1");
+        std::fs::create_dir_all(&wt).unwrap();
+        std::fs::write(
+            wt.join(".git"),
+            format!("gitdir: {}/.git/worktrees/97-t7.1", repo.display()),
+        )
+        .unwrap();
+        let a = App::new(
+            vec![claude("docs", &wt.to_string_lossy(), 0, false, None, None)],
+            vec![],
+        );
+        let (text, _) = render(&a, 140, 20);
+        assert!(text.contains(" 97-t7.1  worktree · acme"), "{text}");
+        assert!(text.contains("worktree 97-t7.1"), "{text}");
+        assert!(!text.contains(".claude/worktrees"), "{text}");
+        assert!(
+            !text.contains('\u{f0645}'),
+            "no icon without a Nerd Font:\n{text}"
+        );
+        let (text, _) = render_icons(&a, 140, 20, true);
+        assert!(text.contains("\u{f0645} worktree · acme"), "{text}");
     }
 
     #[test]

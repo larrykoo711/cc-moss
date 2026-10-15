@@ -58,6 +58,8 @@ pub fn activity(item: &Item) -> i64 {
 pub struct Project {
     pub path: String,
     pub items: Vec<Item>,
+    /// Set when the folder is a git linked worktree.
+    pub worktree: Option<moss_core::worktree::Worktree>,
 }
 
 /// One entry of the list (a project title, or something you can select).
@@ -188,6 +190,7 @@ impl App {
             match projects.iter_mut().find(|p| p.path == path) {
                 Some(p) => p.items.push(item),
                 None => projects.push(Project {
+                    worktree: moss_core::worktree::of(&path),
                     path,
                     items: vec![item],
                 }),

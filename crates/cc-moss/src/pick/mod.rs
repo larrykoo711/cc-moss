@@ -36,8 +36,9 @@ pub fn run() -> Result<()> {
     let config = Config::load()?;
     let socket = Socket::from_config(config.tmux_socket().as_deref());
     let tmux = Tmux::with_socket(socket.clone());
-    // Adopt sessions the hooks missed before the first frame.
-    crate::reconcile::run()?;
+    // Adopt sessions the hooks missed in the background: `claude agents` can
+    // take a second to start, and the first frame must not wait for it.
+    let reconcile = std::thread::spawn(|| crate::reconcile::run().map(drop));
     let (sessions, interrupted) = load(&tmux)?;
     let mut app = App::new(sessions, interrupted);
     let host_prefix = if config.naming.host_prefix {
@@ -55,12 +56,16 @@ pub fn run() -> Result<()> {
         host_prefix: host_prefix.as_deref(),
         cwd: &cwd,
         version: env!("CARGO_PKG_VERSION"),
+        nerd_icons: config
+            .ui
+            .icons
+            .enabled(std::env::var("STARSHIP_SHELL").ok().as_deref()),
     };
 
     let action = {
         let _screen = Screen::enter()?;
         let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-        event_loop(&mut terminal, &mut app, &tmux, &mut view)?
+        event_loop(&mut terminal, &mut app, &tmux, &mut view, Some(reconcile))?
     };
 
     // The screen is restored: hand the terminal to whatever comes next.
@@ -97,13 +102,27 @@ fn event_loop(
     app: &mut App,
     tmux: &Tmux<ProcessRunner>,
     view: &mut ui::View,
+    mut reconcile: Option<std::thread::JoinHandle<Result<()>>>,
 ) -> Result<Action> {
     let mut last_refresh = Instant::now();
     let mut hits = ui::HitMap::default();
     loop {
         view.now_ms = now_ms();
         terminal.draw(|f| hits = ui::draw(f, app, view))?;
-        if last_refresh.elapsed() >= REFRESH {
+        let reconciled = match reconcile.take_if(|h| h.is_finished()) {
+            Some(handle) => {
+                match handle.join() {
+                    Ok(Ok(())) => {}
+                    Ok(Err(e)) => {
+                        app.message = Some(format!("Could not check running sessions: {e:#}"))
+                    }
+                    Err(_) => app.message = Some("Could not check running sessions".into()),
+                }
+                true
+            }
+            None => false,
+        };
+        if reconciled || last_refresh.elapsed() >= REFRESH {
             let (sessions, interrupted) = load(tmux)?;
             app.set_items(sessions, interrupted);
             last_refresh = Instant::now();

@@ -11,6 +11,7 @@ pub struct Config {
     pub claude: ClaudeConfig,
     pub naming: NamingConfig,
     pub tmux: TmuxConfig,
+    pub ui: UiConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -38,6 +39,33 @@ impl Default for NamingConfig {
 pub struct TmuxConfig {
     /// A socket name (`tmux -L`) or path (`tmux -S`, contains `/`). Default server if unset.
     pub socket: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct UiConfig {
+    pub icons: Icons,
+}
+
+/// Whether to draw Nerd Font icons.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Icons {
+    /// Icons when starship is loaded (it needs a Nerd Font too).
+    #[default]
+    Auto,
+    Nerd,
+    Text,
+}
+
+impl Icons {
+    pub fn enabled(self, starship_shell: Option<&str>) -> bool {
+        match self {
+            Icons::Nerd => true,
+            Icons::Text => false,
+            Icons::Auto => starship_shell.is_some_and(|s| !s.is_empty()),
+        }
+    }
 }
 
 impl Config {

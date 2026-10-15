@@ -34,3 +34,19 @@ fn invalid_toml_error_has_path() {
     let err = format!("{:#}", Config::load_from(&p).unwrap_err());
     assert!(err.contains("config.toml"), "{err}");
 }
+
+#[test]
+fn icons_follow_starship_unless_set() {
+    use moss_core::config::Icons;
+    let dir = tempfile::tempdir().unwrap();
+    let c = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+    assert_eq!(c.ui.icons, Icons::Auto);
+    assert!(Icons::Auto.enabled(Some("zsh")));
+    assert!(!Icons::Auto.enabled(None));
+    assert!(!Icons::Auto.enabled(Some("")));
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "[ui]\nicons = \"text\"\n").unwrap();
+    let c = Config::load_from(&p).unwrap();
+    assert!(!c.ui.icons.enabled(Some("zsh")));
+    assert!(Icons::Nerd.enabled(None));
+}
