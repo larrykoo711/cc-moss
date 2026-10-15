@@ -1,0 +1,41 @@
+#!/bin/bash
+# Stand-in for Claude Code in e2e tests: emits the hook events cc-moss
+# listens to, then takes commands from a FIFO named after the current session
+# id: "prompt <title>", "clear", "exit". Like Claude Code, the transcript file
+# only appears with the first prompt (F8).
+name="" sid="" source=startup
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -n) name="$2"; shift 2 ;;
+    --name=*) name="${1#--name=}"; shift ;;
+    --session-id) sid="$2"; shift 2 ;;
+    --resume) sid="$2"; source=resume; shift 2 ;;
+    *) shift ;;
+  esac
+done
+export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=cli
+hook() { printf '%s' "$2" | "$CC_MOSS_BIN" hook "$1" >/dev/null; }
+transcript() { echo "$CC_MOSS_FAKE_DIR/$1.jsonl"; }
+start() {
+  rm -f "$CC_MOSS_FAKE_DIR/$sid.fifo"
+  mkfifo "$CC_MOSS_FAKE_DIR/$sid.fifo"
+  hook session-start "{\"session_id\":\"$sid\",\"cwd\":\"$PWD\",\"source\":\"$1\",\"session_title\":\"$name\",\"transcript_path\":\"$(transcript "$sid")\"}"
+}
+
+start "$source"
+while true; do
+  read -r cmd arg < "$CC_MOSS_FAKE_DIR/$sid.fifo" || continue
+  case "$cmd" in
+    prompt)
+      [ -n "$arg" ] && name="$arg"
+      echo '{}' >> "$(transcript "$sid")"
+      hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+    clear)
+      hook session-end "{\"session_id\":\"$sid\",\"reason\":\"clear\"}"
+      sid=$(uuidgen | tr 'A-Z' 'a-z')
+      start clear ;;
+    exit)
+      hook session-end "{\"session_id\":\"$sid\",\"reason\":\"prompt_input_exit\"}"
+      exit 0 ;;
+  esac
+done

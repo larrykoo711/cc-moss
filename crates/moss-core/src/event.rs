@@ -1,0 +1,73 @@
+//! Agent-neutral session events.
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum StartSource {
+    Startup,
+    Resume,
+    Clear,
+    Compact,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndReason {
+    /// The user ended the session on purpose (`/exit`, logout).
+    Closed(String),
+    /// `/clear`: a new session id follows in the same process.
+    Clear,
+    /// Anything else: signals, crashes, unknown reasons.
+    Abnormal(String),
+}
+
+impl EndReason {
+    /// Map Claude Code's `SessionEnd.reason`. Only reasons the user chose count
+    /// as closed; everything else, including values we have never seen, is
+    /// treated as an interruption so the session stays recoverable.
+    pub fn parse(raw: &str) -> Self {
+        match raw {
+            // `resume`: the user switched this process to another conversation (F11).
+            "prompt_input_exit" | "logout" | "resume" => EndReason::Closed(raw.to_string()),
+            "clear" => EndReason::Clear,
+            other => EndReason::Abnormal(other.to_string()),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Event {
+    Start {
+        source: StartSource,
+        session_id: String,
+        cwd: String,
+        title: Option<String>,
+        transcript_path: Option<String>,
+    },
+    Prompt {
+        session_id: String,
+        title: Option<String>,
+    },
+    Stop {
+        session_id: String,
+    },
+    End {
+        session_id: String,
+        reason: EndReason,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TmuxLoc {
+    pub socket: String,
+    pub session_id: Option<String>,
+    pub session_name: Option<String>,
+    pub pane_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Context {
+    pub pid: Option<u32>,
+    pub pid_start: Option<String>,
+    pub tmux: Option<TmuxLoc>,
+    /// Whitelisted command-line flags, captured on SessionStart only.
+    pub launch_args: Option<Vec<String>>,
+    pub now_ms: i64,
+}

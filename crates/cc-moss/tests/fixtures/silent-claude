@@ -1,0 +1,3 @@
+#!/bin/sh
+# A claude that starts but never reports back (restore still in flight).
+sleep 30

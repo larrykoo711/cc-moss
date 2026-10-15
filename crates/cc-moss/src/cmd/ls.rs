@@ -1,0 +1,133 @@
+//! `cc-moss ls`: what is running, and what needs to be restored.
+
+use anyhow::Result;
+use moss_core::proc;
+use moss_core::registry::Registry;
+use moss_core::slot::{now_ms, rfc3339, Slot, Status};
+use moss_core::store_dir;
+use serde_json::{json, Value};
+
+pub const JSON_SCHEMA: u32 = 1;
+
+pub fn run(all: bool, as_json: bool) -> Result<()> {
+    let path = store_dir::registry_path();
+    let mut rows: Vec<(Status, Slot)> = if path.exists() {
+        Registry::open(&path)?
+            .slots()?
+            .into_iter()
+            .map(|s| (s.effective_status(proc::is_alive), s))
+            .filter(|(st, _)| all || *st != Status::Closed)
+            .collect()
+    } else {
+        Vec::new()
+    };
+    // Most urgent first: interrupted, then running, then closed; newest activity first.
+    rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
+
+    if as_json {
+        let slots: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json!({ "schema": JSON_SCHEMA, "slots": slots }))?
+        );
+    } else {
+        print_table(&rows);
+    }
+    Ok(())
+}
+
+fn rank(st: Status) -> u8 {
+    match st {
+        Status::Interrupted => 0,
+        Status::Running => 1,
+        Status::Closed => 2,
+    }
+}
+
+fn to_json(st: Status, s: &Slot) -> Value {
+    json!({
+        "slot_id": s.slot_id,
+        "agent": s.agent,
+        "name": s.name,
+        "status": st.as_str(),
+        "session_id": s.session_id,
+        "session_ids": s.session_ids,
+        "cwd": s.cwd,
+        "tmux": s.tmux.as_ref().map(|t| json!({
+            "socket": t.socket,
+            "session_id": t.session_id,
+            "session_name": t.session_name,
+            "pane_id": t.pane_id,
+        })),
+        "pid": s.pid,
+        "end_reason": s.end_reason,
+        "notes": { "goal": s.notes.goal, "state": s.notes.state, "note": s.notes.note },
+        "created_at": rfc3339(s.created_at_ms),
+        "last_active_at": rfc3339(s.last_active_at_ms),
+        "ended_at": s.ended_at_ms.map(rfc3339),
+    })
+}
+
+fn print_table(rows: &[(Status, Slot)]) {
+    if rows.is_empty() {
+        println!("No sessions yet. Start Claude Code with the cc-moss hooks installed.");
+        return;
+    }
+    let now = now_ms();
+    let lines: Vec<[String; 6]> = rows
+        .iter()
+        .map(|(st, s)| {
+            [
+                st.as_str().to_string(),
+                s.name.clone().unwrap_or_else(|| short_id(&s.session_id)),
+                ago(now - s.last_active_at_ms),
+                s.tmux
+                    .as_ref()
+                    .and_then(|t| t.session_name.clone())
+                    .unwrap_or_else(|| "-".into()),
+                s.notes
+                    .state
+                    .clone()
+                    .or_else(|| s.notes.note.clone())
+                    .unwrap_or_else(|| "-".into()),
+                s.cwd.clone(),
+            ]
+        })
+        .collect();
+    let header = ["STATUS", "NAME", "ACTIVE", "TMUX", "NOTE", "CWD"].map(String::from);
+    let mut widths = header.clone().map(|h| h.chars().count());
+    for l in &lines {
+        for (w, cell) in widths.iter_mut().zip(l) {
+            *w = (*w).max(cell.chars().count());
+        }
+    }
+    for l in std::iter::once(&header).chain(&lines) {
+        let cells: Vec<String> = l
+            .iter()
+            .zip(widths)
+            .enumerate()
+            .map(|(i, (c, w))| {
+                if i == 5 {
+                    c.clone()
+                } else {
+                    format!("{c:<w$}")
+                }
+            })
+            .collect();
+        println!("{}", cells.join("  "));
+    }
+}
+
+fn short_id(id: &str) -> String {
+    id.chars().take(8).collect()
+}
+
+fn ago(ms: i64) -> String {
+    let s = ms.max(0) / 1000;
+    match s {
+        0..=59 => format!("{s}s"),
+        60..=3599 => format!("{}m", s / 60),
+        3600..=86_399 => format!("{}h", s / 3600),
+        _ => format!("{}d", s / 86_400),
+    }
+}
