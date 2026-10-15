@@ -1,7 +1,10 @@
 pub mod attach;
 pub mod close;
 pub mod confirm;
+pub mod doctor;
+pub mod files;
 pub mod hook;
+pub mod install;
 pub mod ls;
 pub mod new;
 pub mod note;

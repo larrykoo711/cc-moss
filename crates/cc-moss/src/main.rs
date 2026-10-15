@@ -74,6 +74,26 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         zshrc: Option<std::path::PathBuf>,
     },
+    /// Set up the terminal: hooks, tmux, starship and shell blocks, then the tools they need.
+    Install {
+        /// Also install an optional part: aliases.
+        #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
+        with: Vec<cmd::install::Part>,
+        /// Leave a part out: hooks, tmux, starship, shell or aliases.
+        #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
+        skip: Vec<cmd::install::Part>,
+        /// Replace an existing starship config with cc-moss's.
+        #[arg(long)]
+        replace_starship: bool,
+        /// Show what would change; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Apply without asking.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Check hooks, tmux, starship, shell blocks and tools.
+    Doctor,
     /// Pick a session, folder or interrupted session (the `t` shortcut).
     Pick,
     /// Bring interrupted sessions back, each in its own tmux session.
@@ -149,6 +169,24 @@ fn main() -> std::process::ExitCode {
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),
         Command::Pick => report(pick::run()),
+        Command::Install {
+            with,
+            skip,
+            replace_starship,
+            dry_run,
+            yes,
+        } => report(cmd::install::run(cmd::install::Options {
+            dry_run,
+            yes,
+            with,
+            skip,
+            replace_starship,
+        })),
+        Command::Doctor => match cmd::doctor::run() {
+            Ok(true) => std::process::ExitCode::SUCCESS,
+            Ok(false) => std::process::ExitCode::FAILURE,
+            Err(e) => report(Err(e)),
+        },
         Command::Restore {
             yes,
             dry_run,

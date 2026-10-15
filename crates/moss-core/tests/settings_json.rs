@@ -86,7 +86,7 @@ fn install_is_idempotent_and_upgrades_path() {
         assert_eq!(ours_here.len(), 1, "{event}: replaced, not stacked");
         assert_eq!(
             ours_here[0]["command"],
-            format!("\"{new_exe}\" hook {name}"),
+            format!("'{new_exe}' hook {name}"),
             "path with a space is quoted"
         );
     }
@@ -148,4 +148,32 @@ fn serialize_matches_claude_format() {
     let text = "{\n  \"zeta\": \"中文…\",\n  \"alpha\": [\n    1,\n    true,\n    null\n  ],\n  \"empty\": {},\n  \"none\": []\n}\n";
     let doc: Value = serde_json::from_str(text).unwrap();
     assert_eq!(to_claude_string(&doc), text);
+}
+
+#[test]
+fn hook_commands_quote_any_unsafe_path() {
+    use moss_core::agent::HookKind;
+    use moss_core::settings_json::hook_command;
+    assert_eq!(
+        hook_command("/usr/local/bin/cc-moss", HookKind::Stop),
+        "/usr/local/bin/cc-moss hook stop"
+    );
+    assert_eq!(
+        hook_command("/tmp/a'b$(touch x);/cc-moss", HookKind::Stop),
+        "'/tmp/a'\\''b$(touch x);/cc-moss' hook stop"
+    );
+    let out = std::process::Command::new("sh")
+        .args([
+            "-c",
+            &format!(
+                "set -- {}; printf %s \"$1\"",
+                hook_command("/tmp/a'b$(echo pwned)/cc-moss", HookKind::Stop)
+            ),
+        ])
+        .output()
+        .unwrap();
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout),
+        "/tmp/a'b$(echo pwned)/cc-moss"
+    );
 }

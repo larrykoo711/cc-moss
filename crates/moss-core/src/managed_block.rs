@@ -9,6 +9,74 @@ fn markers(tag: &str) -> (String, String) {
     (format!("# >>> {tag} >>>"), format!("# <<< {tag} <<<"))
 }
 
+/// The block's text, with the file's own line endings (CRLF files stay CRLF).
+fn block(tag: &str, body: &str, crlf: bool) -> String {
+    let (open, close) = markers(tag);
+    let body = if body.ends_with('\n') || body.is_empty() {
+        body.to_string()
+    } else {
+        format!("{body}\n")
+    };
+    let text = format!("{open}\n{body}{close}\n");
+    if crlf {
+        text.replace("\r\n", "\n").replace('\n', "\r\n")
+    } else {
+        text
+    }
+}
+
+/// The file split into lines with their endings, and the same lines bare.
+fn split(text: &str) -> (Vec<&str>, Vec<&str>) {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let bare = lines
+        .iter()
+        .map(|l| l.trim_end_matches('\n').trim_end_matches('\r'))
+        .collect();
+    (lines, bare)
+}
+
+fn is_crlf(text: &str) -> bool {
+    text.contains("\r\n")
+}
+
+/// Whether the block is present (and well formed).
+pub fn contains(text: &str, tag: &str) -> bool {
+    let (_, bare) = split(text);
+    matches!(find(&bare, tag), Ok(Some(_)))
+}
+
+/// Every block's opening line: (line index, tag).
+pub fn tags(text: &str) -> Vec<(usize, String)> {
+    let (_, bare) = split(text);
+    bare.iter()
+        .enumerate()
+        .filter_map(|(i, l)| {
+            Some((
+                i,
+                l.strip_prefix("# >>> ")?.strip_suffix(" >>>")?.to_string(),
+            ))
+        })
+        .collect()
+}
+
+/// The line that starts starship (`starship init`), ignoring comments.
+pub fn starship_init_line(text: &str) -> Option<usize> {
+    let (_, bare) = split(text);
+    bare.iter()
+        .position(|l| l.contains("starship init") && !l.trim_start().starts_with('#'))
+}
+
+/// Like [`upsert`], but a new block goes at the very top of the file, so
+/// whatever the user writes after it takes precedence (tmux, for one, lets
+/// later settings win).
+pub fn upsert_top(text: &str, tag: &str, body: &str) -> Result<String> {
+    let (_, bare) = split(text);
+    match find(&bare, tag)? {
+        Some(_) => upsert(text, tag, body),
+        None => Ok(format!("{}{text}", block(tag, body, is_crlf(text)))),
+    }
+}
+
 /// Line index range `[start, end]` (inclusive) of the block, if present.
 fn find(lines: &[&str], tag: &str) -> Result<Option<(usize, usize)>> {
     let (open, close) = markers(tag);
@@ -17,7 +85,9 @@ fn find(lines: &[&str], tag: &str) -> Result<Option<(usize, usize)>> {
     match (opens.as_slice(), closes.as_slice()) {
         ([], []) => Ok(None),
         ([o], [c]) if o < c => Ok(Some((*o, *c))),
-        _ => bail!("the `{tag}` block markers are duplicated or unbalanced; fix the file by hand"),
+        _ => bail!(
+            "the `{tag}` block markers (`# >>> {tag} >>>` … `# <<< {tag} <<<`) are duplicated or unbalanced; fix them by hand"
+        ),
     }
 }
 
@@ -26,18 +96,11 @@ fn find(lines: &[&str], tag: &str) -> Result<Option<(usize, usize)>> {
 /// would override it), or before the managed block containing that line,
 /// or at the end of the file.
 pub fn upsert(text: &str, tag: &str, body: &str) -> Result<String> {
-    let (open, close) = markers(tag);
-    let body = if body.ends_with('\n') || body.is_empty() {
-        body.to_string()
-    } else {
-        format!("{body}\n")
-    };
-    let block = format!("{open}\n{body}{close}\n");
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    let bare: Vec<&str> = lines.iter().map(|l| l.trim_end_matches('\n')).collect();
+    let block = block(tag, body, is_crlf(text));
+    let (lines, bare) = split(text);
     let (before, after) = match find(&bare, tag)? {
         Some((start, end)) => (lines[..start].concat(), lines[end + 1..].concat()),
-        None => match bare.iter().position(|l| l.contains("starship init")) {
+        None => match starship_init_line(text) {
             Some(i) => {
                 let at = enclosing_block_start(&bare, i).unwrap_or(i);
                 (lines[..at].concat(), lines[at..].concat())
@@ -46,7 +109,7 @@ pub fn upsert(text: &str, tag: &str, body: &str) -> Result<String> {
                 // Keep the file's last line intact if it lacks a newline.
                 let mut head = text.to_string();
                 if !head.is_empty() && !head.ends_with('\n') {
-                    head.push('\n');
+                    head.push_str(if is_crlf(text) { "\r\n" } else { "\n" });
                 }
                 (head, String::new())
             }
@@ -57,8 +120,7 @@ pub fn upsert(text: &str, tag: &str, body: &str) -> Result<String> {
 
 /// Remove the block, leaving everything else exactly as it was.
 pub fn remove(text: &str, tag: &str) -> Result<String> {
-    let lines: Vec<&str> = text.split_inclusive('\n').collect();
-    let bare: Vec<&str> = lines.iter().map(|l| l.trim_end_matches('\n')).collect();
+    let (lines, bare) = split(text);
     Ok(match find(&bare, tag)? {
         Some((start, end)) => format!("{}{}", lines[..start].concat(), lines[end + 1..].concat()),
         None => text.to_string(),

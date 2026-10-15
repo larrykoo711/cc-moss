@@ -7,6 +7,7 @@ pub mod event;
 pub mod launch_args;
 pub mod managed_block;
 pub mod naming;
+pub mod platform;
 pub mod proc;
 pub mod registry;
 pub mod restore;

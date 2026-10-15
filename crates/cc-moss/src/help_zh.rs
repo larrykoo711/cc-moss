@@ -48,6 +48,25 @@ const TEXT: &[(&str, &str, &str)] = &[
         "zshrc",
         "放 `t` 快捷命令的 zsh 启动文件 [默认：~/.zshrc]",
     ),
+    (
+        "install",
+        "",
+        "一次装好终端：钩子、tmux、starship、shell 区块，以及它们需要的工具",
+    ),
+    ("install", "with", "额外安装可选部分：aliases"),
+    (
+        "install",
+        "skip",
+        "不装某一部分：hooks、tmux、starship、shell 或 aliases",
+    ),
+    (
+        "install",
+        "replace_starship",
+        "用 cc-moss 的 starship 配置替换你现有的",
+    ),
+    ("install", "dry_run", "只看会改什么，不做任何改动"),
+    ("install", "yes", "不问直接应用"),
+    ("doctor", "", "体检钩子、tmux、starship、shell 区块和工具"),
     ("pick", "", "选择会话、被打断的会话或目录（就是 `t`）"),
     (
         "restore",

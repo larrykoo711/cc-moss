@@ -26,12 +26,15 @@ pub fn event_name(kind: HookKind) -> &'static str {
 }
 
 /// The shell command Claude Code runs for `kind`. Claude Code hands the
-/// command to a shell, so a path with spaces must be quoted.
+/// command to a shell, so any path beyond plain characters is single-quoted.
 pub fn hook_command(exe: &str, kind: HookKind) -> String {
-    if exe.contains(' ') {
-        format!("\"{exe}\" hook {}", kind.cli_name())
-    } else {
+    let plain = exe
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "/._-+@%,:=".contains(c));
+    if plain {
         format!("{exe} hook {}", kind.cli_name())
+    } else {
+        format!("'{}' hook {}", exe.replace('\'', "'\\''"), kind.cli_name())
     }
 }
 

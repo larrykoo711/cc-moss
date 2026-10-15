@@ -67,3 +67,67 @@ fn never_lands_inside_another_managed_block() {
     assert!(ours < theirs, "{out}");
     assert_eq!(remove(&out, "cc-moss").unwrap(), rc);
 }
+
+#[test]
+fn upsert_top_puts_a_new_block_first_and_replaces_in_place() {
+    use moss_core::managed_block::upsert_top;
+    let conf = "set -g mouse off\n";
+    let once = upsert_top(conf, "cc-moss", "source-file /x\n").unwrap();
+    assert_eq!(
+        once,
+        "# >>> cc-moss >>>\nsource-file /x\n# <<< cc-moss <<<\nset -g mouse off\n"
+    );
+    assert_eq!(
+        upsert_top(&once, "cc-moss", "source-file /x\n").unwrap(),
+        once
+    );
+    let moved = format!(
+        "{conf}{}",
+        once.lines().take(3).collect::<Vec<_>>().join("\n") + "\n"
+    );
+    let replaced = upsert_top(&moved, "cc-moss", "source-file /y\n").unwrap();
+    assert!(
+        replaced.starts_with("set -g mouse off\n# >>> cc-moss >>>\nsource-file /y\n"),
+        "{replaced}"
+    );
+    assert_eq!(
+        upsert_top("", "cc-moss", "a").unwrap(),
+        "# >>> cc-moss >>>\na\n# <<< cc-moss <<<\n"
+    );
+}
+
+#[test]
+fn crlf_files_are_recognised_and_stay_crlf() {
+    let rc = "export A=1\r\neval \"$(starship init zsh)\"\r\n";
+    let once = upsert(rc, "cc-moss", BODY).unwrap();
+    assert!(once.contains("# >>> cc-moss >>>\r\n"), "{once:?}");
+    assert!(
+        !once.replace("\r\n", "").contains('\n'),
+        "no bare LF: {once:?}"
+    );
+    assert_eq!(upsert(&once, "cc-moss", BODY).unwrap(), once, "idempotent");
+    assert!(moss_core::managed_block::contains(&once, "cc-moss"));
+}
+
+#[test]
+fn commented_starship_lines_do_not_count() {
+    use moss_core::managed_block::starship_init_line;
+    let rc = "# run starship init last\nexport A=1\neval \"$(starship init zsh)\"\n";
+    assert_eq!(starship_init_line(rc), Some(2));
+    assert_eq!(starship_init_line("# starship init zsh\n"), None);
+    let out = upsert(rc, "cc-moss", BODY).unwrap();
+    assert!(
+        out.starts_with("# run starship init last\nexport A=1\n# >>> cc-moss >>>"),
+        "{out}"
+    );
+}
+
+#[test]
+fn lists_blocks_with_their_lines() {
+    use moss_core::managed_block::tags;
+    let rc = "a\n# >>> one >>>\nx\n# <<< one <<<\n# >>> two: b >>>\n# <<< two: b <<<\n";
+    assert_eq!(
+        tags(rc),
+        [(1, "one".to_string()), (4, "two: b".to_string())]
+    );
+}
