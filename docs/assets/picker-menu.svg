@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1008" height="600" viewBox="0 0 1008 600" role="img" aria-label="t — cc-moss">
+<defs><filter id="s" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity=".35"/></filter></defs>
+<g transform="translate(20 14)">
+<rect width="968" height="552" rx="12" fill="#18181b" filter="url(#s)"/>
+<rect width="968" height="552" rx="12" fill="none" stroke="#3f3f46"/>
+<path d="M0 38 H968" stroke="#27272a"/>
+<circle cx="22" cy="19.0" r="6" fill="#ff5f57"/>
+<circle cx="42" cy="19.0" r="6" fill="#febc2e"/>
+<circle cx="62" cy="19.0" r="6" fill="#28c840"/>
+<text x="484" y="23.5" fill="#a1a1aa" font-size="12.5" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" text-anchor="middle">t — cc-moss</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="14" xml:space="preserve">
+<text x="30.4" y="68.4" fill="#e85656" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">◉</text>
+<text x="47.2" y="68.4" fill="#e4e4e7" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<text x="122.8" y="68.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">0.1.0</text>
+<text x="400.0" y="68.4" fill="#e85656" textLength="109.2" lengthAdjust="spacingAndGlyphs">1 interrupted</text>
+<text x="526.0" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="551.2" y="68.4" fill="#d77757" textLength="75.6" lengthAdjust="spacingAndGlyphs">2 working</text>
+<text x="643.6" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="668.8" y="68.4" fill="#f0ba46" textLength="142.8" lengthAdjust="spacingAndGlyphs">3 waiting for you</text>
+<text x="828.4" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="853.6" y="68.4" fill="#969696" textLength="84.0" lengthAdjust="spacingAndGlyphs">7 sessions</text>
+<text x="30.4" y="108.4" fill="#969696" textLength="8.4" lengthAdjust="spacingAndGlyphs">⌕</text>
+<text x="47.2" y="108.4" fill="#5f5f5f" textLength="378.0" lengthAdjust="spacingAndGlyphs">Search sessions, or type a name for a new one</text>
+<path d="M22.0 124 h924.0" stroke="#5f5f5f"/>
+<text x="30.4" y="148.4" fill="#969696" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<path d="M404.2 134 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="148.4" fill="#e4e4e7" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<text x="38.8" y="168.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">✶</text>
+<text x="55.6" y="168.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<text x="358.0" y="168.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<path d="M404.2 154 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="168.4" fill="#f0ba46" textLength="142.8" lengthAdjust="spacingAndGlyphs">● Waiting for you</text>
+<text x="584.8" y="168.4" fill="#969696" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="610.0" y="168.4" fill="#969696" textLength="67.2" lengthAdjust="spacingAndGlyphs">just now</text>
+<path d="M404.2 174 v20" stroke="#5f5f5f"/>
+<text x="30.4" y="208.4" fill="#969696" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">billing</text>
+<path d="M404.2 194 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="208.4" fill="#5f5f5f" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">NOTE</text>
+<text x="38.8" y="228.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">○</text>
+<text x="55.6" y="228.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">scratch</text>
+<text x="358.0" y="228.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<path d="M404.2 214 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="228.4" fill="#f0ba46" textLength="252.0" lengthAdjust="spacingAndGlyphs">Waiting for the production key</text>
+<text x="38.8" y="248.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<text x="55.6" y="248.4" fill="#e4e4e7" textLength="50.4" lengthAdjust="spacingAndGlyphs">ledger</text>
+<text x="358.0" y="248.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<path d="M404.2 234 v20" stroke="#5f5f5f"/>
+<path d="M404.2 254 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="268.4" fill="#5f5f5f" font-weight="700" textLength="100.8" lengthAdjust="spacingAndGlyphs">LAST MESSAGE</text>
+<text x="30.4" y="288.4" fill="#969696" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">acme</text>
+<path d="M404.2 274 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="288.4" fill="#e4e4e7" textLength="504.0" lengthAdjust="spacingAndGlyphs">“Roll the new rate limiter out to 5% of traffic once the key</text>
+<text x="38.8" y="308.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<text x="55.6" y="308.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">pricing</text>
+<text x="358.0" y="308.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<path d="M404.2 294 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="308.4" fill="#e4e4e7" textLength="50.4" lengthAdjust="spacingAndGlyphs">is in”</text>
+<rect x="22.0" y="314" width="8.4" height="20" fill="#343438"/>
+<text x="22.0" y="328.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
+<rect x="30.4" y="314" width="8.4" height="20" fill="#343438"/>
+<rect x="38.8" y="314" width="8.4" height="20" fill="#343438"/>
+<text x="38.8" y="328.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<rect x="47.2" y="314" width="8.4" height="20" fill="#343438"/>
+<rect x="55.6" y="314" width="92.4" height="20" fill="#343438"/>
+<text x="55.6" y="328.4" fill="#e4e4e7" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<rect x="148.0" y="314" width="210.0" height="20" fill="#343438"/>
+<rect x="358.0" y="314" width="25.2" height="20" fill="#343438"/>
+<text x="358.0" y="328.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<rect x="383.2" y="314" width="8.4" height="20" fill="#343438"/>
+<path d="M404.2 314 v20" stroke="#5f5f5f"/>
+<text x="38.8" y="348.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">✶</text>
+<text x="55.6" y="348.4" fill="#e4e4e7" textLength="75.6" lengthAdjust="spacingAndGlyphs">docs-site</text>
+<text x="358.0" y="348.4" fill="#5f5f5f" textLength="25.2" lengthAdjust="spacingAndGlyphs">now</text>
+<path d="M404.2 334 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="348.4" fill="#5f5f5f" font-weight="700" textLength="50.4" lengthAdjust="spacingAndGlyphs">FOLDER</text>
+<text x="38.8" y="368.4" fill="#e85656" textLength="8.4" lengthAdjust="spacingAndGlyphs">↺</text>
+<text x="55.6" y="368.4" fill="#e4e4e7" textLength="100.8" lengthAdjust="spacingAndGlyphs">release-plan</text>
+<text x="366.4" y="368.4" fill="#5f5f5f" textLength="16.8" lengthAdjust="spacingAndGlyphs">1h</text>
+<path d="M404.2 354 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="368.4" fill="#e4e4e7" textLength="92.4" lengthAdjust="spacingAndGlyphs">~/code/acme</text>
+<path d="M404.2 374 v20" stroke="#5f5f5f"/>
+<text x="38.8" y="408.4" fill="#d77757" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="55.6" y="408.4" fill="#969696" textLength="134.4" lengthAdjust="spacingAndGlyphs">New session here</text>
+<path d="M404.2 394 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="408.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">╭</text>
+<text x="442.0" y="408.4" fill="#d77757" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<text x="542.8" y="408.4" fill="#d77757" textLength="285.6" lengthAdjust="spacingAndGlyphs">─────────────────────────────────╮</text>
+<path d="M404.2 414 v20" stroke="#5f5f5f"/>
+<path d="M429.4 414 v20" stroke="#d77757"/>
+<rect x="433.6" y="414" width="25.2" height="20" fill="#343438"/>
+<text x="442.0" y="428.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">❯</text>
+<rect x="458.8" y="414" width="33.6" height="20" fill="#343438"/>
+<text x="458.8" y="428.4" fill="#e4e4e7" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">Open</text>
+<path d="M824.2 414 v20" stroke="#d77757"/>
+<path d="M404.2 434 v20" stroke="#5f5f5f"/>
+<path d="M429.4 434 v20" stroke="#d77757"/>
+<text x="458.8" y="448.4" fill="#e4e4e7" textLength="100.8" lengthAdjust="spacingAndGlyphs">Write a note</text>
+<path d="M824.2 434 v20" stroke="#d77757"/>
+<path d="M404.2 454 v20" stroke="#5f5f5f"/>
+<path d="M429.4 454 v20" stroke="#d77757"/>
+<text x="458.8" y="468.4" fill="#e85656" textLength="92.4" lengthAdjust="spacingAndGlyphs">End session</text>
+<path d="M824.2 454 v20" stroke="#d77757"/>
+<path d="M404.2 474 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="488.4" fill="#d77757" textLength="403.2" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────────────╯</text>
+<path d="M22.0 504 h924.0" stroke="#5f5f5f"/>
+<text x="30.4" y="528.4" fill="#e4e4e7" font-weight="700" textLength="16.8" lengthAdjust="spacingAndGlyphs">↑↓</text>
+<text x="55.6" y="528.4" fill="#969696" textLength="50.4" lengthAdjust="spacingAndGlyphs">choose</text>
+<text x="148.0" y="528.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">↵</text>
+<text x="164.8" y="528.4" fill="#969696" textLength="58.8" lengthAdjust="spacingAndGlyphs">confirm</text>
+<text x="265.6" y="528.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">←</text>
+<text x="282.4" y="528.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">back</text>
+</g></g></svg>

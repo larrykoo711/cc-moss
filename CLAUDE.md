@@ -10,6 +10,9 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 
 | Path | Purpose |
 |------|---------|
+| `crates/moss-core` | Library: registry, hooks, tmux, restore planning |
+| `crates/cc-moss` | The `cc-moss` binary and the picker |
+| `docs/assets/` | README images (banner, picker screenshots rendered from demo data) |
 | `.sdd/` | Spec-driven development archive (config, per-iteration designs, plans, specs) |
 | `.sdd/001-cli/` | Stage 1: terminal edition |
 
@@ -17,4 +20,5 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 
 - Everything in this repo is public: no hostnames, private IPs, account names or credentials, including in `.sdd/`.
 - Commits: English Conventional Commits, one subject line plus bullet points.
+- README ships in English (`README.md`) and Simplified Chinese (`README.zh-CN.md`); change both together.
 - End-to-end tests run against an isolated tmux socket and a temporary `HOME`, never the user's live tmux server or `~/.claude`.

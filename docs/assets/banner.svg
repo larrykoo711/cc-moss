@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="320" viewBox="0 0 1280 320" role="img" aria-label="cc-moss — Crashes happen. Your Claude Code sessions carry on.">
+<style>
+  .bg{fill:#fafafa} .grid{stroke:#e4e4e7} .ring{stroke:#d4d4d8} .ink{fill:#18181b} .sub{fill:#52525b} .dim{fill:#a1a1aa} .earth{fill:#2563eb} .chip{fill:#f4f4f5;stroke:#e4e4e7}
+  @media (prefers-color-scheme: dark) {
+    .bg{fill:#0d1117} .grid{stroke:#161b22} .ring{stroke:#30363d} .ink{fill:#f0f6fc} .sub{fill:#9198a1} .dim{fill:#6e7681} .earth{fill:#58a6ff} .chip{fill:#161b22;stroke:#30363d}
+  }
+</style>
+<defs>
+  <radialGradient id="eye" cx="50%" cy="50%" r="50%">
+    <stop offset="0" stop-color="#ffd9cf"/><stop offset=".18" stop-color="#ff6b4a"/><stop offset=".55" stop-color="#d4372a"/><stop offset="1" stop-color="#5c0f0f"/>
+  </radialGradient>
+  <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+    <stop offset="0" stop-color="#ff5a3c" stop-opacity=".35"/><stop offset="1" stop-color="#ff5a3c" stop-opacity="0"/>
+  </radialGradient>
+  <pattern id="dots" width="24" height="24" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1" class="dim" opacity=".35"/></pattern>
+</defs>
+<rect class="bg" width="1280" height="320" rx="20"/>
+<rect fill="url(#dots)" width="1280" height="320" rx="20"/>
+<g transform="translate(230 160)">
+  <circle r="120" fill="url(#glow)"/>
+  <ellipse rx="150" ry="46" fill="none" class="ring" stroke-width="1.5" transform="rotate(-18)"/>
+  <ellipse rx="108" ry="108" fill="none" class="ring" stroke-width="1" stroke-dasharray="2 6"/>
+  <circle r="64" fill="#1c1c1f"/>
+  <circle r="64" fill="none" stroke="#3f3f46" stroke-width="3"/>
+  <circle r="50" fill="none" stroke="#27272a" stroke-width="6"/>
+  <circle r="40" fill="url(#eye)"/>
+  <circle cx="-12" cy="-13" r="7" fill="#fff" opacity=".55"/>
+  <circle cx="129" cy="-58" r="9" class="earth"/>
+</g>
+<text x="440" y="150" class="ink" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="84" font-weight="700" letter-spacing="-2">cc-moss</text>
+<text x="444" y="202" class="sub" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="30">Crashes happen. Your Claude Code sessions carry on.</text>
+<text x="444" y="246" class="dim" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Hiragino Sans GB','Microsoft YaHei',Helvetica,Arial,sans-serif" font-size="21">Register · name · note · restore — in tmux, automatically.</text>
+</svg>
