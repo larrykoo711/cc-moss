@@ -253,3 +253,62 @@ fn adopted_sessions_keep_their_real_last_activity() {
     let text = String::from_utf8(out.stdout).unwrap();
     assert!(text.contains("1h"), "{text}");
 }
+
+/// A hook-tracked session marked busy by its last prompt; `claude agents`
+/// reports `status`, and its transcript ends with `last`.
+fn busy_after_reconcile(status: &str, last: &str) -> serde_json::Value {
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakeProcess::spawn();
+    let transcript = dir.path().join("B.jsonl");
+    std::fs::write(&transcript, "").unwrap();
+    let start = serde_json::json!({
+        "session_id": "B", "cwd": "/work", "source": "startup",
+        "session_title": "b", "transcript_path": transcript,
+    })
+    .to_string();
+    hook(dir.path(), "session-start", &start, p.pid());
+    let prompt = serde_json::json!({"session_id": "B", "prompt": "go"}).to_string();
+    hook(dir.path(), "user-prompt-submit", &prompt, p.pid());
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    std::fs::write(&transcript, format!("{last}\n")).unwrap();
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
+         "sessionId": "B", "name": "b", "status": status}
+    ]);
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&stub)
+        .status()
+        .unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    v["slots"][0]["busy"].clone()
+}
+
+const TURN_DONE: &str = r#"{"type":"system","subtype":"turn_duration"}"#;
+const TOOL_CALL: &str =
+    r#"{"type":"assistant","message":{"stop_reason":"tool_use","content":[{"type":"tool_use"}]}}"#;
+
+#[test]
+fn an_idle_session_is_not_shown_working() {
+    // e.g. interrupted with Esc: Claude Code sends no Stop hook.
+    assert_eq!(busy_after_reconcile("idle", TOOL_CALL), false);
+}
+
+#[test]
+fn background_tasks_alone_do_not_mean_working() {
+    // `claude agents` says busy while background shells run after the turn ended.
+    assert_eq!(busy_after_reconcile("busy", TURN_DONE), false);
+}
+
+#[test]
+fn a_turn_in_progress_stays_working() {
+    assert_eq!(busy_after_reconcile("busy", TOOL_CALL), true);
+}

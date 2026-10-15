@@ -25,7 +25,7 @@ pub fn run() -> Result<Registry> {
 }
 
 /// Register running sessions the registry does not know (or knows under an
-/// old process), and refresh whether each is busy.
+/// old process), and clear "working" marks that went stale.
 fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
     let known = registry.slots()?;
     let socket = Socket::from_config(Config::load().ok().and_then(|c| c.tmux_socket()).as_deref());
@@ -37,8 +37,14 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
         let tracked = known
             .iter()
             .find(|k| k.session_id == s.session_id && k.pid == Some(s.pid));
-        let slot_id = match tracked {
-            Some(k) => k.slot_id.clone(),
+        match tracked {
+            // The hooks know this one: only correct a busy mark that no Stop
+            // hook cleared (Claude Code sends none when the user hits Esc).
+            Some(k) => {
+                if k.busy && !still_working(s, k.transcript_path.as_deref(), k.last_active_at_ms) {
+                    registry.set_busy(&k.slot_id, false)?;
+                }
+            }
             None => {
                 let transcript = claude::transcript_path(&s.session_id);
                 let ctx = Context {
@@ -61,15 +67,31 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                     transcript_path: transcript.clone(),
                 };
                 registry.apply_with(&event, &ctx, &proc::is_alive)?;
-                match registry.slot_for_event(&s.session_id, &ctx)? {
-                    Some(slot) => slot.slot_id,
-                    None => continue,
+                if let Some(slot) = registry.slot_for_event(&s.session_id, &ctx)? {
+                    let busy = still_working(s, transcript.as_deref(), 0);
+                    registry.set_busy(&slot.slot_id, busy)?;
                 }
             }
-        };
-        registry.set_busy(&slot_id, s.busy)?;
+        }
     }
     Ok(())
+}
+
+/// Whether a session is working on a turn. `claude agents` says busy also
+/// while background shells run after the turn ended, so a busy report only
+/// counts when the transcript, written after `since_ms`, agrees.
+fn still_working(live: &LiveSession, transcript: Option<&str>, since_ms: i64) -> bool {
+    if !live.busy {
+        return false;
+    }
+    let Some(path) = transcript else {
+        return true;
+    };
+    // Written before the mark was set: the prompt may not be recorded yet.
+    if !modified_ms(path).is_some_and(|m| m >= since_ms) {
+        return true;
+    }
+    moss_core::transcript::turn_open(std::path::Path::new(path)) != Some(false)
 }
 
 fn modified_ms(path: &str) -> Option<i64> {

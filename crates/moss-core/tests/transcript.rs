@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use moss_core::transcript::{custom_title_since, last_custom_title};
+use moss_core::transcript::{custom_title_since, last_custom_title, turn_open};
 
 fn file_with(lines: &[String]) -> tempfile::NamedTempFile {
     let mut f = tempfile::NamedTempFile::new().unwrap();
@@ -77,4 +77,111 @@ fn a_title_just_before_the_mark_in_the_same_chunk_is_skipped() {
     let mark = f.as_file().metadata().unwrap().len();
     writeln!(f, "{}", filler(1)[0]).unwrap();
     assert_eq!(custom_title_since(f.path(), mark).0, None);
+}
+
+fn rec(v: serde_json::Value) -> String {
+    v.to_string()
+}
+
+fn assistant(stop: &str) -> String {
+    rec(
+        serde_json::json!({"type": "assistant", "message": {"stop_reason": stop, "content": [{"type": "text", "text": "ok"}]}}),
+    )
+}
+
+#[test]
+fn a_finished_turn_is_not_open() {
+    let f = file_with(&[
+        assistant("end_turn"),
+        rec(serde_json::json!({"type": "system", "subtype": "stop_hook_summary"})),
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(serde_json::json!({"type": "ai-title", "aiTitle": "x"})),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn a_turn_waiting_on_a_tool_is_open() {
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(serde_json::json!({"type": "user", "message": {"content": "deploy it"}})),
+        assistant("tool_use"),
+        rec(serde_json::json!({"type": "attachment"})),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(true));
+}
+
+#[test]
+fn an_interrupted_turn_is_not_open() {
+    let f = file_with(&[
+        assistant("tool_use"),
+        rec(
+            serde_json::json!({"type": "user", "message": {"content": [{"type": "text", "text": "[Request interrupted by user for tool use]"}]}}),
+        ),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn an_empty_or_missing_transcript_says_nothing() {
+    let f = file_with(&[rec(serde_json::json!({"type": "mode"}))]);
+    assert_eq!(turn_open(f.path()), None);
+    assert_eq!(
+        turn_open(std::path::Path::new("/nonexistent/x.jsonl")),
+        None
+    );
+}
+
+#[test]
+fn local_commands_after_a_turn_do_not_reopen_it() {
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(
+            serde_json::json!({"type": "user", "isMeta": true, "message": {"content": "<local-command-caveat>x"}}),
+        ),
+        rec(
+            serde_json::json!({"type": "user", "message": {"content": "<command-name>/rename</command-name>"}}),
+        ),
+        rec(
+            serde_json::json!({"type": "user", "message": {"content": "<local-command-stdout>ok</local-command-stdout>"}}),
+        ),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn a_background_task_notification_opens_a_turn() {
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(
+            serde_json::json!({"type": "user", "message": {"content": "<task-notification>done</task-notification>"}}),
+        ),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(true));
+}
+
+#[test]
+fn a_final_answer_ends_the_turn_before_the_summary_lands() {
+    let f = file_with(&[assistant("tool_use"), assistant("end_turn")]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn meta_records_are_skipped() {
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(
+            serde_json::json!({"type": "user", "isMeta": true, "message": {"content": "reminder"}}),
+        ),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn a_request_to_the_model_opens_a_turn() {
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        rec(serde_json::json!({"type": "api-request"})),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(true));
 }

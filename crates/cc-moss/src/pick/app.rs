@@ -177,7 +177,7 @@ impl App {
 
     /// Replace the data, keeping the selection on the same item if it still exists.
     pub fn set_items(&mut self, sessions: Vec<Item>, interrupted: Vec<Item>) {
-        let keep = self.selected().filter(|k| *k != Item::New);
+        let keep = self.selected();
         let mut projects: Vec<Project> = Vec::new();
         for item in sessions
             .into_iter()
@@ -201,7 +201,7 @@ impl App {
         self.projects = projects;
         self.refilter();
         if let Some(keep) = keep {
-            if let Some(i) = (0..self.rows.len()).find(|&i| self.item(self.rows[i]) == Some(&keep))
+            if let Some(i) = (0..self.rows.len()).find(|&i| self.item_at(i).as_ref() == Some(&keep))
             {
                 self.cursor = i;
             }
@@ -233,7 +233,11 @@ impl App {
     }
 
     pub fn selected(&self) -> Option<Item> {
-        match self.rows.get(self.cursor)? {
+        self.item_at(self.cursor)
+    }
+
+    fn item_at(&self, row: usize) -> Option<Item> {
+        match self.rows.get(row)? {
             Row::New => Some(Item::New),
             row => self.item(*row).cloned(),
         }
@@ -244,6 +248,11 @@ impl App {
     fn refilter(&mut self) {
         let query = self.query.trim().to_string();
         let mut rows = Vec::new();
+        // "New" comes first, one step up from the first session. An exact
+        // name means the session exists: names are unique (T1.5).
+        if query.is_empty() || !self.names_exactly(&query) {
+            rows.push(Row::New);
+        }
         let pattern = Pattern::parse(&query, CaseMatching::Ignore, Normalization::Smart);
         let mut buf = Vec::new();
         let (mut matched, mut total) = (0, 0);
@@ -280,10 +289,6 @@ impl App {
         for (p, hits) in groups {
             rows.push(Row::Header(p));
             rows.extend(hits.into_iter().map(|(i, _)| Row::Item(p, i)));
-        }
-        // An exact name means the session exists: names are unique (T1.5).
-        if query.is_empty() || !self.names_exactly(&query) {
-            rows.push(Row::New);
         }
         self.rows = rows;
         self.matched = matched;
@@ -605,13 +610,13 @@ mod tests {
         assert_eq!(
             titles(&a),
             [
+                "+",
                 "# /p/acme",
                 "web",
                 "api",
                 "crashed",
                 "# /p/billing",
                 "scratch",
-                "+"
             ]
         );
         assert_eq!(a.selected(), Some(claude("web", "/p/acme", 9, true)));
@@ -621,7 +626,7 @@ mod tests {
         // Search keeps only projects with matches.
         let mut b = app();
         type_str(&mut b, "scr");
-        assert_eq!(titles(&b), ["# /p/billing", "scratch", "+"]);
+        assert_eq!(titles(&b), ["+", "# /p/billing", "scratch"]);
     }
 
     #[test]
@@ -636,7 +641,7 @@ mod tests {
         );
         type_str(&mut a, "doom");
         assert_eq!(a.selected().unwrap().title(), "doomed");
-        assert_eq!(titles(&a), ["# /p/work", "doomed", "+"]);
+        assert_eq!(titles(&a), ["+", "# /p/work", "doomed"]);
         // The folder's own name is still searchable.
         let mut b = app();
         type_str(&mut b, "billing");
@@ -661,19 +666,12 @@ mod tests {
         }
         assert_eq!(
             seen,
-            [
-                "api",
-                "crashed",
-                "scratch",
-                "New session",
-                "New session",
-                "New session"
-            ]
+            ["api", "crashed", "scratch", "scratch", "scratch", "scratch"]
         );
         for _ in 0..10 {
             a.handle(key(KeyCode::Up));
         }
-        assert_eq!(a.selected().unwrap().title(), "web", "no wrap at the top");
+        assert_eq!(a.selected(), Some(Item::New), "no wrap at the top");
     }
 
     #[test]
@@ -788,7 +786,7 @@ mod tests {
         assert!(!a.click(api));
         assert_eq!(a.selected().unwrap().title(), "api");
         assert!(a.click(api), "a second click on the selection opens it");
-        assert!(!a.click(0), "project titles are not selectable");
+        assert!(!a.click(1), "project titles are not selectable");
         assert_eq!(a.selected().unwrap().title(), "api");
     }
 
@@ -804,5 +802,21 @@ mod tests {
             vec![],
         );
         assert_eq!(a.selected().unwrap().title(), "api");
+    }
+
+    #[test]
+    fn new_session_sits_on_top_one_step_up_from_the_first_session() {
+        let mut a = app();
+        assert_eq!(a.selected().unwrap().title(), "web", "opens on a session");
+        a.handle(key(KeyCode::Up));
+        assert_eq!(a.selected(), Some(Item::New));
+    }
+
+    #[test]
+    fn refresh_keeps_new_session_selected() {
+        let mut a = app();
+        a.handle(key(KeyCode::Up));
+        a.set_items(vec![claude("api", "/p/acme", 5, false)], vec![]);
+        assert_eq!(a.selected(), Some(Item::New));
     }
 }

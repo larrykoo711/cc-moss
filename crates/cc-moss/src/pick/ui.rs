@@ -209,12 +209,6 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
                 });
             }
             Row::New => {
-                if !lines.is_empty() {
-                    lines.push(ListLine {
-                        line: Line::raw(""),
-                        row: None,
-                    });
-                }
                 let q = app.query.trim();
                 let what = if q.is_empty() {
                     "New session here".to_string()
@@ -880,7 +874,9 @@ mod tests {
         key(&mut a, KeyCode::Down);
         let (text, _) = render(&a, 110, 26);
         assert!(text.contains("Not a Claude Code session."), "{text}");
-        key(&mut a, KeyCode::Down);
+        for _ in 0..5 {
+            key(&mut a, KeyCode::Up);
+        }
         let (text, _) = render(&a, 110, 26);
         assert!(
             text.contains("Starts Claude Code")
