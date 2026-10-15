@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1008" height="600" viewBox="0 0 1008 600" role="img" aria-label="t — cc-moss">
+<defs><filter id="s" x="-10%" y="-10%" width="120%" height="130%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity=".35"/></filter></defs>
+<g transform="translate(20 14)">
+<rect width="968" height="552" rx="12" fill="#18181b" filter="url(#s)"/>
+<rect width="968" height="552" rx="12" fill="none" stroke="#3f3f46"/>
+<path d="M0 38 H968" stroke="#27272a"/>
+<circle cx="22" cy="19.0" r="6" fill="#ff5f57"/>
+<circle cx="42" cy="19.0" r="6" fill="#febc2e"/>
+<circle cx="62" cy="19.0" r="6" fill="#28c840"/>
+<text x="484" y="23.5" fill="#a1a1aa" font-size="12.5" font-family="-apple-system,Segoe UI,Helvetica,Arial,sans-serif" text-anchor="middle">t — cc-moss</text>
+<g font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,'DejaVu Sans Mono',monospace" font-size="14" xml:space="preserve">
+<circle cx="32.7" cy="61.9" r="1.35" fill="#ff5a3c"/>
+<circle cx="32.7" cy="65.8" r="1.35" fill="#ff5a3c"/>
+<circle cx="36.5" cy="58.0" r="1.35" fill="#ff5a3c"/>
+<circle cx="36.5" cy="69.7" r="1.35" fill="#ff5a3c"/>
+<circle cx="41.1" cy="58.0" r="1.35" fill="#ff5a3c"/>
+<circle cx="44.9" cy="61.9" r="1.35" fill="#ff5a3c"/>
+<circle cx="44.9" cy="65.8" r="1.35" fill="#ff5a3c"/>
+<circle cx="41.1" cy="69.7" r="1.35" fill="#ff5a3c"/>
+<text x="55.6" y="68.4" fill="#e4e4e7" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<text x="131.2" y="68.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">0.1.0</text>
+<text x="484.0" y="68.4" fill="#e85656" textLength="84.0" lengthAdjust="spacingAndGlyphs">1 个被打断</text>
+<text x="584.8" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="610.0" y="68.4" fill="#d77757" textLength="67.2" lengthAdjust="spacingAndGlyphs">2 个在忙</text>
+<text x="694.0" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="719.2" y="68.4" fill="#f0ba46" textLength="84.0" lengthAdjust="spacingAndGlyphs">3 个在等你</text>
+<text x="820.0" y="68.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="845.2" y="68.4" fill="#969696" textLength="92.4" lengthAdjust="spacingAndGlyphs">共 7 个会话</text>
+<text x="30.4" y="108.4" fill="#969696" textLength="8.4" lengthAdjust="spacingAndGlyphs">⌕</text>
+<text x="47.2" y="108.4" fill="#5f5f5f" textLength="268.8" lengthAdjust="spacingAndGlyphs">搜一个会话，或者输入名字开个新的</text>
+<path d="M22.0 124 h924.0" stroke="#5f5f5f"/>
+<text x="38.8" y="148.4" fill="#d77757" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="55.6" y="148.4" fill="#969696" textLength="134.4" lengthAdjust="spacingAndGlyphs">在这里开个新会话</text>
+<path d="M404.2 134 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="148.4" fill="#e4e4e7" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<path d="M404.2 154 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="168.4" fill="#f0ba46" textLength="67.2" lengthAdjust="spacingAndGlyphs">● 在等你</text>
+<text x="509.2" y="168.4" fill="#969696" textLength="8.4" lengthAdjust="spacingAndGlyphs">·</text>
+<text x="534.4" y="168.4" fill="#969696" textLength="67.2" lengthAdjust="spacingAndGlyphs">1 小时前</text>
+<text x="30.4" y="188.4" fill="#969696" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<path d="M404.2 174 v20" stroke="#5f5f5f"/>
+<circle cx="41.1" cy="205.8" r="1.35" fill="#d77757"/>
+<circle cx="44.9" cy="201.9" r="1.35" fill="#d77757"/>
+<circle cx="41.1" cy="209.7" r="1.35" fill="#d77757"/>
+<circle cx="44.9" cy="209.7" r="1.35" fill="#d77757"/>
+<text x="55.6" y="208.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">cc-moss</text>
+<text x="341.2" y="208.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<path d="M404.2 194 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="208.4" fill="#5f5f5f" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">备注</text>
+<path d="M404.2 214 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="228.4" fill="#f0ba46" textLength="134.4" lengthAdjust="spacingAndGlyphs">等生产环境的 key</text>
+<text x="30.4" y="248.4" fill="#969696" font-weight="700" textLength="58.8" lengthAdjust="spacingAndGlyphs">billing</text>
+<path d="M404.2 234 v20" stroke="#5f5f5f"/>
+<text x="38.8" y="268.4" fill="#5f5f5f" textLength="8.4" lengthAdjust="spacingAndGlyphs">○</text>
+<text x="55.6" y="268.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">scratch</text>
+<text x="341.2" y="268.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<path d="M404.2 254 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="268.4" fill="#5f5f5f" font-weight="700" textLength="67.2" lengthAdjust="spacingAndGlyphs">最后一句</text>
+<text x="38.8" y="288.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<text x="55.6" y="288.4" fill="#e4e4e7" textLength="50.4" lengthAdjust="spacingAndGlyphs">ledger</text>
+<text x="341.2" y="288.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<path d="M404.2 274 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="288.4" fill="#e4e4e7" textLength="394.8" lengthAdjust="spacingAndGlyphs">“新的限流器先放 5% 流量，等生产 key 到了再执行”</text>
+<path d="M404.2 294 v20" stroke="#5f5f5f"/>
+<text x="30.4" y="328.4" fill="#969696" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">acme</text>
+<path d="M404.2 314 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="328.4" fill="#5f5f5f" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">目录</text>
+<text x="38.8" y="348.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<text x="55.6" y="348.4" fill="#e4e4e7" textLength="58.8" lengthAdjust="spacingAndGlyphs">pricing</text>
+<text x="341.2" y="348.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<path d="M404.2 334 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="348.4" fill="#e4e4e7" textLength="92.4" lengthAdjust="spacingAndGlyphs">~/code/acme</text>
+<rect x="22.0" y="354" width="8.4" height="20" fill="#343438"/>
+<text x="22.0" y="368.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">▌</text>
+<rect x="30.4" y="354" width="8.4" height="20" fill="#343438"/>
+<rect x="38.8" y="354" width="8.4" height="20" fill="#343438"/>
+<text x="38.8" y="368.4" fill="#f0ba46" textLength="8.4" lengthAdjust="spacingAndGlyphs">●</text>
+<rect x="47.2" y="354" width="8.4" height="20" fill="#343438"/>
+<rect x="55.6" y="354" width="92.4" height="20" fill="#343438"/>
+<text x="55.6" y="368.4" fill="#e4e4e7" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<rect x="148.0" y="354" width="193.2" height="20" fill="#343438"/>
+<rect x="341.2" y="354" width="42.0" height="20" fill="#343438"/>
+<text x="341.2" y="368.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<rect x="383.2" y="354" width="8.4" height="20" fill="#343438"/>
+<path d="M404.2 354 v20" stroke="#5f5f5f"/>
+<circle cx="41.1" cy="385.8" r="1.35" fill="#d77757"/>
+<circle cx="44.9" cy="381.9" r="1.35" fill="#d77757"/>
+<circle cx="41.1" cy="389.7" r="1.35" fill="#d77757"/>
+<circle cx="44.9" cy="389.7" r="1.35" fill="#d77757"/>
+<text x="55.6" y="388.4" fill="#e4e4e7" textLength="75.6" lengthAdjust="spacingAndGlyphs">docs-site</text>
+<text x="341.2" y="388.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">1小时</text>
+<path d="M404.2 374 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="388.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">↵</text>
+<text x="442.0" y="388.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">打开</text>
+<text x="517.6" y="388.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">→</text>
+<text x="534.4" y="388.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">更多</text>
+<text x="38.8" y="408.4" fill="#e85656" textLength="8.4" lengthAdjust="spacingAndGlyphs">↺</text>
+<text x="55.6" y="408.4" fill="#e4e4e7" textLength="100.8" lengthAdjust="spacingAndGlyphs">release-plan</text>
+<text x="341.2" y="408.4" fill="#5f5f5f" textLength="42.0" lengthAdjust="spacingAndGlyphs">2小时</text>
+<path d="M404.2 394 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="408.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">╭</text>
+<text x="442.0" y="408.4" fill="#d77757" font-weight="700" textLength="92.4" lengthAdjust="spacingAndGlyphs">api-gateway</text>
+<text x="542.8" y="408.4" fill="#d77757" textLength="285.6" lengthAdjust="spacingAndGlyphs">─────────────────────────────────╮</text>
+<path d="M404.2 414 v20" stroke="#5f5f5f"/>
+<path d="M429.4 414 v20" stroke="#d77757"/>
+<rect x="433.6" y="414" width="25.2" height="20" fill="#343438"/>
+<text x="442.0" y="428.4" fill="#d77757" textLength="8.4" lengthAdjust="spacingAndGlyphs">❯</text>
+<rect x="458.8" y="414" width="33.6" height="20" fill="#343438"/>
+<text x="458.8" y="428.4" fill="#e4e4e7" font-weight="700" textLength="33.6" lengthAdjust="spacingAndGlyphs">打开</text>
+<path d="M824.2 414 v20" stroke="#d77757"/>
+<path d="M404.2 434 v20" stroke="#5f5f5f"/>
+<path d="M429.4 434 v20" stroke="#d77757"/>
+<text x="458.8" y="448.4" fill="#e4e4e7" textLength="50.4" lengthAdjust="spacingAndGlyphs">写备注</text>
+<path d="M824.2 434 v20" stroke="#d77757"/>
+<path d="M404.2 454 v20" stroke="#5f5f5f"/>
+<path d="M429.4 454 v20" stroke="#d77757"/>
+<text x="458.8" y="468.4" fill="#e85656" textLength="67.2" lengthAdjust="spacingAndGlyphs">结束会话</text>
+<path d="M824.2 454 v20" stroke="#d77757"/>
+<path d="M404.2 474 v20" stroke="#5f5f5f"/>
+<text x="425.2" y="488.4" fill="#d77757" textLength="403.2" lengthAdjust="spacingAndGlyphs">╰──────────────────────────────────────────────╯</text>
+<path d="M22.0 504 h924.0" stroke="#5f5f5f"/>
+<text x="30.4" y="528.4" fill="#e4e4e7" font-weight="700" textLength="16.8" lengthAdjust="spacingAndGlyphs">↑↓</text>
+<text x="55.6" y="528.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">选择</text>
+<text x="131.2" y="528.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">↵</text>
+<text x="148.0" y="528.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">确认</text>
+<text x="223.6" y="528.4" fill="#e4e4e7" font-weight="700" textLength="8.4" lengthAdjust="spacingAndGlyphs">←</text>
+<text x="240.4" y="528.4" fill="#969696" textLength="33.6" lengthAdjust="spacingAndGlyphs">返回</text>
+</g></g></svg>

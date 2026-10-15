@@ -22,7 +22,7 @@
 目录对、启动参数对、对话也接得上。
 
 <p align="center">
-  <img src="docs/assets/picker.svg" alt="cc-moss 会话选择器" width="92%">
+  <img src="docs/assets/picker.zh-CN.svg" alt="cc-moss 会话选择器" width="92%">
 </p>
 
 ## 亮点
@@ -78,8 +78,8 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/picker-restore.svg" alt="选择器中的中断会话"></td>
-    <td width="50%"><img src="docs/assets/picker-menu.svg" alt="会话菜单"></td>
+    <td width="50%"><img src="docs/assets/picker-restore.zh-CN.svg" alt="选择器中的中断会话"></td>
+    <td width="50%"><img src="docs/assets/picker-menu.zh-CN.svg" alt="会话菜单"></td>
   </tr>
   <tr>
     <td align="center"><sub>中断的会话保留备注和最后一条消息</sub></td>
