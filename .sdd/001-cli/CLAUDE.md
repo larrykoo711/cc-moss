@@ -23,9 +23,20 @@
 | 文件 | 用途 |
 |------|------|
 | `notes/drivers-evidence.md` ⭐ | 立项依据、已有能力、开源调研、已定的设计方向 |
+| `notes/hook-probe.md` ⭐ | Claude Code 钩子实测 F1–F9（状态机的事实依据） |
+| `notes/current-state-baseline.md` | 待迁入资产的现状盘点、14 条坑、脱敏要求 |
+| `DESIGN-cli.md` ⭐ | 权威设计：已拍板项 R1–R8、capability map、数据模型、状态机、命令、测试、风险 |
+| `diagrams/architecture-cc-moss.html` | 架构图 |
+| `diagrams/sequence-hook-lifecycle.html` | 一个槽位从新建到恢复的钩子时序 |
+| `diagrams/src/` | 两张图的 archify 源 JSON |
+| `PLAN.md` ⭐ | 4 Phase × 8 Task、依赖图、Kanban、日志、开放问题 |
+| `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
+| `LESSONS.md` | 踩坑沉淀 |
 
 ## 依赖链 & 推进
-- 当前：S0 已完成，下一步 S1（现状盘点 → 列出假设 → capability map → 设计 → 出图）
+- G1 已批准（2026-10-15）；S2 编排完成：4 Phase × 8 Task，P1 是 MVP（T1.1–T1.4）
+- 第一波：T1.1；T1.1 完成后 T1.2 与 T1.3 并行；关键路径 T1.1 → T1.3 → T1.4 → T2.1 → T3.2 → T4.1
+- 下一步：S3 写 T1.1 的 spec
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名

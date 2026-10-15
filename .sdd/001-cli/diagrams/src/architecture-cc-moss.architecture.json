@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": { "title": "cc-moss Architecture", "subtitle": "Stage 1 CLI, with the Stage 2 menubar app as a read-only consumer", "output": "architecture-cc-moss.html" },
+  "components": [
+    { "id": "shell", "type": "frontend", "label": "zsh", "sublabel": "t / cc-moss / alias", "pos": [40, 150], "size": [130, 60] },
+    { "id": "cli", "type": "frontend", "label": "cc-moss CLI", "sublabel": "new ls restore pick", "pos": [250, 150], "size": [140, 60] },
+    { "id": "claude", "type": "external", "label": "Claude Code", "sublabel": "settings.json hooks", "pos": [40, 330], "size": [130, 60] },
+    { "id": "hook", "type": "backend", "label": "cc-moss hook", "sublabel": "start / prompt / end", "pos": [250, 330], "size": [140, 60], "tag": "always exit 0" },
+    { "id": "tmuxad", "type": "backend", "label": "tmux adapter", "sublabel": "socket aware", "pos": [480, 150], "size": [140, 60] },
+    { "id": "registry", "type": "database", "label": "registry.db", "sublabel": "SQLite WAL", "pos": [480, 330], "size": [140, 60], "tag": "slots" },
+    { "id": "agent", "type": "backend", "label": "agent: claude", "sublabel": "Agent trait", "pos": [480, 510], "size": [140, 60] },
+    { "id": "tmuxsrv", "type": "cloud", "label": "tmux server", "sublabel": "sessions + panes", "pos": [720, 150], "size": [140, 60] },
+    { "id": "menubar", "type": "frontend", "label": "Menubar app", "sublabel": "Stage 2 (future)", "pos": [720, 330], "size": [140, 60] },
+    { "id": "transcripts", "type": "database", "label": "Transcripts", "sublabel": "~/.claude/projects", "pos": [720, 510], "size": [140, 60] },
+    { "id": "assets", "type": "backend", "label": "Assets", "sublabel": "install / doctor", "pos": [250, 510], "size": [140, 60] },
+    { "id": "home", "type": "cloud", "label": "Dotfiles", "sublabel": "tmux starship zsh", "pos": [40, 510], "size": [130, 60] }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "moss-core (library)", "wraps": ["tmuxad", "registry", "agent"] }
+  ],
+  "connections": [
+    { "from": "shell", "to": "cli", "variant": "emphasis" },
+    { "from": "cli", "to": "tmuxad", "label": "spawn" },
+    { "from": "tmuxad", "to": "tmuxsrv" },
+    { "from": "claude", "to": "hook", "label": "events", "variant": "emphasis" },
+    { "from": "hook", "to": "registry", "label": "upsert", "variant": "emphasis" },
+    { "from": "menubar", "to": "registry", "label": "read-only", "variant": "dashed" },
+    { "from": "agent", "to": "transcripts", "label": "exists?" },
+    { "from": "assets", "to": "home", "label": "write" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Entry points", "items": ["cc-moss CLI for people", "cc-moss hook for Claude Code", "t is an alias for cc-moss pick"] },
+    { "dot": "emerald", "title": "moss-core", "items": ["registry: slots, state machine", "tmux: create, rename, attach", "agent: Claude Code today, trait for more"] },
+    { "dot": "amber", "title": "Single writer", "items": ["Only the CLI and hook write registry.db", "Menubar app reads, writes go through the CLI"] }
+  ]
+}

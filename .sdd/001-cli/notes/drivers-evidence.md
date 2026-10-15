@@ -19,7 +19,7 @@
 - 恢复后，7 个 tmux 会话（`<host>_em-*`）里各跑着一个 `claude`。`tmux list-panes` 显示前台命令都是
   `zsh`，因为 claude 跑在一层包装 shell 之下，按进程名看不出窗格里是不是 claude。
 - `claude agents --json` 列出 9 个交互式会话，其中 6 个的名字是自动生成的（`<dir>-1c` 这种），
-  和 tmux 会话名对不上。例如 tmux 里的 `em-api-gw` 对应 Claude 里的 `<dir>-1c`。
+  和 tmux 会话名对不上。例如 tmux 里的 `<name-a>` 对应 Claude 里的 `<dir>-1c`。
 - 8 个会话的工作目录相同。凡是「按目录找最新会话记录」的恢复方法，在这种情况下必然恢复错。
 
 ## D3 会话缺少「停在哪 / 在等什么」的备注

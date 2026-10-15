@@ -1,0 +1,274 @@
+{
+ "schema_version": 1,
+ "diagram_type": "sequence",
+ "meta": {
+  "title": "cc-moss Hook Lifecycle",
+  "subtitle": "one slot: new, rename, /clear, reboot, restore",
+  "output": "sequence-hook-lifecycle.html",
+  "viewBox": [
+   760,
+   1240
+  ]
+ },
+ "participants": [
+  {
+   "id": "user",
+   "type": "external",
+   "label": "User",
+   "sublabel": "terminal"
+  },
+  {
+   "id": "cli",
+   "type": "frontend",
+   "label": "cc-moss",
+   "sublabel": "CLI"
+  },
+  {
+   "id": "claude",
+   "type": "external",
+   "label": "claude",
+   "sublabel": "Claude Code"
+  },
+  {
+   "id": "hook",
+   "type": "backend",
+   "label": "hook",
+   "sublabel": "cc-moss hook"
+  },
+  {
+   "id": "tmux",
+   "type": "cloud",
+   "label": "tmux",
+   "sublabel": "server"
+  },
+  {
+   "id": "reg",
+   "type": "database",
+   "label": "registry",
+   "sublabel": "SQLite"
+  }
+ ],
+ "segments": [
+  {
+   "from": 150,
+   "to": 362,
+   "label": "01 / NEW"
+  },
+  {
+   "from": 368,
+   "to": 578,
+   "label": "02 / RENAME"
+  },
+  {
+   "from": 584,
+   "to": 748,
+   "label": "03 / CLEAR"
+  },
+  {
+   "from": 754,
+   "to": 848,
+   "label": "04 / REBOOT"
+  },
+  {
+   "from": 852,
+   "to": 1150,
+   "label": "05 / RESTORE"
+  }
+ ],
+ "messages": [
+  {
+   "from": "user",
+   "to": "cli",
+   "y": 200,
+   "label": "new em-a",
+   "variant": "emphasis"
+  },
+  {
+   "from": "cli",
+   "to": "tmux",
+   "y": 225,
+   "label": "new-session"
+  },
+  {
+   "from": "tmux",
+   "to": "claude",
+   "y": 265,
+   "label": "launch U1"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 305,
+   "label": "Start:startup",
+   "variant": "emphasis"
+  },
+  {
+   "from": "hook",
+   "to": "reg",
+   "y": 345,
+   "label": "new slot"
+  },
+  {
+   "from": "user",
+   "to": "claude",
+   "y": 410,
+   "label": "/rename em-b (no hook)",
+   "variant": "dashed"
+  },
+  {
+   "from": "user",
+   "to": "claude",
+   "y": 440,
+   "label": "next prompt"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 480,
+   "label": "Prompt title=em-b",
+   "variant": "emphasis"
+  },
+  {
+   "from": "hook",
+   "to": "reg",
+   "y": 520,
+   "label": "set name"
+  },
+  {
+   "from": "hook",
+   "to": "tmux",
+   "y": 560,
+   "label": "rename-session"
+  },
+  {
+   "from": "user",
+   "to": "claude",
+   "y": 618,
+   "label": "/clear"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 650,
+   "label": "End:clear skip",
+   "variant": "dashed"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 690,
+   "label": "Start:clear U2"
+  },
+  {
+   "from": "hook",
+   "to": "reg",
+   "y": 730,
+   "label": "append U2"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 798,
+   "label": "End:other or none",
+   "variant": "security"
+  },
+  {
+   "from": "hook",
+   "to": "reg",
+   "y": 830,
+   "label": "interrupted",
+   "variant": "security"
+  },
+  {
+   "from": "user",
+   "to": "cli",
+   "y": 895,
+   "label": "restore",
+   "variant": "emphasis"
+  },
+  {
+   "from": "cli",
+   "to": "reg",
+   "y": 925,
+   "label": "list interrupted"
+  },
+  {
+   "from": "reg",
+   "to": "cli",
+   "y": 965,
+   "label": "em-b / U2",
+   "variant": "return"
+  },
+  {
+   "from": "user",
+   "to": "cli",
+   "y": 1005,
+   "label": "confirm"
+  },
+  {
+   "from": "cli",
+   "to": "tmux",
+   "y": 1045,
+   "label": "new-session"
+  },
+  {
+   "from": "tmux",
+   "to": "claude",
+   "y": 1085,
+   "label": "--resume U2"
+  },
+  {
+   "from": "claude",
+   "to": "hook",
+   "y": 1115,
+   "label": "Start:resume"
+  },
+  {
+   "from": "hook",
+   "to": "reg",
+   "y": 1145,
+   "label": "running",
+   "variant": "emphasis"
+  }
+ ],
+ "activations": [
+  {
+   "participant": "claude",
+   "from": 260,
+   "to": 795,
+   "type": "external"
+  },
+  {
+   "participant": "claude",
+   "from": 1080,
+   "to": 1150,
+   "type": "external"
+  },
+  {
+   "participant": "cli",
+   "from": 880,
+   "to": 1050,
+   "type": "frontend"
+  }
+ ],
+ "cards": [
+  {
+   "dot": "emerald",
+   "title": "Slot",
+   "items": [
+    "One claude process lifetime",
+    "Keyed by CLAUDE_PID + TMUX_PANE",
+    "/clear rotates the id, not the slot"
+   ]
+  },
+  {
+   "dot": "rose",
+   "title": "Closed vs interrupted",
+   "items": [
+    "Only prompt_input_exit / logout = closed",
+    "reason=other (SIGHUP/SIGTERM) = interrupted",
+    "No SessionEnd + dead pid = interrupted"
+   ]
+  }
+ ]
+}
