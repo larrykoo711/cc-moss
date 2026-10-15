@@ -1,4 +1,4 @@
-# PLAN — 001-cli：cc-moss Stage 1 终端版（4 Phase × 9 Task）
+# PLAN — 001-cli：cc-moss Stage 1 终端版（4 Phase × 12 Task）
 
 ## 配套文档
 
@@ -22,7 +22,7 @@
 | Phase | 主题 | Task | 价值 |
 |-------|------|------|------|
 | P1 | MVP：重启后能列出并恢复会话 | T1.1–T1.5 | 直接解决立项的 D1–D3 |
-| P2 | 会话选择器（替代 `t`） | T2.1 | 日常入口；列表里能看到名字、状态、备注 |
+| P2 | 会话选择器（替代 `t`） | T2.1–T2.4 | 日常入口；列表里能看到名字、状态、备注 |
 | P3 | 终端资产并入 | T3.1–T3.2 | 解决 D4；本仓成为 tmux / starship / zsh 资产的正本 |
 | P4 | 开源发布 | T4.1 | CI、README、Release、Homebrew，仓库公开 |
 
@@ -118,6 +118,30 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - commit：`feat(pick): native session picker`
 - 依赖：T1.4
 
+### T2.2 选择器对齐 `claude agents`（反馈车道）
+
+- 仓：cc-moss
+- 目标：用户真机走查 T2.1 后的视觉反馈：分组单列表、整行选中色、底部输入框、灰色提示与快捷键面板
+- 文件：`crates/cc-moss/src/pick/{app,ui,source,mod}.rs`、`crates/cc-moss/tests/pick_e2e.rs`
+- commit：`feat(pick): agents-style picker`
+- 依赖：T2.1
+
+### T2.3 选择器第二轮打磨（反馈车道）
+
+- 仓：cc-moss
+- 目标：会话状态（Working / Waiting）与动画、最后一句话预览、品牌页头、匹配高亮、随选中项变化的提示
+- 文件：`crates/moss-core/src/{event,registry,slot,agent/claude}.rs`、`crates/cc-moss/src/pick/*`
+- commit：`feat(pick): activity, previews and polish`
+- 依赖：T2.2
+
+### T2.4 选择器重新设计：项目分组单行列表 + 详情卡片（反馈车道）
+
+- 仓：cc-moss
+- 目标：解决 T2.3 的「一大片」：按项目分组、每会话一行、细节只给选中项（右侧卡片）、去掉重复与零值
+- 文件：`crates/cc-moss/src/pick/{app,ui}.rs`、`crates/cc-moss/tests/pick_e2e.rs`
+- commit：`feat(pick): project-grouped list with a detail card`
+- 依赖：T2.3
+
 ### T3.1 终端资产 install / doctor
 
 - 仓：cc-moss
@@ -146,7 +170,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - 仓：cc-moss
 - 目标：仓库公开，别人能用 `brew install` 装上
 - 文件：`README.md`、`LICENSE`、`.github/workflows/{ci,release}.yml`、homebrew tap 的 formula
-- 内容：README（MOSS 叙事、30 秒上手、和其他方案的区别）；CI 在 macOS 与 Ubuntu 跑 L3；打 tag 后构建
+- 内容：**公开前清理 git 历史**：T2.2–T2.3 期间的提交曾把本机主机名、工作区名与供应商名写进测试夹具（已在 main 上清除，但历史里还在），公开前用私有词表（仓外 `~/.config/cc-moss-dev/private-words.txt`）扫描全部历史，并重写或压平历史；README（MOSS 叙事、30 秒上手、和其他方案的区别）；CI 在 macOS 与 Ubuntu 跑 L3；打 tag 后构建
   多平台二进制发 GitHub Release；tap 仓加 formula；全仓私有词表扫描
 - 验收：干净机器上 `brew install` → `cc-moss setup` → `new` → kill tmux → `restore` 走通
 - commit：`docs: readme and license`、`ci: build, test and release workflows`
@@ -161,8 +185,11 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 | **T1.3** 新建与名字同步 | cc-moss | T1.1 | ✅ Done | done/T1.3-new-and-name-sync.spec.md | 独立 socket 改名同步 |
 | **T1.4** 恢复 | cc-moss | T1.1,T1.3 | ✅ Done | done/T1.4-restore.spec.md | 假 claude 全流程 e2e + 真机 |
 | **T1.5** 会话名唯一 | cc-moss | T1.3,T1.4 | ✅ Done | done/T1.5-unique-names.spec.md | 同名进入或恢复 e2e |
-| **T2.1** 会话选择器 | cc-moss | T1.4 | 🟦 Ready | — | 4 个 ⚠️ 复测消失 |
-| **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 临时 HOME 幂等 + doctor 绿 |
+| **T2.1** 会话选择器 | cc-moss | T1.4 | ✅ Done | done/T2.1-picker.spec.md | 4 个 ⚠️ 复测消失 |
+| **T2.2** 选择器对齐 claude agents | cc-moss | T2.1 | ✅ Done | done/T2.2-picker-look.spec.md | 分组列表 + agents 皮肤 |
+| **T2.3** 选择器第二轮打磨 | cc-moss | T2.2 | ✅ Done | done/T2.3-picker-polish.spec.md | 状态分组 + 预览 + 高亮 |
+| **T2.4** 选择器重新设计（列表 + 详情卡片） | cc-moss | T2.3 | ✅ Done | done/T2.4-picker-master-detail.spec.md | 项目分组单行 + 详情卡片 |
+| **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | 🟦 Ready | — | 临时 HOME 幂等 + doctor 绿 |
 | **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | ⬜ Backlog | — | 本机日常流程走通 |
 | **T4.1** 开源发布 | cc-moss | T3.2 | ⬜ Backlog | — | 干净机器 brew 全流程 |
 
@@ -170,6 +197,13 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
 - DONE 2026-10-15 T1.4: 两轮独立评审（reports/T1.4-review-1.md，共 2 Critical / 9 Important 全部修复）；L2 全绿；e2e 5/5；变异 8/8；三次真机复验（暗号 PELICAN-42 / HERON-7 / OTTER-3）
+- DONE 2026-10-16 T2.4: 143 测试全绿；e2e 连跑 10/10（排查 flake 时发现搜索会命中长路径、选中不在最佳匹配，已修并补测试）；变异 2/2；宽窄两种布局截图核对
+- PLAN-CHANGE 2026-10-16: 新增 T2.4（反馈车道）：用户认为 T2.3 「一大片、眼睛看花」，选定左列表右详情
+- DONE 2026-10-16 T2.3: 实施中两次吸收用户反馈（去掉 Folders、两行会话、搜索框、分区；无需记忆的交互：方向键 + 回车 + → 菜单 + Esc，支持鼠标）；141 测试全绿；e2e 5/5；变异 2/2；演示数据渲染截图核对
+- PLAN-CHANGE 2026-10-16: 新增 T2.3（反馈车道）：用户要求继续美化
+- DONE 2026-10-16 T2.2: 对照实测的 `claude agents` 配色与结构重做；132 测试全绿；e2e 5/5；变异 2/2；真实数据渲染截图已核对
+- PLAN-CHANGE 2026-10-16: 新增 T2.2（反馈车道）：用户走查 T2.1 认为界面太丑，要求对齐 `claude agents`，选定分组单列表
+- DONE 2026-10-16 T2.1: e2e 在独立 tmux 窗格里用 send-keys 驱动（连跑 5/5）；131 个测试全绿；变异 3/3；controller 抽查（risk ui），真机走查交给用户
 - DONE 2026-10-16 T1.5: controller 抽查（risk logic）；e2e 5/5；变异 2/2；全部 verify 原样通过
 - PLAN-CHANGE 2026-10-16: 新增 T1.5 会话名唯一（用户：不可能开第二个同名会话），P1 由 4 个任务变为 5 个
 - MILESTONE 2026-10-15 P1 MVP 闭环：T1.1–T1.4 全部 Done。按推进节奏，先由用户在本机真实使用一段时间，再开 T2.1

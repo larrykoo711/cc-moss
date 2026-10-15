@@ -29,18 +29,19 @@
 | `diagrams/architecture-cc-moss.html` | 架构图 |
 | `diagrams/sequence-hook-lifecycle.html` | 一个槽位从新建到恢复的钩子时序 |
 | `diagrams/src/` | 两张图的 archify 源 JSON |
-| `PLAN.md` ⭐ | 4 Phase × 9 Task、依赖图、Kanban、日志、开放问题 |
+| `PLAN.md` ⭐ | 4 Phase × 12 Task、依赖图、Kanban、日志、开放问题 |
 | `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
 | `LESSONS.md` | 踩坑沉淀（L1–L9） |
 | `reports/T1.1-review-1.md` | T1.1 两轮独立评审与处置 |
 | `reports/T1.4-review-1.md` | T1.4 两轮独立评审与处置 |
 
 ## 依赖链 & 推进
-- G1 已批准（2026-10-15）；S2 编排完成：4 Phase × 9 Task，P1 是 MVP（T1.1–T1.4）
+- G1 已批准（2026-10-15）；S2 编排完成：4 Phase × 12 Task，P1 是 MVP（T1.1–T1.4）
 - 第一波：T1.1；T1.1 完成后 T1.2 与 T1.3 并行；关键路径 T1.1 → T1.3 → T1.4 → T2.1 → T3.1 → T3.2 → T4.1
 - P1 MVP ✅（2026-10-15）：T1.1–T1.4 全部 Done
 - T1.5 会话名唯一 ✅（2026-10-16）
-- 下一步：用户在本机真实使用 P1（MVP 验收点）；之后开 T2.1（选择器）
+- T2.1 选择器 ✅（2026-10-16）：`t` → `cc-moss pick`
+- 下一步：用户真机走查 `t`；之后 T3.1（终端资产 install/doctor）
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名
