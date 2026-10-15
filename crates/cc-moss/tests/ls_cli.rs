@@ -149,3 +149,107 @@ fn json_has_busy_and_preview() {
     assert_eq!(s["busy"], true);
     assert_eq!(s["last_prompt"], "deploy the gateway");
 }
+
+#[test]
+fn running_sessions_are_adopted_automatically() {
+    // A Claude Code session started before the hooks existed: only `claude agents` knows it.
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakeProcess::spawn();
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
+         "sessionId": "OLD-1", "name": "em-old", "status": "busy"}
+    ]);
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&stub)
+        .status()
+        .unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let s = &v["slots"][0];
+    assert_eq!(s["session_id"], "OLD-1");
+    assert_eq!(s["name"], "em-old");
+    assert_eq!(s["status"], "running");
+    assert_eq!(s["busy"], true);
+    assert_eq!(s["cwd"], "/work/acme");
+}
+
+#[test]
+fn adopting_leaves_sessions_the_hooks_track_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("A", "startup", Some("a")),
+        p.pid(),
+    );
+    let before = ls_json(dir.path(), false)["slots"][0]["last_active_at"].clone();
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
+         "sessionId": "A", "name": "a", "status": "idle"}
+    ]);
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&stub)
+        .status()
+        .unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["slots"].as_array().unwrap().len(), 1);
+    assert_eq!(v["slots"][0]["last_active_at"], before);
+}
+
+#[test]
+fn adopted_sessions_keep_their_real_last_activity() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = FakeProcess::spawn();
+    let config = dir.path().join("claude-config");
+    let project = config.join("projects").join("-work-acme");
+    std::fs::create_dir_all(&project).unwrap();
+    let transcript = project.join("OLD-2.jsonl");
+    std::fs::write(&transcript, "{}\n").unwrap();
+    // Last written an hour ago.
+    let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&transcript)
+        .unwrap()
+        .set_modified(hour_ago)
+        .unwrap();
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
+         "sessionId": "OLD-2", "status": "idle"}
+    ]);
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&stub)
+        .status()
+        .unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .env("CLAUDE_CONFIG_DIR", &config)
+        .args(["ls"])
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    assert!(text.contains("1h"), "{text}");
+}

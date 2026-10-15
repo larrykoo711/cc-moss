@@ -248,6 +248,25 @@ impl<R: Runner> Tmux<R> {
             .unwrap_or_default()
     }
 
+    /// `(pane pid, session id, session name, pane id)` for every pane.
+    pub fn panes(&self) -> Vec<(u32, String, String, String)> {
+        let fmt = "#{pane_pid}\t#{session_id}\t#{session_name}\t#{pane_id}";
+        let Ok(out) = self.run(&["list-panes", "-a", "-F", fmt]) else {
+            return Vec::new();
+        };
+        out.lines()
+            .filter_map(|l| {
+                let mut f = l.splitn(4, '\t');
+                Some((
+                    f.next()?.parse().ok()?,
+                    f.next()?.to_string(),
+                    f.next()?.to_string(),
+                    f.next()?.to_string(),
+                ))
+            })
+            .collect()
+    }
+
     /// Every session with its last activity; empty when no server runs.
     pub fn session_infos(&self) -> Vec<SessionInfo> {
         let fmt = "#{session_id}\t#{session_name}\t#{session_activity}\t#{session_attached}\t#{session_path}";
@@ -313,4 +332,30 @@ pub fn locate(tmux_env: Option<&str>, pane_env: Option<&str>) -> Option<TmuxLoc>
         session_name,
         pane_id,
     })
+}
+
+/// The tmux pane a process runs under: walk up its parents until one of them
+/// is a pane's process.
+pub fn locate_in_panes(
+    pid: u32,
+    parents: &std::collections::HashMap<u32, u32>,
+    panes: &[(u32, String, String, String)],
+    socket: &str,
+) -> Option<TmuxLoc> {
+    let mut current = pid;
+    for _ in 0..64 {
+        if let Some((_, sid, name, pane)) = panes.iter().find(|p| p.0 == current) {
+            return Some(TmuxLoc {
+                socket: socket.to_string(),
+                session_id: Some(sid.clone()),
+                session_name: Some(name.clone()),
+                pane_id: pane.clone(),
+            });
+        }
+        current = *parents.get(&current)?;
+        if current <= 1 {
+            return None;
+        }
+    }
+    None
 }

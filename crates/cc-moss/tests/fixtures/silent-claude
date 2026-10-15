@@ -1,3 +1,5 @@
 #!/bin/sh
 # A claude that starts but never reports back (restore still in flight).
+# `claude agents --json`: no other sessions are running.
+[ "$1" = agents ] && { echo '[]'; exit 0; }
 sleep 30

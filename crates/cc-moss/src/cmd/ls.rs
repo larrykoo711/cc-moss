@@ -2,25 +2,18 @@
 
 use anyhow::Result;
 use moss_core::proc;
-use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
-use moss_core::store_dir;
 use serde_json::{json, Value};
 
 pub const JSON_SCHEMA: u32 = 1;
 
 pub fn run(all: bool, as_json: bool) -> Result<()> {
-    let path = store_dir::registry_path();
-    let mut rows: Vec<(Status, Slot)> = if path.exists() {
-        Registry::open(&path)?
-            .slots()?
-            .into_iter()
-            .map(|s| (s.effective_status(proc::is_alive), s))
-            .filter(|(st, _)| all || *st != Status::Closed)
-            .collect()
-    } else {
-        Vec::new()
-    };
+    let mut rows: Vec<(Status, Slot)> = crate::reconcile::run()?
+        .slots()?
+        .into_iter()
+        .map(|s| (s.effective_status(proc::is_alive), s))
+        .filter(|(st, _)| all || *st != Status::Closed)
+        .collect();
     // Most urgent first: interrupted, then running, then closed; newest activity first.
     rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
 

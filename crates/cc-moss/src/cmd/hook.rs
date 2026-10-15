@@ -69,8 +69,15 @@ fn handle(event: &str) -> Result<()> {
     // Side effects after the registry is committed; failures are only logged.
     match &event {
         Event::Start {
-            source, session_id, ..
+            source,
+            session_id,
+            title,
+            transcript_path,
+            ..
         } => {
+            if title.is_none() {
+                fill_name_from_transcript(&registry, session_id, &ctx, transcript_path.as_deref());
+            }
             if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
                 log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
@@ -92,6 +99,28 @@ fn handle(event: &str) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// After `--resume` Claude Code omits the name from the payload; the
+/// transcript still records the last `/rename`.
+fn fill_name_from_transcript(
+    registry: &Registry,
+    session_id: &str,
+    ctx: &Context,
+    transcript: Option<&str>,
+) {
+    let Some(path) = transcript else { return };
+    let Ok(Some(slot)) = registry.slot_for_event(session_id, ctx) else {
+        return;
+    };
+    if slot.name.is_some() {
+        return;
+    }
+    if let Some(name) = moss_core::transcript::last_custom_title(std::path::Path::new(path)) {
+        if let Err(e) = registry.set_name(&slot.slot_id, &name) {
+            log("session-start", &format!("error: {e:#}"));
+        }
+    }
 }
 
 /// Keep the tmux session name equal to `<prefix>_<Claude session name>`

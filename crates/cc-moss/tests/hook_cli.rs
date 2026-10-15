@@ -249,3 +249,49 @@ fn rename_collision_warns() {
     );
     assert!(out.stdout.is_empty());
 }
+
+#[test]
+fn name_comes_from_the_transcript_when_the_payload_lacks_it() {
+    // After `--resume`, Claude Code leaves session_title out of the payload,
+    // but the transcript records the last /rename.
+    let dir = tempfile::tempdir().unwrap();
+    let t = dir.path().join("t.jsonl");
+    std::fs::write(
+        &t,
+        "{\"type\":\"user\"}\n{\"type\":\"custom-title\",\"customTitle\":\"em-final\",\"sessionId\":\"R\"}\n{\"type\":\"user\"}\n",
+    )
+    .unwrap();
+    let p = common::FakeProcess::spawn();
+    let payload = serde_json::json!({
+        "session_id": "R", "cwd": "/work", "source": "resume", "transcript_path": t,
+    })
+    .to_string();
+    assert!(hook(dir.path(), "session-start", &payload, p.pid())
+        .status
+        .success());
+    assert_eq!(ls_json(dir.path(), true)["slots"][0]["name"], "em-final");
+}
+
+#[test]
+fn ls_backfills_names_of_sessions_registered_earlier() {
+    let dir = tempfile::tempdir().unwrap();
+    let t = dir.path().join("t.jsonl");
+    std::fs::write(&t, "{\"type\":\"user\"}\n").unwrap();
+    let p = common::FakeProcess::spawn();
+    let payload = serde_json::json!({
+        "session_id": "R", "cwd": "/work", "source": "resume", "transcript_path": t,
+    })
+    .to_string();
+    hook(dir.path(), "session-start", &payload, p.pid());
+    assert!(ls_json(dir.path(), true)["slots"][0]["name"].is_null());
+    // Renamed later (before cc-moss saw a title in any payload); Claude
+    // Code appends to the transcript.
+    use std::io::Write;
+    let mut f = std::fs::OpenOptions::new().append(true).open(&t).unwrap();
+    writeln!(
+        f,
+        "{{\"type\":\"custom-title\",\"customTitle\":\"em-late\",\"sessionId\":\"R\"}}"
+    )
+    .unwrap();
+    assert_eq!(ls_json(dir.path(), true)["slots"][0]["name"], "em-late");
+}

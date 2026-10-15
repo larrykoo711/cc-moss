@@ -36,6 +36,8 @@ pub fn run() -> Result<()> {
     let config = Config::load()?;
     let socket = Socket::from_config(config.tmux_socket().as_deref());
     let tmux = Tmux::with_socket(socket.clone());
+    // Adopt sessions the hooks missed before the first frame.
+    crate::reconcile::run()?;
     let (sessions, interrupted) = load(&tmux)?;
     let mut app = App::new(sessions, interrupted);
     let host_prefix = if config.naming.host_prefix {

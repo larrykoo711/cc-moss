@@ -89,3 +89,20 @@ fn read_boot_time_ms() -> Option<i64> {
     let line = stat.lines().find(|l| l.starts_with("btime "))?;
     line[6..].trim().parse::<i64>().ok().map(|s| s * 1000)
 }
+
+/// Every process's parent, from one `ps` call.
+pub fn parents() -> std::collections::HashMap<u32, u32> {
+    let Some(out) = output_with_timeout(
+        Command::new("ps").args(["-A", "-o", "pid=,ppid="]),
+        Duration::from_secs(2),
+    ) else {
+        return Default::default();
+    };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|l| {
+            let mut f = l.split_whitespace();
+            Some((f.next()?.parse().ok()?, f.next()?.parse().ok()?))
+        })
+        .collect()
+}

@@ -84,6 +84,7 @@ impl Item {
             Item::Session(s) => match &s.claude {
                 Some(c) => join(&[
                     Some(&c.label()),
+                    Some(&s.tmux_name),
                     c.note.as_deref(),
                     c.preview.as_deref(),
                     Some(&folder(&c.cwd)),

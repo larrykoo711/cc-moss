@@ -813,3 +813,33 @@ fn prompt_and_stop_track_busy() {
     reg.apply(&end("A", "other"), &ctx(100, 5_000)).unwrap();
     assert!(!only_slot(&reg).busy);
 }
+
+#[test]
+fn set_name_fills_a_missing_name() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Resume, "A", None), &ctx(100, 1_000))
+        .unwrap();
+    let id = only_slot(&reg).slot_id;
+    reg.set_name(&id, "em-final").unwrap();
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("em-final"));
+}
+
+#[test]
+fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
+    use std::io::Write;
+    let mut t = tempfile::NamedTempFile::new().unwrap();
+    writeln!(t, r#"{{"type":"user","message":"hi"}}"#).unwrap();
+    let mut reg = Registry::open_in_memory().unwrap();
+    let event = Event::Start {
+        source: StartSource::Resume,
+        session_id: "A".into(),
+        cwd: "/work".into(),
+        title: None,
+        transcript_path: Some(t.path().to_string_lossy().into_owned()),
+    };
+    reg.apply(&event, &ctx(100, 1_000)).unwrap();
+    assert_eq!(reg.backfill_names().unwrap(), 0);
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"em-late"}}"#).unwrap();
+    assert_eq!(reg.backfill_names().unwrap(), 1);
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("em-late"));
+}

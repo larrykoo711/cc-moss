@@ -300,9 +300,13 @@ fn dot(state: State, now_ms: i64) -> Span<'static> {
     }
 }
 
+/// The Claude Code name, else the tmux session name: never a bare id while
+/// a readable name exists.
 fn display_name(item: &Item, view: &View) -> String {
     match item {
-        Item::Session(s) if s.claude.is_none() => strip_prefix(&s.tmux_name, view.host_prefix),
+        Item::Session(s) if s.claude.as_ref().map_or(true, |c| c.name.is_none()) => {
+            strip_prefix(&s.tmux_name, view.host_prefix)
+        }
         other => other.title(),
     }
 }
@@ -950,6 +954,19 @@ mod tests {
             t.contains("End api-gw?") && t.contains("Yes, end it") && t.contains("Cancel"),
             "{t}"
         );
+    }
+
+    #[test]
+    fn unnamed_claude_session_shows_its_tmux_name() {
+        let mut item = claude("x", "/home/u/acme", 0, false, None, None);
+        if let Item::Session(s) = &mut item {
+            s.tmux_name = "host-a_em-api-gw".into();
+            s.claude.as_mut().unwrap().name = None;
+        }
+        let a = App::new(vec![item], vec![]);
+        let (text, _) = render(&a, 110, 20);
+        assert!(text.contains("● em-api-gw"), "{text}");
+        assert!(!text.contains("x-id"), "{text}");
     }
 
     #[test]

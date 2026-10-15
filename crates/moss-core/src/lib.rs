@@ -14,3 +14,4 @@ pub mod settings_json;
 pub mod slot;
 pub mod store_dir;
 pub mod tmux;
+pub mod transcript;

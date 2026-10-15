@@ -3,6 +3,8 @@
 # listens to, then takes commands from a FIFO named after the current session
 # id: "prompt <title>", "clear", "exit". Like Claude Code, the transcript file
 # only appears with the first prompt (F8).
+# `claude agents --json`: no other sessions are running.
+[ "$1" = agents ] && { echo '[]'; exit 0; }
 name="" sid="" source=startup
 while [ $# -gt 0 ]; do
   case "$1" in

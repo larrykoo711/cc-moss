@@ -232,6 +232,57 @@ impl Registry {
             .exists(params![slot_id, name])?)
     }
 
+    /// Set a slot's name (found outside the hook payload, e.g. in its transcript).
+    pub fn set_name(&self, slot_id: &str, name: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE slots SET name = ?2 WHERE slot_id = ?1",
+            params![slot_id, name],
+        )?;
+        Ok(())
+    }
+
+    /// Name open slots that have none yet from their transcript's last
+    /// `/rename`. Claude Code leaves the name out of hook payloads after
+    /// `--resume`, so a resumed session can stay nameless otherwise.
+    pub fn backfill_names(&self) -> Result<usize> {
+        let mut named = 0;
+        for slot in self.slots()? {
+            if slot.name.is_some() || slot.status == Status::Closed {
+                continue;
+            }
+            let Some(path) = slot.transcript_path.as_deref() else {
+                continue;
+            };
+            // Transcripts grow to tens of megabytes: only read what was
+            // appended since the last look.
+            let from: i64 = self.conn.query_row(
+                "SELECT name_scanned_to FROM slots WHERE slot_id = ?1",
+                [&slot.slot_id],
+                |r| r.get(0),
+            )?;
+            let (title, scanned) =
+                crate::transcript::custom_title_since(Path::new(path), from.max(0) as u64);
+            self.conn.execute(
+                "UPDATE slots SET name_scanned_to = ?2 WHERE slot_id = ?1",
+                params![slot.slot_id, scanned as i64],
+            )?;
+            if let Some(name) = title {
+                self.set_name(&slot.slot_id, &name)?;
+                named += 1;
+            }
+        }
+        Ok(named)
+    }
+
+    /// Whether Claude is working on a prompt (from outside the hooks).
+    pub fn set_busy(&self, slot_id: &str, busy: bool) -> Result<()> {
+        self.conn.execute(
+            "UPDATE slots SET busy = ?2 WHERE slot_id = ?1",
+            params![slot_id, busy],
+        )?;
+        Ok(())
+    }
+
     /// Replace a slot's notes.
     pub fn set_notes(&self, slot_id: &str, notes: &Notes) -> Result<()> {
         self.conn.execute(
@@ -446,6 +497,10 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         ("restore_started_at", "restore_started_at INTEGER"),
         ("busy", "busy INTEGER NOT NULL DEFAULT 0"),
         ("last_prompt", "last_prompt TEXT"),
+        (
+            "name_scanned_to",
+            "name_scanned_to INTEGER NOT NULL DEFAULT 0",
+        ),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
@@ -488,6 +543,7 @@ fn migrate(conn: &mut Connection) -> Result<()> {
                restore_started_at INTEGER,
                busy INTEGER NOT NULL DEFAULT 0,
                last_prompt TEXT,
+               name_scanned_to INTEGER NOT NULL DEFAULT 0,
                end_reason TEXT,
                created_at INTEGER NOT NULL,
                last_active_at INTEGER NOT NULL,

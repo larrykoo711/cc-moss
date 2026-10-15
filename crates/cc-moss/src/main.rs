@@ -2,6 +2,7 @@
 
 mod cmd;
 mod pick;
+mod reconcile;
 
 use clap::{Parser, Subcommand};
 
