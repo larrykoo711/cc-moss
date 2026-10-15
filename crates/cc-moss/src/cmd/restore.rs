@@ -8,7 +8,7 @@ use anyhow::{bail, Result};
 use moss_core::config::Config;
 use moss_core::event::TmuxLoc;
 use moss_core::registry::Registry;
-use moss_core::restore::{plan, resolve, Verdict};
+use moss_core::restore::{plan, Verdict};
 use moss_core::slot::{now_ms, Slot};
 use moss_core::tmux::{ProcessRunner, Socket, Tmux};
 use moss_core::{naming, proc, store_dir};
@@ -25,7 +25,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     let config = Config::load()?;
     let path = store_dir::registry_path();
     if !path.exists() {
-        println!("Nothing to restore.");
+        println!("{}", nothing_to_restore());
         return Ok(());
     }
     let registry = Registry::open(&path)?;
@@ -37,7 +37,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         Some(
             args.names
                 .iter()
-                .map(|n| Ok(resolve(&slots, n)?.slot_id.clone()))
+                .map(|n| Ok(super::resolve(&slots, n)?.slot_id.clone()))
                 .collect::<Result<_>>()?,
         )
     };
@@ -47,18 +47,26 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .collect();
     let candidates = plan(&rows, only.as_ref(), now_ms(), |p: &Path| p.exists());
     if candidates.is_empty() {
-        println!("Nothing to restore.");
+        println!("{}", nothing_to_restore());
         return Ok(());
     }
 
     for c in &candidates {
         let why = match c.verdict {
-            Verdict::Restore => "restore",
-            Verdict::EmptySession => "skip: no messages were ever sent",
-            Verdict::MissingCwd => "skip: directory no longer exists",
-            Verdict::RestorePending => "skip: restore already in progress",
-            Verdict::OpenElsewhere => "skip: this conversation is open in another session",
-            Verdict::Duplicate => "skip: a newer copy of this conversation is restored instead",
+            Verdict::Restore => tr!("restore", "恢复"),
+            Verdict::EmptySession => {
+                tr!("skip: no messages were ever sent", "跳过：一句话都没发过")
+            }
+            Verdict::MissingCwd => tr!("skip: its folder is gone", "跳过：目录已经不在了"),
+            Verdict::RestorePending => tr!("skip: already on its way back", "跳过：已经在恢复中"),
+            Verdict::OpenElsewhere => tr!(
+                "skip: this conversation is open in another session",
+                "跳过：这段对话正在别处打开着"
+            ),
+            Verdict::Duplicate => tr!(
+                "skip: a newer copy of this conversation is restored instead",
+                "跳过：会恢复这段对话更新的那份"
+            ),
         };
         let note = c
             .slot
@@ -67,9 +75,9 @@ pub fn run(args: RestoreArgs) -> Result<()> {
             .as_deref()
             .or(c.slot.notes.note.as_deref());
         println!(
-            "{:<24} {:<52} {}{}",
-            display_name(c.slot),
-            why,
+            "{} {} {}{}",
+            super::pad(&display_name(c.slot), 24),
+            super::pad(why, 52),
             c.slot.cwd,
             note.map(|n| format!("  [{n}]")).unwrap_or_default()
         );
@@ -80,16 +88,32 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .map(|c| c.slot)
         .collect();
     if todo.is_empty() {
-        println!("Nothing restorable.");
+        println!(
+            "{}",
+            tr!("Nothing here can be restored.", "这些会话都恢复不了。")
+        );
         return Ok(());
     }
     if args.dry_run {
-        println!("Dry run: would restore {} session(s).", todo.len());
+        println!(
+            "{}",
+            tr!(
+                format!("Dry run: would restore {} session(s).", todo.len()),
+                format!("演练模式：会恢复 {} 个会话。", todo.len())
+            )
+        );
         return Ok(());
     }
-    let question = format!("Restore {} session(s)?", todo.len());
-    if !confirm::ask(args.yes, &question, "re-run with --yes to restore them")? {
-        println!("Aborted: nothing restored.");
+    let question = tr!(
+        format!("Bring back {} session(s)?", todo.len()),
+        format!("要把这 {} 个会话恢复回来吗？", todo.len())
+    );
+    let refused = tr!(
+        "re-run with --yes to restore them",
+        "加上 --yes 重新运行即可恢复"
+    );
+    if !confirm::ask(args.yes, &question, refused)? {
+        println!("{}", tr!("Okay, nothing restored.", "好的，什么都没动。"));
         return Ok(());
     }
 
@@ -99,15 +123,33 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         match launcher.launch(&registry, slot)? {
             Launched::Started(_) => {}
             Launched::Changed => println!(
-                "Skipped {}: it changed since the list above (resumed elsewhere?)",
-                display_name(slot)
+                "{}",
+                tr!(
+                    format!(
+                        "Skipped {}: it changed since the list above (resumed elsewhere?)",
+                        display_name(slot)
+                    ),
+                    format!(
+                        "跳过 {}：列出之后它有了变化（可能已在别处恢复？）",
+                        display_name(slot)
+                    )
+                )
             ),
             Launched::Failed => failed += 1,
         }
     }
-    println!("Attach with: cc-moss attach <name>");
+    println!(
+        "{}",
+        tr!(
+            "Jump back in with `t`, or `cc-moss attach <name>`.",
+            "敲 `t` 或 `cc-moss attach <名字>` 回到会话里。"
+        )
+    );
     if failed > 0 {
-        bail!("{failed} session(s) could not be restored");
+        bail!(tr!(
+            format!("{failed} session(s) could not be restored"),
+            format!("{failed} 个会话没能恢复")
+        ));
     }
     Ok(())
 }
@@ -170,7 +212,13 @@ impl Launcher {
         argv.extend(name_arg.as_deref());
         argv.extend(slot.launch_args.iter().map(String::as_str));
         if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
-            eprintln!("cc-moss: could not restore {label}: {e:#}");
+            eprintln!(
+                "cc-moss: {}",
+                tr!(
+                    format!("could not restore {label}: {e:#}"),
+                    format!("没能恢复 {label}：{e:#}")
+                )
+            );
             registry.clear_restore_started(&slot.slot_id)?;
             return Ok(Launched::Failed);
         }
@@ -188,7 +236,13 @@ impl Launcher {
                         .contains(&format!("--resume {}", slot.session_id))
                 })
                 .or_else(|| {
-                    eprintln!("cc-moss: could not restore {label}: {e:#}");
+                    eprintln!(
+                        "cc-moss: {}",
+                        tr!(
+                            format!("could not restore {label}: {e:#}"),
+                            format!("没能恢复 {label}：{e:#}")
+                        )
+                    );
                     None
                 }),
         };
@@ -212,7 +266,13 @@ impl Launcher {
             now_ms(),
         )?;
         registry.close_superseded(&slot.slot_id, &slot.session_id, now_ms())?;
-        println!("Started {label} in tmux session {tmux_name}");
+        println!(
+            "{}",
+            tr!(
+                format!("Started {label} in tmux session {tmux_name}."),
+                format!("已启动 {label}（tmux 会话 {tmux_name}）。")
+            )
+        );
         self.taken.push(tmux_name.clone());
         Ok(Launched::Started(tmux_name))
     }
@@ -230,4 +290,11 @@ pub fn display_name(slot: &Slot) -> String {
     slot.name
         .clone()
         .unwrap_or_else(|| slot.session_id.chars().take(8).collect())
+}
+
+fn nothing_to_restore() -> &'static str {
+    tr!(
+        "Nothing to restore. Everything made it through.",
+        "没有需要恢复的会话，全员健在。"
+    )
 }

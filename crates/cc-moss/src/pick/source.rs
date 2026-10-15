@@ -116,7 +116,7 @@ impl Item {
     /// The name shown on the first line.
     pub fn title(&self) -> String {
         match self {
-            Item::New => "New session".into(),
+            Item::New => tr!("New session", "新会话").into(),
             Item::Session(s) => s
                 .claude
                 .as_ref()

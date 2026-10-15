@@ -1,6 +1,6 @@
 [package]
 name = "cc-moss"
-description = "Crashes happen. Your Claude Code sessions carry on."
+description = "Civilizations carry on. So do conversations. Recoverable Claude Code sessions in tmux."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

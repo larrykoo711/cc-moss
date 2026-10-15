@@ -1,18 +1,25 @@
-//! cc-moss: crashes happen, your Claude Code sessions carry on.
+//! cc-moss: civilizations carry on, so do conversations.
 
+#[macro_use]
+mod i18n;
 mod cmd;
+mod help_zh;
 mod pick;
 mod reconcile;
+mod version;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 #[derive(Parser)]
 #[command(
     name = "cc-moss",
-    version,
-    about = "Recoverable Claude Code sessions in tmux"
+    about = "Recoverable Claude Code sessions in tmux",
+    disable_version_flag = true
 )]
 struct Cli {
+    /// Print version.
+    #[arg(short = 'V', long)]
+    version: bool,
     /// Without a command, open the session picker (same as `t`).
     #[command(subcommand)]
     command: Option<Command>,
@@ -111,7 +118,14 @@ enum Command {
 }
 
 fn main() -> std::process::ExitCode {
-    let cli = Cli::parse();
+    let cli = match Cli::try_parse() {
+        Ok(cli) => cli,
+        Err(e) => explain(e),
+    };
+    if cli.version {
+        version::print();
+        return std::process::ExitCode::SUCCESS;
+    }
     let Some(command) = cli.command else {
         return report(pick::run());
     };
@@ -173,6 +187,17 @@ fn main() -> std::process::ExitCode {
             zshrc,
         })),
     }
+}
+
+/// Help, version and usage errors, in the reader's language. Only reached
+/// when something is shown, so the hooks never decide a language.
+fn explain(error: clap::Error) -> ! {
+    if i18n::lang() == i18n::Lang::Zh {
+        if let Err(zh) = help_zh::localize(Cli::command()).try_get_matches() {
+            zh.exit();
+        }
+    }
+    error.exit()
 }
 
 fn report(result: anyhow::Result<()>) -> std::process::ExitCode {

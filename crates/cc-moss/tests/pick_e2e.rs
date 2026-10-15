@@ -33,6 +33,7 @@ fn open_picker(w: &World) {
         format!("CC_MOSS_BIN={bin}"),
         format!("CC_MOSS_FAKE_DIR={}", fifos.display()),
         "HOME=/nonexistent/cc-moss-test-home".into(),
+        "CC_MOSS_LANG=en".into(),
         bin.into(),
         "pick".into(),
     ];

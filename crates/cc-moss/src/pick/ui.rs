@@ -11,6 +11,8 @@ use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo_matcher::{Config, Matcher, Utf32Str};
 use ratatui::layout::{Constraint, Layout, Rect};
 use ratatui::style::{Color, Modifier, Style};
+
+use crate::i18n::Lang;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Clear, Paragraph, Wrap};
 use ratatui::Frame;
@@ -32,8 +34,26 @@ const ORANGE: Color = Color::Rgb(215, 119, 87);
 /// Waiting for you; notes.
 const AMBER: Color = Color::Rgb(240, 186, 70);
 
-// No frame may look like the "+" of "New session".
-const SPINNER: [&str; 6] = ["✶", "✳", "✻", "✽", "✻", "✳"];
+/// Working: four dots running along a figure eight (the cc-moss mark, ∞,
+/// stood upright) inside one braille cell.
+const SPINNER: [&str; 8] = ["⠛", "⠝", "⡜", "⣔", "⣤", "⣢", "⢣", "⠫"];
+/// The cc-moss mark, ∞, drawn with braille dots across two cells so it is as
+/// tall as the text. While sessions are being checked, five dots run along it.
+const MARK: &str = "⢎⡱";
+/// The figure eight through the 4×4 dots of two braille cells: around the
+/// left loop, across the middle, around the right loop and back.
+const MARK_PATH: [(u8, u8); 8] = [
+    (1, 0),
+    (0, 1),
+    (0, 2),
+    (1, 3),
+    (2, 0),
+    (3, 1),
+    (3, 2),
+    (2, 3),
+];
+/// Brand colour of the mark (#FF5A3C).
+const BRAND: Color = Color::Rgb(255, 90, 60);
 /// Nerd Font "file-tree", shown next to the word "worktree".
 const WORKTREE_ICON: &str = "\u{f0645}";
 /// Below this width the card goes under the list.
@@ -50,6 +70,8 @@ pub struct View<'a> {
     pub version: &'a str,
     /// The terminal font has Nerd Font icons.
     pub nerd_icons: bool,
+    /// Running sessions are still being checked in the background.
+    pub checking: bool,
 }
 
 impl View<'_> {
@@ -140,26 +162,37 @@ fn rule(frame: &mut Frame, area: Rect) {
 
 fn draw_header(frame: &mut Frame, area: Rect, app: &App, view: &View) {
     let left = Line::from(vec![
-        Span::styled(" ◉ ", Style::new().fg(RED).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            format!(" {} ", mark(view.checking, view.now_ms)),
+            Style::new().fg(BRAND).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("cc-moss", Style::new().add_modifier(Modifier::BOLD)),
         Span::styled(format!("  {}", view.version), Style::new().fg(FAINT)),
     ]);
     // Only what is there: no "0 working".
     let mut parts: Vec<Span> = Vec::new();
-    for (state, color, word) in [
-        (State::Interrupted, RED, "interrupted"),
-        (State::Working, ORANGE, "working"),
-        (State::Waiting, AMBER, "waiting for you"),
+    for (state, color) in [
+        (State::Interrupted, RED),
+        (State::Working, ORANGE),
+        (State::Waiting, AMBER),
     ] {
         let n = app.count(state);
         if n > 0 {
-            parts.push(Span::styled(format!("{n} {word}"), Style::new().fg(color)));
+            let words = match state {
+                State::Interrupted => tr!(format!("{n} interrupted"), format!("{n} 个被打断")),
+                State::Working => tr!(format!("{n} working"), format!("{n} 个在忙")),
+                _ => tr!(format!("{n} waiting for you"), format!("{n} 个在等你")),
+            };
+            parts.push(Span::styled(words, Style::new().fg(color)));
             parts.push(Span::styled("  ·  ", Style::new().fg(FAINT)));
         }
     }
     let total = app.total;
     parts.push(Span::styled(
-        format!("{total} session{} ", if total == 1 { "" } else { "s" }),
+        tr!(
+            format!("{total} session{} ", if total == 1 { "" } else { "s" }),
+            format!("共 {total} 个会话 "),
+        ),
         grey(),
     ));
     let [line, _] = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(area);
@@ -178,7 +211,10 @@ fn draw_search(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(" ⌕ ", grey()),
             Span::styled(
-                "Search sessions, or type a name for a new one",
+                tr!(
+                    "Find a session, or type a name to start one",
+                    "搜一个会话，或者输入名字开个新的"
+                ),
                 Style::new().fg(FAINT),
             ),
         ])
@@ -186,7 +222,14 @@ fn draw_search(frame: &mut Frame, area: Rect, app: &App) {
     frame.render_widget(line, area);
     if typing {
         frame.render_widget(
-            Line::styled(format!("{} of {} ", app.matched, app.total), grey()).right_aligned(),
+            Line::styled(
+                tr!(
+                    format!("{} of {} ", app.matched, app.total),
+                    format!("{} / {} ", app.matched, app.total)
+                ),
+                grey(),
+            )
+            .right_aligned(),
             area,
         );
     }
@@ -234,9 +277,9 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
             Row::New => {
                 let q = app.query.trim();
                 let what = if q.is_empty() {
-                    "New session here".to_string()
+                    tr!("New session here", "在这里开个新会话").to_string()
                 } else {
-                    format!("New session \"{q}\"")
+                    tr!(format!("New session \"{q}\""), format!("新会话「{q}」"))
                 };
                 lines.push(ListLine {
                     line: Line::from(vec![
@@ -282,6 +325,29 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
 
 /// Folder names for the group titles; the full (short) path where two
 /// projects share a folder name.
+/// The header mark: whole when idle, five running dots while checking.
+fn mark(checking: bool, now_ms: i64) -> String {
+    if !checking {
+        return MARK.to_string();
+    }
+    let start = (now_ms / 120).rem_euclid(MARK_PATH.len() as i64) as usize;
+    let mut cells = [0u32; 2];
+    for k in 0..5 {
+        let (col, row) = MARK_PATH[(start + k) % MARK_PATH.len()];
+        let bit = match (col % 2, row) {
+            (0, 3) => 0x40,
+            (1, 3) => 0x80,
+            (0, r) => 1 << r,
+            (_, r) => 8 << r,
+        };
+        cells[usize::from(col / 2)] |= bit;
+    }
+    cells
+        .iter()
+        .filter_map(|c| char::from_u32(0x2800 + c))
+        .collect()
+}
+
 fn basename(path: &str) -> &str {
     path.rsplit('/').find(|s| !s.is_empty()).unwrap_or(path)
 }
@@ -425,21 +491,24 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
             let q = app.query.trim();
             lines.push(Line::styled(
                 if q.is_empty() {
-                    "New session".to_string()
+                    tr!("New session", "新会话").to_string()
                 } else {
-                    format!("New session \"{q}\"")
+                    tr!(format!("New session \"{q}\""), format!("新会话「{q}」"))
                 },
                 Style::new().add_modifier(Modifier::BOLD),
             ));
             lines.push(Line::styled(
-                "Starts Claude Code in its own tmux session.",
+                tr!(
+                    "A fresh Claude Code, in a tmux session of its own.",
+                    "一个全新的 Claude Code，住在自己的 tmux 会话里。"
+                ),
                 grey(),
             ));
             lines.push(Line::raw(""));
-            lines.push(label("Folder"));
+            lines.push(label(tr!("Folder", "目录")));
             lines.push(Line::raw(tilde(view.cwd, view.home)));
             lines.push(Line::raw(""));
-            lines.push(Line::from(vec![key("↵"), word(" Start")]));
+            lines.push(Line::from(vec![key("↵"), word(tr!(" Start", " 开始"))]));
         }
         _ => {
             let state = State::of(&item).unwrap_or(State::Plain);
@@ -464,6 +533,15 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
                     grey(),
                 ),
             ]));
+            if state == State::Interrupted {
+                lines.push(Line::styled(
+                    tr!(
+                        "The machine blinked. The conversation didn't.",
+                        "机器打了个盹，对话还在。"
+                    ),
+                    grey(),
+                ));
+            }
             let (note, preview) = match &item {
                 Item::Session(s) => (
                     s.claude.as_ref().and_then(|c| c.note.clone()),
@@ -474,20 +552,26 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
             };
             if let Some(n) = note {
                 lines.push(Line::raw(""));
-                lines.push(label("Note"));
+                lines.push(label(tr!("Note", "备注")));
                 lines.push(Line::styled(n, Style::new().fg(AMBER)));
             }
             if let Some(p) = preview {
                 lines.push(Line::raw(""));
-                lines.push(label("Last message"));
+                lines.push(label(tr!("Last message", "最后一句")));
                 lines.push(Line::raw(format!("“{p}”")));
             }
             if state == State::Plain {
                 lines.push(Line::raw(""));
-                lines.push(Line::styled("Not a Claude Code session.", grey()));
+                lines.push(Line::styled(
+                    tr!(
+                        "Just a plain tmux session, no Claude inside.",
+                        "普通的 tmux 会话，里面没有 Claude。"
+                    ),
+                    grey(),
+                ));
             }
             lines.push(Line::raw(""));
-            lines.push(label("Folder"));
+            lines.push(label(tr!("Folder", "目录")));
             let dir = item.dir().unwrap_or_default();
             let worktree = app
                 .projects()
@@ -507,16 +591,16 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
             }
             lines.push(Line::raw(""));
             let open = if state == State::Interrupted {
-                " Restore"
+                tr!(" Restore", " 恢复")
             } else {
-                " Open"
+                tr!(" Open", " 打开")
             };
             lines.push(Line::from(vec![
                 key("↵"),
                 word(open),
                 Span::raw("     "),
                 key("→"),
-                word(" More"),
+                word(tr!(" More", " 更多")),
             ]));
         }
     }
@@ -592,18 +676,27 @@ fn draw_overlay(frame: &mut Frame, card: Rect, app: &App, item: &Item, view: &Vi
                 Span::styled(format!(" {text} "), style)
             };
             let lines = vec![
-                Line::styled(" Closes its tmux session and Claude Code.", grey()),
+                Line::styled(
+                    tr!(
+                        " Closes its tmux session and the Claude inside. No undo.",
+                        " 会关掉它的 tmux 会话和里面的 Claude，没法撤销。"
+                    ),
+                    grey(),
+                ),
                 Line::raw(""),
                 Line::from(vec![
                     Span::raw(" "),
-                    button("Yes, end it", *yes, true),
+                    button(tr!("Yes, end it", "结束它"), *yes, true),
                     Span::raw("   "),
-                    button("Cancel", !*yes, false),
+                    button(tr!("Keep it", "再想想"), !*yes, false),
                 ]),
             ];
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Paragraph::new(lines).block(boxed(format!("End {title}?"))),
+                Paragraph::new(lines).block(boxed(tr!(
+                    format!("End {title}?"),
+                    format!("结束 {title}？")
+                ))),
                 area,
             );
         }
@@ -612,7 +705,8 @@ fn draw_overlay(frame: &mut Frame, card: Rect, app: &App, item: &Item, view: &Vi
             let inner = Block::bordered().inner(area);
             frame.render_widget(Clear, area);
             frame.render_widget(
-                Paragraph::new(Line::raw(format!(" {text}"))).block(boxed("Note".into())),
+                Paragraph::new(Line::raw(format!(" {text}")))
+                    .block(boxed(tr!("Note", "备注").into())),
                 area,
             );
             let x = inner.x + 1 + text.width() as u16;
@@ -631,25 +725,25 @@ fn draw_hint(frame: &mut Frame, area: Rect, app: &App) {
         match &app.mode {
             Mode::Browse => {
                 let open = match app.selected() {
-                    Some(Item::New) => " start",
-                    Some(Item::Interrupted(_)) => " restore",
-                    _ => " open",
+                    Some(Item::New) => tr!(" start", " 新建"),
+                    Some(Item::Interrupted(_)) => tr!(" restore", " 恢复"),
+                    _ => tr!(" open", " 打开"),
                 };
                 let esc = if app.query.is_empty() {
-                    " quit"
+                    tr!(" quit", " 退出")
                 } else {
-                    " clear"
+                    tr!(" clear", " 清空")
                 };
                 vec![
                     Span::raw(" "),
                     key("↑↓"),
-                    word(" move"),
+                    word(tr!(" move", " 移动")),
                     gap(),
                     key("↵"),
                     word(open),
                     gap(),
                     key("→"),
-                    word(" more"),
+                    word(tr!(" more", " 更多")),
                     gap(),
                     key("esc"),
                     word(esc),
@@ -658,32 +752,32 @@ fn draw_hint(frame: &mut Frame, area: Rect, app: &App) {
             Mode::Menu { .. } => vec![
                 Span::raw(" "),
                 key("↑↓"),
-                word(" choose"),
+                word(tr!(" choose", " 选择")),
                 gap(),
                 key("↵"),
-                word(" confirm"),
+                word(tr!(" confirm", " 确认")),
                 gap(),
                 key("←"),
-                word(" back"),
+                word(tr!(" back", " 返回")),
             ],
             Mode::Confirm { .. } => vec![
                 Span::raw(" "),
                 key("←→"),
-                word(" choose"),
+                word(tr!(" choose", " 选择")),
                 gap(),
                 key("↵"),
-                word(" confirm"),
+                word(tr!(" confirm", " 确认")),
                 gap(),
                 key("esc"),
-                word(" cancel"),
+                word(tr!(" cancel", " 取消")),
             ],
             Mode::Note { .. } => vec![
                 Span::raw(" "),
                 key("↵"),
-                word(" save"),
+                word(tr!(" save", " 保存")),
                 gap(),
                 key("esc"),
-                word(" cancel"),
+                word(tr!(" cancel", " 取消")),
             ],
         }
     };
@@ -735,23 +829,32 @@ fn short_path(path: &str, home: Option<&str>) -> String {
 /// `now`, `3m`, `2h`, `5d`: for the list.
 fn short_ago(ms: i64) -> String {
     let s = ms.max(0) / 1000;
-    match s {
-        0..=59 => "now".into(),
-        60..=3599 => format!("{}m", s / 60),
-        3600..=86_399 => format!("{}h", s / 3600),
-        _ => format!("{}d", s / 86_400),
+    match (s, crate::i18n::lang()) {
+        (0..=59, Lang::En) => "now".into(),
+        (0..=59, Lang::Zh) => "刚刚".into(),
+        (60..=3599, Lang::En) => format!("{}m", s / 60),
+        (60..=3599, Lang::Zh) => format!("{}分钟", s / 60),
+        (3600..=86_399, Lang::En) => format!("{}h", s / 3600),
+        (3600..=86_399, Lang::Zh) => format!("{}小时", s / 3600),
+        (_, Lang::En) => format!("{}d", s / 86_400),
+        (_, Lang::Zh) => format!("{}天", s / 86_400),
     }
 }
 
 /// `just now`, `3 minutes ago`: for the card.
 fn long_ago(ms: i64) -> String {
     let s = ms.max(0) / 1000;
-    let unit = |n: i64, u: &str| format!("{n} {u}{} ago", if n == 1 { "" } else { "s" });
+    let unit = |n: i64, en: &str, zh: &str| {
+        tr!(
+            format!("{n} {en}{} ago", if n == 1 { "" } else { "s" }),
+            format!("{n} {zh}前")
+        )
+    };
     match s {
-        0..=59 => "just now".into(),
-        60..=3599 => unit(s / 60, "minute"),
-        3600..=86_399 => unit(s / 3600, "hour"),
-        _ => unit(s / 86_400, "day"),
+        0..=59 => tr!("just now", "刚刚").into(),
+        60..=3599 => unit(s / 60, "minute", "分钟"),
+        3600..=86_399 => unit(s / 3600, "hour", "小时"),
+        _ => unit(s / 86_400, "day", "天"),
     }
 }
 
@@ -771,6 +874,7 @@ mod tests {
     fn render_icons(app: &App, w: u16, h: u16, nerd_icons: bool) -> (String, Buffer) {
         let view = View {
             nerd_icons,
+            checking: false,
             now_ms: 600_000,
             home: Some("/home/u"),
             host_prefix: Some("host-a"),
@@ -867,7 +971,7 @@ mod tests {
     fn one_line_rows_without_noise() {
         let (text, _) = render(&sample(), 110, 26);
         for want in [
-            "◉ cc-moss",
+            "⢎⡱ cc-moss",
             "1 working",
             "1 waiting for you",
             "3 sessions",
@@ -921,13 +1025,16 @@ mod tests {
         assert!(!text.contains("等供应商 key"), "{text}");
         key(&mut a, KeyCode::Down);
         let (text, _) = render(&a, 110, 26);
-        assert!(text.contains("Not a Claude Code session."), "{text}");
+        assert!(
+            text.contains("Just a plain tmux session, no Claude inside."),
+            "{text}"
+        );
         for _ in 0..5 {
             key(&mut a, KeyCode::Up);
         }
         let (text, _) = render(&a, 110, 26);
         assert!(
-            text.contains("Starts Claude Code")
+            text.contains("A fresh Claude Code")
                 && text.contains("~/projects")
                 && text.contains("↵ Start"),
             "{text}"
@@ -995,7 +1102,7 @@ mod tests {
         key(&mut a, KeyCode::Enter);
         let t = render(&a, 110, 26).0;
         assert!(
-            t.contains("End api-gw?") && t.contains("Yes, end it") && t.contains("Cancel"),
+            t.contains("End api-gw?") && t.contains("Yes, end it") && t.contains("Keep it"),
             "{t}"
         );
     }
@@ -1039,6 +1146,55 @@ mod tests {
         );
         let (text, _) = render_icons(&a, 140, 20, true);
         assert!(text.contains("\u{f0645} worktree · acme"), "{text}");
+    }
+
+    #[test]
+    fn working_dots_run_along_a_path() {
+        let dots = |f: &str| f.chars().next().unwrap() as u32 - 0x2800;
+        for (i, frame) in SPINNER.iter().enumerate() {
+            let next = SPINNER[(i + 1) % SPINNER.len()];
+            assert_eq!(dots(frame).count_ones(), 4, "{frame}");
+            assert_eq!(
+                (dots(frame) & dots(next)).count_ones(),
+                3,
+                "{frame} -> {next}"
+            );
+        }
+    }
+
+    #[test]
+    fn speaks_chinese() {
+        crate::i18n::set_for_test(crate::i18n::Lang::Zh);
+        let mut a = sample();
+        let (text, _) = render(&a, 110, 26);
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        for want in [
+            "共 3 个会话",
+            "1 个在忙",
+            "1 个在等你",
+            "搜一个会话",
+            "在这里开个新会话",
+            "备注",
+            "最后一句",
+            "目录",
+            "↵ 打开",
+            "→ 更多",
+            "↑↓ 移动",
+            "esc 退出",
+        ] {
+            assert!(text.contains(want), "missing {want:?} in\n{text}");
+        }
+        for unwanted in ["session", "Folder", "Open", "waiting"] {
+            assert!(!text.contains(unwanted), "English {unwanted:?} in\n{text}");
+        }
+        crate::i18n::set_for_test(crate::i18n::Lang::Zh);
+        key(&mut a, KeyCode::Right);
+        let (menu, _) = render(&a, 110, 26);
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        assert!(
+            menu.contains("写备注") && menu.contains("结束会话"),
+            "{menu}"
+        );
     }
 
     #[test]

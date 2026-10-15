@@ -60,6 +60,7 @@ pub fn run() -> Result<()> {
             .ui
             .icons
             .enabled(std::env::var("STARSHIP_SHELL").ok().as_deref()),
+        checking: true,
     };
 
     let action = {
@@ -108,15 +109,24 @@ fn event_loop(
     let mut hits = ui::HitMap::default();
     loop {
         view.now_ms = now_ms();
+        view.checking = reconcile.is_some();
         terminal.draw(|f| hits = ui::draw(f, app, view))?;
         let reconciled = match reconcile.take_if(|h| h.is_finished()) {
             Some(handle) => {
                 match handle.join() {
                     Ok(Ok(())) => {}
                     Ok(Err(e)) => {
-                        app.message = Some(format!("Could not check running sessions: {e:#}"))
+                        app.message = Some(tr!(
+                            format!("Could not check running sessions: {e:#}"),
+                            format!("没能检查正在运行的会话：{e:#}")
+                        ))
                     }
-                    Err(_) => app.message = Some("Could not check running sessions".into()),
+                    Err(_) => {
+                        app.message = Some(
+                            tr!("Could not check running sessions", "没能检查正在运行的会话")
+                                .into(),
+                        )
+                    }
                 }
                 true
             }
@@ -159,8 +169,14 @@ fn event_loop(
             }
             Action::Remove(r) => {
                 app.message = Some(match registry()?.close_by_user(&r.slot_id, now_ms()) {
-                    Ok(()) => format!("Removed {} from the list.", r.label()),
-                    Err(e) => format!("Could not remove: {e:#}"),
+                    Ok(()) => tr!(
+                        format!("Removed {} from the list.", r.label()),
+                        format!("已把 {} 移出列表。", r.label())
+                    ),
+                    Err(e) => tr!(
+                        format!("Could not remove it: {e:#}"),
+                        format!("没能移除：{e:#}")
+                    ),
                 });
                 let (sessions, interrupted) = load(tmux)?;
                 app.set_items(sessions, interrupted);
@@ -171,9 +187,12 @@ fn event_loop(
                     ..Notes::default()
                 };
                 app.message = Some(match registry()?.set_notes(&slot_id, &notes) {
-                    Ok(()) if text.is_empty() => "Note cleared.".into(),
-                    Ok(()) => "Note saved.".into(),
-                    Err(e) => format!("Could not save the note: {e:#}"),
+                    Ok(()) if text.is_empty() => tr!("Note cleared.", "备注已清空。").into(),
+                    Ok(()) => tr!("Note saved.", "备注已保存。").into(),
+                    Err(e) => tr!(
+                        format!("Could not save the note: {e:#}"),
+                        format!("备注没存上：{e:#}")
+                    ),
                 });
                 let (sessions, interrupted) = load(tmux)?;
                 app.set_items(sessions, interrupted);
@@ -201,8 +220,14 @@ fn end(item: &Item, tmux: &Tmux<ProcessRunner>) -> String {
         })
         .and_then(|()| tmux.kill_session(&s.tmux_id));
     match result {
-        Ok(()) => format!("Ended {}.", item.title()),
-        Err(e) => format!("Could not end {}: {e:#}", item.title()),
+        Ok(()) => tr!(
+            format!("Ended {}. It had a good run.", item.title()),
+            format!("已结束 {}，辛苦啦。", item.title())
+        ),
+        Err(e) => tr!(
+            format!("Could not end {}: {e:#}", item.title()),
+            format!("没能结束 {}：{e:#}", item.title())
+        ),
     }
 }
 

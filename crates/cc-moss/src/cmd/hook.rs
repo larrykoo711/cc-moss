@@ -179,8 +179,9 @@ fn warn_if_name_taken(
     };
     if registry.name_taken_by_other(&slot.slot_id, name)? {
         let msg = serde_json::json!({
-            "systemMessage": format!(
-                "cc-moss: another session is already named `{name}`. Names must be unique: /rename this one."
+            "systemMessage": tr!(
+                format!("cc-moss: another session is already named `{name}`. Names are one of a kind: /rename this one."),
+                format!("cc-moss：已经有另一个会话叫 `{name}` 了。名字不能重复，给这个会话 /rename 一下吧。")
             )
         });
         println!("{msg}");
@@ -191,8 +192,12 @@ fn warn_if_name_taken(
 /// A JSON `systemMessage` is the only thing a hook prints; Claude Code shows it to the user.
 fn warn_outside_tmux() {
     let msg = serde_json::json!({
-        "systemMessage": "cc-moss: this session is not running in tmux, so closing the terminal ends it. \
-    It is still recorded, and `cc-moss restore` can bring it back. Start sessions with `cc-moss new` to keep them alive."
+        "systemMessage": tr!(
+            "cc-moss: this session is not in tmux, so closing the terminal ends it. It is still recorded, \
+             and `cc-moss restore` can bring it back. Start sessions with `cc-moss new` to keep them alive.",
+            "cc-moss：这个会话不在 tmux 里，关掉终端它就结束了。不过它已经登记在案，`cc-moss restore` 能把它找回来。\
+             用 `cc-moss new` 开会话，就不怕终端被关。"
+        )
     });
     println!("{msg}");
 }

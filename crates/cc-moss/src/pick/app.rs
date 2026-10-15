@@ -36,10 +36,10 @@ impl State {
 
     pub fn label(self) -> &'static str {
         match self {
-            State::Working => "Working",
-            State::Waiting => "Waiting for you",
-            State::Interrupted => "Interrupted",
-            State::Plain => "tmux session",
+            State::Working => tr!("Working", "在忙"),
+            State::Waiting => tr!("Waiting for you", "在等你"),
+            State::Interrupted => tr!("Interrupted", "被打断了"),
+            State::Plain => tr!("tmux session", "tmux 会话"),
         }
     }
 }
@@ -90,11 +90,11 @@ pub enum Choice {
 impl Choice {
     pub fn label(self) -> &'static str {
         match self {
-            Choice::Open => "Open",
-            Choice::Restore => "Restore",
-            Choice::Note => "Write a note",
-            Choice::End => "End session",
-            Choice::Remove => "Remove from list",
+            Choice::Open => tr!("Open", "打开"),
+            Choice::Restore => tr!("Restore", "恢复"),
+            Choice::Note => tr!("Write a note", "写备注"),
+            Choice::End => tr!("End session", "结束会话"),
+            Choice::Remove => tr!("Remove from list", "从列表移除"),
         }
     }
 

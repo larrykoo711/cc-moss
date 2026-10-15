@@ -25,7 +25,9 @@ pub fn bin() -> Command {
     cmd.env("HOME", "/nonexistent/cc-moss-test-home")
         .env_remove("ZDOTDIR")
         .env_remove("XDG_CONFIG_HOME")
-        .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude");
+        .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
+        // Assertions are in English, whatever this machine's language is.
+        .env("CC_MOSS_LANG", "en");
     cmd
 }
 

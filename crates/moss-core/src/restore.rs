@@ -3,8 +3,6 @@
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
-use anyhow::{bail, Result};
-
 use crate::slot::{Slot, Status};
 
 /// A restore that started this recently and has not been confirmed yet is
@@ -105,7 +103,7 @@ const MIN_ID_PREFIX: usize = 6;
 /// Find one slot by Claude session name, else tmux session name, else a
 /// session id prefix of at least six characters. Open slots (running or
 /// interrupted) win over closed ones with the same name.
-pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> Result<&'a Slot> {
+pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Slot, ResolveError> {
     let tiers: [&dyn Fn(&Slot) -> bool; 3] = [
         &|s| s.name.as_deref() == Some(query),
         &|s| s.tmux.as_ref().and_then(|t| t.session_name.as_deref()) == Some(query),
@@ -127,18 +125,50 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> Result<&'a Slot> {
         match pick.as_slice() {
             [] => continue,
             [one] => return Ok(one),
-            many => bail!(
+            many => {
+                return Err(ResolveError::Ambiguous {
+                    query: query.to_string(),
+                    matches: many
+                        .iter()
+                        .map(|s| {
+                            format!(
+                                "{} ({})",
+                                s.name.as_deref().unwrap_or("-"),
+                                s.session_id.chars().take(8).collect::<String>()
+                            )
+                        })
+                        .collect(),
+                })
+            }
+        }
+    }
+    Err(ResolveError::NotFound(query.to_string()))
+}
+
+/// Why a name did not pick exactly one session. Callers word it for the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ResolveError {
+    NotFound(String),
+    /// `matches` are "name (id prefix)".
+    Ambiguous {
+        query: String,
+        matches: Vec<String>,
+    },
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ResolveError::NotFound(q) => {
+                write!(f, "no session named `{q}` (see `cc-moss ls --all`)")
+            }
+            ResolveError::Ambiguous { query, matches } => write!(
+                f,
                 "`{query}` matches several sessions: {} (use an id prefix)",
-                many.iter()
-                    .map(|s| format!(
-                        "{} ({})",
-                        s.name.as_deref().unwrap_or("-"),
-                        s.session_id.chars().take(8).collect::<String>()
-                    ))
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                matches.join(", ")
             ),
         }
     }
-    bail!("no session named `{query}` (see `cc-moss ls --all`)")
 }
+
+impl std::error::Error for ResolveError {}

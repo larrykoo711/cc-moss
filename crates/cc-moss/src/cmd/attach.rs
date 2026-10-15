@@ -5,24 +5,35 @@ use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use moss_core::registry::Registry;
-use moss_core::restore::resolve;
+
 use moss_core::store_dir;
 use moss_core::tmux::Socket;
 
 pub fn run(name: &str) -> Result<()> {
     let registry = Registry::open(&store_dir::registry_path())?;
     let slots = registry.slots()?;
-    let slot = resolve(&slots, name)?;
+    let slot = super::resolve(&slots, name)?;
     // A stopped session's tmux ids belong to a dead server and may now point
     // at another session.
     if slot.effective_status(moss_core::proc::is_alive) != moss_core::slot::Status::Running {
-        bail!("`{name}` is not running; see `cc-moss restore`");
+        bail!(tr!(
+            format!(
+                "`{name}` is not running right now; bring it back with `cc-moss restore {name}`"
+            ),
+            format!("`{name}` 现在没在运行，可以用 `cc-moss restore {name}` 把它叫回来")
+        ));
     }
     let Some(loc) = slot.tmux.as_ref() else {
-        bail!("`{name}` is not running in tmux");
+        bail!(tr!(
+            format!("`{name}` is not running in tmux"),
+            format!("`{name}` 不在 tmux 里运行")
+        ));
     };
     let Some(target) = loc.session_id.as_deref().or(loc.session_name.as_deref()) else {
-        bail!("`{name}` has no known tmux session");
+        bail!(tr!(
+            format!("`{name}` has no known tmux session"),
+            format!("`{name}` 没有登记过 tmux 会话")
+        ));
     };
     attach_tmux(&Socket::Path(loc.socket.clone()), target)
 }

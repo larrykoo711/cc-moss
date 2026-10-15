@@ -45,6 +45,8 @@ pub struct TmuxConfig {
 #[serde(default)]
 pub struct UiConfig {
     pub icons: Icons,
+    /// "auto" (or unset), "en" or "zh".
+    pub language: Option<String>,
 }
 
 /// Whether to draw Nerd Font icons.

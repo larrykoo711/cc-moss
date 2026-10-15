@@ -24,7 +24,10 @@ fn decide(yes: bool, stdin_is_tty: bool) -> Confirm {
 }
 
 fn is_yes(answer: &str) -> bool {
-    matches!(answer.trim().to_ascii_lowercase().as_str(), "y" | "yes")
+    matches!(
+        answer.trim().to_ascii_lowercase().as_str(),
+        "y" | "yes" | "是" | "好" | "确定"
+    )
 }
 
 /// `Ok(true)` to go ahead, `Ok(false)` if the user said no, an error when no
@@ -41,7 +44,10 @@ pub fn ask_default_yes(yes: bool, question: &str, refused: &str) -> Result<bool>
 fn prompt(yes: bool, question: &str, refused: &str, default_yes: bool) -> Result<bool> {
     match decide(yes, io::stdin().is_terminal()) {
         Confirm::Proceed => Ok(true),
-        Confirm::Refuse => bail!("stdin is not a terminal, so cc-moss cannot ask; {refused}"),
+        Confirm::Refuse => bail!(tr!(
+            format!("stdin is not a terminal, so cc-moss cannot ask; {refused}"),
+            format!("当前不是交互式终端，没法问你；{refused}")
+        )),
         Confirm::Ask => {
             let hint = if default_yes { "[Y/n]" } else { "[y/N]" };
             print!("{question} {hint} ");

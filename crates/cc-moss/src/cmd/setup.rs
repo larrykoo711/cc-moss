@@ -38,7 +38,8 @@ struct Change {
     path: PathBuf,
     original: Option<String>,
     new_text: String,
-    done: &'static str,
+    /// What to say once written.
+    done: String,
 }
 
 pub fn run(opts: Options) -> Result<()> {
@@ -55,36 +56,52 @@ pub fn run(opts: Options) -> Result<()> {
 
     for c in &changes {
         println!("--- {}", c.path.display());
-        println!("+++ {} (after setup)", c.path.display());
+        println!(
+            "+++ {} {}",
+            c.path.display(),
+            tr!("(after setup)", "（setup 之后）")
+        );
         print!(
             "{}",
             unified_diff(c.original.as_deref().unwrap_or(""), &c.new_text, 3)
         );
     }
     if opts.dry_run {
-        println!("Dry run: nothing written.");
+        println!(
+            "{}",
+            tr!("Dry run: nothing written.", "演练模式：什么都没写入。")
+        );
         return Ok(());
     }
     let question = if changes.len() == 1 {
-        format!("Apply this change to {}?", changes[0].path.display())
+        tr!(
+            format!("Apply this change to {}?", changes[0].path.display()),
+            format!("把上面的改动写入 {}？", changes[0].path.display())
+        )
     } else {
-        format!("Apply these changes to {} files?", changes.len())
+        tr!(
+            format!("Apply these changes to {} files?", changes.len()),
+            format!("把上面的改动写入这 {} 个文件？", changes.len())
+        )
     };
     if !confirm::ask(
         opts.yes,
         &question,
-        "re-run with --yes to apply the diff above",
+        tr!(
+            "re-run with --yes to apply the diff above",
+            "加上 --yes 重新运行即可应用上面的改动"
+        ),
     )? {
-        println!("Aborted: nothing written.");
+        println!("{}", tr!("Okay, nothing written.", "好的，什么都没动。"));
         return Ok(());
     }
     for c in &changes {
         if let Some(text) = &c.original {
             let backup = write_backup(&c.path, text.as_bytes())?;
-            println!("Backup: {}", backup.display());
+            println!("{} {}", tr!("Backup:", "备份："), backup.display());
         }
         write_atomically(&c.path, c.new_text.as_bytes())?;
-        println!("{} {}", c.done, c.path.display());
+        println!("{}", c.done);
     }
     Ok(())
 }
@@ -120,21 +137,48 @@ fn settings_change(opts: &Options) -> Result<Option<Change>> {
     // should not be rewritten when nothing changes semantically.
     if new_doc == old_doc && (original.is_some() || opts.uninstall) {
         if opts.uninstall {
-            println!("No cc-moss hooks in {}; nothing to remove.", path.display());
+            println!(
+                "{}",
+                tr!(
+                    format!("No cc-moss hooks in {}; nothing to remove.", path.display()),
+                    format!("{} 里没有 cc-moss 钩子，不用移除。", path.display())
+                )
+            );
         } else {
-            println!("cc-moss hooks in {} are up to date.", path.display());
+            println!(
+                "{}",
+                tr!(
+                    format!(
+                        "cc-moss hooks in {} are already up to date.",
+                        path.display()
+                    ),
+                    format!("{} 里的 cc-moss 钩子已是最新。", path.display())
+                )
+            );
         }
         return Ok(None);
     }
     Ok(Some(Change {
-        path,
         original,
         new_text: to_claude_string(&new_doc),
         done: if opts.uninstall {
-            "Removed the cc-moss hooks from"
+            tr!(
+                format!("Removed the cc-moss hooks from {}.", path.display()),
+                format!("已从 {} 移除 cc-moss 钩子。", path.display())
+            )
         } else {
-            "Installed the cc-moss hooks (new Claude Code sessions register with cc-moss) in"
+            tr!(
+                format!(
+                    "Installed the cc-moss hooks in {}. New Claude Code sessions will check in automatically.",
+                    path.display()
+                ),
+                format!(
+                    "已在 {} 装好 cc-moss 钩子，之后新开的 Claude Code 会话会自动登记。",
+                    path.display()
+                )
+            )
         },
+        path,
     }))
 }
 
@@ -146,8 +190,17 @@ fn zshrc_change(opts: &Options) -> Result<Option<Change>> {
     let Some(original) = read_optional(&path)? else {
         if !opts.uninstall {
             println!(
-                "No {}; skipping the `t` shortcut (add `function t {{ cc-moss pick \"$@\"; }}` to your shell yourself).",
-                path.display()
+                "{}",
+                tr!(
+                    format!(
+                        "No {}, so no `t` shortcut. Add `function t {{ cc-moss pick \"$@\"; }}` to your shell yourself.",
+                        path.display()
+                    ),
+                    format!(
+                        "没找到 {}，先不加 `t` 快捷命令。可以自己把 `function t {{ cc-moss pick \"$@\"; }}` 加进 shell 配置。",
+                        path.display()
+                    )
+                )
             );
         }
         return Ok(None);
@@ -160,19 +213,40 @@ fn zshrc_change(opts: &Options) -> Result<Option<Change>> {
     .with_context(|| format!("cannot update {}", path.display()))?;
     if new_text == original {
         if !opts.uninstall {
-            println!("The `t` shortcut in {} is up to date.", path.display());
+            println!(
+                "{}",
+                tr!(
+                    format!(
+                        "The `t` shortcut in {} is already up to date.",
+                        path.display()
+                    ),
+                    format!("{} 里的 `t` 快捷命令已是最新。", path.display())
+                )
+            );
         }
         return Ok(None);
     }
     Ok(Some(Change {
-        path,
         original: Some(original),
         new_text,
         done: if opts.uninstall {
-            "Removed the `t` shortcut from"
+            tr!(
+                format!("Removed the `t` shortcut from {}.", path.display()),
+                format!("已从 {} 移除 `t` 快捷命令。", path.display())
+            )
         } else {
-            "Added the `t` shortcut (open a new shell or `source` it) to"
+            tr!(
+                format!(
+                    "Added the `t` shortcut to {}. Open a new terminal (or `source` it) and type `t`.",
+                    path.display()
+                ),
+                format!(
+                    "已在 {} 加好 `t` 快捷命令。开个新终端（或 `source` 一下），敲 `t` 试试。",
+                    path.display()
+                )
+            )
         },
+        path,
     }))
 }
 

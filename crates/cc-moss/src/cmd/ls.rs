@@ -4,6 +4,7 @@ use anyhow::Result;
 use moss_core::proc;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
 use serde_json::{json, Value};
+use unicode_width::UnicodeWidthStr;
 
 pub const JSON_SCHEMA: u32 = 1;
 
@@ -65,7 +66,13 @@ fn to_json(st: Status, s: &Slot) -> Value {
 
 fn print_table(rows: &[(Status, Slot)]) {
     if rows.is_empty() {
-        println!("No sessions yet. Start Claude Code with the cc-moss hooks installed.");
+        println!(
+            "{}",
+            tr!(
+                "No sessions yet. Start one with `cc-moss new <name>`, or just type `t`.",
+                "还没有会话。用 `cc-moss new <名字>` 开一个，或者直接敲 `t`。"
+            )
+        );
         return;
     }
     let now = now_ms();
@@ -73,7 +80,7 @@ fn print_table(rows: &[(Status, Slot)]) {
         .iter()
         .map(|(st, s)| {
             [
-                st.as_str().to_string(),
+                status_word(*st).to_string(),
                 s.name.clone().unwrap_or_else(|| short_id(&s.session_id)),
                 ago(now - s.last_active_at_ms),
                 s.tmux
@@ -89,11 +96,15 @@ fn print_table(rows: &[(Status, Slot)]) {
             ]
         })
         .collect();
-    let header = ["STATUS", "NAME", "ACTIVE", "TMUX", "NOTE", "CWD"].map(String::from);
-    let mut widths = header.clone().map(|h| h.chars().count());
+    let header = tr!(
+        ["STATUS", "NAME", "ACTIVE", "TMUX", "NOTE", "CWD"],
+        ["状态", "名字", "活动", "TMUX", "备注", "目录"]
+    )
+    .map(String::from);
+    let mut widths = header.clone().map(|h| h.width());
     for l in &lines {
         for (w, cell) in widths.iter_mut().zip(l) {
-            *w = (*w).max(cell.chars().count());
+            *w = (*w).max(cell.width());
         }
     }
     for l in std::iter::once(&header).chain(&lines) {
@@ -101,13 +112,15 @@ fn print_table(rows: &[(Status, Slot)]) {
             .iter()
             .zip(widths)
             .enumerate()
-            .map(|(i, (c, w))| {
-                if i == 5 {
-                    c.clone()
-                } else {
-                    format!("{c:<w$}")
-                }
-            })
+            .map(
+                |(i, (c, w))| {
+                    if i == 5 {
+                        c.clone()
+                    } else {
+                        super::pad(c, w)
+                    }
+                },
+            )
             .collect();
         println!("{}", cells.join("  "));
     }
@@ -124,5 +137,13 @@ fn ago(ms: i64) -> String {
         60..=3599 => format!("{}m", s / 60),
         3600..=86_399 => format!("{}h", s / 3600),
         _ => format!("{}d", s / 86_400),
+    }
+}
+
+fn status_word(st: Status) -> &'static str {
+    match st {
+        Status::Running => tr!("running", "运行中"),
+        Status::Interrupted => tr!("interrupted", "已中断"),
+        Status::Closed => tr!("closed", "已关闭"),
     }
 }

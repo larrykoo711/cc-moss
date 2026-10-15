@@ -78,7 +78,13 @@ pub fn run(args: NewArgs) -> Result<()> {
     tmux.new_session(&tmux_name, &cwd.to_string_lossy(), &argv)
         .context("start tmux session")?;
     // The registry learns about the session from its SessionStart hook.
-    println!("Started {name} in tmux session {tmux_name}");
+    println!(
+        "{}",
+        tr!(
+            format!("Started {name} in tmux session {tmux_name}."),
+            format!("已启动 {name}（tmux 会话 {tmux_name}）。")
+        )
+    );
 
     if args.detach {
         return Ok(());
@@ -109,22 +115,35 @@ fn existing_session(
     let (status, slot) = match rows.as_slice() {
         [] => return Ok(None),
         [one] => (one.0, &one.1),
-        many => bail!(
-            "several open sessions are named `{name}`: {}; close the extra ones with `cc-moss close <id>`",
-            many.iter()
+        many => {
+            let ids = many
+                .iter()
                 .map(|(_, s)| s.session_id.chars().take(8).collect::<String>())
                 .collect::<Vec<_>>()
-                .join(", ")
-        ),
+                .join(", ");
+            bail!(tr!(
+                format!("several open sessions are named `{name}`: {ids}; close the extra ones with `cc-moss close <id>`"),
+                format!("有好几个未关闭的会话都叫 `{name}`：{ids}；用 `cc-moss close <id>` 关掉多余的")
+            ))
+        }
     };
 
     if status == Status::Running {
-        println!("{name} is already running; attaching.");
+        println!(
+            "{}",
+            tr!(
+                format!("{name} is already running; taking you there."),
+                format!("{name} 已经在运行了，带你过去。")
+            )
+        );
         if detach {
             return Ok(Some(Ok(())));
         }
         let Some(loc) = slot.tmux.as_ref() else {
-            bail!("{name} is already running outside tmux");
+            bail!(tr!(
+                format!("{name} is already running outside tmux"),
+                format!("{name} 已经在 tmux 之外运行了")
+            ));
         };
         let target = loc
             .session_id
@@ -147,24 +166,48 @@ fn existing_session(
         Some(Verdict::EmptySession) => {
             // It never got a message: nothing to lose, start over under the same name.
             registry.close_by_user(&slot.slot_id, now_ms())?;
-            println!("{name} was interrupted before its first message; starting a new session.");
+            println!(
+                "{}",
+                tr!(
+                    format!("{name} was interrupted before its first message; starting fresh."),
+                    format!("{name} 还没说上话就被打断了，直接重新开一个。")
+                )
+            );
             return Ok(None);
         }
-        Some(other) => bail!(
-            "{name} was interrupted and cannot be restored ({other:?}); free the name with `cc-moss close {name}`"
-        ),
+        Some(other) => bail!(tr!(
+            format!("{name} was interrupted and cannot be restored ({other:?}); free the name with `cc-moss close {name}`"),
+            format!("{name} 被打断了，但没法恢复（{other:?}）；用 `cc-moss close {name}` 把名字腾出来")
+        )),
         None => return Ok(None),
     }
-    let question = format!("{name} was interrupted. Restore it?");
-    let refused = format!("run `cc-moss restore {name}` (or `cc-moss new {name} --yes`)");
+    let question = tr!(
+        format!("{name} was interrupted. Bring it back?"),
+        format!("{name} 之前被打断了，要恢复它吗？")
+    );
+    let refused = tr!(
+        format!("run `cc-moss restore {name}` (or `cc-moss new {name} --yes`)"),
+        format!("运行 `cc-moss restore {name}`（或 `cc-moss new {name} --yes`）")
+    );
     if !confirm::ask_default_yes(yes, &question, &refused)? {
-        bail!("{name} is taken by an interrupted session; restore it or `cc-moss close {name}`");
+        bail!(tr!(
+            format!(
+                "{name} is taken by an interrupted session; restore it or `cc-moss close {name}`"
+            ),
+            format!("{name} 这个名字被一个中断的会话占着；恢复它，或者 `cc-moss close {name}`")
+        ));
     }
     let mut launcher = Launcher::new(config)?;
     let tmux_name = match launcher.launch(&registry, slot)? {
         Launched::Started(t) => t,
-        Launched::Changed => bail!("{name} changed meanwhile (resumed elsewhere?); try again"),
-        Launched::Failed => bail!("could not restore {name}"),
+        Launched::Changed => bail!(tr!(
+            format!("{name} changed meanwhile (resumed elsewhere?); try again"),
+            format!("{name} 刚刚有了变化（可能已在别处恢复？），再试一次")
+        )),
+        Launched::Failed => bail!(tr!(
+            format!("could not restore {name}"),
+            format!("没能恢复 {name}")
+        )),
     };
     if detach {
         return Ok(Some(Ok(())));
