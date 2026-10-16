@@ -22,7 +22,7 @@ jobs:
     name: third-party licenses
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
@@ -32,7 +32,7 @@ jobs:
       # Binary archives must carry the notices of every dependency compiled in
       # (MIT/Apache require it; nucleo-matcher is MPL-2.0, source linked there).
       - run: cargo bundle-licenses --format toml --output THIRD-PARTY-LICENSES.toml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: third-party-licenses
           path: THIRD-PARTY-LICENSES.toml
@@ -51,7 +51,7 @@ jobs:
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           ref: ${{ env.TAG }}
       - uses: dtolnay/rust-toolchain@stable
@@ -74,7 +74,7 @@ jobs:
       - name: Smoke test
         if: matrix.target != 'x86_64-apple-darwin' || runner.arch == 'X64'
         run: ./target/${{ matrix.target }}/release/cc-moss --version | tee /dev/stderr | grep -q "^cc-moss "
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           name: third-party-licenses
       - name: Package
@@ -92,7 +92,7 @@ jobs:
             tar --uid 0 --gid 0 -C dist -czf "dist/$name.tar.gz" "$name"
           fi
           cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: |
@@ -108,8 +108,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
@@ -152,9 +152,9 @@ jobs:
             echo "::notice::No TAP_DEPLOY_KEY secret: update Formula/cc-moss.rb in larrykoo711/homebrew-tap by hand"
           fi
       - if: steps.token.outputs.ok == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
       - if: steps.token.outputs.ok == 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           repository: larrykoo711/homebrew-tap
           ssh-key: ${{ secrets.TAP_DEPLOY_KEY }}

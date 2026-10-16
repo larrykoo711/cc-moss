@@ -215,7 +215,7 @@ impl Registry {
                         id
                     }
                     None => {
-                        let id = Ulid::new().to_string();
+                        let id = Ulid::generate().to_string();
                         tx.execute(
                             "INSERT INTO slots (slot_id, agent, session_id, cwd, pid, pid_start,
                                status, created_at, last_active_at)
