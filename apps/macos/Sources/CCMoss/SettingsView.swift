@@ -358,6 +358,7 @@ struct GeneralSettings: View {
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
         }
+        MenuBarSettings(model: model)
         SettingsCard(title: "cc-moss") {
             CardRow(
                 title: L.t("Program", "程序位置"),

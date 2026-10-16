@@ -13,6 +13,10 @@ enum Render {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
+        if let state = value("--icon") {
+            icon(state, args: args, out: out)
+            return
+        }
         guard let demo = value("--demo"), let data = FileManager.default.contents(atPath: demo) else {
             FileHandle.standardError.write(Data("--render needs --demo <ls --json file>\n".utf8))
             exit(2)
@@ -43,6 +47,72 @@ enum Render {
             exit(0)
         }
         RunLoop.main.run()
+    }
+
+    /// The menu bar icon on a stand-in menu bar, for reviewing its frames.
+    ///
+    ///   CCMoss --render out.png --icon working|waiting|needsYou|interrupted|idle|all
+    ///          [--frame n | --sheet] [--count n] [--dark] [--scale 1|2]
+    ///
+    /// `--sheet` lays out every frame of the state left to right; `all` shows
+    /// each state's first frame. Template states are drawn in the bar's text colour.
+    @MainActor static func icon(_ name: String, args: [String], out: String) {
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        let states: [String: IconState] = [
+            "working": .working, "waiting": .waiting, "needsYou": .needsYou,
+            "interrupted": .interrupted, "idle": .idle,
+        ]
+        let frames: [IconFrame]
+        if name == "all" {
+            frames = [.needsYou, .interrupted, .working, .waiting, .idle].map { IconFrame(state: $0, index: 0) }
+        } else if let state = states[name] {
+            if args.contains("--sheet") {
+                frames = (0..<IconMotion.frameCount(state)).map { IconFrame(state: state, index: $0) }
+            } else {
+                let n = Int(value("--frame") ?? "0") ?? 0
+                frames = [IconFrame(state: state, index: n % IconMotion.frameCount(state))]
+            }
+        } else {
+            FileHandle.standardError.write(Data("--icon: one of \(states.keys.sorted().joined(separator: ", ")), all\n".utf8))
+            exit(2)
+        }
+        let badge = value("--count").flatMap(Int.init)
+        let dark = args.contains("--dark")
+        let scale = CGFloat(Double(value("--scale") ?? "2") ?? 2)
+        let cell = StatusIcon.size(badge: badge)
+        let pad: CGFloat = 8
+        let bar: CGFloat = 24
+        let width = pad + CGFloat(frames.count) * (cell.width + pad)
+        let pixels = NSSize(width: (width * scale).rounded(), height: (bar * scale).rounded())
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(pixels.width), pixelsHigh: Int(pixels.height),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let gc = NSGraphicsContext(bitmapImageRep: rep) else { exit(1) }
+        let ctx = gc.cgContext
+        // y-down, in points.
+        ctx.translateBy(x: 0, y: pixels.height)
+        ctx.scaleBy(x: scale, y: -scale)
+        let background = dark ? NSColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1) : NSColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1)
+        ctx.setFillColor(background.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: bar))
+        let ink = dark ? NSColor.white : NSColor.black.withAlphaComponent(0.85)
+        for (i, frame) in frames.enumerated() {
+            let x = pad + CGFloat(i) * (cell.width + pad)
+            StatusIcon.draw(frame, badge: badge, in: ctx, rect: CGRect(x: x, y: 0, width: cell.width, height: bar), ink: ink)
+        }
+        ctx.flush()
+        guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
+        do {
+            try png.write(to: URL(fileURLWithPath: out))
+        } catch {
+            FileHandle.standardError.write(Data("\(error)\n".utf8))
+            exit(1)
+        }
+        exit(0)
     }
 
     @MainActor static func preview(args: [String]) {

@@ -9,8 +9,8 @@ struct CCMossApp: App {
         MenuBarExtra {
             PanelView(model: model)
         } label: {
-            Image(nsImage: StatusIcon.image)
-                .accessibilityLabel("cc-moss")
+            Image(nsImage: model.icon.image)
+                .accessibilityLabel("cc-moss: " + model.icon.state.label)
         }
         .menuBarExtraStyle(.window)
 

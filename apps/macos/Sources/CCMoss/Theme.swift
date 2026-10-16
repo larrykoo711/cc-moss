@@ -63,6 +63,8 @@ enum Icons {
     static let update = "arrow.down.circle"
     static let github = "chevron.left.forwardslash.chevron.right"
     static let copied = "checkmark.circle.fill"
+    /// A session is asking you something (permission, a question).
+    static let needsYou = "hand.raised"
 
     static func state(_ state: SessionState) -> String {
         switch state {
