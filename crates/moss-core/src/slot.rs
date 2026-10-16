@@ -111,3 +111,43 @@ pub fn now_ms() -> i64 {
         .unwrap_or_default();
     i64::try_from(d.as_millis()).unwrap_or(i64::MAX)
 }
+
+/// What the picker shows as a session's last message: the first line that
+/// has words in it, at most 200 characters. Claude Code wraps some prompts in
+/// its own markup (messages from other sessions, slash commands); those tags
+/// are taken off so the words show, and a line that is only a tag is skipped.
+pub fn prompt_preview(prompt: &str) -> Option<String> {
+    prompt
+        .lines()
+        .map(strip_markup)
+        .find(|l| !l.is_empty())
+        .map(|l| l.chars().take(200).collect())
+}
+
+/// `line` without a Claude Code tag at its start or end. Those tags have a
+/// hyphen in their name (`cross-session-message`, `command-name`); plain
+/// HTML like `<div>` does not, so a question about HTML stays as written.
+fn strip_markup(line: &str) -> &str {
+    let mut s = line.trim();
+    if let Some(end) = s.find('>').filter(|_| s.starts_with('<')) {
+        if is_markup_tag(&s[1..end]) {
+            s = s[end + 1..].trim_start();
+        }
+    }
+    if let Some(start) = s.rfind("</").filter(|_| s.ends_with('>')) {
+        if is_markup_tag(&s[start + 1..s.len() - 1]) {
+            s = s[..start].trim_end();
+        }
+    }
+    s
+}
+
+/// `name attr="…"` or `/name` where the name looks like Claude Code's markup.
+fn is_markup_tag(inside: &str) -> bool {
+    let name = inside.trim_start_matches('/');
+    let name = name.split_whitespace().next().unwrap_or_default();
+    name.contains('-')
+        && name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-' || c == '_')
+}

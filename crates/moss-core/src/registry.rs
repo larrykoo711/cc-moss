@@ -877,8 +877,6 @@ fn record_session(
     Ok(())
 }
 
-/// The first non-empty line of a prompt, at most 200 characters.
 fn preview(prompt: &str) -> Option<String> {
-    let line = prompt.lines().map(str::trim).find(|l| !l.is_empty())?;
-    Some(line.chars().take(200).collect())
+    crate::slot::prompt_preview(prompt)
 }
