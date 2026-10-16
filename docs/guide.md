@@ -192,10 +192,18 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 
 ## 常见问题
 
-**装完后提示 `t: command not found`。** 新开一个终端（或执行 `exec zsh`），让 `~/.zshrc` 重新加载。
+**装完后提示 `t: command not found`**
 
-**我用 bash 或 fish。** `cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。用 `cc-moss pick`（或给它绑个键）代替 `t`。
+新开一个终端（或执行 `exec zsh`），让 `~/.zshrc` 重新加载。
 
-**有会话没被登记上。** 运行 `cc-moss doctor`：它会检查钩子、tmux、提示符和各个工具，并告诉你每一项怎么修。
+**我用 bash 或 fish**
 
-**我有好几台机器。** 每台机器各有自己的登记表。`host_prefix` 默认开启，tmux 会话名带着 `<主机名>_` 前缀，ssh 过去也分得清。
+`cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。用 `cc-moss pick`（或给它绑个键）代替 `t`。
+
+**有会话没被登记上**
+
+运行 `cc-moss doctor`：它会检查钩子、tmux、提示符和各个工具，并告诉你每一项怎么修。
+
+**我有好几台机器**
+
+每台机器各有自己的登记表。`host_prefix` 默认开启，tmux 会话名带着 `<主机名>_` 前缀，ssh 过去也分得清。
