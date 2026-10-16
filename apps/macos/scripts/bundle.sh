@@ -47,6 +47,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>cc-moss</string>
   <key>CFBundleExecutable</key><string>cc-moss</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
   <key>CFBundleVersion</key><string>$version</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
@@ -59,6 +60,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+# Finder, the notification banners and System Settings show this icon
+# (scripts/make-icon.sh renders it from docs/assets/icon.svg).
+cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 # The Automation prompt in the user's language.
 mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
 printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_en" > "$app/Contents/Resources/en.lproj/InfoPlist.strings"

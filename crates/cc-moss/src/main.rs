@@ -91,12 +91,12 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         zshrc: Option<std::path::PathBuf>,
     },
-    /// Set up the terminal: hooks, tmux, starship and shell blocks, then the tools they need.
+    /// Set up the terminal: hooks, tmux, starship and shell blocks, then the tools they need (and the menubar app on macOS).
     Install {
         /// Also install an optional part: aliases.
         #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
         with: Vec<cmd::install::Part>,
-        /// Leave a part out: hooks, tmux, starship, shell or aliases.
+        /// Leave a part out: hooks, tmux, starship, shell, app or aliases.
         #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
         skip: Vec<cmd::install::Part>,
         /// Replace an existing starship config with cc-moss's.

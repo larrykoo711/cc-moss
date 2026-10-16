@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use moss_core::update::{self, Version};
 
-use super::confirm;
+use super::{app, confirm};
 
 /// `cc-moss update` asks for the latest version with this much patience.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -178,7 +178,8 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let method = Method::detect(&current_exe()?);
+    let exe = current_exe()?;
+    let method = Method::detect(&exe);
     println!();
     match (&method, method.command(&latest)) {
         (Method::Homebrew, Some(cmd)) => println!(
@@ -234,6 +235,12 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         managed => {
             run_manager(&managed.command(&latest).expect("a package manager"))?;
             confirm_upgraded(managed, &latest)?;
+            // Homebrew's new keg carries the new app; cargo builds none.
+            let new_app = managed
+                .installed_path(&exe)
+                .and_then(|p| std::fs::canonicalize(p).ok())
+                .and_then(|p| app::bundled_near(&p));
+            app::follow_update(new_app.as_deref());
         }
     }
     println!(
@@ -340,7 +347,11 @@ fn replace_self(exe: &Path, version: &Version) -> Result<()> {
         ))));
     }
     let work = WorkDir(work);
-    swap_in(exe, version, &work.0, &url, &tarball, &name).map_err(unchanged)
+    swap_in(exe, version, &work.0, &url, &tarball, &name).map_err(unchanged)?;
+    // The macOS archive carries the app next to the binary; take it before
+    // the work folder goes.
+    app::follow_update(app::bundled_near(&work.0.join(&name).join("cc-moss")).as_deref());
+    Ok(())
 }
 
 fn swap_in(

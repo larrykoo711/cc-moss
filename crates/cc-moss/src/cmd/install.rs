@@ -13,7 +13,7 @@ use moss_core::managed_block;
 use moss_core::platform::{install_commands, on_path, without_sudo, Platform, Tool};
 
 use super::files::{self, read_optional, Change, Removal};
-use super::{alias, confirm, setup};
+use super::{alias, app, confirm, setup};
 
 pub const TMUX_CONF: &str = include_str!("../../assets/tmux.conf");
 pub const STARSHIP_TOML: &str = include_str!("../../assets/starship.toml");
@@ -29,7 +29,8 @@ pub const TAG_PATH: &str = "cc-moss: path";
 pub const TAG_ALIASES: &str = "cc-moss: aliases";
 
 /// What `install` can set up: hooks (Claude Code hooks and `t`), tmux,
-/// starship, shell (ssh reset, PATH for scripts) and the optional aliases.
+/// starship, shell (ssh reset, PATH for scripts), the menubar app (macOS)
+/// and the optional aliases.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
 pub enum Part {
     Hooks,
@@ -37,6 +38,7 @@ pub enum Part {
     Starship,
     Shell,
     Aliases,
+    App,
 }
 
 pub struct Options {
@@ -326,6 +328,10 @@ pub fn run(opts: Options) -> Result<()> {
         }
     } else if !files::apply(&changes, &notes, opts.dry_run, opts.yes, "install")? && !opts.dry_run {
         return Ok(());
+    }
+
+    if opts.wants(Part::App) {
+        app::offer(opts.dry_run, opts.yes)?;
     }
 
     let tools = install_tools(&opts);

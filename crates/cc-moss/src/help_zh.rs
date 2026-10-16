@@ -81,13 +81,13 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "install",
         "",
-        "一次装好终端：钩子、tmux、starship、shell 区块，以及它们需要的工具",
+        "一次装好终端：钩子、tmux、starship、shell 区块，以及它们需要的工具（macOS 上还有状态栏 App）",
     ),
     ("install", "with", "额外安装可选部分：aliases"),
     (
         "install",
         "skip",
-        "不装某一部分：hooks、tmux、starship、shell 或 aliases",
+        "不装某一部分：hooks、tmux、starship、shell、app 或 aliases",
     ),
     (
         "install",

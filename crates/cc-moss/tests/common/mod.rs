@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+pub mod app;
 pub mod releases;
 
 use std::io::Write;

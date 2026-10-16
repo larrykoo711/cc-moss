@@ -9,7 +9,7 @@ use moss_core::platform::{on_path, Tool};
 
 use super::files::read_optional;
 use super::install::{self, Paths};
-use super::{alias, setup};
+use super::{alias, app, setup};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -138,6 +138,7 @@ fn checks() -> Result<Vec<Check>> {
         )
     };
     let mut out = vec![version_check()];
+    out.extend(app_check());
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {
@@ -634,6 +635,70 @@ fn version_check() -> Check {
             None,
         ),
     }
+}
+
+/// The menubar app (macOS only): in an Applications folder, where its
+/// notifications work, and the same version as this cc-moss.
+fn app_check() -> Option<Check> {
+    if !app::applies() {
+        return None;
+    }
+    let what = tr!("menubar app", "状态栏 App");
+    let current = moss_core::update::Version::current().to_string();
+    let bundled = app::bundled();
+    let fix_install = Some("cc-moss install".to_string());
+    let Some(installed) = app::installed() else {
+        return Some(if bundled.is_some() {
+            check(
+                Mark::Note,
+                what,
+                tr!(
+                    "not in an Applications folder yet: notifications need it there",
+                    "还没放进「应用程序」目录：放进去才能收到通知"
+                ),
+                fix_install,
+            )
+        } else {
+            check(
+                Mark::Note,
+                what,
+                tr!(
+                    "not installed (it comes with the Homebrew install and the macOS release download)",
+                    "没装（Homebrew 安装和 macOS 的 Release 下载包里都带着它）"
+                ),
+                None,
+            )
+        });
+    };
+    let have = app::version(&installed).unwrap_or_else(|| "?".into());
+    let place = app::display(&installed);
+    if have == current {
+        return Some(check(
+            Mark::Ok,
+            what,
+            tr!(format!("{have}, in {place}"), format!("{have}，在 {place}")),
+            None,
+        ));
+    }
+    // A bundled app of the right version is one `install` away; otherwise
+    // the CLI itself is behind or ahead, and `update` sorts both out.
+    let bundled_current = bundled
+        .as_deref()
+        .and_then(app::version)
+        .is_some_and(|v| v == current);
+    Some(check(
+        Mark::Warn,
+        what,
+        tr!(
+            format!("{have} in {place}, but cc-moss is {current}"),
+            format!("{place} 里是 {have}，但 cc-moss 是 {current}")
+        ),
+        Some(if bundled_current {
+            "cc-moss install".to_string()
+        } else {
+            "cc-moss update".to_string()
+        }),
+    ))
 }
 
 /// Sessions active in the last week that the hooks recorded without a pid
