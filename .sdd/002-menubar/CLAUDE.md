@@ -27,9 +27,14 @@
 | `diagrams/architecture-menubar.html` | 架构图 |
 | `diagrams/sequence-open-session.html` | 开机提醒 → 找回 → 在终端打开的时序 |
 | `diagrams/src/` | 两张图的 archify 源 JSON |
+| `PLAN.md` ⭐ | 3 Phase × 10 Task、依赖图、Kanban、日志、开放问题 |
+| `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
 
 ## 依赖链 & 推进
-- S0 立项 ✅（2026-10-16）；S1 设计草案完成，待 G1 批准
+- S0 立项 ✅、G1 设计批准 ✅（2026-10-16）
+- S2 编排完成：3 Phase × 10 Task，P1 是 MVP（T1.1–T1.3），待 G2
+- 第一波：T1.1（Swift 面板）与 T2.1（CLI 事件流）并行
+- 后续 epic（另立档案）：003-pet、004-pet-approve、005-voice，见 `DESIGN-menubar.md` §1.1
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名

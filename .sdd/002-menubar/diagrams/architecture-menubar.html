@@ -527,12 +527,12 @@
         <div class="pulse-dot"></div>
         <h1>cc-moss Menubar Architecture</h1>
       </div>
-      <p class="subtitle">Stage 2: a Swift app that reads and writes only through the CLI</p>
+      <p class="subtitle">Stage 2: one event stream, shown as icon motion and notifications</p>
     </div>
 
     <!-- Main Diagram -->
     <div class="diagram-container">
-      <svg viewBox="0 0 900 638" role="img" aria-label="cc-moss Menubar Architecture — Stage 2: a Swift app that reads and writes only through the CLI (architecture diagram)">
+      <svg viewBox="0 0 900 638" role="img" aria-label="cc-moss Menubar Architecture — Stage 2: one event stream, shown as icon motion and notifications (architecture diagram)">
         <!-- Definitions -->
         <defs>
           <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
@@ -582,13 +582,13 @@
         <rect x="480" y="150" width="140" height="60" rx="6" class="c-mask"/>
         <rect x="480" y="150" width="140" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
         <text x="550" y="178" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">MossKit</text>
-        <text x="550" y="194" class="t-muted" font-size="9" text-anchor="middle">run, decode, group</text>
+        <text x="550" y="194" class="t-muted" font-size="9" text-anchor="middle">snapshot + events</text>
         <text x="550" y="202" class="t-backend" font-size="7" text-anchor="middle">injectable</text>
 
         <rect x="720" y="150" width="140" height="60" rx="6" class="c-mask"/>
         <rect x="720" y="150" width="140" height="60" rx="6" class="c-frontend" stroke-width="1.5"/>
         <text x="790" y="178" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">cc-moss CLI</text>
-        <text x="790" y="194" class="t-muted" font-size="9" text-anchor="middle">ls --json, restore</text>
+        <text x="790" y="194" class="t-muted" font-size="9" text-anchor="middle">ls, events, restore</text>
 
         <rect x="250" y="330" width="140" height="60" rx="6" class="c-mask"/>
         <rect x="250" y="330" width="140" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
@@ -608,8 +608,8 @@
 
         <rect x="40" y="330" width="140" height="60" rx="6" class="c-mask"/>
         <rect x="40" y="330" width="140" height="60" rx="6" class="c-backend" stroke-width="1.5"/>
-        <text x="110" y="358" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Lifecycle</text>
-        <text x="110" y="374" class="t-muted" font-size="9" text-anchor="middle">login item, notify</text>
+        <text x="110" y="358" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Notify + life</text>
+        <text x="110" y="374" class="t-muted" font-size="9" text-anchor="middle">alerts, login item</text>
 
         <rect x="480" y="510" width="140" height="60" rx="6" class="c-mask"/>
         <rect x="480" y="510" width="140" height="60" rx="6" class="c-external" stroke-width="1.5"/>
@@ -670,8 +670,8 @@
         </div>
         <ul>
           <li>&bull; Hook writes wake the watcher</li>
-          <li>&bull; 60s sweep finds dead processes</li>
-          <li>&bull; Opening the panel refreshes now</li>
+          <li>&bull; events --since: what just happened</li>
+          <li>&bull; ls --json: how things are now</li>
         </ul>
       </div>
 

@@ -1,0 +1,192 @@
+# PLAN — 002-menubar：cc-moss Stage 2 macOS 状态栏 App（3 Phase × 10 Task）
+
+## 配套文档
+
+| 文档 | 用途 |
+|------|------|
+| `DESIGN-menubar.md` | 权威设计（假设 A1–A16 已定，产品路线 §1.1） |
+| `notes/drivers-evidence.md` | 立项依据、终端脚本接口、签名政策、Claude Code 钩子事实 |
+| `notes/current-state-baseline.md` | App 需要的能力在 CLI 里的现状 |
+| `diagrams/` | 架构图、开机提醒 → 找回 → 打开的时序图 |
+
+## 铁律
+
+- 每个任务先有 spec 且过 `sdd-gate.sh`，再动代码；实施在 `feature/002-<task>` 分支上，PR squash 合并
+- Rust 改动：`cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all` 绿；
+  Swift 改动：`swift build` + `swift test`（`apps/macos/`）绿
+- App 只经 `cc-moss` 读写，绝不打开 `registry.db`（单一写入方）
+- 测试与演示用独立状态目录（`CC_MOSS_STATE_DIR`）与独立 tmux socket，不碰真实会话
+- 公开仓：提交前用私有词表扫描新增内容与 `git log -p origin/main..HEAD`
+- 宿主事实见 `.sdd/config.md`
+
+## 总览
+
+| Phase | 主题 | Task | 价值 |
+|-------|------|------|------|
+| P1 | MVP：一眼看清，点一下进去，断了能找回 | T1.1–T1.3 | 解决 D1–D3：不开终端就知道状态，点一下进会话，重启后一键找回 |
+| P2 | 动态与通知 | T2.1–T2.5 | 事件流地基；图标动画、通知中心、开机提醒、面板里的日常操作 |
+| P3 | 发布 | T3.1–T3.2 | 随 cc-moss 一起装、一起升；0.2.0 发版并装上 3 台 Mac |
+
+## 依赖图
+
+```text
+T1.1 面板与快照 ─┬─> T1.2 在终端里打开 ─┬─> T1.3 找回 ──────────────┐
+                 │                      └─> T2.5 新会话/便条 ──────┤
+T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────────────────────────┤
+                   └─> T2.3 通知中心 ─> T2.4 开机自启与设置 ───────┴─> T3.1 打包与分发 ─> T3.2 打磨、文档与 0.2.0
+```
+
+- 关键路径：T1.1 → T1.2 → T2.3 → T2.4 → T3.1 → T3.2
+- 并行窗口：T1.1（Swift）与 T2.1（Rust）互不相干，可同时开；T1.1 合入后 T1.2、T2.2 并行
+- P1 完成后本机先装开发版真实用一段时间（MVP 验收点），再进 P2 的视觉动画
+
+## 任务
+
+### T1.1 面板与快照
+
+- 目标：菜单栏出现 cc-moss 图标，点开是精心设计的面板：搜索、按项目分组、每会话两行（名字 + 状态 + 时间 / 最后一句或便条），实时刷新
+- 文件：`crates/cc-moss/src/cmd/ls.rs`（加 `project`、`worktree`）、`apps/macos/Package.swift`、
+  `apps/macos/Sources/MossKit/*`、`apps/macos/Sources/CCMoss/*`、`apps/macos/Tests/MossKitTests/*`、`.github/workflows/ci.yml`
+- 内容：先做两个探针（Q5 只用命令行工具能否构建与测试；Q6 ad-hoc 签名能否申请通知权限），结论写入 notes；
+  `ls --json` 加字段；MossKit（找 cc-moss、补 PATH、可注入的命令执行、解码、状态与分组、过滤）；
+  Watcher（目录变化合并 1 秒 + 60 秒兜底 + 打开面板时刷新）；MenuBarExtra 面板；找不到 cc-moss 的引导卡；
+  CI 加 macOS Swift 任务
+- TDD：解码（字段缺失、未知 schema）、状态计算、分组与排序（对齐选择器）、过滤、路径探测
+- 验收：独立状态目录 + 演示数据下面板显示与 `t` 一致；钩子写入后 2 秒内面板更新
+- commit：`feat(app): menubar panel with live sessions`
+- 依赖：无
+
+### T1.2 在终端里打开
+
+- 目标：点会话即在用户的终端里新开窗口进入它
+- 文件：`apps/macos/Sources/MossKit/Terminal*.swift`、`apps/macos/Sources/CCMoss/*`
+- 内容：Ghostty（≥1.3）/ iTerm2 / Terminal 三个适配，自动探测与手动选择，「复制命令」兜底；
+  名字单引号转义；自动化授权被拒的引导；不在 tmux 的会话不给打开
+- TDD：各终端生成的脚本（表驱动，含引号、空格、中文名）；探测优先级；版本判断
+- 验收：三种终端真机各打开一次；名字含单引号也能正确进入
+- commit：`feat(app): open a session in your terminal`
+- 依赖：T1.1
+
+### T1.3 找回
+
+- 目标：面板顶部「有 N 个会话断了 · 全部找回」，单行「找回」，找回后可直接打开
+- 文件：`apps/macos/Sources/MossKit/Actions.swift`、`apps/macos/Sources/CCMoss/*`
+- 内容：调用 `cc-moss restore --yes [name…]`；进行中状态、成功后刷新、失败原样展示 CLI 的错误
+- TDD：命令拼装、错误解析、进行中禁止重复点击
+- 验收：独立 socket 上杀掉 tmux server 后从面板全部找回，`ls` 显示 running
+- commit：`feat(app): bring interrupted sessions back`
+- 依赖：T1.1、T1.2
+
+### T2.1 会话事件流（CLI）
+
+- 目标：`cc-moss events --json --since <序号>` 能增量读到会话发生了什么；`ls --json` 有 `attention`
+- 文件：`crates/moss-core/src/{registry,event,agent/*,settings_json}.rs`、`crates/cc-moss/src/cmd/{hook,events,setup,doctor}.rs`、`crates/cc-moss/src/reconcile.rs`
+- 内容：`events` 表（只增、7 天清理）；钩子写事件（started / working / finished / needs_you / ended / renamed）；
+  对账写 interrupted，`restore` 写 restored；注册 `Notification`、`PostToolUse` 钩子并据此置/清 `attention`；
+  `setup` 补钩子、`doctor` 提示缺失；钩子仍永远 exit 0
+- TDD：事件序列表驱动（取真实钩子输入）；序号单调；清理边界；`attention` 置与清；旧库迁移
+- 验收：钩子 p95 < 30ms（含新钩子，Q7）；`setup` 在已装旧钩子的临时 HOME 上只补新增两项
+- commit：`feat(core): session event stream and attention`
+- 依赖：无（与 T1.1 并行；`ls.rs` 冲突由后合入方变基解决）
+
+### T2.2 图标动画
+
+- 目标：菜单栏图标用动画表达动态（A7）
+- 文件：`apps/macos/Sources/CCMoss/StatusIcon*.swift`、`apps/macos/Resources/*`
+- 内容：Continuum 模板图；四态与优先级；在忙 = 光点流动、需要你确认 = 轻跳 + 强调色；减少动态效果、屏幕休眠时停帧
+- TDD：状态 → 图标态的优先级映射；帧调度在休眠/减少动态时暂停
+- 验收：四态真机录屏；空闲时 App CPU < 1%
+- commit：`feat(app): an icon that shows what is going on`
+- 依赖：T1.1、T2.1
+
+### T2.3 通知中心
+
+- 目标：会话事件按类型发到系统通知中心，点通知打开该会话
+- 文件：`apps/macos/Sources/MossKit/Notify*.swift`、`apps/macos/Sources/CCMoss/*`
+- 内容：订阅事件流；类型开关与默认值（A9）；同一会话短时间内合并；点击 = 在终端打开；权限被拒时的引导
+- TDD：事件 → 通知的映射、开关、合并窗口
+- 验收：需要你确认、断了、做完了、找回完成四类真机各触发一次
+- commit：`feat(app): session events in Notification Center`
+- 依赖：T1.2、T2.1
+
+### T2.4 开机自启与设置
+
+- 目标：开机自启（首次问一次）；开机发现有断了的会话就提醒；设置窗口（终端、通知开关、开机自启、cc-moss 路径）
+- 文件：`apps/macos/Sources/CCMoss/{Settings,Lifecycle}*.swift`
+- 内容：`SMAppService` 登录项；启动时对账并提醒；设置持久化
+- TDD：首次启动流程状态机；设置读写
+- 验收：真机重启一次，登录后收到「有 N 个会话断了」，点开即可找回
+- commit：`feat(app): start at login and settings`
+- 依赖：T2.3
+
+### T2.5 新会话、便条与不再提醒
+
+- 目标：在面板里开新会话（选目录 + 起名）、写便条、不再提醒
+- 文件：`apps/macos/Sources/MossKit/Actions.swift`、`apps/macos/Sources/CCMoss/*`
+- 内容：`cc-moss new <名字> -C <目录> --detach` 后在终端打开；`note`；`close`；重名时按 T1.5 规则提示
+- TDD：命令拼装；重名处理
+- 验收：三项操作真机各走一次，`t` 里同步可见
+- commit：`feat(app): new sessions and notes from the menubar`
+- 依赖：T1.2
+
+### T3.1 打包与分发
+
+- 目标：`brew install`/`brew upgrade` 带上 App，`cc-moss install` 放进「应用程序」，`cc-moss update` 一起升
+- 文件：`apps/macos/scripts/bundle.sh`、`.github/workflows/release.yml`、`packaging/homebrew/*`、`crates/cc-moss/src/cmd/{install,update,doctor}.rs`
+- 内容：组装 `.app`（`LSUIElement`、图标、版本号取自 workspace）、ad-hoc 签名、Release 产物与校验和；
+  公式在 macOS 上装入 App；`install` 询问后复制到 `~/Applications`；`update` 替换 App 并重启它；`doctor` 检查 App 版本
+- TDD：版本号一致性；install/update 对 App 的处理（临时 HOME）
+- 验收：干净的 macOS 用户目录下 `brew install` → `cc-moss install` → App 能启动并显示会话
+- commit：`feat(release): ship the menubar app with cc-moss`
+- 依赖：P1、P2 全部
+
+### T3.2 打磨、文档与 0.2.0
+
+- 目标：中英文案与视觉走查（human-feel），README/指南加上 App，发 0.2.0，装上 3 台 Mac
+- 文件：`apps/macos/Sources/CCMoss/Localizable*`、`README*.md`、`docs/guide*.md`、`docs/assets/*`、`CHANGELOG.md`
+- 验收：E2E human-feel 走查记录；3 台 Mac 经 `cc-moss update` 升到 0.2.0 并启动 App
+- commit：`docs: the menubar app` + `chore: release 0.2.0`
+- 依赖：T3.1
+
+## Kanban
+
+| Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
+|------|----|------|------|-----|----------|
+| **T1.1** 面板与快照 | cc-moss | — | ⬜ Backlog | — | 面板与 `t` 一致，2 秒内刷新 |
+| **T1.2** 在终端里打开 | cc-moss | T1.1 | ⬜ Backlog | — | 三种终端真机打开 |
+| **T1.3** 找回 | cc-moss | T1.1,T1.2 | ⬜ Backlog | — | 杀 server 后面板全部找回 |
+| **T2.1** 会话事件流（CLI） | cc-moss | — | ⬜ Backlog | — | 事件序列 + 钩子 p95 |
+| **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ⬜ Backlog | — | 四态录屏，空闲 CPU < 1% |
+| **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 四类通知真机触发 |
+| **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
+| **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ⬜ Backlog | — | 三项操作 `t` 里可见 |
+| **T3.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
+| **T3.2** 打磨、文档与 0.2.0 | cc-moss | T3.1 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
+
+## 日志
+
+- 2026-10-16 S0 立项；S1 设计草案 → 用户回复「是的，状态栏 App 是一个精心设计的面板……」并追加：图标动画表达动态、
+  session 事件经通知中心通知、核心完成后做桌面宠物（动画 + 气泡 + 语音、代办确认、语音对话），整个 App 用 sdd 驱动。
+  据此加入 A13–A16 与产品路线 §1.1（003-pet、004-pet-approve、005-voice 各自另立档案）。G1 通过
+- 2026-10-16 Q1 分发方式：按建议 A12（随 cc-moss 一起发、ad-hoc 签名、不走 cask），用户未提异议；办开发者账号后再加公证与 cask，不推翻本条
+- 2026-10-16 S2 编排：3 Phase × 10 Task，P1 为 MVP
+
+## 推进节奏
+
+1. 第一波：T1.1 与 T2.1 并行
+2. 第二波：T1.2、T2.2；随后 T1.3、T2.3、T2.5
+3. P1 收尾：本机装开发版真实使用（MVP 验收点）
+4. 第三波：T2.4 → T3.1 → T3.2
+
+## 开放问题
+
+| # | 问题 | 何时定 |
+|---|------|--------|
+| O1 | Q5 只用命令行工具能否构建 SwiftUI App 并跑测试（否则需 `xcode-select` 切到 Xcode） | T1.1 探针 |
+| O2 | Q6 ad-hoc 签名能否申请通知权限 | T1.1 探针 |
+| O3 | Q7 `PostToolUse` 钩子对每次工具调用的开销 | T2.1 实测 |
+
+## 已定调（防翻案）
+
+- 设计 A1–A16（见 `DESIGN-menubar.md` §2），2026-10-16 用户批准
+- 本迭代不拦截任何确认（A16）；代办确认、桌面宠物、语音对话分别在 004、003、005

@@ -3,7 +3,7 @@
   "diagram_type": "architecture",
   "meta": {
     "title": "cc-moss Menubar Architecture",
-    "subtitle": "Stage 2: a Swift app that reads and writes only through the CLI",
+    "subtitle": "Stage 2: one event stream, shown as icon motion and notifications",
     "output": "architecture-menubar.html"
   },
   "components": [
@@ -39,7 +39,7 @@
       "id": "kit",
       "type": "backend",
       "label": "MossKit",
-      "sublabel": "run, decode, group",
+      "sublabel": "snapshot + events",
       "pos": [
         480,
         150
@@ -54,7 +54,7 @@
       "id": "cli",
       "type": "frontend",
       "label": "cc-moss CLI",
-      "sublabel": "ls --json, restore",
+      "sublabel": "ls, events, restore",
       "pos": [
         720,
         150
@@ -110,8 +110,8 @@
     {
       "id": "life",
       "type": "backend",
-      "label": "Lifecycle",
-      "sublabel": "login item, notify",
+      "label": "Notify + life",
+      "sublabel": "alerts, login item",
       "pos": [
         40,
         330
@@ -228,8 +228,8 @@
       "title": "Refresh",
       "items": [
         "Hook writes wake the watcher",
-        "60s sweep finds dead processes",
-        "Opening the panel refreshes now"
+        "events --since: what just happened",
+        "ls --json: how things are now"
       ]
     },
     {

@@ -28,3 +28,15 @@
 | Homebrew 与未签名 App | Homebrew 4.7 去掉了 `--no-quarantine`，并宣布 2026-09-01 起不再支持无法通过 Gatekeeper 的 cask；Apple Silicon 只运行带签名的原生代码（ad-hoc 签名也算） | https://github.com/ivoronin/TomatoBar/issues/102 |
 | 本机签名身份 | 0 个（无 Developer ID 证书） | `security find-identity -v -p codesigning` |
 | 工具链 | Swift 6.4（命令行工具），Xcode 已装但未选为活动开发目录；macOS 26.6 | `swift --version`、`xcode-select -p` |
+
+## Claude Code 钩子事实（A13–A16 的依据）
+
+来源：https://code.claude.com/docs/en/hooks.md （2026-10-16 查阅，本机 Claude Code 2.1.301）
+
+- `Notification`：只能做副作用，不能阻塞或改变流程；`notification_type` 有 `permission_prompt`（等待约 6 秒后才发）、
+  `idle_prompt`（回答完约 60 秒无输入才发）、`elicitation_dialog`、`agent_needs_input`、`agent_completed` 等
+- `PermissionRequest`：可返回 `allow`/`deny`；钩子阻塞期间终端里的提示框行为**文档未说明**——留给 004 实测
+- 终端里点了同意/拒绝/关掉提示框，**没有对应事件**；工具跑完会有 `PostToolUse`/`PostToolUseFailure`，被拒则什么都没有
+- `Stop` 只表示这一轮回答结束，不覆盖「在等权限」和「在等提问回答」
+- `AskUserQuestion` 可由 `PreToolUse` 钩子代答；MCP 的 `Elicitation` 可由钩子代答——都留给 004
+- 现状：cc-moss 只注册了 `SessionStart`、`UserPromptSubmit`、`Stop`、`SessionEnd`（`moss-core/src/settings_json.rs:20`）

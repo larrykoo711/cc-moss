@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<!--
+  larry-sdd playground 模板（通用骨架，自包含单文件）
+
+  ═══ 占位符清单（cp 后必须全部替换；一个都不许留到读者面前）═══
+    002 · cc-moss Stage 2 状态栏 App     页面标题，同时用于 <title> 与侧栏 h1。写「卡 <n> · <一句话主题>」
+    .sdd/002-menubar · 面板、图标动画、通知中心、事件流  侧栏副标题一行，写档案目录名或迭代口径
+  新增占位符一律写进本清单——`gen_kanban.py --check` 与 `stage_clean_check.sh` 会扫
+  `__[A-Z_]+__`，命中即红，清单是给人看的对照表，扫描是机制兜底。
+
+  用法：
+    1. cp 本文件到 {ISSUE_DIR}/<n>/playground.html
+    2. 全局替换上表占位符（`grep -n '__[A-Z_]*__' playground.html` 应无输出）
+    3. 填 <section> 业务板块（占位注释标了填什么）。涉 DDL/数据模型的需求必须加「Schema 变更」
+       板块：ER 图 + 字段清单 + DDL 草案 + 迁移路径/发版顺序/回滚 + 明确不做的变更（防误扩 scope）——
+       schema 是 review 时最先被追问的部分，散在方案小字里等于没写（实证：case-studies）
+    4. Kanban 的 TASKS/PHASES 数组：手填，或跑 scripts/gen_kanban.py 从 PLAN 生成后粘进来
+    5. 侧栏 nav 的 data-sec 与各 section id 一一对应
+
+  ═══ 密度纪律：playground 是读者界面，不是作者的盘点草稿 ═══
+  作者天然会把调研结论原样粘进来——「A · B · C · D · E」串成一行、一个单元格塞三个分句。
+  读者拿到的是没有落点的一堵字（用户 2026-09-13：「密密麻麻的文字描述，如果是给人类看的，
+  那就糟糕的交互」）。下面四条是硬约束，写完自检：
+    1. **并列事实用 `<ul class="chips">`，不用 `·` 串句**。一片一个短名词（≤12 字），
+       状态色用 `.ok/.warn/.bad`。盘点、缺口、清单类内容一律如此。
+    2. **表格单元格 ≤ 一句话（约 40 字）**。塞不下说明该拆列、拆行，或把细节挪进折叠。
+    3. **每个 section 开头一行 `<p class="lede">` 结论**——读者只读这行也不该误解本板块。
+    4. **方法论、基线说明、逐条证据收进 `<details class="fold">`**，summary 写成能独立成句的
+       一行摘要。默认收起；展开是补证据，不是补语义。
+  反例（本模板 2026-09-13 之前的实例卡）：一个「今天没有什么」单元格 213 字、
+  一段「横切缝隙」把 12 条并列项用 `·` 连成 210 字，读者无从下眼。
+
+  ═══ 空 section 的处理（无需手工删）═══
+  没填内容的 section 在加载时**自动隐藏**，连同它的侧栏菜单项一起——读者永远看不到光秃秃的标题。
+  想有意展示空态（告诉读者「这块本迭代不适用」或「另见别处」），给 section 加 data-empty 属性，
+  形如 &lt;section id="gaps" data-empty="本迭代无历史包袱，根因见 DESIGN.md"&gt;
+  🔴 上面这行**刻意写成转义形式**：本注释块里曾放过一行真标签样式的示例，
+     填模板的人顺着它往下写、内容落进注释里，顶部那个注释开标记因此从未闭合 ——
+     <head>/<style>/<body> 连同数个 section 全被吞掉，整页渲染成无样式裸文字
+     （2026-09-16 卡 836 实证；机制兜底见 gen_kanban.py --check-structure）。
+     **注释块里永远不要出现看起来可以直接往下填的开标签。**
+  会渲染统一的空态块（淡色边框 + 这句原因 + 指向 PLAN/DESIGN 的指针），而不是隐藏。
+  判空规则：除 <h2> 外无可见内容即为空；「待填」类 badge 视为空信号，不算内容。
+
+  技术约束（勿破坏）：单文件无外链 CDN · 深浅主题切换 + localStorage 记忆（切换器固定 sidebar 左下角，
+  绝不与标题同行——同行会挤压 h1 换行，2026-08-20 用户定标）· Kanban 与 PLAN 双写同源。
+  读者/作者分界（2026-09-08 用户定标）：页面上只放读者要看的东西。双写纪律、总数核对这类**作者操作
+  纪律**一律写 HTML 注释，不写进正文 lead——「糟糕的 Tips 提示交互」。
+-->
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>002 · cc-moss Stage 2 状态栏 App</title>
+<style>
+  :root{
+    --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  :root,[data-theme="dark"]{
+    --bg:#0b0e14; --bg2:#11161f; --panel:#151b26; --panel2:#1a212e; --panel3:#202938;
+    --border:#26303f; --border2:#324155;
+    --txt:#e4e9f0; --txt2:#9aa7b8; --txt3:#5e6b7d;
+    --accent:#4f9cf9; --accent2:#7c5cfc;
+    --ok:#34d399; --warn:#fbbf24; --bad:#f87171; --info:#38bdf8;
+    --ok-bg:rgba(52,211,153,.12); --warn-bg:rgba(251,191,36,.12); --bad-bg:rgba(248,113,113,.12); --info-bg:rgba(56,189,248,.12);
+    --code-bg:#0a0d13; --code-txt:#cdd9e5; --code-inline:#a8d5ff;
+    --track:#1c2433; --shadow:rgba(0,0,0,.4);
+  }
+  [data-theme="light"]{
+    --bg:#f6f8fb; --bg2:#eef2f7; --panel:#ffffff; --panel2:#f4f7fb; --panel3:#eaf0f7;
+    --border:#dde4ec; --border2:#c4cfdc;
+    --txt:#1a2230; --txt2:#445166; --txt3:#6b7a8f;
+    --accent:#2563eb; --accent2:#7c3aed;
+    --ok:#059669; --warn:#d97706; --bad:#dc2626; --info:#0284c7;
+    --ok-bg:rgba(5,150,105,.10); --warn-bg:rgba(217,119,6,.10); --bad-bg:rgba(220,38,38,.10); --info-bg:rgba(2,132,199,.10);
+    --code-bg:#1a212e; --code-txt:#e4e9f0; --code-inline:#0b5cad;
+    --track:#e3e9f1; --shadow:rgba(20,40,80,.10);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--txt);font-family:var(--sans);font-size:14px;line-height:1.6;display:flex}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-track{background:var(--bg)}
+  ::-webkit-scrollbar-thumb{background:var(--border2);border-radius:5px}
+  a{color:var(--accent);text-decoration:none}
+  code{font-family:var(--mono);font-size:.86em;background:var(--panel3);padding:1px 5px;border-radius:4px;color:var(--code-inline)}
+  aside{width:228px;min-width:228px;height:100vh;position:sticky;top:0;background:var(--bg2);
+    border-right:1px solid var(--border);padding:20px 0 0;z-index:10;display:flex;flex-direction:column}
+  nav{flex:1;overflow-y:auto}
+  /* 主题切换器固定左下角：与标题同行会挤压 h1 导致换行（2026-08-20 用户定标） */
+  .side-foot{padding:12px 20px;border-top:1px solid var(--border);display:flex;align-items:center;gap:8px;flex-shrink:0}
+  .side-foot .foot-label{font-size:10.5px;color:var(--txt3);font-family:var(--mono)}
+  .brand{padding:0 20px 16px;border-bottom:1px solid var(--border);margin-bottom:8px}
+  .brand h1{font-size:16px;font-weight:700;line-height:1.35;overflow-wrap:anywhere;
+    background:linear-gradient(90deg,var(--accent),var(--accent2));-webkit-background-clip:text;background-clip:text;color:transparent}
+  .brand .sub{font-size:10.5px;color:var(--txt3);margin-top:4px;font-family:var(--mono);overflow-wrap:anywhere}
+  nav a{display:flex;align-items:center;gap:9px;padding:8px 20px;color:var(--txt2);
+    font-size:12.5px;border-left:2px solid transparent;transition:all .15s;cursor:pointer}
+  nav a:hover{background:var(--panel);color:var(--txt)}
+  nav a.active{background:var(--panel2);color:var(--accent);border-left-color:var(--accent);font-weight:600}
+  nav a .ic{font-size:14px;width:16px;text-align:center;opacity:.85}
+  nav .group{font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--txt3);padding:14px 20px 5px;font-weight:700}
+  /* 空 section 与其菜单项由 initSections() 打 hidden；分组标题在整组隐藏时一并收起 */
+  nav a[hidden],nav .group[hidden],section[hidden]{display:none!important}
+  main{flex:1;min-width:0;height:100vh;overflow-y:auto;padding:0 clamp(16px,4vw,40px) 80px}
+  section{padding:32px 0 8px;max-width:1400px}
+  h2{font-size:20px;margin-bottom:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .lead{color:var(--txt2);margin-bottom:16px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:14px;overflow-x:auto}
+  .badge{display:inline-block;font-size:10px;padding:2px 8px;border-radius:6px;font-family:var(--mono);font-weight:600}
+  .badge.ok{background:var(--ok-bg);color:var(--ok)} .badge.warn{background:var(--warn-bg);color:var(--warn)}
+  .badge.bad{background:var(--bad-bg);color:var(--bad)} .badge.info{background:var(--info-bg);color:var(--info)}
+  .badge.mut{background:var(--panel3);color:var(--txt3)}
+  pre{background:var(--code-bg);color:var(--code-txt);padding:14px;border-radius:8px;overflow-x:auto;font-family:var(--mono);font-size:12px;line-height:1.55;margin:10px 0}
+  .theme-switch{display:inline-flex;align-items:center;background:var(--panel2);border:1px solid var(--border2);border-radius:999px;padding:2px;cursor:pointer;position:relative;width:36px;height:19px;flex-shrink:0}
+  .theme-switch .knob{position:absolute;top:1px;left:1px;width:15px;height:15px;border-radius:50%;background:var(--accent);transition:transform .25s;display:flex;align-items:center;justify-content:center;font-size:9px;color:#fff}
+  [data-theme="dark"] .theme-switch .knob{transform:translateX(17px)}
+
+  /* ── 清单化原语：给「一串并列事实」用，替代 `·` 串起来的长句 ──
+     作者习惯把盘点结果写成「A · B · C · D · E」塞进一个单元格，读者拿到的是
+     一堵没有落点的墙（用户 2026-09-13：「密密麻麻的文字描述…糟糕的交互」）。
+     并列事实一律拆成 chip，每片一个短名词，长度不齐也不折磨眼睛。 */
+  .chips{display:flex;flex-wrap:wrap;gap:5px;margin:0}
+  .chips li{list-style:none;font-size:11px;line-height:1.5;padding:3px 9px;border-radius:999px;
+    border:1px solid var(--border);background:var(--panel2);color:var(--txt2);font-family:var(--mono)}
+  .chips li.ok{border-color:var(--ok);color:var(--ok)}
+  .chips li.warn{border-color:var(--warn);color:var(--warn)}
+  .chips li.bad{border-color:var(--bad);color:var(--bad)}
+  ul.tight{margin:0;padding-left:17px} ul.tight li{font-size:12.5px;line-height:1.6;margin:2px 0}
+
+  /* 折叠：背景、方法论、逐条清单这类「读者多半不看、但必须可查」的正文收进来，
+     默认收起。摘要行本身要能独立成句，展开只是补证据。 */
+  details.fold{border:1px solid var(--border);border-radius:9px;background:var(--panel2);
+    padding:9px 13px;margin:10px 0}
+  details.fold>summary{cursor:pointer;font-size:12px;color:var(--txt2);font-weight:600;
+    list-style:none;display:flex;align-items:center;gap:7px}
+  details.fold>summary::-webkit-details-marker{display:none}
+  details.fold>summary::before{content:'▸';color:var(--txt3);font-size:10px;transition:transform .15s}
+  details.fold[open]>summary::before{transform:rotate(90deg)}
+  details.fold>summary:hover{color:var(--txt)}
+  details.fold .fb{padding-top:10px;margin-top:9px;border-top:1px solid var(--border);font-size:12.5px;line-height:1.65}
+  details.fold .fb>*:first-child{margin-top:0} details.fold .fb>*:last-child{margin-bottom:0}
+
+  /* 摘要行：一句话结论 + 右侧计量，放在密集表格之前当「先读这行」 */
+  .lede{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;font-size:13px;line-height:1.6;margin:0 0 12px}
+
+  /* ── 有意空态块（section[data-empty]）：不隐藏，但明确告诉读者「这块是空的、去哪看」── */
+  .empty-state{border:1px dashed var(--border2);border-radius:10px;padding:18px 20px;color:var(--txt2);
+    background:var(--panel2);display:flex;flex-direction:column;gap:6px;margin-top:10px}
+  .empty-state .es-why{font-size:13px}
+  .empty-state .es-ptr{font-size:11.5px;color:var(--txt3);font-family:var(--mono)}
+
+  /* ── Kanban 图例：读者要的是「现在各态各多少」，不是作者的双写纪律 ── */
+  .kb-legend{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:2px 0 14px}
+  .kb-legend .lg{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-family:var(--mono);
+    padding:3px 9px;border-radius:999px;border:1px solid var(--border);background:var(--panel2);color:var(--txt2);white-space:nowrap}
+  .kb-legend .lg .n{font-weight:700;color:var(--txt)}
+  .kb-legend .lg[data-zero="1"]{opacity:.45}
+  .kb-legend .sep{width:1px;height:16px;background:var(--border2);margin:0 2px}
+  .kb-legend .tot{font-size:11px;font-family:var(--mono);color:var(--txt3)}
+
+  /* ── Kanban 栅格：列保底宽度 + 横向滚动 ──
+     列宽曾是 minmax(0,1fr)，Phase 多时（六列）每列被压到 ~150px，
+     标题、dep、验收锚点三处同时省略号，看板退化成只剩 ID 可读（用户 2026-09-13）。
+     现在列宽下限 var(--kb-colw)，装不下就横向滚——挤压换成滚动，信息不再丢。
+     列数少时仍用 1fr 铺满：auto-fit 在总宽够时把余量平分给各列。 */
+  .kb-scroll{margin-top:14px;overflow-x:auto;overflow-y:hidden;padding-bottom:8px;
+    scrollbar-width:thin;overscroll-behavior-x:contain}
+  #kanban-grid{--kb-colw:230px;display:grid;gap:12px;align-items:start;
+    grid-template-columns:repeat(var(--kb-cols,1),minmax(var(--kb-colw),1fr))}
+  .kb-col{min-width:0;display:flex;flex-direction:column;gap:10px}
+  .kb-head{display:flex;align-items:center;gap:8px;min-height:34px;padding:6px 10px;
+    background:var(--panel2);border:1px solid var(--border);border-radius:7px;
+    font-size:11px;font-weight:700;color:var(--txt2)}
+  .kb-head .pk{color:var(--accent2);flex-shrink:0}
+  .kb-head .pn{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .kb-head .pc{flex-shrink:0;color:var(--txt3);font-family:var(--mono);font-weight:600}
+  .kb-card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:11px 12px;
+    display:flex;flex-direction:column;gap:5px;min-height:112px;min-width:0;overflow-wrap:anywhere}
+  /* ── 状态一眼可辨（卡 97 AMEND-97-board-3，2026-09-30）──
+     只靠一个 emoji badge 时，一屏卡片里 Ready / Backlog / Doing 分不开。
+     规范：顶边 3px 状态色条 + 右上实心状态签；Doing 卡底微染 + 签上呼吸点；Done 整卡降噪；
+     Backlog 无色条、签为描边（最安静）。左缘留给宿主自定义语义（如依赖三色），两种语义不共用一条边。 */
+  .kb-card{position:relative;overflow:hidden}
+  .kb-card::before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:var(--st-c,transparent)}
+  .kb-card.st-backlog::before{background:transparent}
+  .kb-card.st-ready{--st-c:#3B82F6}
+  .kb-card.st-doing{--st-c:#F59E0B;background:color-mix(in oklab,#F59E0B 7%,var(--panel))}
+  .kb-card.st-review{--st-c:#8B5CF6}
+  .kb-card.st-done{--st-c:#22C55E;opacity:.62}
+  .st-pill{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:700;letter-spacing:.02em;
+    padding:2px 8px;border-radius:999px;white-space:nowrap;color:#fff;background:var(--st-c,#94A3B8)}
+  .st-pill.st-backlog{background:transparent;color:var(--txt3);box-shadow:inset 0 0 0 1px var(--border2)}
+  .st-pill.st-ready{--st-c:#3B82F6}
+  .st-pill.st-doing{--st-c:#D97706}
+  .st-pill.st-review{--st-c:#7C3AED}
+  .st-pill.st-done{--st-c:#16A34A}
+  .st-pill.st-doing::before{content:"";width:6px;height:6px;border-radius:50%;background:#fff;animation:stpulse 1.4s ease-in-out infinite}
+  @keyframes stpulse{0%,100%{opacity:1}50%{opacity:.25}}
+  @media (prefers-reduced-motion:reduce){.st-pill.st-doing::before{animation:none}}
+  .kb-card .r1{display:flex;justify-content:space-between;align-items:center;gap:6px}
+  .kb-card .tid{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+  .kb-card .tt{font-size:12px;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  /* meta 单行不折：dep 文本长短不一时折行会让同列卡片高矮参差（用户 2026-09-08 指出「大大小小」），
+     溢出交给 badge 自身的省略号，全文在 title */
+  .kb-card .meta{display:flex;gap:5px;min-width:0;overflow:hidden}
+  .kb-card .ac{font-size:10px;color:var(--txt3);font-family:var(--mono);line-height:1.45;
+    display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;margin-top:auto}
+  /* badge 不换行是为了不让「🟨 In Progress」断成两行；但长 SDD slug 会顶破列宽——
+     故只保证不折行，超出列宽时省略号截断，全文在 title 里（2026-09-08 实证：SDD-T5.16-… 撑列 18px） */
+  .kb-card .badge{white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}
+  .kb-card .meta .badge{flex-shrink:0}
+  .kb-card .meta .b-dep{flex-shrink:1;min-width:0}  /* 挤压优先落在 dep 上，仓名保持可读 */
+  .kb-card{cursor:pointer;transition:border-color .12s,transform .12s}
+  .kb-card:hover{border-color:var(--accent2)}
+  .kb-card:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ── 任务抽屉：卡面只放摘要，全文在这里 ── */
+  .kb-drawer{position:fixed;inset:0;z-index:50;display:none}
+  .kb-drawer[open]{display:block}
+  .kb-drawer .scrim{position:absolute;inset:0;background:rgba(0,0,0,.45)}
+  .kb-panel{position:absolute;top:0;right:0;height:100%;width:min(440px,92vw);
+    background:var(--panel);border-left:1px solid var(--border);
+    display:flex;flex-direction:column;box-shadow:-12px 0 32px rgba(0,0,0,.28)}
+  .kb-panel .dh{display:flex;align-items:center;gap:10px;padding:16px 18px;
+    border-bottom:1px solid var(--border);flex-shrink:0}
+  .kb-panel .dh .tid{font-family:var(--mono);font-size:15px;font-weight:700;color:var(--accent)}
+  .kb-panel .dx{margin-left:auto;background:none;border:1px solid var(--border);color:var(--txt2);
+    border-radius:6px;width:28px;height:28px;cursor:pointer;font-size:15px;line-height:1}
+  .kb-panel .dx:hover{color:var(--txt);border-color:var(--txt3)}
+  .kb-panel .db{flex:1;overflow-y:auto;padding:16px 18px 28px}
+  .kb-panel .dt{font-size:15px;font-weight:600;line-height:1.45;margin-bottom:16px;overflow-wrap:anywhere}
+  .kb-panel dl{display:grid;grid-template-columns:auto 1fr;gap:9px 14px;margin:0 0 18px;align-items:baseline}
+  .kb-panel dt{font-size:11px;color:var(--txt3);font-family:var(--mono);white-space:nowrap}
+  .kb-panel dd{margin:0;font-size:12.5px;line-height:1.5;overflow-wrap:anywhere}
+  .kb-panel .dsec{font-size:11px;color:var(--txt3);font-family:var(--mono);
+    text-transform:uppercase;letter-spacing:.04em;margin:0 0 7px}
+  .kb-panel .dac{font-size:12.5px;line-height:1.65;color:var(--txt2);
+    background:var(--panel2);border:1px solid var(--border);border-radius:8px;
+    padding:11px 13px;overflow-wrap:anywhere;white-space:pre-wrap}
+  /* Step todo：卡面放不下的工作项清单。编号用计数器而非 <ol> 的默认序号，
+     免得长条目换行后数字与文字对不齐。 */
+  .kb-panel .dsteps{list-style:none;counter-reset:kbs;margin:0 0 18px;padding:0}
+  .kb-panel .dsteps li{counter-increment:kbs;position:relative;
+    padding:0 0 0 26px;margin-bottom:9px;font-size:12.5px;line-height:1.6;
+    color:var(--txt2);overflow-wrap:anywhere}
+  .kb-panel .dsteps li::before{content:counter(kbs);position:absolute;left:0;top:1px;
+    width:17px;height:17px;border-radius:4px;background:var(--panel2);
+    border:1px solid var(--border);color:var(--txt3);
+    font-family:var(--mono);font-size:10px;line-height:17px;text-align:center}
+  .kb-panel .dsteps code{font-family:var(--mono);font-size:11.5px;
+    background:var(--panel2);border-radius:3px;padding:1px 4px}
+  .kb-panel .dsteps strong{color:var(--txt);font-weight:600}
+  .kb-panel .dnav{display:flex;gap:8px;padding:12px 18px;border-top:1px solid var(--border);flex-shrink:0}
+  .kb-panel .dnav button{flex:1;background:var(--panel2);border:1px solid var(--border);color:var(--txt2);
+    border-radius:7px;padding:7px;cursor:pointer;font-size:11.5px;font-family:var(--mono)}
+  .kb-panel .dnav button:hover:not(:disabled){color:var(--txt);border-color:var(--txt3)}
+  .kb-panel .dnav button:disabled{opacity:.35;cursor:default}
+
+  /* ── 响应式（2026-08-31 实证补入；2026-09-08 补 Kanban 降列）──
+     窄屏不再降列数：列已有保底宽度、外层可横滚，降列只会让列再次被压扁。 */
+  @media (max-width:720px){ #kanban-grid{--kb-colw:200px} }
+  @media (max-width: 900px){
+    body{flex-direction:column}
+    aside{position:static;width:100%;min-width:0;height:auto;border-right:none;border-bottom:1px solid var(--border);padding:10px 0 0}
+    .brand{padding:0 16px 10px;margin-bottom:0;border-bottom:none;padding-right:60px}
+    nav{display:flex;overflow-x:auto;white-space:nowrap;padding:0 8px 8px}
+    nav .group{display:none}
+    nav a{border-left:none;border-bottom:2px solid transparent;padding:6px 10px;flex-shrink:0}
+    nav a.active{border-left-color:transparent;border-bottom-color:var(--accent)}
+    .side-foot{position:absolute;top:12px;right:12px;border-top:none;padding:0}
+    main{height:auto;overflow-y:visible}
+  }
+</style>
+</head>
+<body>
+<aside>
+  <div class="brand">
+    <h1>002 · cc-moss Stage 2 状态栏 App</h1>
+    <div class="sub">.sdd/002-menubar · 面板、图标动画、通知中心、事件流</div>
+  </div>
+  <nav id="nav">
+    <div class="group">为什么</div>
+    <a data-sec="background" class="active"><span class="ic">▤</span>背景 / 铁证</a>
+    <a data-sec="gaps"><span class="ic">⚠</span>根因 / 缺口</a>
+    <div class="group">怎么做</div>
+    <a data-sec="design"><span class="ic">⟳</span>方案核心</a>
+    <a data-sec="anchors"><span class="ic">⚿</span>代码锚点</a>
+    <div class="group">实施</div>
+    <a data-sec="kanban"><span class="ic">☑</span>Kanban 推进</a>
+    <!-- 需交互模拟器的需求（决策/参数类）在此加板块，如 <a data-sec="simulator">模拟器</a> -->
+  </nav>
+  <div class="side-foot">
+    <div class="theme-switch" id="themeBtn" title="切换主题"><span class="knob" id="knob">☾</span></div>
+    <span class="foot-label">theme</span>
+  </div>
+</aside>
+<main>
+  <section id="background">
+    <h2>背景 / 铁证</h2>
+    <p>Stage 1（v0.1.1）让会话在崩溃、重启后能找回，但一切都要先打开终端敲 <code>t</code> 才看得到。用户要的是一个常驻菜单栏、精心设计的原生面板：图标动画表达动态，会话事件进通知中心；之后再长出桌面宠物、代办确认与语音对话。</p>
+    <table><tr><th>#</th><th>缺口</th></tr>
+    <tr><td>D1</td><td>会话状态只有打开终端敲 <code>t</code> 才看得到</td></tr>
+    <tr><td>D2</td><td>重启后没有任何东西提醒「有会话断了」</td></tr>
+    <tr><td>D3</td><td>去某个会话得先找到一个终端窗口</td></tr>
+    <tr><td>D4</td><td>用户原始需求：macOS 原生常驻状态栏 App</td></tr></table>
+  </section>
+
+  <section id="gaps">
+    <h2>根因 / 缺口</h2>
+    <table><tr><th>App 需要</th><th>现状</th></tr>
+    <tr><td>读全部会话与状态</td><td>✅ <code>ls --json</code>，0.2 秒</td></tr>
+    <tr><td>按项目分组、worktree 标记</td><td>⚠️ 选择器里有，JSON 里没有</td></tr>
+    <tr><td>「刚发生了什么」（事件）</td><td>❌ 只有快照</td></tr>
+    <tr><td>「需要你确认」</td><td>❌ 未注册 Notification 钩子</td></tr>
+    <tr><td>找回、新建、便条、不再提醒</td><td>✅ CLI 命令齐全</td></tr>
+    <tr><td>GUI 进程找到 cc-moss 与 tmux</td><td>❌ GUI 的 PATH 极简，需 App 补齐</td></tr></table>
+  </section>
+
+  <section id="design">
+    <h2>方案核心</h2>
+    <pre>
+ Claude Code ──钩子──> cc-moss hook ──> registry.db（快照 + events 表）
+                                           │ 只经 CLI 读写
+ cc-moss.app ── ls --json / events --since ┘
+   ├─ 面板：搜索、按项目分组、两行卡片、找回横幅
+   ├─ 图标动画：在忙流动 / 需要你确认轻跳 / 断了琥珀 / 在等你小圆点
+   ├─ 通知中心：按类型开关，点击即在终端打开
+   └─ 打开会话：Ghostty / iTerm2 / Terminal 新窗口执行 cc-moss attach
+    </pre>
+    <p>已拍板：Swift + SwiftUI、macOS 14+；App 不碰数据库；事件是一等公民；随 cc-moss 一起发（ad-hoc 签名，不走 cask）；本迭代不拦截确认。</p>
+    <p>后续路线：003 桌面宠物 → 004 宠物代办确认 → 005 语音对话。</p>
+  </section>
+
+  <section id="anchors">
+    <h2>代码锚点校准 <span class="badge mut" id="anchorDate">核实日期：待填</span></h2>
+    <!-- 填：锚点核实结果（精确命中/行号漂移/语义变化/新发现四档，对齐 notes/code-anchors-verified.md）。
+         锚点重核后把上方 badge 换成真实日期——只剩「待填」badge 视同空，本 section 会被隐藏。 -->
+  </section>
+
+  <section id="kanban">
+    <h2>Kanban 推进 <span class="badge info" id="kbCount">— Phase × — Task</span></h2>
+    <!-- 作者纪律（不写进页面正文）：五态 ⬜ Backlog · 🟦 Ready · 🟨 In Progress · 🟩 Review · ✅ Done。
+         状态是跨 session 真相源，改动须与 PLAN Kanban 表双写同步并数一遍总数（gen_kanban.py --check 兜底）。
+         读者只需要下面这行带实时计数的图例，纪律留在这里。 -->
+    <div class="kb-legend" id="kbLegend"></div>
+    <!-- 卡片点开抽屉看全文：卡面的标题/dep/验收锚点都是截断显示的 -->
+    <div class="kb-scroll"><div id="kanban-grid"></div></div>
+  </section>
+</main>
+
+<!-- 任务抽屉：内容由 openDrawer 填充 -->
+<div class="kb-drawer" id="kbDrawer" role="dialog" aria-modal="true" aria-labelledby="kbdTid">
+  <div class="scrim" data-close></div>
+  <div class="kb-panel">
+    <div class="dh">
+      <span class="tid" id="kbdTid"></span>
+      <span id="kbdSt"></span>
+      <button class="dx" data-close aria-label="关闭">✕</button>
+    </div>
+    <div class="db">
+      <div class="dt" id="kbdTitle"></div>
+      <dl id="kbdMeta"></dl>
+      <div id="kbdStepsBox" hidden>
+        <p class="dsec">工作项</p>
+        <ol class="dsteps" id="kbdSteps"></ol>
+      </div>
+      <p class="dsec">验收锚点</p>
+      <div class="dac" id="kbdAc"></div>
+    </div>
+    <div class="dnav">
+      <button id="kbdPrev">← 上一个</button>
+      <button id="kbdNext">下一个 →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ═══ Kanban 数据（与 PLAN-<slug>.md 双写同源；改一处必改另一处并数总数）═══
+   st ∈ backlog | ready | doing | review | done
+   手填，或跑 skill 的 scripts/gen_kanban.py 从 PLAN 生成 TASKS 粘进来。 */
+const TASKS = [
+  {id:'T1.1', t:'面板与快照', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'面板与 `t` 一致，2 秒内刷新', steps:[]},
+  {id:'T1.2', t:'在终端里打开', repo:'cc-moss', dep:'T1.1', st:'backlog', sdd:'—', ac:'三种终端真机打开', steps:[]},
+  {id:'T1.3', t:'找回', repo:'cc-moss', dep:'T1.1,T1.2', st:'backlog', sdd:'—', ac:'杀 server 后面板全部找回', steps:[]},
+  {id:'T2.1', t:'会话事件流（CLI）', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'事件序列 + 钩子 p95', steps:[]},
+  {id:'T2.2', t:'图标动画', repo:'cc-moss', dep:'T1.1,T2.1', st:'backlog', sdd:'—', ac:'四态录屏，空闲 CPU < 1%', steps:[]},
+  {id:'T2.3', t:'通知中心', repo:'cc-moss', dep:'T1.2,T2.1', st:'backlog', sdd:'—', ac:'四类通知真机触发', steps:[]},
+  {id:'T2.4', t:'开机自启与设置', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'重启后收到提醒并找回', steps:[]},
+  {id:'T2.5', t:'新会话、便条与不再提醒', repo:'cc-moss', dep:'T1.2', st:'backlog', sdd:'—', ac:'三项操作 `t` 里可见', steps:[]},
+  {id:'T3.1', t:'打包与分发', repo:'cc-moss', dep:'T1.3,T2.2,T2.4,T2.5', st:'backlog', sdd:'—', ac:'干净用户目录 brew 全流程', steps:[]},
+  {id:'T3.2', t:'打磨、文档与 0.2.0', repo:'cc-moss', dep:'T3.1', st:'backlog', sdd:'—', ac:'3 台 Mac 升到 0.2.0', steps:[]},
+];
+const PHASES = [
+  {k:'P1', name:'MVP：看清、打开、找回', ids:['T1.1','T1.2','T1.3']},
+  {k:'P2', name:'动态与通知', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
+  {k:'P3', name:'发布', ids:['T3.1','T3.2']},
+];
+
+/* ═══ 以下为通用渲染 + 空态/主题/导航逻辑，无需改 ═══ */
+const KB_ST = {
+  backlog:['○','Backlog','mut'], ready:['●','Ready','ok'], doing:['','Doing','warn'],
+  review:['◆','Review','info'], done:['✓','Done','ok'],
+};
+const KB_ORDER = ['backlog','ready','doing','review','done'];
+const esc = s => String(s==null?'':s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+function renderLegend(){
+  const host=document.getElementById('kbLegend'); if(!host) return;
+  const shown=new Set(PHASES.flatMap(p=>p.ids));
+  const rows=TASKS.filter(t=>shown.has(t.id));
+  const chips=KB_ORDER.map(st=>{
+    const [ic,label]=KB_ST[st]; const n=rows.filter(t=>t.st===st).length;
+    return `<span class="lg" data-zero="${n?0:1}"><span class="st-pill st-${st}">${ic?ic+' ':''}${label}</span><span class="n">${n}</span></span>`;
+  }).join('');
+  host.innerHTML=chips+`<span class="sep"></span><span class="tot">共 ${rows.length} Task · ${PHASES.length} Phase</span>`;
+}
+function renderKanban(){
+  const host=document.getElementById('kanban-grid'); if(!host) return;
+  host.style.setProperty('--kb-cols', Math.max(PHASES.length,1));
+  host.innerHTML=PHASES.map(p=>{
+    const doneN=p.ids.filter(id=>(TASKS.find(x=>x.id===id)||{}).st==='done').length;
+    const cards=p.ids.map(id=>{
+      const t=TASKS.find(x=>x.id===id); if(!t) return '';
+      const [ic,label,cls]=KB_ST[t.st]||KB_ST.backlog;
+      const sddB=t.sdd&&t.sdd!=='—'
+        ? `<span class="badge info" title="${esc(t.sdd)}">📄 ${esc(t.sdd)}</span>`
+        : `<span class="badge mut">SDD 待产</span>`;
+      return `<div class="kb-card st-${esc(t.st)}" data-tid="${esc(t.id)}"
+          role="button" tabindex="0" aria-label="查看 ${esc(t.id)} 详情">
+        <div class="r1"><span class="tid">${esc(t.id)}</span><span class="st-pill st-${esc(t.st)}">${ic?ic+' ':''}${label}</span></div>
+        <div class="tt" title="${esc(t.t)}">${esc(t.t)}</div>
+        <div class="meta"><span class="badge mut" title="仓：${esc(t.repo)}">${esc(t.repo)}</span><span class="badge mut b-dep" title="依赖：${esc(t.dep)}">dep:${esc(t.dep)}</span></div>
+        <div class="meta">${sddB}</div>
+        <div class="ac" title="${esc(t.ac)}">✓ ${esc(t.ac)}</div></div>`;
+    }).join('');
+    return `<div class="kb-col"><div class="kb-head" title="${esc(p.k+' '+p.name)}">
+      <span class="pk">${esc(p.k)}</span><span class="pn">${esc(p.name)}</span>
+      <span class="pc">${doneN}/${p.ids.length}</span></div>${cards}</div>`;
+  }).join('');
+  const totalTasks=PHASES.reduce((n,p)=>n+p.ids.length,0);
+  const c=document.getElementById('kbCount');
+  if(c) c.textContent=`${PHASES.length} Phase × ${totalTasks} Task`;
+}
+
+/* ── 任务抽屉 ──
+   卡面受列宽约束，标题 2 行、验收锚点 3 行截断，长依赖链只剩省略号；
+   全文只在 title 属性里，触屏读不到。抽屉给出未截断的全字段。
+   顺序按看板阅读顺序（Phase 内 ids 顺序）展平，前后键沿此顺序走。 */
+const KB_FLAT = PHASES.flatMap(p=>p.ids.map(id=>({id,phase:p})));
+let kbIdx = -1;
+function openDrawer(tid){
+  const i=KB_FLAT.findIndex(x=>x.id===tid); if(i<0) return;
+  kbIdx=i;
+  const {phase}=KB_FLAT[i];
+  const t=TASKS.find(x=>x.id===tid); if(!t) return;
+  const [ic,label,cls]=KB_ST[t.st]||KB_ST.backlog;
+  document.getElementById('kbdTid').textContent=t.id;
+  document.getElementById('kbdSt').innerHTML=`<span class="st-pill st-${esc(t.st)}">${ic?ic+' ':''}${label}</span>`;
+  document.getElementById('kbdTitle').textContent=t.t;
+  const rows=[
+    ['阶段', `${phase.k} ${phase.name}`],
+    ['仓', t.repo],
+    ['依赖', t.dep],
+    ['SDD', t.sdd && t.sdd!=='—' ? t.sdd : 'SDD 待产'],
+  ];
+  document.getElementById('kbdMeta').innerHTML=
+    rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join('');
+  // PLAN 的步骤文本带 markdown 的 `code` 与 **强调**，原样显示会露出星号。
+  // 先转义再放行这两种行内标记 —— 顺序不能反，否则等于开了 XSS 口子。
+  const md = v => esc(v)
+    .replace(/`([^`]+)`/g, '<code>$1</code>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  const steps = t.steps || [];
+  document.getElementById('kbdStepsBox').hidden = steps.length === 0;
+  document.getElementById('kbdSteps').innerHTML =
+    steps.map(x => `<li>${md(x)}</li>`).join('');
+  document.getElementById('kbdAc').innerHTML=t.ac?md(t.ac):'—';
+  document.getElementById('kbdPrev').disabled = i<=0;
+  document.getElementById('kbdNext').disabled = i>=KB_FLAT.length-1;
+  const d=document.getElementById('kbDrawer');
+  d.setAttribute('open','');
+  d.querySelector('.dx').focus();
+}
+function closeDrawer(){
+  const d=document.getElementById('kbDrawer');
+  d.removeAttribute('open');
+  // 焦点还给来源卡片，键盘用户不会被丢回文档开头
+  if(kbIdx>=0) document.querySelector(`.kb-card[data-tid="${CSS.escape(KB_FLAT[kbIdx].id)}"]`)?.focus();
+  kbIdx=-1;
+}
+function stepDrawer(delta){
+  const i=kbIdx+delta;
+  if(i>=0 && i<KB_FLAT.length) openDrawer(KB_FLAT[i].id);
+}
+function initDrawer(){
+  const grid=document.getElementById('kanban-grid'), d=document.getElementById('kbDrawer');
+  if(!grid||!d) return;
+  grid.addEventListener('click',e=>{
+    const card=e.target.closest('.kb-card'); if(card) openDrawer(card.dataset.tid);
+  });
+  grid.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'&&e.key!==' ') return;
+    const card=e.target.closest('.kb-card'); if(!card) return;
+    e.preventDefault(); openDrawer(card.dataset.tid);
+  });
+  d.querySelectorAll('[data-close]').forEach(el=>el.onclick=closeDrawer);
+  document.getElementById('kbdPrev').onclick=()=>stepDrawer(-1);
+  document.getElementById('kbdNext').onclick=()=>stepDrawer(1);
+  document.addEventListener('keydown',e=>{
+    if(!d.hasAttribute('open')) return;
+    if(e.key==='Escape') closeDrawer();
+    else if(e.key==='ArrowLeft') stepDrawer(-1);
+    else if(e.key==='ArrowRight') stepDrawer(1);
+  });
+}
+
+/* 空 section 自愈：除 h2 外没有可见内容的 section 连同其菜单项一起隐藏；
+   data-empty 的 section 改渲染统一空态块。只剩「待填」类 badge 视为空信号。 */
+const EMPTY_BADGE = /待填|TBD|待补|—\s*$/;
+function sectionIsEmpty(sec){
+  for(const el of sec.children){
+    if(el.tagName==='H2'){
+      // h2 里除标题文字外若挂了实义 badge（如真实核实日期），算内容
+      const badges=[...el.querySelectorAll('.badge')];
+      if(badges.some(b=>b.textContent.trim() && !EMPTY_BADGE.test(b.textContent.trim()))) return false;
+      continue;
+    }
+    if(el.textContent.trim()) return false;
+    if(el.querySelector('img,svg,canvas,table,pre,iframe,input,button')) return false;
+  }
+  return true;
+}
+function initSections(){
+  const links=[...document.querySelectorAll('nav a[data-sec]')];
+  for(const sec of document.querySelectorAll('main section')){
+    const why=sec.getAttribute('data-empty');
+    const empty=sectionIsEmpty(sec);
+    if(why!==null){
+      if(empty && !sec.querySelector('.empty-state')){
+        const box=document.createElement('div');
+        box.className='empty-state';
+        box.innerHTML=`<div class="es-why">${esc(why)}</div>`
+          +`<div class="es-ptr">本板块本迭代无内容 · 详见 PLAN.md / DESIGN.md</div>`;
+        sec.appendChild(box);
+      }
+      continue;                       // 有意空态：显示，不隐藏
+    }
+    if(!empty) continue;
+    sec.hidden=true;
+    links.filter(a=>a.dataset.sec===sec.id).forEach(a=>a.hidden=true);
+  }
+  // 一个 group 下的菜单项全隐藏时，收起该组标题（否则留下悬空的分组名）
+  let group=null, groupHasVisible=false;
+  const flush=()=>{ if(group) group.hidden=!groupHasVisible; };
+  for(const el of document.querySelectorAll('#nav > *')){
+    if(el.classList.contains('group')){ flush(); group=el; groupHasVisible=false; }
+    else if(el.tagName==='A' && !el.hidden) groupHasVisible=true;
+  }
+  flush();
+}
+function initNav(){
+  const links=[...document.querySelectorAll('nav a[data-sec]')].filter(a=>!a.hidden);
+  links.forEach(a=>a.onclick=()=>{ const el=document.getElementById(a.dataset.sec); if(el) el.scrollIntoView({behavior:'smooth',block:'start'}); });
+  const secs=links.map(a=>document.getElementById(a.dataset.sec)).filter(Boolean);
+  // 首屏激活第一个可见 section——隐藏了首个板块时不该留一个指向空处的高亮
+  document.querySelectorAll('nav a').forEach(a=>a.classList.remove('active'));
+  links[0]?.classList.add('active');
+  const main=document.querySelector('main');
+  main.addEventListener('scroll',()=>{
+    let cur=secs[0]?.id;
+    for(const s of secs){ if(s.getBoundingClientRect().top<200) cur=s.id; }
+    links.forEach(a=>a.classList.toggle('active', a.dataset.sec===cur));
+  });
+}
+function initTheme(){
+  const root=document.documentElement, knob=document.getElementById('knob');
+  const KEY='larrysdd-theme';
+  const saved=localStorage.getItem(KEY)||'light';
+  root.setAttribute('data-theme',saved); knob.textContent=saved==='dark'?'☾':'☀';
+  document.getElementById('themeBtn').onclick=()=>{
+    const next=root.getAttribute('data-theme')==='dark'?'light':'dark';
+    root.setAttribute('data-theme',next); knob.textContent=next==='dark'?'☾':'☀';
+    localStorage.setItem(KEY,next);
+  };
+}
+renderKanban(); renderLegend(); initDrawer(); initSections(); initNav(); initTheme();
+</script>
+</body>
+</html>
