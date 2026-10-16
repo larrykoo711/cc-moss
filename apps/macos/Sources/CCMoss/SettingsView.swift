@@ -13,6 +13,8 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State var tab: Tab = .general
+    /// Canned `alias ls --json` for screenshots.
+    var aliasDemo: AliasList?
     @State private var search = ""
     @State private var back: [Tab] = []
     @State private var forward: [Tab] = []
@@ -21,11 +23,12 @@ struct SettingsView: View {
     static let size = CGSize(width: 820, height: 560)
 
     enum Tab: CaseIterable, Hashable {
-        case general, about
+        case general, aliases, about
 
         var title: String {
             switch self {
             case .general: L.t("General", "通用")
+            case .aliases: L.t("Aliases", "别名")
             case .about: L.t("About", "关于")
             }
         }
@@ -33,6 +36,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: Icons.general
+            case .aliases: Icons.aliases
             case .about: "infinity"
             }
         }
@@ -40,6 +44,7 @@ struct SettingsView: View {
         var tint: [Color] {
             switch self {
             case .general: [Color(white: 0.62), Color(white: 0.45)]
+            case .aliases: AliasRow.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
         }
@@ -48,6 +53,7 @@ struct SettingsView: View {
         var keywords: [String] {
             switch self {
             case .general: [title, "cc-moss", L.t("login startup command path version update", "开机 登录 启动 命令 位置 路径 版本 更新")]
+            case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
             }
         }
@@ -83,6 +89,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         switch tab {
                         case .general: GeneralSettings(model: model)
+                        case .aliases: AliasesSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
                         }
                     }

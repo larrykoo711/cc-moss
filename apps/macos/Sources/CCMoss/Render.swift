@@ -7,6 +7,7 @@ import SwiftUI
 ///   CCMoss --render out.png --demo sessions.json [--dark] [--query q]
 ///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
 ///          [--now 2026-10-16T12:00:00Z]
+///          [--settings general|aliases|about [--aliases <alias ls --json file>]]
 enum Render {
     @MainActor static func run(out: String, args: [String]) {
         func value(_ flag: String) -> String? {
@@ -35,7 +36,15 @@ enum Render {
             }
             if let id = value("--select") { model.selectedID = id }
             if let tab = value("--settings") {
-                drawSettings(model: model, tab: tab == "about" ? .about : .general, dark: args.contains("--dark"), out: out)
+                // `--aliases <alias ls --json file>` for the aliases page.
+                let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
+                    .flatMap { try? AliasList.decode($0) }
+                let page: SettingsView.Tab = switch tab {
+                case "about": .about
+                case "aliases": .aliases
+                default: .general
+                }
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"), out: out)
             } else {
                 draw(model: model, dark: args.contains("--dark"), actions: args.contains("--actions"), out: out)
             }
@@ -87,8 +96,8 @@ enum Render {
         app.run()
     }
 
-    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, dark: Bool, out: String) {
-        let root = SettingsView(model: model, tab: tab)
+    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool, out: String) {
+        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         let size = host.fittingSize
