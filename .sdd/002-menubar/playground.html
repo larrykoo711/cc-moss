@@ -381,10 +381,10 @@
    st ∈ backlog | ready | doing | review | done
    手填，或跑 skill 的 scripts/gen_kanban.py 从 PLAN 生成 TASKS 粘进来。 */
 const TASKS = [
-  {id:'T1.1', t:'面板与快照', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'面板与 `t` 一致，2 秒内刷新', steps:[]},
+  {id:'T1.1', t:'面板与快照', repo:'cc-moss', dep:'—', st:'ready', sdd:'—', ac:'面板与 `t` 一致，2 秒内刷新', steps:[]},
   {id:'T1.2', t:'在终端里打开', repo:'cc-moss', dep:'T1.1', st:'backlog', sdd:'—', ac:'三种终端真机打开', steps:[]},
   {id:'T1.3', t:'找回', repo:'cc-moss', dep:'T1.1,T1.2', st:'backlog', sdd:'—', ac:'杀 server 后面板全部找回', steps:[]},
-  {id:'T2.1', t:'会话事件流（CLI）', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'事件序列 + 钩子 p95', steps:[]},
+  {id:'T2.1', t:'会话事件流（CLI）', repo:'cc-moss', dep:'—', st:'ready', sdd:'—', ac:'事件序列 + 钩子 p95', steps:[]},
   {id:'T2.2', t:'图标动画', repo:'cc-moss', dep:'T1.1,T2.1', st:'backlog', sdd:'—', ac:'四态录屏，空闲 CPU < 1%', steps:[]},
   {id:'T2.3', t:'通知中心', repo:'cc-moss', dep:'T1.2,T2.1', st:'backlog', sdd:'—', ac:'四类通知真机触发', steps:[]},
   {id:'T2.4', t:'开机自启与设置', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'重启后收到提醒并找回', steps:[]},

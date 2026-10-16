@@ -152,10 +152,10 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
-| **T1.1** 面板与快照 | cc-moss | — | ⬜ Backlog | — | 面板与 `t` 一致，2 秒内刷新 |
+| **T1.1** 面板与快照 | cc-moss | — | 🟦 Ready | todo/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
 | **T1.2** 在终端里打开 | cc-moss | T1.1 | ⬜ Backlog | — | 三种终端真机打开 |
 | **T1.3** 找回 | cc-moss | T1.1,T1.2 | ⬜ Backlog | — | 杀 server 后面板全部找回 |
-| **T2.1** 会话事件流（CLI） | cc-moss | — | ⬜ Backlog | — | 事件序列 + 钩子 p95 |
+| **T2.1** 会话事件流（CLI） | cc-moss | — | 🟦 Ready | todo/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
 | **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ⬜ Backlog | — | 四态录屏，空闲 CPU < 1% |
 | **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 四类通知真机触发 |
 | **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
