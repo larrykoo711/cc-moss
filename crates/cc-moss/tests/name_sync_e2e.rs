@@ -85,3 +85,25 @@ fn duplicate_names_get_a_suffix() {
         (names == ["host_job-a", "host_job-a-2"]).then_some(())
     });
 }
+
+#[test]
+fn new_passes_claude_flags_without_double_dash() {
+    let w = World::new("passthru");
+    let out = w
+        .cc_moss()
+        .args(["new", "--model", "opus", "job-a", "--detach", "-C"])
+        .arg(w.path("work"))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    w.session_id("job-a");
+    let cmd = w.tmux(&[
+        "list-panes",
+        "-t",
+        "host_job-a",
+        "-F",
+        "#{pane_start_command}",
+    ]);
+    assert!(cmd.contains("--model opus"), "{cmd}");
+    assert!(cmd.contains("--name=job-a"), "{cmd}");
+}

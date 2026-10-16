@@ -66,7 +66,7 @@ enum Command {
         /// If the name belongs to an interrupted session, restore it without asking.
         #[arg(long)]
         yes: bool,
-        /// Extra arguments for claude, after `--`.
+        /// Extra arguments for claude, e.g. `--model opus`; `--` is optional.
         #[arg(last = true)]
         claude_args: Vec<String>,
     },
@@ -196,7 +196,7 @@ enum AliasCommand {
     ///
     /// `cc-moss alias add tn new` makes `tn login-page` run
     /// `cc-moss new login-page`, in any shell, right away. One quoted
-    /// argument is read as command text: `cc-moss alias add tr "restore --yes"`.
+    /// argument is read as command text: `cc-moss alias add tback "restore --yes"`.
     /// Put --force and --json before the name.
     Add {
         /// Use the name even if it is already a command on your PATH.
@@ -253,10 +253,24 @@ fn arguments() -> Result<Vec<std::ffi::OsString>, anyhow::Error> {
 }
 
 fn main() -> std::process::ExitCode {
-    let argv = match arguments() {
+    let mut argv = match arguments() {
         Ok(argv) => argv,
         Err(e) => return report(Err(e)),
     };
+    // `cc-moss new` takes Claude Code's own flags without a `--`, so an
+    // alias such as `mycc = "new --dangerously-skip-permissions"` works.
+    if argv.get(1).is_some_and(|a| a == "new") {
+        let rest: Vec<String> = argv[2..]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        argv.truncate(2);
+        argv.extend(
+            moss_core::launch_args::normalize_new(&rest)
+                .into_iter()
+                .map(Into::into),
+        );
+    }
     // Hooks never go through clap: a usage error exits 2, which Claude Code
     // treats as a blocking error on UserPromptSubmit. Arguments a newer
     // cc-moss might add are ignored; the event is the first non-flag word.

@@ -54,7 +54,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "new",
         "claude_args",
-        "传给 claude 的额外参数，写在 `--` 之后",
+        "传给 claude 的额外参数，例如 `--model opus`；`--` 可写可不写",
     ),
     (
         "setup",
@@ -149,7 +149,7 @@ const TEXT: &[(&str, &str, &str)] = &[
 
 const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令。\n\n\
 `cc-moss alias add tn new` 之后，`tn 登录页` 就等于 `cc-moss new 登录页`，任何 shell 里马上能用。\
-只给一个带引号的参数时，它会被当成整条命令来读：`cc-moss alias add tr \"restore --yes\"`。\
+只给一个带引号的参数时，它会被当成整条命令来读：`cc-moss alias add tback \"restore --yes\"`。\
 --force 和 --json 要写在名字前面。";
 
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\

@@ -234,10 +234,11 @@ struct PanelView: View {
             }
         }
         if !s.inTmux {
-            return PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "↵",
+            // An attach command is no use for it; its folder is (user 2026-10-16).
+            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: "↵",
                                help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
                                          "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。")) {
-                copy(model.attachCommand(s))
+                copy(s.cwd)
             }
         }
         let terminal = model.terminals.current
@@ -255,10 +256,12 @@ struct PanelView: View {
             list.append(primary)
         }
         if let s = model.selected, model.phase == .ready {
-            list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                copy(model.attachCommand(s))
-            })
-            list.append(PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: "") {
+            if s.inTmux || s.state == .interrupted {
+                list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                    copy(model.attachCommand(s))
+                })
+            }
+            list.append(PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: s.inTmux ? "" : "↵") {
                 copy(s.cwd)
             })
         }

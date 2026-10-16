@@ -79,7 +79,7 @@ rm -rf ~/.local/state/cc-moss    # optional: the registry and its log
 t                                    # open the picker (same as plain `cc-moss`)
 t api                                # open it already searching for "api"
 cc-moss new api-gateway              # start, jump into or restore the session named api-gateway
-cc-moss new -C ~/code/acme -- --model opus   # pick the folder, pass arguments through to claude
+cc-moss new -C ~/code/acme --model opus   # pick the folder; Claude Code's own flags go straight through
 cc-moss note api-gateway --state "Waiting for the staging config"
 cc-moss ls                           # interrupted sessions first, then running ones
 cc-moss restore                      # after a crash: bring everything back
@@ -132,7 +132,8 @@ terminals, right after you add it: no `source`. `t` is one: `t` is `cc-moss pick
 
 ```sh
 cc-moss alias add tn new            # tn login-page  →  cc-moss new login-page
-cc-moss alias add tr "restore --yes"
+cc-moss alias add mycc "new --dangerously-skip-permissions"   # mycc login-page
+cc-moss alias add tback "restore --yes"
 cc-moss alias ls
 cc-moss alias rm tn
 ```

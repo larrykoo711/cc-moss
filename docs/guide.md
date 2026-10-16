@@ -64,7 +64,7 @@ rm -rf ~/.local/state/cc-moss    # 可选：登记表和它的日志
 t                                    # 打开选择器（等同于直接运行 `cc-moss`）
 t api                                # 打开时已经在搜「api」
 cc-moss new api-gateway              # 新建、进入或恢复名为 api-gateway 的会话
-cc-moss new -C ~/code/acme -- --model opus   # 指定目录，并把参数透传给 claude
+cc-moss new -C ~/code/acme --model opus   # 指定目录；Claude Code 自己的参数直接写，cc-moss 会转交给它
 cc-moss note api-gateway --state "在等预发环境的配置"
 cc-moss ls                           # 先列中断的会话，再列运行中的
 cc-moss restore                      # 崩溃之后：全部找回来
@@ -116,7 +116,8 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 ```sh
 cc-moss alias add tn new            # tn 登录页  →  cc-moss new 登录页
-cc-moss alias add tr "restore --yes"
+cc-moss alias add mycc "new --dangerously-skip-permissions"   # mycc 登录页
+cc-moss alias add tback "restore --yes"
 cc-moss alias ls
 cc-moss alias rm tn
 ```
