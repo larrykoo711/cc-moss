@@ -39,6 +39,53 @@ public enum Message {
         }
         return .ok
     }
+
+    /// Up to three names to pick with one click: the folder, the worktree,
+    /// a few words of the last prompt. Each is free (a taken one gets the
+    /// next free number) and differs from the current name.
+    public static func renameSuggestions(for session: Session, among sessions: [Session]) -> [String] {
+        var seeds = [slug((session.cwd as NSString).lastPathComponent)]
+        if let root = session.worktree?.root { seeds.append(slug((root as NSString).lastPathComponent)) }
+        if let prompt = session.lastPrompt { seeds.append(promptSlug(prompt)) }
+        var out: [String] = []
+        for seed in seeds where !seed.isEmpty {
+            guard let name = free(seed, of: session, among: sessions, avoiding: out) else { continue }
+            out.append(name)
+            if out.count == 3 { break }
+        }
+        return out
+    }
+
+    /// `seed`, or `seed-2`, `seed-3`… whichever is free first.
+    private static func free(_ seed: String, of session: Session, among sessions: [Session], avoiding: [String]) -> String? {
+        for n in 1...20 {
+            let name = n == 1 ? seed : "\(seed)-\(n)"
+            if avoiding.contains(name) { return nil }
+            switch checkRename(name, of: session, among: sessions) {
+            case .ok: return name
+            case .unchanged: return nil
+            default: continue
+            }
+        }
+        return nil
+    }
+
+    /// Lowercase words joined by dashes; anything else is dropped.
+    static func slug(_ text: String) -> String {
+        text.lowercased()
+            .split(whereSeparator: { !($0.isLetter || $0.isNumber) })
+            .joined(separator: "-")
+    }
+
+    /// The first three meaningful English words of a prompt.
+    static func promptSlug(_ prompt: String) -> String {
+        let filler: Set<String> = ["the", "a", "an", "to", "of", "and", "or", "for", "in", "on", "please", "can", "you", "it", "this", "that", "my", "me", "with"]
+        let words = prompt.lowercased()
+            .split(whereSeparator: { !($0.isASCII && ($0.isLetter || $0.isNumber)) })
+            .map(String.init)
+            .filter { $0.count > 1 && !filler.contains($0) }
+        return words.prefix(3).joined(separator: "-")
+    }
 }
 
 extension MossClient {

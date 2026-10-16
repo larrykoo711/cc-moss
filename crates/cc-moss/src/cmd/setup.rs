@@ -21,6 +21,8 @@ pub struct Options {
     pub uninstall: bool,
     pub settings: Option<PathBuf>,
     pub zshrc: Option<PathBuf>,
+    /// Say nothing when there is nothing to do (`install --dry-run --json`).
+    pub quiet: bool,
 }
 
 /// The managed `.zshrc` block where versions before 0.2 kept `t` as a zsh
@@ -88,6 +90,9 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
     // Compare documents, not text: a file the user formatted differently
     // should not be rewritten when nothing changes semantically.
     if new_doc == old_doc && (original.is_some() || opts.uninstall) {
+        if opts.quiet {
+            return Ok(None);
+        }
         if opts.uninstall {
             println!(
                 "{}",

@@ -1,4 +1,5 @@
 pub mod alias;
+pub mod app;
 pub mod attach;
 pub mod close;
 pub mod config;

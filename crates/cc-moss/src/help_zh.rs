@@ -81,13 +81,13 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "install",
         "",
-        "一次装好终端：钩子、tmux、starship、shell 区块，以及它们需要的工具",
+        "一次装好终端：钩子、tmux、starship、shell 区块，以及它们需要的工具（macOS 上还有状态栏 App）",
     ),
     ("install", "with", "额外安装可选部分：aliases"),
     (
         "install",
         "skip",
-        "不装某一部分：hooks、tmux、starship、shell 或 aliases",
+        "不装某一部分：hooks、tmux、starship、shell、app 或 aliases",
     ),
     (
         "install",
@@ -97,9 +97,10 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "install",
         "uninstall",
-        "撤销 install：移除它加的钩子、配置块和文件",
+        "撤销 install：移除它加的钩子、配置块和文件，以及状态栏 App（macOS）",
     ),
     ("install", "dry_run", "只看会改什么，不做任何改动"),
+    ("install", "json", "配合 --dry-run：以 JSON 列出每一部分的状态（给状态栏 App 用）"),
     ("install", "yes", "不问直接应用"),
     (
         "doctor",

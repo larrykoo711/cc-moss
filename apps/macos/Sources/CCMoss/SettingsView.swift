@@ -23,12 +23,16 @@ struct SettingsView: View {
 
     static let size = CGSize(width: 820, height: 560)
 
-    enum Tab: CaseIterable, Hashable {
-        case general, notifications, aliases, about
+    /// The sections, in the sidebar's order. Everyday things first, one
+    /// subject per page; About stands apart at the bottom of the list.
+    enum Tab: String, CaseIterable, Hashable {
+        case general, menuBar, mo, notifications, aliases, about
 
         var title: String {
             switch self {
             case .general: L.t("General", "通用")
+            case .menuBar: L.t("Menu Bar", "菜单栏")
+            case .mo: L.t("Mo", "小莫")
             case .notifications: L.t("Notifications", "通知")
             case .aliases: L.t("Aliases", "别名")
             case .about: L.t("About", "关于")
@@ -38,32 +42,54 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: Icons.general
+            case .menuBar: "menubar.rectangle"
+            case .mo: "face.smiling"
             case .notifications: Icons.notifications
             case .aliases: Icons.aliases
             case .about: "infinity"
             }
         }
 
+        /// System Settings' palette: one hue per section, top-lit.
         var tint: [Color] {
             switch self {
             case .general: [Color(white: 0.62), Color(white: 0.45)]
+            case .menuBar: [Color(red: 0.30, green: 0.62, blue: 1.0), Color(red: 0.12, green: 0.44, blue: 0.95)]
+            case .mo: [Color(red: 0.25, green: 0.80, blue: 0.72), Color(red: 0.08, green: 0.62, blue: 0.56)]
             case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
             case .aliases: AliasRow.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
         }
 
+        /// A little room above this one in the sidebar: it starts a group.
+        var startsGroup: Bool { self == .aliases || self == .about }
+
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop shortcut hotkey keyboard language english chinese", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物 快捷键 热键 唤出 语言 中文 英文 english")]
+            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 终端 ghostty iterm wezterm kitty alacritty")]
+            case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
+            case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
+                                       "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
             case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
                                              "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
-            case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
+            case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }
     }
+
+    /// Open on a given section (Mo's menu opens on Mo): taken when the
+    /// window appears, or at once if it is already open.
+    @MainActor static func show(_ tab: Tab) {
+        pendingTab = tab
+        NotificationCenter.default.post(name: showTab, object: tab.rawValue)
+    }
+
+    @MainActor private static var pendingTab: Tab?
+    static let showTab = Notification.Name("cc-moss.settings.showTab")
 
     private var tabs: [Tab] {
         let q = search.lowercased().trimmingCharacters(in: .whitespaces)
@@ -84,17 +110,26 @@ struct SettingsView: View {
                 .frame(width: 252)
                 .padding(8)
             VStack(alignment: .leading, spacing: 0) {
-                NavCapsule(
-                    canGoBack: !back.isEmpty, canGoForward: !forward.isEmpty,
-                    goBack: { if let t = back.popLast() { forward.append(tab); tab = t } },
-                    goForward: { if let t = forward.popLast() { back.append(tab); tab = t } }
-                )
+                // The page's name beside back and forward, as in System Settings.
+                HStack(spacing: 12) {
+                    NavCapsule(
+                        canGoBack: !back.isEmpty, canGoForward: !forward.isEmpty,
+                        goBack: { if let t = back.popLast() { forward.append(tab); tab = t } },
+                        goForward: { if let t = forward.popLast() { back.append(tab); tab = t } }
+                    )
+                    Text(tab.title)
+                        .font(.system(size: 15, weight: .semibold))
+                        .contentTransition(.opacity)
+                        .animation(.easeOut(duration: 0.15), value: tab)
+                }
                 .padding(.top, 10)
-                .padding(.bottom, 12)
+                .padding(.bottom, 14)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         switch tab {
                         case .general: GeneralSettings(model: model)
+                        case .menuBar: MenuBarSettings(model: model)
+                        case .mo: PetSettings()
                         case .notifications: NotificationSettings()
                         case .aliases: AliasesSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
@@ -121,9 +156,19 @@ struct SettingsView: View {
         // undone by the next layout.
         .background(WindowLayoutHook())
         .tooltipLayer()
-        .onAppear { SettingsWindow.bringToFront() }
+        .onAppear {
+            SettingsWindow.bringToFront()
+            if let t = Self.pendingTab {
+                Self.pendingTab = nil
+                tab = t
+            }
+        }
         .onChange(of: search) { _, _ in
             if let first = tabs.first, !tabs.contains(tab) { go(first) }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Self.showTab)) { note in
+            Self.pendingTab = nil
+            if let raw = note.object as? String, let t = Tab(rawValue: raw) { go(t) }
         }
     }
 
@@ -166,6 +211,10 @@ struct SettingsView: View {
             .animation(.easeOut(duration: 0.15), value: searchFocused)
             .padding(.bottom, 10)
             ForEach(tabs, id: \.self) { t in
+                if t.startsGroup, search.isEmpty {
+                    Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 1)
+                        .padding(.horizontal, 8).padding(.vertical, 6)
+                }
                 SidebarItem(tab: t, selected: t == tab) { go(t) }
             }
             Spacer()
@@ -276,8 +325,9 @@ struct SettingsCard<Content: View>: View {
         VStack(alignment: .leading, spacing: 4) {
             if let title {
                 Text(title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .frame(minHeight: 32, alignment: .center)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 30, alignment: .center)
                     .padding(.leading, 12)
             }
             VStack(spacing: 0) {
@@ -327,6 +377,9 @@ struct FilledField: View {
     var monospaced = false
     /// Take the keyboard as soon as it appears (the panel's forms).
     var autofocus = false
+    /// The form's one field: taller, larger type, text selected on arrival
+    /// so typing replaces it.
+    var large = false
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -334,18 +387,24 @@ struct FilledField: View {
     var body: some View {
         TextField(placeholder, text: $text)
             .textFieldStyle(.plain)
-            .font(.system(size: 12, design: monospaced ? .monospaced : .default))
+            .font(.system(size: large ? 14 : 12, design: monospaced ? .monospaced : .default))
             .focused($focused)
             .onSubmit(onSubmit)
-            .padding(.horizontal, 10)
-            .frame(height: 28)
+            .padding(.horizontal, large ? 12 : 10)
+            .frame(height: large ? 36 : 28)
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.selection(scheme).opacity(0.8)))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
                     .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
             )
             .animation(.easeOut(duration: 0.12), value: focused)
-            .onAppear { if autofocus { focused = true } }
+            .onAppear {
+                guard autofocus else { return }
+                focused = true
+                if large {
+                    DispatchQueue.main.async { NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil) }
+                }
+            }
     }
 }
 
@@ -354,6 +413,8 @@ struct SoftButton: View {
     let title: String
     let icon: String
     var prominent = false
+    /// Its key, shown as a small keycap after the title (Raycast's action bar).
+    var shortcut: String?
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -363,6 +424,16 @@ struct SoftButton: View {
             HStack(spacing: 6) {
                 Image(systemName: icon).font(.system(size: 11, weight: .medium))
                 Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
+                if let shortcut {
+                    Text(shortcut)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                        .padding(.horizontal, 4)
+                        .frame(minWidth: 18, minHeight: 16)
+                        .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                            .fill(prominent ? Color.white.opacity(0.2) : Color.primary.opacity(0.07)))
+                        .padding(.leading, 1)
+                }
             }
             .foregroundStyle(prominent ? Color.white : Color.primary)
             .padding(.horizontal, 11)
@@ -381,6 +452,8 @@ struct SoftButton: View {
     }
 }
 
+/// General: starting up and calling the panel, the language, and where
+/// sessions open.
 struct GeneralSettings: View {
     @Bindable var model: AppModel
 
@@ -390,7 +463,7 @@ struct GeneralSettings: View {
     @State private var languageError: String?
 
     var body: some View {
-        SettingsCard {
+        SettingsCard(title: L.t("Startup", "启动")) {
             CardRow(
                 title: L.t("Open at Login", "开机自动打开"),
                 detail: loginError ?? L.t("Keep an eye on your sessions from the moment you log in.",
@@ -405,12 +478,15 @@ struct GeneralSettings: View {
             }
             CardRow(
                 title: L.t("Open the Panel", "唤出面板"),
-                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。")
+                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。"),
+                divider: false
             ) {
                 HotKeyRecorder()
             }
+        }
+        SettingsCard(title: L.t("Language", "语言")) {
             CardRow(
-                title: L.t("Language", "界面语言"),
+                title: L.t("Interface Language", "界面语言"),
                 detail: languageError ?? L.t("Also used by t and the terminal.",
                                              "和终端共用；t 下次打开时跟着换。"),
                 divider: false
@@ -424,24 +500,6 @@ struct GeneralSettings: View {
             }
         }
         TerminalSettings(prefs: model.terminals)
-        MenuBarSettings(model: model)
-        PetSettings()
-        SettingsCard(title: "cc-moss") {
-            CardRow(
-                title: L.t("Program", "程序位置"),
-                detail: model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) }
-                    ?? L.t("Not found in the usual places", "常见位置里没找到"),
-                divider: false
-            ) {
-                HStack(spacing: 8) {
-                    if UserDefaults.standard.string(forKey: "cliPath") != nil {
-                        SoftButton(title: L.t("Automatic", "自动"), icon: "arrow.uturn.backward") { set(nil) }
-                            .tip(L.t("Find it in the usual places again", "重新在常见位置自动找"))
-                    }
-                    SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
-                }
-            }
-        }
     }
 
     private func setLanguage(_ raw: String) {
@@ -466,6 +524,28 @@ struct GeneralSettings: View {
             loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
         }
         openAtLogin = LoginItem.isEnabled
+    }
+}
+
+/// Where the cc-moss program is: found in the usual places, or chosen.
+struct ProgramRow: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        CardRow(
+            title: L.t("Command Line", "命令行程序"),
+            detail: model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) }
+                ?? L.t("Not found in the usual places", "常见位置里没找到"),
+            divider: false
+        ) {
+            HStack(spacing: 8) {
+                if UserDefaults.standard.string(forKey: "cliPath") != nil {
+                    SoftButton(title: L.t("Automatic", "自动"), icon: "arrow.uturn.backward") { set(nil) }
+                        .tip(L.t("Find it in the usual places again", "重新在常见位置自动找"))
+                }
+                SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
+            }
+        }
     }
 
     private func set(_ path: String?) {
@@ -532,11 +612,15 @@ struct AboutSettings: View {
         VStack(spacing: 22) {
             hero
             SettingsCard(title: L.t("Software Update", "软件更新")) {
-                CardRow(title: updateTitle, detail: updateDetail, divider: false) {
+                CardRow(title: updateTitle, detail: updateDetail) {
                     updateControl
                 }
+                ProgramRow(model: model)
             }
             SettingsCard(title: L.t("Learn More", "了解更多")) {
+                LinkRow(icon: "sparkles", title: L.t("Show the Welcome Again", "再看一遍欢迎引导")) {
+                    WelcomeWindow.show(model: model)
+                }
                 LinkRow(icon: "book", title: L.t("User Guide", "使用手册"),
                         url: L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
                                  "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
@@ -678,13 +762,19 @@ struct VersionChip: View {
 struct LinkRow: View {
     let icon: String
     let title: String
-    let url: String
+    var url = ""
     var divider = true
+    /// Something in the app instead of a web page (no outward arrow).
+    var perform: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
         Button {
-            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+            if let perform {
+                perform()
+            } else if let u = URL(string: url) {
+                NSWorkspace.shared.open(u)
+            }
         } label: {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
@@ -694,7 +784,7 @@ struct LinkRow: View {
                         .frame(width: 20)
                     Text(title).font(.system(size: 14))
                     Spacer()
-                    Image(systemName: "arrow.up.right")
+                    Image(systemName: perform == nil ? "arrow.up.right" : "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(hovering ? .secondary : .tertiary)
                 }

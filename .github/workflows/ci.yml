@@ -82,7 +82,16 @@ jobs:
       - name: Bundle and sign
         run: |
           scripts/bundle.sh
-          codesign -dv build/cc-moss.app 2>&1 | grep -q 'Signature=adhoc'
+          scripts/check-bundle.sh
+  formula:
+    name: Homebrew formula renders
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - run: |
+          packaging/homebrew/render.sh v9.9.9 packaging/homebrew/testdata/SHA256SUMS > "$RUNNER_TEMP/cc-moss.rb"
+          ruby -c "$RUNNER_TEMP/cc-moss.rb"
+          grep -q 'prefix.install "cc-moss.app"' "$RUNNER_TEMP/cc-moss.rb"
 
   msrv:
     name: MSRV

@@ -162,12 +162,21 @@ impl Env {
     /// Publish `version` for this machine: a tarball whose `cc-moss` prints
     /// `says` for `--version`, and its checksum file.
     pub fn publish(&self, version: &str, says: &str) -> String {
+        self.publish_with_app(version, says, None)
+    }
+
+    /// Like `publish`, with a (fake) `cc-moss.app` saying `app` next to the
+    /// binary, as the macOS release archives carry it.
+    pub fn publish_with_app(&self, version: &str, says: &str, app: Option<&str>) -> String {
         let name = format!("cc-moss-v{version}-{}", target());
         let build = self.path("build");
         write_exe(
             &build.join(&name).join("cc-moss"),
             &format!("#!/bin/sh\necho \"{says}\"\n"),
         );
+        if let Some(app) = app {
+            super::app::fake_app(&build.join(&name).join("cc-moss.app"), app);
+        }
         let tarball = self.path("files").join(format!("{name}.tar.gz"));
         let ok = Command::new("tar")
             .arg("-C")

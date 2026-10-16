@@ -2,6 +2,7 @@
 
 #![allow(dead_code)]
 
+pub mod app;
 pub mod releases;
 
 use std::io::Write;
@@ -33,7 +34,13 @@ pub fn bin() -> Command {
         .env("CC_MOSS_LANG", "en")
         // No test reaches the network; update tests turn checking back on
         // with a stub curl on PATH.
-        .env("CC_MOSS_NO_UPDATE_CHECK", "1");
+        .env("CC_MOSS_NO_UPDATE_CHECK", "1")
+        // Not root unless a test says so, and never the real /Applications.
+        .env_remove("SUDO_USER")
+        .env(
+            "CC_MOSS_SYSTEM_APPLICATIONS",
+            "/nonexistent/cc-moss-test-applications",
+        );
     cmd
 }
 
