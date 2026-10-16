@@ -1,52 +1,171 @@
 import MossKit
 import SwiftUI
 
-/// Settings › General › Desktop Pet: Mo on or off, how big, and how it
+/// Settings › Mo: on or off, how big, and how it
 /// gets your attention (DESIGN-pet §6.5).
 struct PetSettings: View {
     @AppStorage(PetController.enabledKey) private var enabled = false
     @AppStorage(PetController.sizeKey) private var size = Double(PetController.defaultSize)
     @AppStorage(PetInteraction.key) private var interaction = PetInteraction.everyday.rawValue
+    @AppStorage(VoiceMode.key) private var voiceMode = VoiceMode.off.rawValue
+    /// Empty: the best installed voice (Automatic).
+    @AppStorage(VoicePicker.key) private var voiceId = ""
+
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        SettingsCard(title: L.t("Desktop Pet", "桌面宠物")) {
+        hero
+        SettingsCard(title: L.t("Companion", "小伙伴")) {
             CardRow(
-                title: L.t("Mo", "小莫"),
+                title: L.t("Show Mo", "显示小莫"),
                 detail: enabled
                     ? L.t("Lives in a corner of your desktop and shows how your sessions are doing. Click it to open the panel.",
                           "住在桌面一角，用表情告诉你会话怎么样了。点它打开面板。")
                     : L.t("A small companion for your desktop. It stays quiet until something needs you.",
                           "桌面上的小伙伴。平时安安静静，有事才找你。"),
-                divider: true
+                divider: enabled
             ) {
-                Toggle("", isOn: $enabled)
+                Toggle("", isOn: $enabled.animation(.easeOut(duration: 0.2)))
                     .toggleStyle(.switch)
                     .handCursor()
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: enabled) { _, _ in changed() }
             }
-            CardRow(title: L.t("Size", "大小"), divider: true) {
-                SlidingPicker(selection: $size, options: [
-                    (48, L.t("Small", "小")),
-                    (64, L.t("Medium", "中")),
-                    (88, L.t("Large", "大")),
-                ])
-                .onChange(of: size) { _, _ in changed() }
-                .disabled(!enabled)
-                .opacity(enabled ? 1 : 0.45)
-            }
-            CardRow(title: L.t("Interaction", "互动方式"), detail: detail, divider: false) {
-                SlidingPicker(selection: $interaction, options: [
-                    (PetInteraction.quiet.rawValue, L.t("Quiet", "安静")),
-                    (PetInteraction.everyday.rawValue, L.t("Everyday", "日常")),
-                    (PetInteraction.active.rawValue, L.t("Active", "积极")),
-                ])
-                .onChange(of: interaction) { _, _ in changed() }
-                .disabled(!enabled)
-                .opacity(enabled ? 1 : 0.45)
+            // Only what applies: with Mo off there is nothing to size.
+            if enabled {
+                CardRow(title: L.t("Size", "大小"), divider: false) {
+                    SlidingPicker(selection: $size, options: [
+                        (48, L.t("Small", "小")),
+                        (64, L.t("Medium", "中")),
+                        (88, L.t("Large", "大")),
+                    ])
+                    .onChange(of: size) { _, _ in changed() }
+                }
+                .transition(.opacity)
             }
         }
+        if enabled {
+            SettingsCard(title: L.t("When Something Needs You", "有事找你时")) {
+                CardRow(title: L.t("Interaction", "互动方式"), detail: detail, divider: false) {
+                    SlidingPicker(selection: $interaction, options: [
+                        (PetInteraction.quiet.rawValue, L.t("Quiet", "安静")),
+                        (PetInteraction.everyday.rawValue, L.t("Everyday", "日常")),
+                        (PetInteraction.active.rawValue, L.t("Active", "积极")),
+                    ])
+                    .onChange(of: interaction) { _, _ in changed() }
+                }
+            }
+            .transition(.opacity)
+            voiceCard
+                .transition(.opacity)
+        }
+    }
+
+    // MARK: - Voice (T3.4)
+
+    private var mode: VoiceMode { VoiceMode(rawValue: voiceMode) ?? .off }
+
+    /// Off, a chime, or Mo reading the message title (DESIGN-pet §6.4).
+    private var voiceCard: some View {
+        SettingsCard(title: L.t("Voice", "声音")) {
+            CardRow(title: L.t("Sound", "出声方式"), detail: voiceDetail, divider: mode != .off) {
+                SlidingPicker(selection: $voiceMode.animation(.easeOut(duration: 0.2)), options: [
+                    (VoiceMode.off.rawValue, L.t("Off", "关")),
+                    (VoiceMode.chime.rawValue, L.t("Chime", "提示音")),
+                    (VoiceMode.speak.rawValue, L.t("Speak", "说话")),
+                ])
+            }
+            switch mode {
+            case .off:
+                EmptyView()
+            case .chime:
+                CardRow(title: L.t("Chime", "提示音"), detail: L.t("A soft sound built into macOS.", "macOS 自带的一声轻响。"),
+                        divider: false) {
+                    SoftButton(title: L.t("Preview", "试听"), icon: "play.fill") { Speaker.shared.chime() }
+                }
+                .transition(.opacity)
+            case .speak:
+                voiceRows
+                    .transition(.opacity)
+            }
+        }
+    }
+
+    @ViewBuilder private var voiceRows: some View {
+        let voices = VoicePicker.installed(Speaker.installedVoices(), for: L.lang)
+        let chosen = voices.first { $0.id == voiceId } ?? voices.first
+        CardRow(title: L.t("Speaking Voice", "嗓音"), detail: voiceCaption(voices)) {
+            HStack(spacing: 8) {
+                if !voices.isEmpty {
+                    Dropdown(options: { voiceOptions(voices) }, selection: voices.contains { $0.id == voiceId } ? voiceId : "",
+                             pick: { voiceId = $0 }) {
+                        Text(voices.contains { $0.id == voiceId } ? chosen.map(title) ?? "" : L.t("Automatic", "自动"))
+                    }
+                }
+                SoftButton(title: L.t("Preview", "试听"), icon: "play.fill") {
+                    Speaker.shared.say(L.t("Hi, I'm Mo. This is how I'll call you when something needs you.",
+                                           "你好，我是小莫。有事找你时，我就这样说。"),
+                                       voice: chosen?.id, language: VoicePicker.languageCode(L.lang))
+                }
+            }
+        }
+        LinkRow(icon: "arrow.down.circle", title: L.t("Download Better Voices", "下载更好的声音"),
+                url: Speaker.downloadVoicesURL, divider: false)
+    }
+
+    private var voiceDetail: String {
+        switch mode {
+        case .off: L.t("Mo stays silent and only makes faces.", "小莫不出声，只用表情示意。")
+        case .chime: L.t("A soft chime, at most every 30 s.", "有事时轻响一声，30 秒最多一次。")
+        case .speak: L.t("Mo reads the title aloud, at most every 30 s.", "小莫念出消息标题，30 秒最多一句。")
+        }
+    }
+
+    private func voiceCaption(_ voices: [VoiceInfo]) -> String {
+        if voices.isEmpty {
+            return L.t("No English voice yet. Download one in System Settings.", "还没有中文声音，先去系统设置下载一个。")
+        }
+        return voices.contains { $0.quality > .standard }
+            ? L.t("Premium and Enhanced voices sound the most natural.", "「高级」「增强」声音听起来最自然。")
+            : L.t("Downloaded voices sound far more natural.", "下载一个「高级」声音，听起来自然得多。")
+    }
+
+    /// Automatic first (the best one, named), then every installed voice, best first.
+    private func voiceOptions(_ voices: [VoiceInfo]) -> [DropdownOption<String>] {
+        [DropdownOption(id: "", title: L.t("Automatic", "自动"), symbol: "wand.and.stars", badge: voices.first.map(title))]
+            + voices.map { DropdownOption(id: $0.id, title: title($0), badge: $0.quality.tag) }
+    }
+
+    /// The voice's name, with its region when it is not the usual one (Meijia · Taiwan).
+    private func title(_ voice: VoiceInfo) -> String {
+        let parts = voice.language.replacingOccurrences(of: "_", with: "-").split(separator: "-")
+        guard voice.language.replacingOccurrences(of: "_", with: "-") != VoicePicker.languageCode(L.lang),
+              parts.count > 1,
+              let region = Locale(identifier: L.lang == .zh ? "zh_CN" : "en_US").localizedString(forRegionCode: String(parts[1]))
+        else { return voice.name }
+        return "\(voice.name) · \(region)"
+    }
+
+    /// Mo itself at the top of the page: awake when on, asleep when off.
+    private var hero: some View {
+        HStack(spacing: 16) {
+            LayerPet(pose: enabled ? .happy : .sleeping, size: 72, dark: scheme == .dark)
+                .frame(width: 88, height: 88)
+                .animation(.easeOut(duration: 0.2), value: enabled)
+            VStack(alignment: .leading, spacing: 5) {
+                Text(L.t("Mo", "小莫"))
+                    .font(.system(size: 22, weight: .semibold))
+                Text(enabled
+                     ? L.t("On your desktop, keeping an eye on things.", "在桌面上，替你看着呢。")
+                     : L.t("Asleep. Switch it on and it moves in.", "睡着了。打开就搬到你桌面上。"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.top, 4)
     }
 
     /// What the chosen mode does when something needs you.

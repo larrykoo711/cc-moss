@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use moss_core::update::{self, Version};
 
-use super::confirm;
+use super::{app, confirm};
 
 /// `cc-moss update` asks for the latest version with this much patience.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -178,7 +178,8 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         return Ok(());
     }
 
-    let method = Method::detect(&current_exe()?);
+    let exe = current_exe()?;
+    let method = Method::detect(&exe);
     println!();
     match (&method, method.command(&latest)) {
         (Method::Homebrew, Some(cmd)) => println!(
@@ -234,6 +235,12 @@ pub fn run(args: UpdateArgs) -> Result<()> {
         managed => {
             run_manager(&managed.command(&latest).expect("a package manager"))?;
             confirm_upgraded(managed, &latest)?;
+            // Homebrew's new keg carries the new app; cargo builds none.
+            let new_app = managed
+                .installed_path(&exe)
+                .and_then(|p| std::fs::canonicalize(p).ok())
+                .and_then(|p| app::bundled_near(&p));
+            app::follow_update(new_app.as_deref());
         }
     }
     println!(
@@ -340,7 +347,11 @@ fn replace_self(exe: &Path, version: &Version) -> Result<()> {
         ))));
     }
     let work = WorkDir(work);
-    swap_in(exe, version, &work.0, &url, &tarball, &name).map_err(unchanged)
+    swap_in(exe, version, &work.0, &url, &tarball, &name).map_err(unchanged)?;
+    // The macOS archive carries the app next to the binary; take it before
+    // the work folder goes.
+    app::follow_update(app::bundled_near(&work.0.join(&name).join("cc-moss")).as_deref());
+    Ok(())
 }
 
 fn swap_in(
@@ -442,13 +453,22 @@ fn by_hand(dir: &Path, exe: &Path, url: &str, tarball: &str, name: &str) -> Stri
         "  curl -fsSLO {url}\n  tar -xzf {tarball}\n  sudo install -m 755 {name}/cc-moss {}",
         exe.display()
     );
+    // The app goes in without sudo: it belongs to the user.
+    let app_step = if app::applies() {
+        tr!(
+            format!("\nThe download also carries the menubar app, {name}/cc-moss.app: run `./{name}/cc-moss install` (without sudo) to update it, or drag it into Applications."),
+            format!("\n下载包里还有状态栏 App（{name}/cc-moss.app）：运行 `./{name}/cc-moss install`（不加 sudo）来更新它，或者把它拖进「应用程序」。")
+        )
+    } else {
+        String::new()
+    };
     tr!(
         format!(
-            "cannot write to {}, so cc-moss cannot replace itself; nothing was changed. To update by hand:\n{steps}",
+            "cannot write to {}, so cc-moss cannot replace itself; nothing was changed. To update by hand:\n{steps}{app_step}",
             dir.display()
         ),
         format!(
-            "没有 {} 的写权限，cc-moss 没法替换自己；什么都没改。可以手动升级：\n{steps}",
+            "没有 {} 的写权限，cc-moss 没法替换自己；什么都没改。可以手动升级：\n{steps}{app_step}",
             dir.display()
         )
     )

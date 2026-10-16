@@ -17,6 +17,9 @@ done
 
 version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
 [[ -n "$version" ]] || { echo "bundle.sh: no version in Cargo.toml" >&2; exit 1; }
+# CFBundleVersion takes only numbers: a pre-release (0.2.0-rc.1) is 0.2.0
+# there, while CFBundleShortVersionString shows the whole version.
+build_version="${version%%-*}"
 
 build_args=(build -c release --product CCMoss)
 case "$arch" in
@@ -47,8 +50,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>cc-moss</string>
   <key>CFBundleExecutable</key><string>cc-moss</string>
   <key>CFBundlePackageType</key><string>APPL</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
-  <key>CFBundleVersion</key><string>$version</string>
+  <key>CFBundleVersion</key><string>$build_version</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
@@ -59,6 +63,9 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+# Finder, the notification banners and System Settings show this icon
+# (scripts/make-icon.sh renders it from docs/assets/icon.svg).
+cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 # The Automation prompt in the user's language.
 mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
 printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_en" > "$app/Contents/Resources/en.lproj/InfoPlist.strings"

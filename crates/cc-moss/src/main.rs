@@ -91,23 +91,26 @@ enum Command {
         #[arg(long, value_name = "PATH")]
         zshrc: Option<std::path::PathBuf>,
     },
-    /// Set up the terminal: hooks, tmux, starship and shell blocks, then the tools they need.
+    /// Set up the terminal: hooks, tmux, starship and shell blocks, then the tools they need (and the menubar app on macOS).
     Install {
         /// Also install an optional part: aliases.
         #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
         with: Vec<cmd::install::Part>,
-        /// Leave a part out: hooks, tmux, starship, shell or aliases.
+        /// Leave a part out: hooks, tmux, starship, shell, app or aliases.
         #[arg(long, value_enum, value_name = "PART", hide_possible_values = true)]
         skip: Vec<cmd::install::Part>,
         /// Replace an existing starship config with cc-moss's.
         #[arg(long)]
         replace_starship: bool,
-        /// Undo install: remove the hooks, blocks and files it added.
+        /// Undo install: remove the hooks, blocks and files it added, and the menubar app (macOS).
         #[arg(long, conflicts_with_all = ["with", "skip", "replace_starship"])]
         uninstall: bool,
         /// Show what would change; change nothing.
         #[arg(long)]
         dry_run: bool,
+        /// With --dry-run: each part's state as JSON (for the menubar app).
+        #[arg(long, requires = "dry_run", conflicts_with = "uninstall")]
+        json: bool,
         /// Apply without asking.
         #[arg(long)]
         yes: bool,
@@ -371,6 +374,7 @@ fn main() -> std::process::ExitCode {
             replace_starship,
             uninstall,
             dry_run,
+            json,
             yes,
         } => {
             let opts = cmd::install::Options {
@@ -382,6 +386,8 @@ fn main() -> std::process::ExitCode {
             };
             report(if uninstall {
                 cmd::install::uninstall(&opts)
+            } else if json {
+                cmd::install::plan_json(&opts)
             } else {
                 cmd::install::run(opts)
             })
@@ -456,6 +462,7 @@ fn main() -> std::process::ExitCode {
             uninstall,
             settings,
             zshrc,
+            quiet: false,
         })),
     }
 }

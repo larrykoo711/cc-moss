@@ -32,4 +32,33 @@ import Testing
         #expect(Message.checkRename("a\u{3}b", of: list[0], among: list) == .badCharacters)
         #expect(Message.checkRename("new-name", of: list[0], among: list) == .ok)
     }
+
+    @Test func suggestsTheFolderFirst() {
+        let list = sessions([sessionJSON(id: "A", name: nil, cwd: "/Users/demo/code/acme-web")])
+        #expect(Message.renameSuggestions(for: list[0], among: list).first == "acme-web")
+    }
+
+    @Test func takenSuggestionsGetANumber() {
+        let list = sessions([
+            sessionJSON(id: "A", name: nil, cwd: "/Users/demo/code/acme-web"),
+            sessionJSON(id: "B", name: "acme-web", cwd: "/Users/demo/code/acme-web"),
+        ])
+        #expect(Message.renameSuggestions(for: list[0], among: list).first == "acme-web-2")
+    }
+
+    @Test func wordsFromTheLastPrompt() {
+        let list = sessions([sessionJSON(id: "A", name: nil, cwd: "/Users/demo/code/acme-web",
+                                         lastPrompt: "Fix the login form validation please")])
+        #expect(Message.renameSuggestions(for: list[0], among: list).contains("fix-login-form"))
+    }
+
+    @Test func neverTheCurrentNameNorTwice() {
+        let list = sessions([sessionJSON(id: "A", name: "acme-web", cwd: "/Users/demo/code/acme-web",
+                                         lastPrompt: "acme web")])
+        let s = Message.renameSuggestions(for: list[0], among: list)
+        #expect(!s.contains("acme-web"))
+        #expect(Set(s).count == s.count)
+        #expect(s.count <= 3)
+        #expect(s.allSatisfy { Message.checkRename($0, of: list[0], among: list) == .ok })
+    }
 }

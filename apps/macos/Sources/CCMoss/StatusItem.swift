@@ -248,6 +248,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HotKeyCenter.shared.onPress = { [weak self] in self?.panel?.toggle() }
         HotKeyCenter.shared.start()
         startLanguage()
+        // The first-run welcome, once (T4.2).
+        WelcomeWindow.openPanel = { [weak self] in self?.panel?.show() }
+        if WelcomeFlow.shouldShow(.standard) { WelcomeWindow.show(model: model) }
     }
 
     /// `[ui] language` from the CLI's config; a switch reaches the CLI's own

@@ -707,3 +707,628 @@ fn alias_install_asks_before_linking() {
     assert!(fs::symlink_metadata(h.path(".local/bin/t")).is_err());
     assert!(!h.path(".config/cc-moss/config.toml").exists());
 }
+
+// ---- the menubar app (macOS) ------------------------------------------
+
+use common::app;
+
+const CURRENT: &str = env!("CARGO_PKG_VERSION");
+
+impl Home {
+    /// The app Homebrew or the release download put next to the binary.
+    fn bundled_app(&self, version: &str) -> PathBuf {
+        let keg = self.path("keg/cc-moss.app");
+        app::fake_app(&keg, version);
+        keg
+    }
+
+    fn user_app(&self) -> PathBuf {
+        self.path("Applications/cc-moss.app")
+    }
+
+    fn logs(&self) -> PathBuf {
+        self.path("logs")
+    }
+
+    /// `run_with` on macOS, with `bundled` as the app that came with cc-moss.
+    fn run_mac(&self, args: &[&str], bundled: Option<&Path>) -> Output {
+        self.run_mac_with(args, bundled, &[])
+    }
+
+    /// `run_mac` with more variables. The system Applications folder is one
+    /// in this home, never the real /Applications.
+    fn run_mac_with(&self, args: &[&str], bundled: Option<&Path>, env: &[(&str, &str)]) -> Output {
+        let bundled = bundled.map(|p| p.display().to_string()).unwrap_or_default();
+        let system = self.path("system-Applications").display().to_string();
+        let mut vars = vec![
+            ("CC_MOSS_PLATFORM", "macos"),
+            ("CC_MOSS_BUNDLED_APP", bundled.as_str()),
+            ("CC_MOSS_SYSTEM_APPLICATIONS", system.as_str()),
+        ];
+        vars.extend_from_slice(env);
+        self.run_with(args, &vars)
+    }
+
+    /// The names in ~/Applications, to spot leftovers.
+    fn applications(&self) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(self.path("Applications"))
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+}
+
+#[test]
+fn app_fresh_home_gets_a_copy() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    let dest = h.user_app();
+    assert_eq!(app::version(&dest).as_deref(), Some(CURRENT), "{out}");
+    let meta = fs::symlink_metadata(&dest).unwrap();
+    assert!(meta.is_dir(), "a copy, not a link");
+    use std::os::unix::fs::PermissionsExt;
+    let exe = fs::metadata(dest.join("Contents/MacOS/cc-moss")).unwrap();
+    assert!(exe.permissions().mode() & 0o111 != 0, "still executable");
+    assert!(
+        app::log(&h.logs(), "open").contains(&dest.display().to_string()),
+        "started: {}",
+        app::log(&h.logs(), "open")
+    );
+    assert!(
+        app::log(&h.logs(), "osascript").is_empty(),
+        "nothing to quit"
+    );
+}
+
+#[test]
+fn app_same_version_is_left_alone() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), CURRENT);
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert!(app::is_marked(&h.user_app()), "not copied again: {out}");
+    assert!(out.contains("menubar app"), "{out}");
+    assert!(app::log(&h.logs(), "open").is_empty());
+}
+
+#[test]
+fn app_other_version_is_replaced() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert!(!app::is_marked(&h.user_app()), "{out}");
+    assert_eq!(app::version(&h.user_app()).as_deref(), Some(CURRENT));
+    assert!(out.contains("0.0.1"), "says what it replaces: {out}");
+    // It was not running, so it is not started either.
+    assert!(app::log(&h.logs(), "open").is_empty());
+    let left: Vec<_> = fs::read_dir(h.path("Applications"))
+        .unwrap()
+        .map(|e| e.unwrap().file_name())
+        .collect();
+    assert_eq!(left, ["cc-moss.app"], "no leftovers");
+}
+
+#[test]
+fn app_running_is_restarted_after_replace() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    let quit = app::log(&h.logs(), "osascript");
+    assert!(
+        quit.contains(&format!(
+            "tell application id \"{}\" to quit",
+            app::BUNDLE_ID
+        )),
+        "{quit}"
+    );
+    let pgrep = app::log(&h.logs(), "pgrep");
+    assert!(
+        pgrep.contains("Applications/cc-moss") && pgrep.contains("Contents/MacOS/cc-moss"),
+        "{pgrep}"
+    );
+    assert!(app::log(&h.logs(), "open").contains("-g"));
+    assert!(app::log(&h.logs(), "pkill").is_empty());
+    assert!(app::log(&h.logs(), "killall").is_empty());
+}
+
+#[test]
+fn app_skip_leaves_it_alone() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    ok(h.run_mac(&["install", "--yes", "--skip", "app"], Some(&keg)));
+    assert!(!h.user_app().exists());
+}
+
+#[test]
+fn app_dry_run_writes_nothing() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let out = ok(h.run_mac(&["install", "--dry-run"], Some(&keg)));
+    assert!(!h.user_app().exists());
+    assert!(out.contains("Applications"), "{out}");
+    assert!(app::log(&h.logs(), "open").is_empty());
+}
+
+#[test]
+fn app_asks_and_refuses_without_a_terminal() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    ok(h.run_mac(&["install", "--yes", "--skip", "app"], Some(&keg)));
+    let out = h.run_mac(&["install"], Some(&keg));
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(text(&out).contains("--yes"), "{}", text(&out));
+    assert!(!h.user_app().exists());
+}
+
+#[test]
+fn app_not_offered_off_macos() {
+    let h = Home::with_all();
+    let keg = h.bundled_app(CURRENT);
+    let out = ok(h.run_with(
+        &["install", "--yes"],
+        &[("CC_MOSS_BUNDLED_APP", keg.to_str().unwrap())],
+    ));
+    assert!(!h.user_app().exists());
+    assert!(!out.contains("menubar app"), "{out}");
+    let report = ok(h.run(&["doctor"]));
+    assert!(!report.contains("menubar app"), "{report}");
+}
+
+#[test]
+fn app_speaks_chinese() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let out = ok(h.run_with(
+        &["install", "--yes"],
+        &[
+            ("CC_MOSS_PLATFORM", "macos"),
+            ("CC_MOSS_BUNDLED_APP", keg.to_str().unwrap()),
+            ("CC_MOSS_LANG", "zh"),
+        ],
+    ));
+    assert!(out.contains("状态栏 App"), "{out}");
+}
+
+/// The doctor's app row and the fix under it.
+fn app_row(report: &str) -> String {
+    report
+        .lines()
+        .skip_while(|l| !l.contains("menubar app"))
+        .take(2)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[test]
+fn doctor_app_not_installed() {
+    let h = Home::with_all();
+    let row = app_row(&text(&h.run_mac(&["doctor"], None)));
+    assert!(row.contains('·') && row.contains("not installed"), "{row}");
+}
+
+#[test]
+fn doctor_app_outside_applications() {
+    let h = Home::with_all();
+    let keg = h.bundled_app(CURRENT);
+    let row = app_row(&text(&h.run_mac(&["doctor"], Some(&keg))));
+    assert!(
+        row.contains("not in an Applications folder") && row.contains("→ cc-moss install"),
+        "{row}"
+    );
+}
+
+#[test]
+fn doctor_app_matches() {
+    let h = Home::with_all();
+    app::fake_app(&h.user_app(), CURRENT);
+    let row = app_row(&text(&h.run_mac(&["doctor"], None)));
+    assert!(
+        row.contains('✓') && row.contains(CURRENT) && row.contains("Applications"),
+        "{row}"
+    );
+}
+
+#[test]
+fn doctor_app_version_differs() {
+    let h = Home::with_all();
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    let row = app_row(&text(&h.run_mac(&["doctor"], Some(&keg))));
+    assert!(
+        row.contains('!') && row.contains("0.0.1") && row.contains(CURRENT),
+        "{row}"
+    );
+    assert!(row.contains("→ cc-moss install"), "{row}");
+}
+
+#[test]
+fn doctor_app_in_the_system_applications_folder() {
+    let h = Home::with_all();
+    app::fake_app(&h.path("system-Applications/cc-moss.app"), CURRENT);
+    let row = app_row(&text(&h.run_mac(&["doctor"], None)));
+    assert!(
+        row.contains('✓') && row.contains("system-Applications"),
+        "{row}"
+    );
+}
+
+const SUDO: &[(&str, &str)] = &[("SUDO_USER", "demo")];
+
+#[test]
+fn app_left_alone_under_sudo() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac_with(&["install", "--yes"], Some(&keg), SUDO));
+    assert!(app::is_marked(&h.user_app()), "{out}");
+    assert!(out.contains("without sudo"), "{out}");
+    for tool in ["osascript", "kill", "open", "pgrep"] {
+        assert!(app::log(&h.logs(), tool).is_empty(), "{tool} was run");
+    }
+}
+
+#[test]
+fn app_fresh_home_left_alone_under_sudo() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let out = ok(h.run_mac_with(&["install", "--yes"], Some(&keg), SUDO));
+    assert!(!h.user_app().exists(), "{out}");
+    assert!(out.contains("without sudo"), "{out}");
+}
+
+/// Run `f` with ~/Applications read-only, so nothing in it can be renamed,
+/// created or deleted.
+fn read_only_applications<T>(h: &Home, f: impl FnOnce() -> T) -> T {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = h.path("Applications");
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o555)).unwrap();
+    let out = f();
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
+    out
+}
+
+fn is_root() -> bool {
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+}
+
+#[test]
+fn app_failed_replace_keeps_the_old_one() {
+    if is_root() {
+        return; // root writes into read-only folders
+    }
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::mark(&h.user_app());
+    let out = ok(read_only_applications(&h, || {
+        h.run_mac(&["install", "--yes"], Some(&keg))
+    }));
+    assert!(app::is_marked(&h.user_app()), "old app intact: {out}");
+    assert_eq!(app::version(&h.user_app()).as_deref(), Some("0.0.1"));
+    assert_eq!(h.applications(), ["cc-moss.app"], "no leftovers");
+    assert!(out.contains("Could not update the menubar app"), "{out}");
+    assert!(out.contains("All set"), "the rest of install ran: {out}");
+}
+
+#[test]
+fn app_failed_replace_starts_the_old_one_again() {
+    if is_root() {
+        return;
+    }
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::mark(&h.user_app());
+    let out = ok(read_only_applications(&h, || {
+        h.run_mac(&["install", "--yes"], Some(&keg))
+    }));
+    assert!(app::is_marked(&h.user_app()), "{out}");
+    let open = app::log(&h.logs(), "open");
+    assert!(
+        open.contains(&h.user_app().display().to_string()),
+        "the old app runs again: {open}"
+    );
+}
+
+#[test]
+fn app_quit_falls_back_to_sigterm_for_its_own_pid() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::osascript_fails(&h.stubs, &h.logs());
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert_eq!(
+        app::version(&h.user_app()).as_deref(),
+        Some(CURRENT),
+        "{out}"
+    );
+    assert!(!app::log(&h.logs(), "osascript").is_empty(), "asked first");
+    assert_eq!(app::log(&h.logs(), "kill").trim(), "-TERM 4242");
+    assert!(app::log(&h.logs(), "pkill").is_empty());
+    assert!(app::log(&h.logs(), "killall").is_empty());
+    assert!(app::log(&h.logs(), "open").contains("-g"), "restarted");
+}
+
+#[test]
+fn app_quit_timeout_is_a_warning_and_install_goes_on() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::osascript_fails(&h.stubs, &h.logs());
+    app::never_quits(&h.stubs, &h.logs());
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac_with(
+        &["install", "--yes"],
+        Some(&keg),
+        &[("CC_MOSS_APP_QUIT_TIMEOUT_MS", "300")],
+    ));
+    assert!(app::is_marked(&h.user_app()), "untouched: {out}");
+    assert!(out.contains("did not quit"), "{out}");
+    assert!(out.contains("All set"), "the rest of install ran: {out}");
+    assert!(app::log(&h.logs(), "open").is_empty(), "still running");
+    assert_eq!(h.applications(), ["cc-moss.app"]);
+}
+
+#[test]
+fn app_newer_installed_is_not_downgraded() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "99.0.0");
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert!(app::is_marked(&h.user_app()), "{out}");
+    assert!(out.contains("99.0.0") && out.contains("newer"), "{out}");
+}
+
+#[test]
+fn app_prerelease_is_older_than_its_release() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), &format!("{CURRENT}-rc.1"));
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert_eq!(
+        app::version(&h.user_app()).as_deref(),
+        Some(CURRENT),
+        "{out}"
+    );
+}
+
+#[test]
+fn app_dev_build_installed_is_left_alone() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "dev");
+    app::mark(&h.user_app());
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert!(app::is_marked(&h.user_app()), "{out}");
+    assert!(out.contains("dev") && out.contains("unknown"), "{out}");
+}
+
+#[test]
+fn app_symlinked_dest_replaces_only_the_link() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let target = h.path("elsewhere/cc-moss.app");
+    app::fake_app(&target, "0.0.1");
+    app::mark(&target);
+    fs::create_dir_all(h.path("Applications")).unwrap();
+    std::os::unix::fs::symlink(&target, h.user_app()).unwrap();
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    let meta = fs::symlink_metadata(h.user_app()).unwrap();
+    assert!(meta.is_dir(), "a real folder now: {out}");
+    assert_eq!(app::version(&h.user_app()).as_deref(), Some(CURRENT));
+    assert!(app::is_marked(&target), "the link's target is untouched");
+    assert_eq!(app::version(&target).as_deref(), Some("0.0.1"));
+    assert_eq!(h.applications(), ["cc-moss.app"]);
+}
+
+#[test]
+fn app_missing_bundle_says_where_to_get_it() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let out = ok(h.run_mac(&["install", "--yes"], None));
+    assert!(!h.user_app().exists());
+    assert!(
+        out.contains("./cc-moss install") && out.contains("cc-moss.app"),
+        "{out}"
+    );
+}
+
+// ---- uninstall and the app ----------------------------------------------
+
+const LOGIN_ITEM: &str = "Library/LaunchAgents/io.github.larrykoo711.cc-moss.login.plist";
+
+#[test]
+fn uninstall_removes_our_app_and_its_login_item() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::fake_app(&h.user_app(), CURRENT);
+    h.write(LOGIN_ITEM, "<plist/>\n");
+    let out = ok(h.run_mac(&["install", "--uninstall", "--yes"], None));
+    assert!(fs::symlink_metadata(h.user_app()).is_err(), "{out}");
+    assert!(!h.path(LOGIN_ITEM).exists(), "{out}");
+    assert!(
+        app::log(&h.logs(), "osascript").contains("to quit"),
+        "quit first"
+    );
+    assert!(app::log(&h.logs(), "open").is_empty(), "not started again");
+    assert!(app::log(&h.logs(), "pkill").is_empty());
+}
+
+#[test]
+fn uninstall_removes_only_the_link_to_our_app() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let target = h.path("elsewhere/cc-moss.app");
+    app::fake_app(&target, CURRENT);
+    fs::create_dir_all(h.path("Applications")).unwrap();
+    std::os::unix::fs::symlink(&target, h.user_app()).unwrap();
+    let out = ok(h.run_mac(&["install", "--uninstall", "--yes"], None));
+    assert!(fs::symlink_metadata(h.user_app()).is_err(), "{out}");
+    assert!(target.join("Contents/Info.plist").exists());
+}
+
+#[test]
+fn uninstall_keeps_an_app_that_is_not_ours() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    app::fake_app(&h.user_app(), CURRENT);
+    let plist = h.user_app().join("Contents/Info.plist");
+    let text = fs::read_to_string(&plist)
+        .unwrap()
+        .replace(app::BUNDLE_ID, "org.example.other");
+    fs::write(&plist, text).unwrap();
+    let out = ok(h.run_mac(&["install", "--uninstall", "--yes"], None));
+    assert!(h.user_app().exists(), "{out}");
+    assert!(out.contains("Kept"), "{out}");
+}
+
+#[test]
+fn uninstall_dry_run_keeps_the_app() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::fake_app(&h.user_app(), CURRENT);
+    h.write(LOGIN_ITEM, "<plist/>\n");
+    let out = ok(h.run_mac(&["install", "--uninstall", "--dry-run"], None));
+    assert!(h.user_app().exists(), "{out}");
+    assert!(h.path(LOGIN_ITEM).exists());
+    assert!(out.contains("cc-moss.app"), "says it would go: {out}");
+    assert!(app::log(&h.logs(), "osascript").is_empty());
+}
+
+#[test]
+fn uninstall_asks_before_removing_the_app() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    app::fake_app(&h.user_app(), CURRENT);
+    let out = h.run_mac(&["install", "--uninstall"], None);
+    assert!(!out.status.success(), "{}", text(&out));
+    assert!(h.user_app().exists());
+}
+
+#[test]
+fn uninstall_leaves_the_app_alone_under_sudo() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::fake_app(&h.user_app(), CURRENT);
+    let out = ok(h.run_mac_with(&["install", "--uninstall", "--yes"], None, SUDO));
+    assert!(h.user_app().exists(), "{out}");
+    assert!(out.contains("without sudo"), "{out}");
+    assert!(app::log(&h.logs(), "osascript").is_empty());
+}
+
+#[test]
+fn uninstall_off_macos_leaves_applications_alone() {
+    let h = Home::with_all();
+    app::fake_app(&h.user_app(), CURRENT);
+    ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert!(h.user_app().exists());
+}
+
+fn plan(h: &Home) -> serde_json::Value {
+    let out = ok(h.run(&["install", "--dry-run", "--json", "--skip", "app"]));
+    serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+}
+
+fn state(plan: &serde_json::Value, part: &str) -> String {
+    plan["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["part"] == part)
+        .unwrap_or_else(|| panic!("no {part} in {plan}"))["state"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn dry_run_json_lists_every_part() {
+    let h = Home::with_all();
+    let p = plan(&h);
+    assert_eq!(p["schema"], 1);
+    let names: Vec<&str> = p["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["part"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["hooks", "tmux", "starship", "shell", "aliases", "app"]
+    );
+    for part in ["hooks", "tmux", "starship", "shell"] {
+        assert_eq!(state(&p, part), "changes", "{p}");
+    }
+    assert_eq!(state(&p, "aliases"), "skipped", "optional, not asked for");
+    assert_eq!(state(&p, "app"), "skipped", "--skip app");
+    let hooks = p["parts"][0]["summary"].as_str().unwrap();
+    assert!(hooks.contains("~/.claude/settings.json"), "{hooks}");
+}
+
+#[test]
+fn dry_run_json_changes_nothing() {
+    let h = Home::with_all();
+    let before = h.snapshot();
+    plan(&h);
+    assert_eq!(h.snapshot(), before);
+}
+
+#[test]
+fn dry_run_json_marks_ready_after_install() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes", "--skip", "app"]));
+    let p = plan(&h);
+    for part in ["hooks", "tmux", "starship", "shell"] {
+        assert_eq!(state(&p, part), "ready", "{p}");
+    }
+}
+
+#[test]
+fn dry_run_json_names_a_missing_tool() {
+    let h = Home::new(&["claude", "starship"]);
+    // Sealed: a tmux on this machine (an apt one on CI) must not count.
+    ok(h.run_sealed(&["install", "--yes", "--skip", "app"], &[]));
+    let out = ok(h.run_sealed(&["install", "--dry-run", "--json", "--skip", "app"], &[]));
+    let p: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
+    assert_eq!(state(&p, "tmux"), "changes", "{p}");
+    assert!(
+        p["parts"][1]["summary"].as_str().unwrap().contains("tmux"),
+        "{p}"
+    );
+}
+
+#[test]
+fn json_needs_dry_run() {
+    let h = Home::with_all();
+    assert!(!h.run(&["install", "--json"]).status.success());
+}

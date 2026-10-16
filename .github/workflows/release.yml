@@ -45,8 +45,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { target: aarch64-apple-darwin,       os: macos-latest }
-          - { target: x86_64-apple-darwin,        os: macos-latest }
+          # app_arch: the menubar app built for the same machine, shipped in
+          # the same archive (DESIGN-menubar A12).
+          - { target: aarch64-apple-darwin,       os: macos-latest, app_arch: arm64 }
+          - { target: x86_64-apple-darwin,        os: macos-latest, app_arch: x86_64 }
           - { target: x86_64-unknown-linux-musl,  os: ubuntu-latest }
           - { target: aarch64-unknown-linux-musl, os: ubuntu-24.04-arm }
     runs-on: ${{ matrix.os }}
@@ -74,16 +76,27 @@ jobs:
       - name: Smoke test
         if: matrix.target != 'x86_64-apple-darwin' || runner.arch == 'X64'
         run: ./target/${{ matrix.target }}/release/cc-moss --version | tee /dev/stderr | grep -q "^cc-moss "
+      - name: Build the menubar app
+        if: matrix.app_arch
+        run: |
+          apps/macos/scripts/bundle.sh --arch ${{ matrix.app_arch }}
+          apps/macos/scripts/check-bundle.sh
       - uses: actions/download-artifact@v8
         with:
           name: third-party-licenses
       - name: Package
         shell: bash
+        env:
+          # macOS tar would add ._* files for extended attributes.
+          COPYFILE_DISABLE: "1"
         run: |
           # A dry run of a branch like feature/x must not put a slash in the name.
           name="cc-moss-${TAG//\//-}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/cc-moss" LICENSE THIRD-PARTY-LICENSES.toml README.md README.en.md CHANGELOG.md "dist/$name/"
+          if [ -n "${{ matrix.app_arch }}" ]; then
+            cp -R apps/macos/build/cc-moss.app "dist/$name/"
+          fi
           # Owner 0 in the archive: an extraction under sudo must not hand the
           # binary to whichever local user shares the build machine's uid.
           if tar --version 2>/dev/null | grep -q GNU; then
@@ -102,7 +115,7 @@ jobs:
 
   publish:
     name: GitHub Release
-    needs: build
+    needs: [build, check]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -164,16 +177,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="${TAG#v}"
           gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS
-          sum() { awk -v f="cc-moss-${TAG}-$1.tar.gz" '$2 == f { print $1 }' SHA256SUMS; }
-          sed -e "s/@VERSION@/$version/g" \
-              -e "s/@SHA_DARWIN_ARM@/$(sum aarch64-apple-darwin)/" \
-              -e "s/@SHA_DARWIN_X64@/$(sum x86_64-apple-darwin)/" \
-              -e "s/@SHA_LINUX_ARM@/$(sum aarch64-unknown-linux-musl)/" \
-              -e "s/@SHA_LINUX_X64@/$(sum x86_64-unknown-linux-musl)/" \
-              packaging/homebrew/cc-moss.rb.in > tap/Formula/cc-moss.rb
-          if grep -q '@[A-Z_]*@' tap/Formula/cc-moss.rb; then echo "unfilled placeholder"; exit 1; fi
+          packaging/homebrew/render.sh "$TAG" SHA256SUMS > tap/Formula/cc-moss.rb
       - name: Commit and push
         if: steps.token.outputs.ok == 'true'
         working-directory: tap
@@ -183,3 +188,46 @@ jobs:
           git add Formula/cc-moss.rb
           # A re-run of the same release changes nothing: no empty commit.
           git diff --cached --quiet || { git commit -m "cc-moss ${TAG}" && git push; }
+
+  # What a release would ship, checked before anything is published (on a
+  # tag push, publish waits for it; a dry run stops here): the archives
+  # carry the app on macOS only, the app's signature survives the trip, and
+  # the formula renders from the checksums.
+  check:
+    name: Check the archives and the formula
+    needs: build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Archives
+        shell: bash
+        run: |
+          tag="${TAG//\//-}"
+          cd dist
+          for t in aarch64-apple-darwin x86_64-apple-darwin; do
+            name="cc-moss-$tag-$t"
+            mkdir -p "x/$t" && tar -xzf "$name.tar.gz" -C "x/$t"
+            ../apps/macos/scripts/check-bundle.sh "x/$t/$name/cc-moss.app"
+            # Listed first: grep -q closing the pipe early would fail it.
+            files="$(tar -tzf "$name.tar.gz")"
+            if grep -q '/\._' <<<"$files"; then echo "$name has ._ files"; exit 1; fi
+          done
+          for t in x86_64-unknown-linux-musl aarch64-unknown-linux-musl; do
+            files="$(tar -tzf "cc-moss-$tag-$t.tar.gz")"
+            if grep -q 'cc-moss.app' <<<"$files"; then echo "$t must not carry the app"; exit 1; fi
+            grep -qx "cc-moss-$tag-$t/cc-moss" <<<"$files"
+          done
+      - name: Formula
+        shell: bash
+        run: |
+          tag="${TAG//\//-}"
+          cat dist/*.sha256 > SHA256SUMS
+          packaging/homebrew/render.sh "$tag" SHA256SUMS > cc-moss.rb
+          ruby -c cc-moss.rb
+          grep -q 'prefix.install "cc-moss.app"' cc-moss.rb

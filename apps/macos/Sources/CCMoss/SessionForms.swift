@@ -165,6 +165,9 @@ extension AppModel {
 struct FormCard<Content: View>: View {
     let title: String
     let icon: String
+    /// A quiet fact about the form, at the right of the title (where a
+    /// note goes, how a message arrives) instead of a sentence under it.
+    var aside: (icon: String, text: String)?
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var scheme
 
@@ -175,6 +178,15 @@ struct FormCard<Content: View>: View {
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Theme.brand)
                 Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Spacer(minLength: 8)
+                if let aside {
+                    HStack(spacing: 4) {
+                        Image(systemName: aside.icon).font(.system(size: 10, weight: .semibold))
+                        Text(aside.text).font(.system(size: 11))
+                    }
+                    .foregroundStyle(Theme.caption)
+                    .fixedSize()
+                }
             }
             .padding(.horizontal, 4)
             content()
@@ -220,7 +232,7 @@ struct FormHint: View {
             if let icon {
                 Image(systemName: icon).font(.system(size: 10, weight: .semibold)).foregroundStyle(tint)
             }
-            Text(text).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(text).font(.system(size: 11)).foregroundStyle(Theme.caption)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 4)
@@ -314,10 +326,8 @@ struct NewSessionForm: View {
                 Text(L.t("Starting…", "正在开…")).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
-            SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
-                .tip("Esc")
-            SoftButton(title: primaryTitle, icon: primaryIcon, prominent: true, action: submit)
-                .tip("↵")
+            SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+            SoftButton(title: primaryTitle, icon: primaryIcon, prominent: true, shortcut: "↵", action: submit)
                 .disabled(draft.working)
         }
     }
@@ -354,20 +364,24 @@ struct NoteForm: View {
         _text = State(initialValue: Note.current(session))
     }
 
+    private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var hadNote: Bool { !Note.current(session).isEmpty }
+    private var clears: Bool { empty && hadNote }
+
     var body: some View {
-        FormCard(title: L.t("Note for “\(session.title)”", "给「\(session.title)」写便条"), icon: Icons.note) {
+        FormCard(title: L.t("Note for “\(session.title)”", "给「\(session.title)」写便条"), icon: Icons.note,
+                 aside: ("lock", L.t("Claude doesn't see it", "Claude 看不到"))) {
             MultilineField(placeholder: L.t("Where it stopped, what's next…", "停在哪里、下一步做什么…"),
                            text: $text) { model.saveNote(session, text: text) }
-            FormHint(text: L.t("⌘↩ saves, Esc cancels, empty clears the note. A note stays with cc-moss; Claude doesn't see it.",
-                               "⌘↩ 保存，Esc 取消，留空就是清除。便条只留在 cc-moss 里，Claude 看不到。"))
             HStack(spacing: 8) {
                 Spacer()
-                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
-                    .tip("Esc")
-                SoftButton(title: L.t("Save", "保存"), icon: "checkmark", prominent: true) {
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+                // Emptied, saving clears the note: say so on the button.
+                SoftButton(title: clears ? L.t("Clear Note", "清除便条") : L.t("Save", "保存"),
+                           icon: clears ? "trash" : "checkmark", prominent: true, shortcut: "⌘↩") {
                     model.saveNote(session, text: text)
                 }
-                .tip("⌘↩")
+                .disabled(empty && !hadNote)
             }
         }
     }
@@ -385,16 +399,13 @@ struct MessageForm: View {
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
-        FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message) {
+        FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
+                 aside: ("terminal", L.t("As if typed in its terminal", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
-            FormHint(text: L.t("⌘↩ sends it to the session, as if you typed it in its terminal. Esc cancels.",
-                               "⌘↩ 发送到这个会话，就像你在它的终端里打的一样。Esc 取消。"))
             HStack(spacing: 8) {
                 Spacer()
-                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
-                    .tip("Esc")
-                SoftButton(title: L.t("Send", "发送"), icon: Icons.message, prominent: true) { send() }
-                    .tip("⌘↩")
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+                SoftButton(title: L.t("Send", "发送"), icon: Icons.message, prominent: true, shortcut: "⌘↩") { send() }
                     .disabled(empty)
             }
         }
@@ -423,29 +434,53 @@ struct RenameForm: View {
 
     private var check: Message.RenameCheck { Message.checkRename(name, of: session, among: model.sessions) }
 
-    private var hint: String {
+    /// What the field says now, with its colour: fine, or what to change.
+    private var status: (icon: String, text: String, tint: Color) {
         switch check {
-        case .ok: return L.t("Return renames it. Claude Code renames the session; the panel and tmux follow.",
-                             "回车改名。名字由 Claude Code 改，面板和 tmux 会跟着变。")
-        case .unchanged: return L.t("That's its name already.", "现在就叫这个。")
-        case .empty: return L.t("Give it a name.", "起个名字吧。")
-        case .badCharacters: return L.t("Just letters, numbers and punctuation, on one line.", "只能是一行普通文字。")
-        case .taken(let other): return L.t("“\(other)” already has this name. Pick another one.", "「\(other)」已经叫这个名字了，换一个吧。")
+        case .ok:
+            return ("checkmark.circle.fill", L.t("Claude Code renames it; the panel and tmux follow.",
+                                                 "由 Claude Code 改名，面板和 tmux 跟着变。"), .green)
+        case .unchanged:
+            return ("equal.circle", L.t("That's its name already.", "现在就叫这个。"), .secondary)
+        case .empty:
+            return ("pencil.circle", L.t("Type a name, or pick one below.", "输入新名字，或点一个建议。"), .secondary)
+        case .badCharacters:
+            return ("exclamationmark.circle.fill", L.t("One line of plain text, please.", "只能是一行普通文字。"), Theme.amber)
+        case .taken(let other):
+            return ("exclamationmark.circle.fill", L.t("“\(other)” has this name already.", "「\(other)」已经叫这个名字了。"), Theme.amber)
         }
     }
 
+    private var suggestions: [String] { Message.renameSuggestions(for: session, among: model.sessions) }
+
     var body: some View {
         FormCard(title: L.t("Rename “\(session.title)”", "给「\(session.title)」改名"), icon: Icons.rename) {
-            FilledField(placeholder: L.t("New name", "新名字"), text: $name, autofocus: true) { submit() }
-            FormHint(text: hint)
+            FilledField(placeholder: L.t("New name", "新名字"), text: $name, autofocus: true, large: true) { submit() }
+            if !suggestions.isEmpty {
+                HStack(spacing: 6) {
+                    Text(L.t("Try", "试试"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.caption)
+                    ForEach(suggestions, id: \.self) { s in
+                        SuggestionChip(text: s, chosen: name == s) { name = s }
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 2)
+            }
             HStack(spacing: 8) {
-                Spacer()
-                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
-                    .tip("Esc")
-                SoftButton(title: L.t("Rename", "改名"), icon: Icons.rename, prominent: true) { submit() }
-                    .tip("↵")
+                let st = status
+                HStack(spacing: 5) {
+                    Image(systemName: st.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(st.tint)
+                    Text(st.text).font(.system(size: 11)).foregroundStyle(Theme.caption).lineLimit(1)
+                }
+                .animation(.easeOut(duration: 0.12), value: st.text)
+                Spacer(minLength: 8)
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+                SoftButton(title: L.t("Rename", "改名"), icon: Icons.rename, prominent: true, shortcut: "↵") { submit() }
                     .disabled(check != .ok)
             }
+            .padding(.leading, 2)
         }
     }
 
@@ -507,16 +542,14 @@ struct CloseConfirmCard: View {
 
     var body: some View {
         FormCard(title: Close.question(sessions), icon: Icons.dismiss) {
-            FormHint(text: L.t("It won't be offered for restore again. `cc-moss ls --all` still lists it.",
-                               "以后不会再提示找回它；`cc-moss ls --all` 里仍然看得到。"))
+            FormHint(text: L.t("No more restore prompts. `cc-moss ls --all` still lists it.",
+                               "以后不再提示找回，`cc-moss ls --all` 里还能看到。"))
             HStack(spacing: 8) {
                 Spacer()
-                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.closeGate.cancel() }
-                    .tip("Esc")
-                SoftButton(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, prominent: true) {
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.closeGate.cancel() }
+                SoftButton(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, prominent: true, shortcut: "↵") {
                     model.confirmClose()
                 }
-                .tip("↵")
             }
         }
     }
@@ -555,5 +588,34 @@ struct NewSessionButton: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
         .tip(L.t("New Session  ⌘N", "新会话  ⌘N"))
         .accessibilityLabel(L.t("New Session", "新会话"))
+    }
+}
+
+/// A name to pick with one click: a small capsule, filled when it is the
+/// field's text.
+struct SuggestionChip: View {
+    let text: String
+    let chosen: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            Text(text)
+                .font(.system(size: 12))
+                .lineLimit(1)
+                .foregroundStyle(chosen ? Theme.brand : .primary)
+                .padding(.horizontal, 9)
+                .frame(height: 22)
+                .background(Capsule().fill(chosen ? Theme.brand.opacity(0.12)
+                                                  : Color.primary.opacity(hovering ? 0.09 : 0.05)))
+                .overlay(Capsule().strokeBorder(chosen ? Theme.brand.opacity(0.35) : .clear))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
     }
 }

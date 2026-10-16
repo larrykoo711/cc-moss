@@ -210,9 +210,9 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ✅ Done | done/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ✅ Done | done/T3.3-pet-bubbles.spec.md | 事件气泡、点击打开会话 |
-| **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
-| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.4 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
-| **T4.2** 首次启动引导 | cc-moss | T4.1 | ⬜ Backlog | — | 干净用户目录首次启动走完引导 |
+| **T3.4** 语音播报 | cc-moss | T3.3 | 🟩 Review | in-progress/T3.4-voice.spec.md | 中英播报、勿扰静音 |
+| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.3 | 🟩 Review | in-progress/T4.1-ship-the-app.spec.md | 干净用户目录 brew 全流程 |
+| **T4.2** 首次启动引导 | cc-moss | T4.1 | 🟩 Review | in-progress/T4.2-welcome.spec.md | 干净用户目录首次启动走完引导 |
 | **T4.3** 打磨、文档与 0.2.0 | cc-moss | T4.2 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
 
 ## 日志
@@ -243,6 +243,12 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 - 2026-10-17 T2.4 spec 过 gate；Rust `config get/set` 由 agent 并行完成（feature/002-t2.4-config 合入集成分支），Swift 侧开机提醒、全局快捷键 ⌃⌥M、界面语言由 controller 完成；本机 App 改用开发版 CLI（Homebrew 0.1.1 缺新命令）
 - 2026-10-17 用户验收「没问题，开始 Ship」：T1.3、T2.3、T2.4、T2.5、T3.2、T3.3 转 Done；各报告「待用户确认」项随日常使用验证，问题走反馈车道
 - AMEND T3.2: 「六个动作录屏」改为真实图层离屏关键帧（中英、深浅 12 张）approved-by=user date=2026-10-17
+- 2026-10-17 wave three 合入 main（#18，squash 后树与集成分支逐字节一致）
+- 2026-10-17 反馈车道（用户：设置面板不够精细、菜单随意、分组不好；便条提示糟糕；改名交互糟糕）：设置拆为 通用 / 菜单栏 / 小莫 / 通知 / 别名 / 关于（细线分组、页头标题、分组标题降级、小莫关闭时收起从属项、小莫头图），程序位置移入关于；表单快捷键改为按钮上的按键标签、说明移到标题右侧；改名加大输入框、预选现名、一键建议、带图标的实时状态（feature/002-settings-ia）
+- 2026-10-17 T4.1（打包分发）与 T3.4（语音）各派一名 agent 并行（feature/002-t4.1-ship、feature/002-t3.4-voice）
+- 2026-10-17 T3.4 完成（Swift 234，5 个变异全杀）；四个开放问题由 controller 按默认值裁决并记入 spec
+- 2026-10-17 T4.1 完成，独立评审 0 Critical / 2 Important / 7 Minor：Important 两条（sudo 下不碰 App、替换可回滚）与 Minor 3、4、6、7、8、9 全部修复并补测试，Minor 5（CI 里真装 brew）留给发版后的人工验收；用户决定项：卸载时移除 App 与登录项（已做）、brew upgrade 后由 App 提示版本不一致（T4.3）
+- 2026-10-17 T4.2 首次启动引导：六步、可跳过、已满足自动打勾；CLI 新增 `install --dry-run --json`
 - 2026-10-16 T2.2 菜单栏图标三轮真机测量：每帧换图 10fps 4.3%、Core Animation 26.5%（WindowServer +13%）、每秒 2 次换图 1.43%（≈ iStat Menus 菜单栏进程 1.3%）。结论：菜单栏每次更新有固定系统开销，只能压更新次数；流畅动画留给 P3 宠物窗口
 - 2026-10-16 用户：菜单栏动态效果可关（A24，已实现于集成分支）；系统通知与宠物提醒互斥（A23，T2.3 / T3.3 共用 AlertRouter）
 - 2026-10-16 用户修订宠物交互：需要你时不直接弹消息框，先用表情动作（日常模式另加半透明口头禅小气泡）示意，悬停或点击才展开；三种模式安静 / 日常（默认）/ 积极；平时半透明、互动或悬停时过渡到不透明 → DESIGN-pet §6.5；半透明与悬停过渡并入 T3.2，模式与气泡在 T3.3
