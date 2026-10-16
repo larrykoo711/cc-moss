@@ -60,6 +60,11 @@ enum Main {
             PetSheets.run(outDir: CommandLine.arguments[i + 1], layers: CommandLine.arguments.contains("--layers"))
             return
         }
+        // `--welcome-sheets dir`: the first-run welcome, every step (T4.2).
+        if let i = CommandLine.arguments.firstIndex(of: "--welcome-sheets"), i + 1 < CommandLine.arguments.count {
+            WelcomeSheets.run(outDir: CommandLine.arguments[i + 1])
+            return
+        }
         if CommandLine.arguments.contains("--preview") {
             Render.preview(args: CommandLine.arguments)
             return

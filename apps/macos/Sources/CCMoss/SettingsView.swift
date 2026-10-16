@@ -618,6 +618,9 @@ struct AboutSettings: View {
                 ProgramRow(model: model)
             }
             SettingsCard(title: L.t("Learn More", "了解更多")) {
+                LinkRow(icon: "sparkles", title: L.t("Show the Welcome Again", "再看一遍欢迎引导")) {
+                    WelcomeWindow.show(model: model)
+                }
                 LinkRow(icon: "book", title: L.t("User Guide", "使用手册"),
                         url: L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
                                  "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
@@ -759,13 +762,19 @@ struct VersionChip: View {
 struct LinkRow: View {
     let icon: String
     let title: String
-    let url: String
+    var url = ""
     var divider = true
+    /// Something in the app instead of a web page (no outward arrow).
+    var perform: (() -> Void)?
     @State private var hovering = false
 
     var body: some View {
         Button {
-            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+            if let perform {
+                perform()
+            } else if let u = URL(string: url) {
+                NSWorkspace.shared.open(u)
+            }
         } label: {
             VStack(spacing: 0) {
                 HStack(spacing: 10) {
@@ -775,7 +784,7 @@ struct LinkRow: View {
                         .frame(width: 20)
                     Text(title).font(.system(size: 14))
                     Spacer()
-                    Image(systemName: "arrow.up.right")
+                    Image(systemName: perform == nil ? "arrow.up.right" : "chevron.right")
                         .font(.system(size: 11, weight: .semibold))
                         .foregroundStyle(hovering ? .secondary : .tertiary)
                 }
