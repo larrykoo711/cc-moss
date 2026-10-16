@@ -60,6 +60,10 @@ final class PetController {
     private var placement = PetPlacement()
     private var tucked = false
     private var peeking: Bool?
+    /// What Mo says and when (T3.3), and the bubble window it says it in.
+    private var director = PetDirector(mode: .everyday)
+    private var bubbles: PetBubbles?
+    private var onBubble = false
 
     init(model: AppModel, showPanel: @escaping () -> Void, defaults: UserDefaults = .standard, offScreen: Bool = false) {
         self.model = model
@@ -83,11 +87,17 @@ final class PetController {
         defaults.double(forKey: doNotDisturbKey) > Date().timeIntervalSince1970
     }
 
-    /// The router decided this one is Mo's to tell.
+    /// The router decided this one is Mo's to tell. Mo hints first (the
+    /// antenna lamp, on top of the pose the snapshot gives); what it says
+    /// depends on the interaction mode (DESIGN-pet §6.5).
     func take(_ alert: SessionAlert) {
         alerts.append(alert)
         if alerts.count > 20 { alerts.removeFirst(alerts.count - 20) }
         onAlert?(alert)
+        guard window != nil else { return }
+        director.doNotDisturb = doNotDisturbUntil != nil
+        if director.take(alert, at: now) { view?.flashLamp() }
+        show()
     }
 
     static func enabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: enabledKey) }
@@ -101,10 +111,12 @@ final class PetController {
 
     /// Show, hide or resize Mo to match the settings.
     func sync() {
+        director.mode = PetInteraction(defaults: defaults)
         let want = Self.enabled(defaults)
         let wantSize = Self.size(defaults)
         if window != nil, !want || wantSize != size { teardown() }
         if want, window == nil { build(size: wantSize) }
+        if window != nil { show() }
     }
 
     // MARK: - Window
@@ -120,6 +132,9 @@ final class PetController {
         let container = NSView(frame: NSRect(x: 0, y: 0, width: side, height: side))
         let pet = PetView(body: size)
         container.addSubview(pet)
+        let bubbles = PetBubbles()
+        bubbles.onPointer = { [weak self] inside in self?.pointedAtBubble(inside) }
+        self.bubbles = bubbles
         let opener = NSHostingView(rootView: SettingsOpener { [weak self] in self?.openSettings = $0 })
         opener.frame = .zero
         container.addSubview(opener)
@@ -148,6 +163,9 @@ final class PetController {
         gate?.stop()
         gate = nil
         view?.setLoops([])
+        bubbles?.close()
+        bubbles = nil
+        onBubble = false
         window?.orderOut(nil)
         window = nil
         view = nil
@@ -213,6 +231,8 @@ final class PetController {
         tucked = false
         savePlacement()
         place(animated: true)
+        // The bubble rode along; once Mo settles, see which side it fits on now.
+        after("bubbleLayout", 0.3) { $0.show() }
     }
 
     // MARK: - Sessions and events
@@ -261,6 +281,10 @@ final class PetController {
     private func update() {
         let dnd = doNotDisturbUntil
         stage.rest(PetPose.resting(model.sessions, doNotDisturb: dnd != nil))
+        director.doNotDisturb = dnd != nil
+        let sessions = model.sessions
+        let clock = Date()
+        director.keep { Self.stillTrue($0, in: sessions, now: clock) }
         if let dnd { after("dnd", dnd.timeIntervalSinceNow) { $0.update() } } else { cancel("dnd") }
         show()
     }
@@ -308,14 +332,18 @@ final class PetController {
         }
         if let end = stage.performanceEnds, end > t { after("show", end - t) { $0.show() } }
 
-        presence.update(pose: pose, hovering: hovering, at: t)
+        let display = bubbleDisplay(at: t)
+        let talking: Bool = if case .box = display { true } else { false }
+        presence.update(pose: pose, hovering: hovering || onBubble || talking, at: t)
         let opacity = presence.opacity(at: t)
         if abs(view.presence - opacity) > 0.01 { view.setPresence(opacity, animated: !reduceMotion) }
         if let back = presence.fadeBackAt, back > t { after("fade", back - t) { $0.show() } }
 
         if tucked, peeking != PetPresence.wantsYou(pose) { place(animated: true) }
         view.setAccessibilityLabel(L.t("Mo: ", "小莫：") + pose.title)
-        view.toolTip = summary
+        // No summary tooltip over a message Mo is holding for you.
+        view.toolTip = director.message == nil ? summary : nil
+        render(display, at: t)
     }
 
     private func enter(_ pose: PetPose, previous: PetPose?, at t: TimeInterval) {
@@ -346,12 +374,104 @@ final class PetController {
         return parts.isEmpty ? L.t("Mo: all quiet", "小莫：一切安好") : parts.joined(separator: " · ")
     }
 
+    // MARK: - Bubbles
+
+    /// What the director says, unless Mo can't be seen (then nothing, and
+    /// the message waits).
+    private func bubbleDisplay(at t: TimeInterval) -> PetDisplay {
+        guard !offScreen, visible, !tucked else { return .nothing }
+        return director.display(at: t)
+    }
+
+    private func render(_ display: PetDisplay, at t: TimeInterval) {
+        guard let bubbles, let window, let anchor = bubbleAnchor() else { return }
+        switch display {
+        case .nothing:
+            bubbles.hide(animated: !reduceMotion)
+        case let .puff(id, text):
+            bubbles.puff(text, id: id, anchor: anchor, parent: window, reduceMotion: reduceMotion)
+        case let .box(message):
+            bubbles.box(message, text: message.text(names: names(message)), anchor: anchor, parent: window,
+                        reduceMotion: reduceMotion,
+                        primary: { [weak self] in self?.perform(message) },
+                        later: { [weak self] in self?.later() })
+        }
+        if let next = director.nextChange(after: t) { after("bubble", next - t) { $0.show() } } else { cancel("bubble") }
+    }
+
+    /// Mo's head and feet on screen, and the screen's usable area.
+    private func bubbleAnchor() -> BubbleAnchor? {
+        guard let window, let view, let screen = window.screen ?? NSScreen.main else { return nil }
+        let shape = view.hitShape.boundingBox // y-down
+        func screenPoint(_ p: CGPoint) -> CGPoint { window.convertPoint(toScreen: view.convert(p, to: nil)) }
+        return BubbleAnchor(head: screenPoint(CGPoint(x: shape.midX, y: shape.minY - 8)),
+                            feet: screenPoint(CGPoint(x: shape.midX, y: shape.maxY + 4)),
+                            visible: screen.visibleFrame)
+    }
+
+    private func pointedAtBubble(_ inside: Bool) {
+        onBubble = inside
+        director.pointer(onBubble: inside, at: now)
+        show()
+    }
+
+    /// The box's main button (or a click on its words): the same as the
+    /// notification's (A23). One session: open it, or show it in the panel
+    /// to bring it back. Several: the panel, on them.
+    private func perform(_ message: PetMessage) {
+        director.dismiss()
+        show()
+        if message.alerts.count == 1, let slot = message.slots.first {
+            AlertCenter.perform(message.action, slot: slot, model: model, showPanel: showPanel)
+            return
+        }
+        model.query = ""
+        model.stateFilter = switch message.kind {
+        case .interrupted: .interrupted
+        case .finished: .waiting
+        case .needsYou, .restored: nil
+        }
+        if let first = message.slots.first, model.sessions.contains(where: { $0.id == first }) { model.selectedID = first }
+        showPanel()
+    }
+
+    /// "Later", "Not now", "Got it", or the close button.
+    private func later() {
+        director.dismiss()
+        show()
+    }
+
+    /// The names the panel shows, for the message's sessions.
+    private func names(_ message: PetMessage) -> [String] {
+        message.alerts.map { alert in
+            if let s = model.sessions.first(where: { $0.id == alert.slotId }) { return s.title }
+            if let name = alert.name, !name.isEmpty { return name }
+            return String(alert.slotId.prefix(8))
+        }
+    }
+
+    /// Whether an alert still says something true. An alert can arrive a
+    /// moment before the snapshot that shows it, so a fresh one is kept.
+    static func stillTrue(_ alert: SessionAlert, in sessions: [Session], now: Date) -> Bool {
+        if now.timeIntervalSince(alert.at) < 5 { return true }
+        guard let session = sessions.first(where: { $0.id == alert.slotId }) else { return false }
+        switch alert.kind {
+        case .needsYou: return session.needsYou
+        case .interrupted: return session.state == .interrupted
+        case .restored, .finished: return true
+        }
+    }
+
     // MARK: - Mouse
 
     private func clicked(_ count: Int) {
         switch count {
         case 1:
-            showPanel()
+            // Holding a message: the click opens it; otherwise the panel, as always.
+            switch director.click(at: now) {
+            case .showBox: show()
+            case .openPanel: showPanel()
+            }
             onClick?()
         case 3:
             celebrate() // the easter egg: a quiet little cheer
@@ -362,6 +482,7 @@ final class PetController {
 
     private func hovered(_ inside: Bool) {
         hovering = inside
+        director.pointer(onMo: inside, at: now)
         if !inside { view?.look(toward: nil) }
         show()
         onHover?(inside)

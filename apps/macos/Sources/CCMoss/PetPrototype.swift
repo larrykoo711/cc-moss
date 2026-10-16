@@ -501,7 +501,7 @@ private struct ListeningChip: View {
 
 // MARK: - Sheets
 
-private struct Desktop: View {
+struct Desktop: View {
     let dark: Bool
     var body: some View {
         LinearGradient(
@@ -513,7 +513,7 @@ private struct Desktop: View {
     }
 }
 
-private struct SheetTitle: View {
+struct SheetTitle: View {
     let title: String
     let subtitle: String
     var body: some View {
@@ -836,7 +836,7 @@ enum PetSheets {
         exit(0)
     }
 
-    @MainActor private static func snapshot<V: View>(_ view: V, dark: Bool, to path: String) {
+    @MainActor static func snapshot<V: View>(_ view: V, dark: Bool, to path: String) {
         let host = NSHostingView(rootView: view.environment(\.colorScheme, dark ? .dark : .light))
         let size = host.fittingSize
         host.frame = NSRect(origin: .zero, size: size)
