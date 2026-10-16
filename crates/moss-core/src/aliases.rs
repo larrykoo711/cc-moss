@@ -230,11 +230,14 @@ pub fn expand(command: &str, subcommands: &[&str]) -> Result<Vec<String>, Comman
     Ok(words)
 }
 
-/// The `cc-moss` a link should point at: one that survives upgrades. A
-/// package manager's versioned path (`…/Cellar/cc-moss/0.1.1/bin/cc-moss`)
-/// is deleted by the next upgrade; its `bin/cc-moss` link is not. Looks on
-/// `PATH` first, then next to a `Cellar`, and takes the first `cc-moss` that
-/// is the same file as `current`. Falls back to `current`.
+/// The `cc-moss` that links and Claude Code hooks should run: one that
+/// survives upgrades. A package manager's versioned path
+/// (`…/Cellar/cc-moss/0.1.1/bin/cc-moss`) is deleted by the next upgrade; its
+/// `bin/cc-moss` link is not. Looks on `PATH` first (an entry is used as
+/// written), then next to a `Cellar`, and takes the first `cc-moss` that is
+/// the same file as `current`. Falls back to the real file `current`
+/// resolves to: on macOS `current_exe()` is the path the program was started
+/// by, which under an alias is the alias's own link.
 pub fn stable_entry(current: &Path, path_var: Option<&OsStr>) -> PathBuf {
     let Ok(real) = std::fs::canonicalize(current) else {
         return current.to_path_buf();
@@ -253,7 +256,7 @@ pub fn stable_entry(current: &Path, path_var: Option<&OsStr>) -> PathBuf {
         .chain(by_cellar)
         .filter(|c| cellar_prefix(c).is_none())
         .find(|c| std::fs::canonicalize(c).is_ok_and(|c| c == real));
-    found.unwrap_or_else(|| current.to_path_buf())
+    found.unwrap_or(real)
 }
 
 /// The directory holding a `Cellar` component of `path`, if any.
@@ -481,41 +484,60 @@ pub fn parse_type_output(output: &str, names: &[&str], dir: &Path) -> Vec<(Strin
         .collect()
 }
 
-/// What one `type <name>` says, for bash, zsh, fish and sh.
+/// What one `type <name>` says, for bash, zsh, fish and sh. Only the words
+/// after `<name> is ` are read: the name and the path can contain any of
+/// the words the answer is made of (`myalias`, `/home/function/…`).
 pub fn parse_type(text: &str, link: &Path) -> Shadow {
     let Some(first) = text.lines().map(str::trim).find(|l| !l.is_empty()) else {
         return Shadow::Unknown;
     };
-    let line = first.to_lowercase();
-    if line.contains("not found") || line.contains("could not find") {
-        return Shadow::NotFound;
-    }
-    if line.contains("alias") {
+    let name = link
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let Some(answer) = first.strip_prefix(&format!("{name} is ")) else {
+        // `t not found` (zsh), `bash: type: t: not found`, `type: Could not
+        // find 't'` (fish).
+        let line = first.to_lowercase();
+        return if line.ends_with("not found") || line.contains("could not find") {
+            Shadow::NotFound
+        } else {
+            Shadow::Unknown
+        };
+    };
+    let lower = answer.to_lowercase();
+    let starts = |words: &[&str]| words.iter().any(|w| lower.starts_with(w));
+    if starts(&["aliased to", "an alias"]) {
         return Shadow::Alias;
     }
-    if line.contains("function") {
+    if starts(&["a function", "a shell function"]) {
         return Shadow::Function;
     }
-    if line.contains("builtin") || line.contains("reserved word") || line.contains("keyword") {
+    if starts(&[
+        "a shell builtin",
+        "a builtin",
+        "a reserved word",
+        "a shell keyword",
+        "a keyword",
+    ]) {
         return Shadow::Builtin;
     }
-    let path = first
-        .split_whitespace()
-        .map(|w| w.trim_matches(|c| matches!(c, '(' | ')' | '`' | '\'' | '"')))
-        .find(|w| w.starts_with('/'));
-    match path {
-        Some(p) => {
-            let p = Path::new(p);
-            // The same directory may be spelled differently (a symlinked home).
-            let dir = |p: &Path| p.parent().and_then(|d| std::fs::canonicalize(d).ok());
-            let same = p == link
-                || (p.file_name() == link.file_name() && dir(p).is_some() && dir(p) == dir(link));
-            if same {
-                Shadow::None
-            } else {
-                Shadow::Command(p.to_path_buf())
-            }
-        }
-        None => Shadow::Unknown,
+    // `/path/t`, or bash's `hashed (/path/t)`.
+    let path = answer
+        .strip_prefix("hashed (")
+        .and_then(|p| p.strip_suffix(')'))
+        .unwrap_or(answer);
+    if !path.starts_with('/') {
+        return Shadow::Unknown;
+    }
+    let p = Path::new(path);
+    // The same directory may be spelled differently (a symlinked home).
+    let dir = |p: &Path| p.parent().and_then(|d| std::fs::canonicalize(d).ok());
+    let same =
+        p == link || (p.file_name() == link.file_name() && dir(p).is_some() && dir(p) == dir(link));
+    if same {
+        Shadow::None
+    } else {
+        Shadow::Command(p.to_path_buf())
     }
 }

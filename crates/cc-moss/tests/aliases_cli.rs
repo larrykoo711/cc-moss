@@ -497,3 +497,57 @@ fn works_in_bash_and_zsh() {
         );
     }
 }
+
+/// PATH without the fake Homebrew `bin`: no stable cc-moss anywhere.
+fn no_entry_path(env: &Env) -> String {
+    format!("{}:/usr/bin:/bin", env.home().join(".local/bin").display())
+}
+
+#[test]
+fn started_through_an_alias_it_links_the_real_binary() {
+    let env = Env::new();
+    let real = fs::canonicalize(env!("CARGO_BIN_EXE_cc-moss")).unwrap();
+    env.write_config("[aliases]\nta = \"alias add\"\nts = \"setup\"\n");
+    fs::create_dir_all(env.home().join(".local/bin")).unwrap();
+    for name in ["ta", "ts"] {
+        symlink(&real, env.link(name)).unwrap();
+    }
+    let run = |name: &str, args: &[&str]| {
+        env.command(env.link(name))
+            .env("PATH", no_entry_path(&env))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+
+    ok(run("ta", &["zz", "pick"]));
+    assert_eq!(
+        fs::read_link(env.link("zz")).unwrap(),
+        real,
+        "not a link to `ta`"
+    );
+    let doc = env.json(&["alias", "ls", "--json"]);
+    let zz = doc["aliases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["name"] == "zz")
+        .unwrap()
+        .clone();
+    assert_ne!(zz["status"], "foreign", "{zz}");
+    ok(env.cc(&["alias", "rm", "zz"]));
+    assert!(fs::symlink_metadata(env.link("zz")).is_err());
+
+    // Hooks written through an alias run the real binary, not `ts hook …`.
+    let settings = env.path("settings.json");
+    ok(run(
+        "ts",
+        &["--yes", "--settings", settings.to_str().unwrap()],
+    ));
+    let text = fs::read_to_string(&settings).unwrap();
+    assert!(
+        text.contains(&format!("{} hook stop", real.display())),
+        "{text}"
+    );
+    assert!(!text.contains("/ts hook"), "{text}");
+}

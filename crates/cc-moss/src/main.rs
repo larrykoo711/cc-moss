@@ -81,7 +81,7 @@ enum Command {
         /// Apply without asking (required when stdin is not a terminal).
         #[arg(long)]
         yes: bool,
-        /// Remove the cc-moss hooks, leaving everything else untouched.
+        /// Remove the cc-moss hooks and the `t` alias; everything else stays.
         #[arg(long)]
         uninstall: bool,
         /// Settings file to edit [default: ~/.claude/settings.json].

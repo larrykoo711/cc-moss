@@ -38,12 +38,22 @@ pub fn run(opts: Options) -> Result<()> {
     }
     let place = super::alias::Place::detect()?;
     let (alias_changes, alias_notes) = if opts.uninstall {
-        super::alias::uninstall_changes(&place)?
+        super::alias::uninstall_changes(&place, false)?
     } else {
         super::alias::default_changes(&place)?
     };
+    let linking = !opts.uninstall && !alias_changes.is_empty();
     changes.extend(alias_changes);
     notes.extend(alias_notes);
+    // `t` is a link in ~/.local/bin now, so that directory must be on PATH.
+    // For zsh, setup adds the same PATH-only block install uses (shown in the
+    // diff like everything else); other shells get a one-line hint.
+    let paths = super::install::Paths::detect()?;
+    if super::install::zsh_in_use(&paths) {
+        changes.extend(zshenv_change(&opts, &paths)?);
+    } else if linking {
+        notes.extend(super::alias::path_hint(&place));
+    }
     if changes.is_empty() {
         for n in &notes {
             println!("{n}");
@@ -126,6 +136,28 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
     }))
 }
 
+/// Add the `cc-moss: path` block to `~/.zshenv` (it puts `~/.local/bin`
+/// on PATH), or on uninstall take it out again unless `install`'s shell
+/// blocks are there too: then it is install's to remove.
+fn zshenv_change(opts: &Options, paths: &super::install::Paths) -> Result<Option<Change>> {
+    use super::install::{self, TAG_PATH, TAG_SSH};
+    if opts.uninstall {
+        let zshrc = opts.zshrc.clone().or_else(default_zshrc_path);
+        let zshrc = match zshrc {
+            Some(p) => read_optional(&p)?.unwrap_or_default(),
+            None => String::new(),
+        };
+        if managed_block::contains(&zshrc, TAG_SSH) {
+            return Ok(None);
+        }
+        return install::strip_blocks(&paths.zshenv, &[TAG_PATH]);
+    }
+    let original = read_optional(&paths.zshenv)?.unwrap_or_default();
+    let text = managed_block::upsert(&original, TAG_PATH, install::PATH_ZSH)
+        .with_context(|| format!("cannot update {}", paths.zshenv.display()))?;
+    install::change(&paths.zshenv, text)
+}
+
 /// Take the old `function t` block out of `.zshrc`: `t` is a link now, and
 /// a function of the same name would hide it. Only cc-moss's own block is
 /// touched; a `t` the user wrote is reported by `doctor`, never edited.
@@ -183,7 +215,7 @@ pub(super) fn default_settings_path() -> Result<PathBuf> {
 /// when there is one, else the running binary itself.
 fn hook_exe() -> Result<String> {
     let exe = std::env::current_exe().context("cannot locate the cc-moss executable")?;
-    let exe = settings_json::stable_exe(&exe, std::env::var_os("PATH").as_deref());
+    let exe = moss_core::aliases::stable_entry(&exe, std::env::var_os("PATH").as_deref());
     exe.into_os_string()
         .into_string()
         .map_err(|_| anyhow::anyhow!("the cc-moss executable path is not valid UTF-8"))

@@ -309,20 +309,11 @@ fn alias_t_keeps_the_users_own_choice() {
     );
     assert!(home.join(".local/bin/t").exists());
 
-    // Uninstall removes links but keeps the user's aliases and their t.
-    fs::create_dir_all(home.join(".local/bin")).unwrap();
-    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_cc-moss"), home.join(".local/bin/mycc"))
-        .unwrap();
+    // Uninstall removes the `t` link but keeps the user's own `t` entry.
     let out = setup_in(&home, &["--uninstall", "--yes"]);
     assert!(out.status.success(), "{}", stderr(&out));
-    assert!(
-        stdout(&out).contains("Kept your aliases"),
-        "{}",
-        stdout(&out)
-    );
     assert_eq!(fs::read_to_string(&config).unwrap(), text);
     assert!(fs::symlink_metadata(home.join(".local/bin/t")).is_err());
-    assert!(fs::symlink_metadata(home.join(".local/bin/mycc")).is_err());
 }
 
 #[test]
@@ -450,4 +441,84 @@ fn new_hooks_added_once() {
     let out = setup(dir.path(), &["--uninstall", "--yes"]);
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(fs::read(&path).unwrap(), CLAUDE_FORMATTED.as_bytes());
+}
+
+#[test]
+fn alias_setup_puts_local_bin_on_path_for_zsh() {
+    // A 0.1 user who only ever ran `setup`: no install, no PATH block.
+    let home = tempfile::tempdir().unwrap();
+    let home = fs::canonicalize(home.path()).unwrap();
+    fs::write(home.join(".zshrc"), format!("export A=1\n{OLD_T_BLOCK}")).unwrap();
+    let run = |args: &[&str]| {
+        bin()
+            .env("HOME", &home)
+            .env("SHELL", "/bin/zsh")
+            .env("PATH", "/usr/bin:/bin")
+            .stdin(std::process::Stdio::null())
+            .arg("setup")
+            .args(args)
+            .arg("--settings")
+            .arg(home.join("settings.json"))
+            .output()
+            .unwrap()
+    };
+    let dry = run(&["--dry-run"]);
+    assert!(
+        stdout(&dry).contains(".zshenv"),
+        "shown in the diff: {}",
+        stdout(&dry)
+    );
+    let out = run(&["--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let zshenv = fs::read_to_string(home.join(".zshenv")).unwrap();
+    assert!(zshenv.contains("# >>> cc-moss: path >>>"), "{zshenv}");
+
+    // A new zsh finds `t` with nothing else on PATH.
+    if Path::new("/bin/zsh").exists() || Path::new("/usr/bin/zsh").exists() {
+        let found = std::process::Command::new("zsh")
+            .env_clear()
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .args(["-c", "command -v t"])
+            .output()
+            .unwrap();
+        assert_eq!(
+            String::from_utf8_lossy(&found.stdout).trim(),
+            home.join(".local/bin/t").to_str().unwrap()
+        );
+    }
+
+    // setup --uninstall takes its own PATH block back out, and only `t`.
+    let out = run(&["--uninstall", "--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        !home.join(".zshenv").exists(),
+        "the file held only our block"
+    );
+}
+
+#[test]
+fn alias_setup_uninstall_only_removes_t() {
+    let home = tempfile::tempdir().unwrap();
+    let home = fs::canonicalize(home.path()).unwrap();
+    assert!(setup_in(&home, &["--yes"]).status.success());
+    let bin_dir = home.join(".local/bin");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_cc-moss"), bin_dir.join("tn")).unwrap();
+    let config = home.join(".config/cc-moss/config.toml");
+    fs::write(
+        &config,
+        fs::read_to_string(&config).unwrap() + "tn = \"new\"\n",
+    )
+    .unwrap();
+    let out = setup_in(&home, &["--uninstall", "--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(fs::symlink_metadata(bin_dir.join("t")).is_err());
+    assert!(
+        bin_dir.join("tn").exists(),
+        "other aliases are install's business"
+    );
+    assert_eq!(
+        fs::read_to_string(&config).unwrap(),
+        "[aliases]\ntn = \"new\"\n"
+    );
 }
