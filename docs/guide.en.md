@@ -19,7 +19,9 @@ cc-moss doctor                           # checks that everything is in place
 
 - **Prebuilt binaries** for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static) are on the
   [releases page](https://github.com/larrykoo711/cc-moss/releases). Unpack, put `cc-moss` on your `PATH`. This is
-  the way for arm64 Linux, where Homebrew does not run.
+  the way for arm64 Linux, where Homebrew does not run. The macOS download has the menubar app (`cc-moss.app`) next
+  to the binary: run `./cc-moss install` in the unpacked folder to put it in `~/Applications` as well, or drag
+  `cc-moss.app` into Applications yourself.
 - **From source** (Rust 1.89 or newer, and a C compiler for the bundled SQLite):
   `cargo install --locked --git https://github.com/larrykoo711/cc-moss cc-moss`
 
@@ -33,7 +35,7 @@ cc-moss doctor                           # checks that everything is in place
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
-| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same version is left alone |
+| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same or a newer version, or a development build, is left alone, and so is everything under sudo |
 | `aliases` | Optional (`--with aliases`): `ll`, `lla`, `psg`, `gl`, plus `lg`/`lt` (eza), `catp`/`catn` (bat), `ff` (fd) and `psp` (procs) when those are installed. `ls`, `cat`, `grep` and `cd` keep their usual behaviour |
 
 Leave a part out with `--skip <part>`. Shell additions live in clearly marked `# >>> cc-moss: … >>>` blocks, and each
@@ -64,7 +66,8 @@ cc-moss update                   # checks for a new version, shows what is new, 
 It updates the way you installed: `brew upgrade` for Homebrew, `cargo install` for a source build, and for a release
 download it fetches the new binary, checks it against the published SHA-256 and swaps it in. On macOS the menubar app in
 `~/Applications` moves to the same version; if it was running, it quits first and opens again afterwards (a source
-build has no app, so cc-moss tells you it stays on the old one). Homebrew users can also run `brew upgrade cc-moss` for
+build has no app, so cc-moss tells you it stays on the old one). The app is never moved to an older version, a
+development build is left alone, and under sudo the app is not touched at all. Homebrew users can also run `brew upgrade cc-moss` for
 the CLI, then `cc-moss install` to bring the app along. Once a day the picker and `doctor` also look for a new version and mention it; see
 [Privacy](#privacy) for what that sends and how to turn it off.
 
@@ -73,9 +76,12 @@ the CLI, then `cc-moss install` to bring the app along. Once a day the picker an
 ```sh
 cc-moss install --uninstall      # removes the hooks, every cc-moss block and the files it created; asks first
 brew uninstall cc-moss           # or delete the binary; do this second, so the hooks are gone first
-rm -rf ~/Applications/cc-moss.app  # macOS: the menubar app (quit it from its menu first)
 rm -rf ~/.local/state/cc-moss    # optional: the registry and its log
 ```
+
+On macOS, `cc-moss install --uninstall` also quits and deletes `~/Applications/cc-moss.app` (only cc-moss's own app)
+and the `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.login.plist` it writes for "Open at Login". It asks
+about this separately; answer no to keep the app.
 
 ## Usage
 

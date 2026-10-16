@@ -102,7 +102,7 @@ enum Command {
         /// Replace an existing starship config with cc-moss's.
         #[arg(long)]
         replace_starship: bool,
-        /// Undo install: remove the hooks, blocks and files it added.
+        /// Undo install: remove the hooks, blocks and files it added, and the menubar app (macOS).
         #[arg(long, conflicts_with_all = ["with", "skip", "replace_starship"])]
         uninstall: bool,
         /// Show what would change; change nothing.

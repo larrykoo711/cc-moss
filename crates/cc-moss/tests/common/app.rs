@@ -37,40 +37,71 @@ pub fn version(app: &Path) -> Option<String> {
     Some(version.trim().to_string())
 }
 
-/// Stub `pgrep`, `osascript` and `open` (and `pkill`/`killall`, which must
-/// never be called) into `bin`, logging each call to `<logs>/<name>.log`.
-/// With `running`, the app counts as running until `osascript` asks it to
-/// quit.
+/// Stub `pgrep`, `osascript`, `open` and `kill` (and `pkill`/`killall`,
+/// which must never be called) into `bin`, logging each call to
+/// `<logs>/<name>.log`. With `running`, the app counts as running (pid 4242)
+/// until `osascript` asks it to quit or `kill` stops it.
 pub fn stubs(bin: &Path, logs: &Path, running: bool) {
     let quit = logs.join("quit");
-    let log = |name: &str| format!("echo \"$*\" >> '{}/{name}.log'\n", logs.display());
     let pgrep = if running {
         format!(
-            "#!/bin/sh\n{}[ -e '{}' ] && exit 1\nexit 0\n",
-            log("pgrep"),
+            "#!/bin/sh\n{}[ -e '{}' ] && exit 1\necho 4242\nexit 0\n",
+            log_line(logs, "pgrep"),
             quit.display()
         )
     } else {
-        format!("#!/bin/sh\n{}exit 1\n", log("pgrep"))
+        format!("#!/bin/sh\n{}exit 1\n", log_line(logs, "pgrep"))
     };
-    let osascript = format!(
-        "#!/bin/sh\n{}touch '{}'\n",
-        log("osascript"),
-        quit.display()
-    );
+    let quits = |name: &str| {
+        format!(
+            "#!/bin/sh\n{}touch '{}'\n",
+            log_line(logs, name),
+            quit.display()
+        )
+    };
     std::fs::create_dir_all(bin).unwrap();
     std::fs::create_dir_all(logs).unwrap();
     for (name, script) in [
         ("pgrep", pgrep),
-        ("osascript", osascript),
-        ("open", format!("#!/bin/sh\n{}", log("open"))),
-        ("pkill", format!("#!/bin/sh\n{}", log("pkill"))),
-        ("killall", format!("#!/bin/sh\n{}", log("killall"))),
+        ("osascript", quits("osascript")),
+        ("kill", quits("kill")),
+        ("open", format!("#!/bin/sh\n{}", log_line(logs, "open"))),
+        ("pkill", format!("#!/bin/sh\n{}", log_line(logs, "pkill"))),
+        (
+            "killall",
+            format!("#!/bin/sh\n{}", log_line(logs, "killall")),
+        ),
     ] {
-        let p = bin.join(name);
-        std::fs::write(&p, script).unwrap();
-        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+        write_stub(&bin.join(name), &script);
     }
+}
+
+/// `osascript` fails, as it does when the Automation permission is denied.
+pub fn osascript_fails(bin: &Path, logs: &Path) {
+    write_stub(
+        &bin.join("osascript"),
+        &format!(
+            "#!/bin/sh\n{}echo 'Not authorized to send Apple events' >&2\nexit 1\n",
+            log_line(logs, "osascript")
+        ),
+    );
+}
+
+/// The app never quits: neither asking nor `kill` stops it.
+pub fn never_quits(bin: &Path, logs: &Path) {
+    write_stub(
+        &bin.join("pgrep"),
+        &format!("#!/bin/sh\n{}echo 4242\nexit 0\n", log_line(logs, "pgrep")),
+    );
+}
+
+fn log_line(logs: &Path, name: &str) -> String {
+    format!("echo \"$*\" >> '{}/{name}.log'\n", logs.display())
+}
+
+fn write_stub(path: &Path, script: &str) {
+    std::fs::write(path, script).unwrap();
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 /// What a stub logged.

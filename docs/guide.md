@@ -16,7 +16,7 @@ cc-moss doctor                           # 检查是否都装好了
 <details>
 <summary>其他安装方式</summary>
 
-- **预编译二进制**：macOS（Apple 芯片、Intel）与 Linux（x86_64、arm64，静态链接）见[Releases 页面](https://github.com/larrykoo711/cc-moss/releases)，解压后把 `cc-moss` 放进 `PATH` 即可。arm64 的 Linux 上 Homebrew 跑不起来，请用这种方式。
+- **预编译二进制**：macOS（Apple 芯片、Intel）与 Linux（x86_64、arm64，静态链接）见[Releases 页面](https://github.com/larrykoo711/cc-moss/releases)，解压后把 `cc-moss` 放进 `PATH` 即可。arm64 的 Linux 上 Homebrew 跑不起来，请用这种方式。macOS 的下载包里，状态栏 App（`cc-moss.app`）就放在程序旁边：在解压出的文件夹里运行 `./cc-moss install`，它会把 App 一起放进 `~/Applications`；也可以直接把 `cc-moss.app` 拖进「应用程序」。
 - **从源码构建**（Rust 1.89 及以上，另需 C 编译器来编译内置的 SQLite）：`cargo install --locked --git https://github.com/larrykoo711/cc-moss cc-moss`
 
 </details>
@@ -29,7 +29,7 @@ cc-moss doctor                           # 检查是否都装好了
 | `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
 | `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
 | `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
-| `app` | 仅 macOS：状态栏 App 随 cc-moss 一起来（Homebrew 和 macOS 的 Releases 下载包里都有），问过你之后复制到 `~/Applications/cc-moss.app` 并启动。必须放在「应用程序」目录里，macOS 才会给它发通知；已经是同一版本就不动 |
+| `app` | 仅 macOS：状态栏 App 随 cc-moss 一起来（Homebrew 和 macOS 的 Releases 下载包里都有），问过你之后复制到 `~/Applications/cc-moss.app` 并启动。必须放在「应用程序」目录里，macOS 才会给它发通知；已经是同一版本、更新的版本或开发版就不动，用 sudo 运行时也不动 |
 | `aliases` | 可选（`--with aliases`）：`ll`、`lla`、`psg`、`gl`，装了对应工具时再加 `lg`/`lt`（eza）、`catp`/`catn`（bat）、`ff`（fd）、`psp`（procs）。`ls`、`cat`、`grep`、`cd` 保持原样 |
 
 用 `--skip <部分>` 跳过某一项。shell 里的改动都放在醒目的 `# >>> cc-moss: … >>>` 区块中，每个被改动的文件都会留一份带时间戳、权限不变的备份。缺少的工具会连同安装命令一起列出来，你同意才执行：macOS 用 Homebrew；Debian 与 Ubuntu 用 apt，starship 则用官方安装脚本（先经 HTTPS 下载，再执行）装到 `~/.local/bin`。其他系统只列出工具名，由你自己安装。
@@ -49,16 +49,17 @@ cc-moss doctor                           # 检查是否都装好了
 cc-moss update                   # 检查新版本，告诉你更新了什么，问过再升级
 ```
 
-它会按你当初的安装方式升级：Homebrew 装的用 `brew upgrade`，源码装的用 `cargo install`；从 Releases 下载的，则下载新的二进制，对照发布的 SHA-256 校验无误后替换。macOS 上 `~/Applications` 里的状态栏 App 会一起换成同一版本，原本开着的会先退出、换好后重新打开（源码安装不带 App，会提示你它还停在旧版本）。Homebrew 用户直接 `brew upgrade cc-moss` 也能升级 CLI，之后再运行一次 `cc-moss install` 把 App 也换上。选择器和 `doctor` 每天最多检查一次新版本，有就提醒你；它发送了什么、怎么关掉，见[隐私](#隐私)。
+它会按你当初的安装方式升级：Homebrew 装的用 `brew upgrade`，源码装的用 `cargo install`；从 Releases 下载的，则下载新的二进制，对照发布的 SHA-256 校验无误后替换。macOS 上 `~/Applications` 里的状态栏 App 会一起换成同一版本，原本开着的会先退出、换好后重新打开（源码安装不带 App，会提示你它还停在旧版本）。App 不会被换成更旧的版本，开发版也不动；用 sudo 运行时完全不碰 App。Homebrew 用户直接 `brew upgrade cc-moss` 也能升级 CLI，之后再运行一次 `cc-moss install` 把 App 也换上。选择器和 `doctor` 每天最多检查一次新版本，有就提醒你；它发送了什么、怎么关掉，见[隐私](#隐私)。
 
 ### 卸载
 
 ```sh
 cc-moss install --uninstall      # 移除钩子、所有 cc-moss 区块和它创建的文件；先给你看，问过再改
 brew uninstall cc-moss           # 或删掉二进制；放在第二步，确保钩子已经先撤掉
-rm -rf ~/Applications/cc-moss.app  # macOS：状态栏 App（先从它的菜单里退出）
 rm -rf ~/.local/state/cc-moss    # 可选：登记表和它的日志
 ```
+
+macOS 上，`cc-moss install --uninstall` 也会先退出、再删掉 `~/Applications/cc-moss.app`（只删 cc-moss 自己的 App），以及它为「登录时打开」写的 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.login.plist`。这一步会单独问你，想留着 App 就答「否」。
 
 ## 用法
 

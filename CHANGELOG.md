@@ -11,7 +11,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - The menubar app ships with cc-moss: same version, same release. The Homebrew formula and the macOS release archives
   carry `cc-moss.app` (ad-hoc signed); `cc-moss install` asks, then copies it to `~/Applications`, where macOS
   delivers its notifications (`--skip app` leaves it out). `cc-moss update` brings the app to the new version and
-  restarts it if it was running, and `cc-moss doctor` reports its version and where it lives.
+  restarts it if it was running, and `cc-moss doctor` reports its version and where it lives. Replacing the app is
+  all or nothing (a failure keeps the old one), it is never downgraded, and under sudo it is left alone.
+  `cc-moss install --uninstall` removes it too, with its "Open at Login" launch agent.
 
 - Native aliases: `cc-moss alias add tn new` makes `tn` work in every shell right away. Aliases are links in
   `~/.local/bin`, never go through a shell, and can be managed from the menubar app's Settings › Aliases.
