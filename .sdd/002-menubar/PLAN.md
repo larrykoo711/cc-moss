@@ -199,15 +199,15 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
 | **T1.1** 面板与快照 | cc-moss | — | ✅ Done | done/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
-| **T1.2** 在终端里打开 | cc-moss | T1.1 | ⬜ Backlog | — | 默认终端与 Ghostty 真机打开、设置可切换 |
+| **T1.2** 在终端里打开 | cc-moss | T1.1 | 🟨 In Progress | in-progress/T1.2-open-in-terminal.spec.md | 默认终端与 Ghostty 真机打开、设置可切换 |
 | **T1.3** 找回 | cc-moss | T1.1,T1.2 | ⬜ Backlog | — | 杀 server 后面板全部找回 |
 | **T2.1** 会话事件流（CLI） | cc-moss | — | ✅ Done | done/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
-| **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ⬜ Backlog | — | 四态录屏，空闲 CPU < 1% |
+| **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | 🟨 In Progress | in-progress/T2.2-icon-motion.spec.md | 四态录屏，空闲 CPU < 1% |
 | **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 四类通知真机触发 |
 | **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
 | **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ⬜ Backlog | — | 三项操作 `t` 里可见 |
-| **T2.6** 原生别名 | cc-moss | T1.1 | ⬜ Backlog | — | bash/zsh 下别名可用，改完即生效 |
-| **T3.1** 宠物设计 | cc-moss | T2.1 | ⬜ Backlog | — | 用户批准宠物设计 |
+| **T2.6** 原生别名 | cc-moss | T1.1 | 🟨 In Progress | in-progress/T2.6-native-aliases.spec.md | bash/zsh 下别名可用，改完即生效 |
+| **T3.1** 宠物设计 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T3.1-pet-design.spec.md | 用户批准宠物设计 |
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ⬜ Backlog | — | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ⬜ Backlog | — | 事件气泡、点击打开会话 |
 | **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
@@ -236,6 +236,7 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 - 2026-10-16 用户：T1.2 的终端在设置里可配置多种，默认系统终端，推荐 Ghostty → DESIGN A5 更新
 - 2026-10-16 用户：「补充完善 kanban 然后继续全力推进 with sdd and agent team」
 - 2026-10-16 T2.1 合入 main（#15，独立评审 2 Important + 2 Minor 均已修复并补红→绿测试，380 测试全绿，钩子 p95 PostToolUse 3.6ms / Notification 7.4ms）；T1.1 变基后全绿，随 #14 合入
+- 2026-10-16 T1.1 合入 main（#14）。第二波 S3：T1.2、T2.2、T2.6、T3.1 spec 过 gate，派 agent team 四路并行（各自 worktree 与 feature 分支，controller 负责看板与合并）
 
 ## 推进节奏
 
