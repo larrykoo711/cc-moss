@@ -36,6 +36,7 @@ struct PanelView: View {
         // Keyboard focus lives in the search field; buttons never take it,
         // so no focus ring lands on the filter or the action pill.
         .focusEffectDisabled()
+        .tooltipLayer()
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
@@ -250,9 +251,9 @@ struct PanelView: View {
         }
         if !s.inTmux {
             // An attach command is no use for it; its folder is (user 2026-10-16).
-            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copy, shortcut: "↵",
+            return PanelAction(title: L.t("Copy", "复制"), icon: Icons.copy, shortcut: "↵",
                                help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
-                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。")) {
+                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。复制的是它的目录路径。")) {
                 copy(s.cwd)
             }
         }

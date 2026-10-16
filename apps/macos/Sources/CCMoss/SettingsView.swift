@@ -114,6 +114,7 @@ struct SettingsView: View {
         // and keeps the window exactly our size; doing it once on open was
         // undone by the next layout.
         .background(WindowLayoutHook())
+        .tooltipLayer()
         .onAppear { SettingsWindow.bringToFront() }
         .onChange(of: search) { _, _ in
             if let first = tabs.first, !tabs.contains(tab) { go(first) }

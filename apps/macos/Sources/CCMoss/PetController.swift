@@ -144,10 +144,13 @@ final class PetController {
         pet.onPointer = { [weak self] p in self?.view?.look(toward: p) }
     }
 
+    /// The screens, with the one under the pointer as "main": Mo first
+    /// appears where you are looking, not on a screen you may not use.
     static func screens() -> [PetScreen] {
-        let first = NSScreen.screens.first
+        let mouse = NSEvent.mouseLocation
+        let here = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.screens.first
         return NSScreen.screens.map { s in
-            PetScreen(id: s.petID, frame: s.frame, visible: s.visibleFrame, isMain: s == first)
+            PetScreen(id: s.petID, frame: s.frame, visible: s.visibleFrame, isMain: s == here)
         }
     }
 
