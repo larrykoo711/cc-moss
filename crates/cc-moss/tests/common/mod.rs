@@ -47,12 +47,13 @@ pub fn hook(state: &Path, event: &str, stdin: &str, pid: Option<u32>) -> Output 
         cmd.env("CLAUDE_PID", pid.to_string());
     }
     let mut child = cmd.spawn().expect("spawn cc-moss hook");
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(stdin.as_bytes())
-        .unwrap();
+    // A hook may exit without reading its input (an event it does not know):
+    // the write then races the exit and can hit a closed pipe, which is fine.
+    match child.stdin.take().unwrap().write_all(stdin.as_bytes()) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::BrokenPipe => {}
+        Err(e) => panic!("writing the hook's stdin: {e}"),
+    }
     child.wait_with_output().unwrap()
 }
 
