@@ -260,6 +260,8 @@ enum DropdownWindow {
     /// The trigger, in screen points: a click there is the trigger's own
     /// toggle, not "elsewhere".
     private static var anchorRect: NSRect = .zero
+    /// Room around the list for its shadow (radius 8, offset 3, ×2 + slack).
+    private static let margin: CGFloat = 28
 
     static func show<V: View>(below anchor: NSRect, content: V, onClose: @escaping () -> Void) {
         close()
@@ -268,8 +270,10 @@ enum DropdownWindow {
             .glassPanel(cornerRadius: 16)
             // A soft shadow that follows the rounded shape; the window's own
             // shadow would outline its rectangle.
-            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
-            .padding(16)) // room for the shadow
+            .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+            // The shadow must fit inside the window: one cut off at the
+            // window's edge shows up as a hard-edged rectangle.
+            .padding(Self.margin))
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let p = DropdownPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
@@ -280,7 +284,7 @@ enum DropdownWindow {
         p.level = .popUpMenu
         p.contentView = host
         // Right edges line up, just below the trigger, kept on screen.
-        var origin = NSPoint(x: anchor.maxX - size.width + 16, y: anchor.minY - size.height + 10)
+        var origin = NSPoint(x: anchor.maxX - size.width + margin, y: anchor.minY - size.height + margin - 6)
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) }) ?? NSScreen.main {
             origin.x = min(max(origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - size.width)
             origin.y = max(origin.y, screen.visibleFrame.minY)
