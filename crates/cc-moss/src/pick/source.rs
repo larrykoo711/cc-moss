@@ -29,7 +29,11 @@ impl SlotRow {
             cwd: s.cwd.clone(),
             last_active_ms: s.last_active_at_ms,
             busy: s.busy,
-            preview: s.last_prompt.clone(),
+            // Older versions stored markup-only lines; tidy them on the way out.
+            preview: s
+                .last_prompt
+                .as_deref()
+                .and_then(moss_core::slot::prompt_preview),
         }
     }
 

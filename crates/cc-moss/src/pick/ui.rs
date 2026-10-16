@@ -620,18 +620,21 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
                 None => lines.push(Line::raw(tilde(dir, view.home))),
             }
             lines.push(Line::raw(""));
-            let open = if state == State::Interrupted {
-                tr!(" Restore", " 恢复")
-            } else {
-                tr!(" Open", " 打开")
-            };
-            lines.push(Line::from(vec![
-                key("↵"),
-                word(open),
-                Span::raw("     "),
-                key("→"),
-                word(tr!(" More", " 更多")),
-            ]));
+            // An open menu, question or note box takes this line's place.
+            if matches!(app.mode, Mode::Browse) {
+                let open = if state == State::Interrupted {
+                    tr!(" Restore", " 恢复")
+                } else {
+                    tr!(" Open", " 打开")
+                };
+                lines.push(Line::from(vec![
+                    key("↵"),
+                    word(open),
+                    Span::raw("     "),
+                    key("→"),
+                    word(tr!(" More", " 更多")),
+                ]));
+            }
         }
     }
     let inner = Rect::new(
@@ -640,8 +643,11 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
         area.width.saturating_sub(2),
         area.height,
     );
-    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
-    draw_overlay(frame, inner, app, &item, view);
+    let card = Paragraph::new(lines).wrap(Wrap { trim: false });
+    // Rows the card's text takes once wrapped: the box opens right below it.
+    let used = u16::try_from(card.line_count(inner.width)).unwrap_or(u16::MAX);
+    frame.render_widget(card, inner);
+    draw_overlay(frame, inner, used, app, &item, view);
 }
 
 /// The card for "Update to X.Y.Z".
@@ -689,13 +695,17 @@ fn draw_update_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
     frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
-/// Menu, confirmation and note boxes, at the bottom of the card.
-fn draw_overlay(frame: &mut Frame, card: Rect, app: &App, item: &Item, view: &View) {
+/// Menu, confirmation and note boxes, right below the card's text (`used`
+/// rows), where the "↵ Open  → More" line was; pushed up only when the
+/// terminal is too short to fit them there.
+fn draw_overlay(frame: &mut Frame, card: Rect, used: u16, app: &App, item: &Item, view: &View) {
     let title = display_name(item, view);
     let place = |h: u16| {
         let w = card.width.min(48);
         let h = h.min(card.height);
-        Rect::new(card.x, card.bottom().saturating_sub(h), w, h)
+        let below = card.y.saturating_add(used);
+        let y = below.min(card.bottom().saturating_sub(h));
+        Rect::new(card.x, y, w, h)
     };
     let boxed = |t: String| {
         Block::bordered()
@@ -1178,6 +1188,27 @@ mod tests {
         let x = line[..line.find("api-gw").unwrap()].width() as u16;
         assert_ne!(buf[(x, y)].fg, ORANGE);
         assert_eq!(buf[(x + 4, y)].fg, ORANGE);
+    }
+
+    #[test]
+    fn the_menu_opens_right_under_the_card_not_at_the_bottom() {
+        let mut a = sample();
+        key(&mut a, KeyCode::Right);
+        // A tall terminal: the card's content ends near the top.
+        let t = render(&a, 110, 60).0;
+        let rows: Vec<&str> = t.lines().collect();
+        let row_of = |needle: &str| rows.iter().position(|l| l.contains(needle));
+        let folder = row_of("FOLDER").expect("the card shows its folder");
+        let menu = row_of("Write a note").expect("the menu is open");
+        assert!(
+            menu > folder && menu - folder <= 6,
+            "menu at row {menu}, folder at row {folder}:\n{t}"
+        );
+        // The menu takes the place of the "↵ Open  → More" line.
+        assert!(!t.contains("→ More"), "{t}");
+        // A short terminal still shows the whole menu.
+        let t = render(&a, 110, 16).0;
+        assert!(t.contains("End session"), "{t}");
     }
 
     #[test]

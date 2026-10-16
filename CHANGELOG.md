@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- The picker's menu, note box and "end it?" question open right under the session card, where "↵ Open  → More"
+  was, instead of at the bottom of a tall terminal.
+- Dependencies: ratatui 0.30, crossterm 0.29, rusqlite 0.40, toml 1, ulid 3.
+
+### Fixed
+
+- "Last message" no longer shows Claude Code's own markup (`<cross-session-message …>`, `<command-name>`) for
+  messages from other sessions and slash commands: it shows the words inside, or nothing.
+
 ## [0.1.0] - 2026-10-16
 
 The first release: Claude Code sessions that survive crashes, reboots and closed tabs.
