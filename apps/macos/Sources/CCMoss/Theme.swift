@@ -60,6 +60,7 @@ enum Icons {
     static let general = "gearshape"
     static let about = "info.circle"
     static let aliases = "link"
+    static let notifications = "bell.badge"
     static let choose = "folder.badge.gearshape"
     static let update = "arrow.down.circle"
     static let github = "chevron.left.forwardslash.chevron.right"

@@ -8,7 +8,7 @@ import SwiftUI
 ///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
-///          [--settings general|aliases|about [--aliases <alias ls --json file>]]
+///          [--settings general|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -65,7 +65,15 @@ enum Render {
                 let page: SettingsView.Tab = switch tab {
                 case "about": .about
                 case "aliases": .aliases
+                case "notifications": .notifications
                 default: .general
+                }
+                // `--auth allowed|denied|unavailable`: the notifications page's permission row.
+                NotificationStatus.shared.auth = switch value("--auth") {
+                case "allowed": .allowed
+                case "denied": .denied
+                case "unavailable": .unavailable
+                default: .notDetermined
                 }
                 drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"), out: out)
             } else {
