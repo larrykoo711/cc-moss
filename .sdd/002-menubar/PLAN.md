@@ -200,16 +200,16 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 |------|----|------|------|-----|----------|
 | **T1.1** 面板与快照 | cc-moss | — | ✅ Done | done/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
 | **T1.2** 在终端里打开 | cc-moss | T1.1 | ✅ Done | done/T1.2-open-in-terminal.spec.md | 默认终端与 Ghostty 真机打开、设置可切换 |
-| **T1.3** 找回 | cc-moss | T1.1,T1.2 | 🟩 Review | in-progress/T1.3-bring-back.spec.md | 杀 server 后面板全部找回 |
+| **T1.3** 找回 | cc-moss | T1.1,T1.2 | ✅ Done | done/T1.3-bring-back.spec.md | 杀 server 后面板全部找回 |
 | **T2.1** 会话事件流（CLI） | cc-moss | — | ✅ Done | done/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
 | **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ✅ Done | done/T2.2-icon-motion.spec.md | 四态录屏，空闲 CPU < 1% |
-| **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | 🟩 Review | in-progress/T2.3-notifications.spec.md | 四类通知真机触发 |
-| **T2.4** 开机自启与设置 | cc-moss | T2.3 | 🟩 Review | in-progress/T2.4-startup-and-settings.spec.md | 重启后收到提醒并找回 |
-| **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | 🟩 Review | in-progress/T2.5-new-and-notes.spec.md | 三项操作 `t` 里可见 |
+| **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | ✅ Done | done/T2.3-notifications.spec.md | 四类通知真机触发 |
+| **T2.4** 开机自启与设置 | cc-moss | T2.3 | ✅ Done | done/T2.4-startup-and-settings.spec.md | 重启后收到提醒并找回 |
+| **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ✅ Done | done/T2.5-new-and-notes.spec.md | 三项操作 `t` 里可见 |
 | **T2.6** 原生别名 | cc-moss | T1.1 | ✅ Done | done/T2.6-native-aliases.spec.md | bash/zsh 下别名可用，改完即生效 |
 | **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
-| **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | 🟩 Review | in-progress/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
-| **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | 🟩 Review | in-progress/T3.3-pet-bubbles.spec.md | 事件气泡、点击打开会话 |
+| **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ✅ Done | done/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
+| **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ✅ Done | done/T3.3-pet-bubbles.spec.md | 事件气泡、点击打开会话 |
 | **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
 | **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.4 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
 | **T4.2** 首次启动引导 | cc-moss | T4.1 | ⬜ Backlog | — | 干净用户目录首次启动走完引导 |
@@ -241,6 +241,8 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 - 2026-10-17 用户真机反馈修复：点小莫或写便条后 App 退出（最后窗口关闭即退出）、右键菜单改为小莫气泡、提示定位、设置文案精简与说明字调淡；用户「没问题，继续按 sdd kanban 迭代」
 - 2026-10-17 第三波 Review 收口：T1.3、T2.3、T2.5、T3.2、T3.3 写入 reports；点击穿透真机探针通过（alpha 保持默认）。各报告「待用户确认」项与 T3.2 录屏改为离屏关键帧（需批准）留待用户验收后进 Done
 - 2026-10-17 T2.4 spec 过 gate；Rust `config get/set` 由 agent 并行完成（feature/002-t2.4-config 合入集成分支），Swift 侧开机提醒、全局快捷键 ⌃⌥M、界面语言由 controller 完成；本机 App 改用开发版 CLI（Homebrew 0.1.1 缺新命令）
+- 2026-10-17 用户验收「没问题，开始 Ship」：T1.3、T2.3、T2.4、T2.5、T3.2、T3.3 转 Done；各报告「待用户确认」项随日常使用验证，问题走反馈车道
+- AMEND T3.2: 「六个动作录屏」改为真实图层离屏关键帧（中英、深浅 12 张）approved-by=user date=2026-10-17
 - 2026-10-16 T2.2 菜单栏图标三轮真机测量：每帧换图 10fps 4.3%、Core Animation 26.5%（WindowServer +13%）、每秒 2 次换图 1.43%（≈ iStat Menus 菜单栏进程 1.3%）。结论：菜单栏每次更新有固定系统开销，只能压更新次数；流畅动画留给 P3 宠物窗口
 - 2026-10-16 用户：菜单栏动态效果可关（A24，已实现于集成分支）；系统通知与宠物提醒互斥（A23，T2.3 / T3.3 共用 AlertRouter）
 - 2026-10-16 用户修订宠物交互：需要你时不直接弹消息框，先用表情动作（日常模式另加半透明口头禅小气泡）示意，悬停或点击才展开；三种模式安静 / 日常（默认）/ 积极；平时半透明、互动或悬停时过渡到不透明 → DESIGN-pet §6.5；半透明与悬停过渡并入 T3.2，模式与气泡在 T3.3
