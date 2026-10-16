@@ -132,7 +132,7 @@ terminals, right after you add it: no `source`. `t` is one: `t` is `cc-moss pick
 
 ```sh
 cc-moss alias add tn new            # tn login-page  →  cc-moss new login-page
-cc-moss alias add tr "restore --yes"
+cc-moss alias add tback "restore --yes"
 cc-moss alias ls
 cc-moss alias rm tn
 ```

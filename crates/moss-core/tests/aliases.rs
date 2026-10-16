@@ -365,3 +365,16 @@ fn type_answers_are_read_after_the_name() {
         Shadow::NotFound
     );
 }
+
+#[test]
+fn a_non_string_alias_is_skipped_not_fatal() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    let text = "[ui]\nlanguage = \"zh\"\n[aliases]\nt = \"pick\"\nn = 3\nl = [\"ls\"]\n";
+    std::fs::write(&p, text).unwrap();
+    let c = Config::load_from(&p).expect("the rest of the config still loads");
+    assert_eq!(c.ui.language.as_deref(), Some("zh"));
+    assert_eq!(c.aliases.keys().collect::<Vec<_>>(), ["t"]);
+    assert_eq!(aliases::ignored_entries(text), ["l", "n"]);
+    assert!(aliases::ignored_entries("[aliases]\nt = \"pick\"\n").is_empty());
+}

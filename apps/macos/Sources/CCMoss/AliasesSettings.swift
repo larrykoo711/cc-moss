@@ -19,6 +19,8 @@ struct AliasesSettings: View {
     @State private var draftName = ""
     @State private var draftCommand = ""
     @State private var failure: (row: String, failure: AliasFailure)?
+    /// A delete that failed, shown on its own row.
+    @State private var rowErrors: [String: String] = [:]
     @State private var busy = false
     @Environment(\.colorScheme) private var scheme
 
@@ -104,7 +106,7 @@ struct AliasesSettings: View {
                 if editing == .row(alias.name) {
                     editRow(id: alias.name)
                 } else {
-                    AliasRow(alias: alias, divider: i < rows.count - 1,
+                    AliasRow(alias: alias, divider: i < rows.count - 1, error: rowErrors[alias.name],
                              onEdit: { startEditing(alias) },
                              onDelete: { Task { await remove(alias) } })
                 }
@@ -173,6 +175,11 @@ struct AliasesSettings: View {
                         .font(.system(size: 12))
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 8)
+                    if failure.failure.canReplace {
+                        SoftButton(title: L.t("Replace", "替换"), icon: "arrow.triangle.2.circlepath") {
+                            save(id, replace: true)
+                        }
+                    }
                     if failure.failure.canForce {
                         SoftButton(title: L.t("Use It Anyway", "坚持用这个名字"), icon: "exclamationmark.arrow.triangle.2.circlepath") {
                             save(id, force: true)
@@ -225,10 +232,15 @@ struct AliasesSettings: View {
         withAnimation(.easeOut(duration: 0.15)) { editing = nil }
     }
 
-    private func save(_ id: String, force: Bool = false) {
+    private func save(_ id: String, force: Bool = false, replace: Bool = false) {
         guard let client, !busy else { return }
         let name = draftName.trimmingCharacters(in: .whitespaces)
         let command = draftCommand.trimmingCharacters(in: .whitespaces)
+        // cc-moss would just change the other alias; ask before that happens.
+        if !replace, list?.replaces(name, editing: id == Self.addingID ? nil : id) == true {
+            failure = (id, AliasFailure.taken(name))
+            return
+        }
         Task {
             busy = true
             defer { busy = false }
@@ -254,12 +266,13 @@ struct AliasesSettings: View {
         do {
             try await client.removeAlias(name: alias.name)
         } catch let f as AliasFailure {
-            loadError = f.message
+            rowErrors[alias.name] = f.message
             return
         } catch {
-            loadError = "\(error)"
+            rowErrors[alias.name] = "\(error)"
             return
         }
+        rowErrors[alias.name] = nil
         await load()
     }
 
@@ -273,6 +286,7 @@ struct AliasesSettings: View {
 struct AliasRow: View {
     let alias: Alias
     let divider: Bool
+    var error: String?
     let onEdit: () -> Void
     let onDelete: () -> Void
     @State private var hovering = false
@@ -309,6 +323,15 @@ struct AliasRow: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 46)
             .background(Color.primary.opacity(hovering ? 0.03 : 0))
+            if let error {
+                Label(error, systemImage: "exclamationmark.circle.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(Theme.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+            }
             if divider {
                 Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
             }

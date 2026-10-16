@@ -196,7 +196,7 @@ enum AliasCommand {
     ///
     /// `cc-moss alias add tn new` makes `tn login-page` run
     /// `cc-moss new login-page`, in any shell, right away. One quoted
-    /// argument is read as command text: `cc-moss alias add tr "restore --yes"`.
+    /// argument is read as command text: `cc-moss alias add tback "restore --yes"`.
     /// Put --force and --json before the name.
     Add {
         /// Use the name even if it is already a command on your PATH.

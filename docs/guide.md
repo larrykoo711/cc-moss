@@ -116,7 +116,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 ```sh
 cc-moss alias add tn new            # tn 登录页  →  cc-moss new 登录页
-cc-moss alias add tr "restore --yes"
+cc-moss alias add tback "restore --yes"
 cc-moss alias ls
 cc-moss alias rm tn
 ```

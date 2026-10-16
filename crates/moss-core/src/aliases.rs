@@ -402,6 +402,22 @@ pub fn set_in_config(text: &str, name: &str, command: &str) -> Result<String> {
     Ok(doc.to_string())
 }
 
+/// The `[aliases]` entries in `text` that are not strings, which loading
+/// the config skips. Empty when the text does not parse.
+pub fn ignored_entries(text: &str) -> Vec<String> {
+    let Ok(doc) = text.parse::<toml::Table>() else {
+        return Vec::new();
+    };
+    match doc.get("aliases") {
+        Some(toml::Value::Table(t)) => t
+            .iter()
+            .filter(|(_, v)| !v.is_str())
+            .map(|(k, _)| k.clone())
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
 /// `text` without `[aliases] name`, and whether it was there.
 pub fn remove_from_config(text: &str, name: &str) -> Result<(String, bool)> {
     let mut doc: toml_edit::DocumentMut = text.parse().context("config.toml is not valid TOML")?;

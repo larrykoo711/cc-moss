@@ -68,6 +68,16 @@ private let listJSON = """
         #expect(list.filtered("nothing").isEmpty)
     }
 
+    @Test func savingANameThatExistsAsksFirst() throws {
+        let list = try AliasList.decode(Data(listJSON.utf8))
+        #expect(list.replaces("tn", editing: nil), "adding a name that exists")
+        #expect(list.replaces("tn", editing: "t"), "renaming onto another alias")
+        #expect(!list.replaces("tn", editing: "tn"), "editing a row in place")
+        #expect(!list.replaces("fresh", editing: nil))
+        #expect(AliasFailure.taken("tn").canReplace)
+        #expect(!AliasFailure.taken("tn").canForce)
+    }
+
     @Test func argumentsKeepTypedTextOutOfOptions() {
         #expect(AliasArgs.list() == ["alias", "ls", "--json"])
         #expect(AliasArgs.add(name: "tn", command: "new --detach")

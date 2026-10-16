@@ -58,6 +58,12 @@ public struct AliasList: Decodable, Equatable, Sendable {
         return list
     }
 
+    /// Whether saving `name` would replace another alias: one with that name
+    /// exists and it is not the row being edited (`editing`, nil when adding).
+    public func replaces(_ name: String, editing: String?) -> Bool {
+        name != editing && aliases.contains { $0.name == name }
+    }
+
     /// The aliases whose name or command contains every word of `query`.
     public func filtered(_ query: String) -> [Alias] {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace)
@@ -83,6 +89,16 @@ public struct AliasFailure: Error, Equatable, Sendable {
 
     /// The name is already a command elsewhere; adding with force is possible.
     public var canForce: Bool { code == "exists" }
+
+    /// The app's own question: the name belongs to another alias.
+    public static func taken(_ name: String) -> AliasFailure {
+        AliasFailure(code: "taken",
+                     message: L.t("There is already an alias called `\(name)`. Replace it?",
+                                  "已经有一个叫 `\(name)` 的别名了，要替换它吗？"))
+    }
+
+    /// Saving again with consent replaces the other alias.
+    public var canReplace: Bool { code == "taken" }
 }
 
 /// The argument lists the app hands cc-moss. Names and commands always come

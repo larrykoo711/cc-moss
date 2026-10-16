@@ -25,7 +25,7 @@
       "fix": null
     },
     {
-      "name": "tr",
+      "name": "tback",
       "command": "restore --yes",
       "status": "ok",
       "link": "ok",
