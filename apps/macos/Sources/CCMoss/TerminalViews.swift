@@ -187,7 +187,6 @@ struct TerminalPicker: View {
                 Text(L.t("None found", "一个也没找到")).foregroundStyle(.secondary)
             }
         }
-        .help(L.t("Choose the terminal sessions open in", "选择打开会话用的终端"))
         .accessibilityLabel(L.t("Terminal: \(prefs.current?.terminal.displayName ?? "")", "终端：\(prefs.current?.terminal.displayName ?? "")"))
     }
 }
@@ -267,18 +266,21 @@ enum DropdownWindow {
         anchorRect = anchor
         let host = NSHostingView(rootView: content
             .glassPanel(cornerRadius: 16)
-            .padding(10)) // room for the shadow
+            // A soft shadow that follows the rounded shape; the window's own
+            // shadow would outline its rectangle.
+            .shadow(color: .black.opacity(0.18), radius: 12, y: 6)
+            .padding(16)) // room for the shadow
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let p = DropdownPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
                          backing: .buffered, defer: false)
         p.isOpaque = false
         p.backgroundColor = .clear
-        p.hasShadow = true
+        p.hasShadow = false
         p.level = .popUpMenu
         p.contentView = host
         // Right edges line up, just below the trigger, kept on screen.
-        var origin = NSPoint(x: anchor.maxX - size.width + 10, y: anchor.minY - size.height + 4)
+        var origin = NSPoint(x: anchor.maxX - size.width + 16, y: anchor.minY - size.height + 10)
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) }) ?? NSScreen.main {
             origin.x = min(max(origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - size.width)
             origin.y = max(origin.y, screen.visibleFrame.minY)

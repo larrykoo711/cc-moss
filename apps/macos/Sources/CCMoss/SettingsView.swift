@@ -101,11 +101,18 @@ struct SettingsView: View {
             .padding(.leading, 6)
             .padding(.trailing, 20)
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        // Fill whatever height the window has: the hidden title bar still
+        // counts 28 pt, and a fixed height left a strip at the bottom.
+        .frame(width: Self.size.width)
+        .frame(minHeight: Self.size.height, maxHeight: .infinity)
         .background(Theme.surface(scheme))
         .background(.regularMaterial)
         .ignoresSafeArea()
         .focusEffectDisabled()
+        // Every layout pass puts the window buttons back inside the sidebar
+        // and keeps the window exactly our size; doing it once on open was
+        // undone by the next layout.
+        .background(WindowLayoutHook())
         .onAppear { SettingsWindow.bringToFront() }
         .onChange(of: search) { _, _ in
             if let first = tabs.first, !tabs.contains(tab) { go(first) }
@@ -679,6 +686,35 @@ enum SettingsWindow {
             guard let button = window.standardWindowButton(kind), let bar = button.superview else { continue }
             let step: CGFloat = 20
             button.setFrameOrigin(NSPoint(x: 22 + CGFloat(i) * step, y: bar.bounds.height - button.frame.height - 14))
+        }
+    }
+}
+
+/// An invisible view that re-applies the settings window's chrome after
+/// each layout of the window: full-size content, our size, buttons tucked in.
+struct WindowLayoutHook: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { HookView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class HookView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        override func layout() {
+            super.layout()
+            apply()
+        }
+
+        private func apply() {
+            guard let window else { return }
+            MainActor.assumeIsolated {
+                if !window.styleMask.contains(.fullSizeContentView) || window.titleVisibility != .hidden {
+                    SettingsWindow.fitContent(of: window)
+                }
+                SettingsWindow.tuckWindowButtons(in: window)
+            }
         }
     }
 }
