@@ -474,6 +474,34 @@ fn alias_checks(zshrc: &str, zsh: bool, zshenv: &str) -> Vec<Check> {
         }
     };
     let rows = alias::rows(&place, &config, true);
+    let ignored = read_optional(&place.config)
+        .ok()
+        .flatten()
+        .map(|t| moss_core::aliases::ignored_entries(&t))
+        .unwrap_or_default();
+    if !ignored.is_empty() {
+        out.push(check(
+            Mark::Warn,
+            tr!("aliases", "别名"),
+            tr!(
+                format!(
+                    "skipped in {}: {} (an alias is a string, e.g. t = \"pick\")",
+                    place.config.display(),
+                    ignored.join(", ")
+                ),
+                format!(
+                    "{} 里跳过了 {}（别名要写成字符串，比如 t = \"pick\"）",
+                    place.config.display(),
+                    ignored.join("、")
+                )
+            ),
+            Some(format!(
+                "cc-moss alias add {} <{}>",
+                ignored[0],
+                tr!("command", "命令")
+            )),
+        ));
+    }
     let fix_doctor = Some("cc-moss doctor --fix".to_string());
     if !rows.iter().any(|r| r.name == alias::DEFAULT_NAME) {
         out.push(check(

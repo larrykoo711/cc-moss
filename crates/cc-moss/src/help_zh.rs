@@ -63,7 +63,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("setup", "dry_run", "只看 diff，什么都不写"),
     ("setup", "yes", "不问直接应用（stdin 不是终端时必须加）"),
-    ("setup", "uninstall", "移除 cc-moss 钩子，其余设置原样保留"),
+    (
+        "setup",
+        "uninstall",
+        "移除 cc-moss 钩子和 `t` 别名，其余原样保留",
+    ),
     (
         "setup",
         "settings",

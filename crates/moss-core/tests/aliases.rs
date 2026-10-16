@@ -308,3 +308,73 @@ fn reads_what_type_says() {
     assert_eq!(s("bash: type: t: not found"), Shadow::NotFound);
     assert_eq!(s(""), Shadow::Unknown);
 }
+
+#[test]
+fn falls_back_to_the_real_binary_not_the_link_it_ran_through() {
+    // Started as `~/.local/bin/ta` with no cc-moss on PATH: macOS reports
+    // the link itself as the current executable.
+    let dir = tempfile::tempdir().unwrap();
+    let dir = std::fs::canonicalize(dir.path()).unwrap();
+    let real = dir.join("opt/cc-moss");
+    std::fs::create_dir_all(real.parent().unwrap()).unwrap();
+    std::fs::write(&real, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&real, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let bin = dir.join(".local/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    let ta = bin.join("ta");
+    symlink(&real, &ta).unwrap();
+    assert_eq!(aliases::stable_entry(&ta, None), real);
+    let empty = std::env::join_paths(["/nonexistent"]).unwrap();
+    assert_eq!(aliases::stable_entry(&ta, Some(&empty)), real);
+}
+
+#[test]
+fn type_answers_are_read_after_the_name() {
+    // Names and paths can hold the very words the answer is made of.
+    let dir = Path::new("/home/function/alias/.local/bin");
+    for name in ["myalias", "tbuiltin", "funcy", "keyword", "nfound"] {
+        let link = dir.join(name);
+        let answer = format!("{name} is {}", link.display());
+        assert_eq!(
+            aliases::parse_type(&answer, &link),
+            Shadow::None,
+            "{answer}"
+        );
+        let hashed = format!("{name} is hashed ({})", link.display());
+        assert_eq!(
+            aliases::parse_type(&hashed, &link),
+            Shadow::None,
+            "{hashed}"
+        );
+    }
+    let link = dir.join("myalias");
+    assert_eq!(
+        aliases::parse_type("myalias is a shell function from /home/demo/.zshrc", &link),
+        Shadow::Function
+    );
+    assert_eq!(
+        aliases::parse_type("myalias is aliased to `ls'", &link),
+        Shadow::Alias
+    );
+    assert_eq!(
+        aliases::parse_type("myalias is /usr/local/bin/myalias", &link),
+        Shadow::Command("/usr/local/bin/myalias".into())
+    );
+    assert_eq!(
+        aliases::parse_type("myalias not found", &link),
+        Shadow::NotFound
+    );
+}
+
+#[test]
+fn a_non_string_alias_is_skipped_not_fatal() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    let text = "[ui]\nlanguage = \"zh\"\n[aliases]\nt = \"pick\"\nn = 3\nl = [\"ls\"]\n";
+    std::fs::write(&p, text).unwrap();
+    let c = Config::load_from(&p).expect("the rest of the config still loads");
+    assert_eq!(c.ui.language.as_deref(), Some("zh"));
+    assert_eq!(c.aliases.keys().collect::<Vec<_>>(), ["t"]);
+    assert_eq!(aliases::ignored_entries(text), ["l", "n"]);
+    assert!(aliases::ignored_entries("[aliases]\nt = \"pick\"\n").is_empty());
+}

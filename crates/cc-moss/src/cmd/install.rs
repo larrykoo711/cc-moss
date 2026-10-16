@@ -213,7 +213,7 @@ pub fn is_ours(tag: &str) -> bool {
 }
 
 /// A change to `path`, if `new_text` differs from what is there.
-fn change(path: &Path, new_text: String) -> Result<Option<Change>> {
+pub(super) fn change(path: &Path, new_text: String) -> Result<Option<Change>> {
     let original = read_optional(path)?;
     if original.as_deref().unwrap_or_default() == new_text {
         return Ok(None);
@@ -260,7 +260,12 @@ pub fn run(opts: Options) -> Result<()> {
             zshrc: None,
         };
         changes.extend(setup::settings_change(&setup_opts)?);
-        let (alias_changes, alias_notes) = alias::default_changes(&alias::Place::detect()?)?;
+        let place = alias::Place::detect()?;
+        let (alias_changes, alias_notes) = alias::default_changes(&place)?;
+        // zsh users get ~/.local/bin on PATH from the shell part's .zshenv block.
+        if !alias_changes.is_empty() && !(zsh_in_use(&paths) && opts.wants(Part::Shell)) {
+            notes.extend(alias::path_hint(&place));
+        }
         changes.extend(alias_changes);
         notes.extend(alias_notes);
     }
@@ -368,7 +373,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         zshrc: None,
     };
     changes.extend(setup::settings_change(&setup_opts)?);
-    let (alias_changes, alias_notes) = alias::uninstall_changes(&alias::Place::detect()?)?;
+    let (alias_changes, alias_notes) = alias::uninstall_changes(&alias::Place::detect()?, true)?;
     changes.extend(alias_changes);
     notes.extend(alias_notes);
     let zsh_tags = [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES];
@@ -447,7 +452,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
 }
 
 /// `path` without cc-moss's blocks `tags`; deleted when nothing else is left.
-fn strip_blocks(path: &Path, tags: &[&str]) -> Result<Option<Change>> {
+pub(super) fn strip_blocks(path: &Path, tags: &[&str]) -> Result<Option<Change>> {
     let Some(original) = read_optional(path)? else {
         return Ok(None);
     };

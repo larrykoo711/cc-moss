@@ -304,3 +304,23 @@ fn alias_path_missing_reported() {
         "{report}"
     );
 }
+
+#[test]
+fn alias_non_string_entry_is_named_not_fatal() {
+    let home = alias_home("t = \"pick\"\nn = 3\n");
+    std::os::unix::fs::symlink(
+        env!("CARGO_BIN_EXE_cc-moss"),
+        home.path().join(".local/bin/t"),
+    )
+    .unwrap();
+    let report = text(&doctor_with(home.path(), &[], "en"));
+    assert!(
+        line_for(&report, "t").contains('✓'),
+        "the rest still works: {report}"
+    );
+    let line = line_for(&report, "aliases");
+    assert!(
+        line.contains('!') && line.contains("skipped") && line.contains(": n"),
+        "{line}"
+    );
+}

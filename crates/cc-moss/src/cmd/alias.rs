@@ -795,16 +795,14 @@ pub fn default_changes(place: &Place) -> Result<(Vec<Change>, Vec<String>)> {
             ),
         });
     }
-    if !changes.is_empty() {
-        notes.extend(path_hint(place));
-    }
     Ok((changes, notes))
 }
 
-/// What `install --uninstall` removes: every alias link of ours, and the
-/// `t = "pick"` entry it added (the file too, if nothing else is left).
-/// The user's own aliases stay in the config.
-pub fn uninstall_changes(place: &Place) -> Result<(Vec<Change>, Vec<String>)> {
+/// What uninstalling removes: the `t` link and the `t = "pick"` entry
+/// setup/install added (the file too, if nothing else is left); with `all`
+/// (`install --uninstall`) every other alias link of ours as well. The
+/// user's own aliases always stay in the config.
+pub fn uninstall_changes(place: &Place, all: bool) -> Result<(Vec<Change>, Vec<String>)> {
     let mut changes = Vec::new();
     let mut notes = Vec::new();
     let original = read_optional(&place.config)?;
@@ -812,7 +810,11 @@ pub fn uninstall_changes(place: &Place) -> Result<(Vec<Change>, Vec<String>)> {
         Some(_) => Config::load_from(&place.config)?,
         None => Config::default(),
     };
-    let mut names: Vec<&str> = config.aliases.keys().map(String::as_str).collect();
+    let mut names: Vec<&str> = if all {
+        config.aliases.keys().map(String::as_str).collect()
+    } else {
+        Vec::new()
+    };
     if !names.contains(&DEFAULT_NAME) {
         names.push(DEFAULT_NAME);
     }
@@ -878,7 +880,7 @@ pub fn uninstall_changes(place: &Place) -> Result<(Vec<Change>, Vec<String>)> {
         .map(String::as_str)
         .filter(|n| *n != DEFAULT_NAME)
         .collect();
-    if !kept.is_empty() {
+    if all && !kept.is_empty() {
         notes.push(tr!(
             format!(
                 "Kept your aliases in {} ({}); their links go. `cc-moss doctor --fix` brings them back.",
