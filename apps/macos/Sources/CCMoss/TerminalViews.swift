@@ -160,69 +160,239 @@ struct RecommendedBadge: View {
     }
 }
 
-/// A Raycast-style dropdown: the chosen terminal's icon and name; a click
-/// opens a menu of the installed ones, each with its own app icon.
+/// A Raycast-style dropdown: the chosen terminal's icon and name in a soft
+/// filled capsule; a click opens our floating list (search on top, grey
+/// highlight on the chosen one), not the system's blue menu.
 struct TerminalPicker: View {
     let prefs: TerminalPrefs
-    @State private var hovering = false
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Button(action: popUp) {
-            HStack(spacing: 7) {
-                if let current = prefs.current {
-                    Image(nsImage: TerminalPrefs.icon(current, size: 18))
-                        .resizable().interpolation(.high).frame(width: 18, height: 18)
-                    Text(current.terminal.displayName).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
-                    if current.terminal.isRecommended { RecommendedBadge() }
-                } else {
-                    Text(L.t("None found", "一个也没找到")).font(.system(size: 12)).foregroundStyle(.secondary)
+        Dropdown(
+            options: { () -> [DropdownOption<Terminal>] in
+                prefs.rescan()
+                return prefs.installed.map { t in
+                    DropdownOption(id: t.terminal, title: t.terminal.displayName,
+                                   image: TerminalPrefs.icon(t, size: 20),
+                                   badge: t.terminal.isRecommended ? L.t("Recommended", "推荐") : nil)
                 }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.secondary)
+            },
+            selection: prefs.current?.terminal,
+            pick: { prefs.choose($0) }
+        ) {
+            if let current = prefs.current {
+                Image(nsImage: TerminalPrefs.icon(current, size: 18))
+                    .resizable().interpolation(.high).frame(width: 18, height: 18)
+                Text(current.terminal.displayName)
+            } else {
+                Text(L.t("None found", "一个也没找到")).foregroundStyle(.secondary)
             }
-            .padding(.leading, 8)
-            .padding(.trailing, 9)
-            .frame(height: 28)
-            .background(RoundedRectangle(cornerRadius: 7).fill(Theme.selection(scheme).opacity(hovering ? 1.6 : 1)))
-            .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Theme.hairline(scheme)))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(PressStyle())
-        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
         .help(L.t("Choose the terminal sessions open in", "选择打开会话用的终端"))
         .accessibilityLabel(L.t("Terminal: \(prefs.current?.terminal.displayName ?? "")", "终端：\(prefs.current?.terminal.displayName ?? "")"))
     }
+}
 
-    private func popUp() {
-        prefs.rescan()
-        let menu = NSMenu()
-        let target = MenuTarget { prefs.choose($0) }
-        var selected: NSMenuItem?
-        for t in prefs.installed {
-            let suffix = t.terminal.isRecommended ? L.t("  ·  Recommended", "  ·  推荐") : ""
-            let item = NSMenuItem(title: t.terminal.displayName + suffix, action: #selector(MenuTarget.pick(_:)), keyEquivalent: "")
-            item.target = target
-            item.representedObject = t.terminal.rawValue
-            item.image = TerminalPrefs.icon(t, size: 16)
-            if t.terminal == prefs.current?.terminal {
-                item.state = .on
-                selected = item
+/// The trigger of every settings dropdown: label and a chevron in a soft
+/// capsule; opens a `DropdownWindow` right under itself.
+struct Dropdown<ID: Hashable, Label: View>: View {
+    let options: () -> [DropdownOption<ID>]
+    let selection: ID?
+    let pick: (ID) -> Void
+    @ViewBuilder let label: () -> Label
+    @State private var hovering = false
+    @State private var open = false
+    @State private var anchor = AnchorBox()
+
+    var body: some View {
+        Button { toggle() } label: {
+            HStack(spacing: 8) {
+                label().font(.system(size: 13, weight: .medium)).lineLimit(1).fixedSize()
+                Image(systemName: open ? "chevron.up" : "chevron.down")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
-            menu.addItem(item)
+            .padding(.horizontal, 11)
+            .frame(height: 30)
+            .background(Capsule().fill(Color.primary.opacity(hovering || open ? 0.10 : 0.06)))
+            .contentShape(Capsule())
+            .background(AnchorView(box: anchor))
         }
-        // Modal until the menu closes, so `target` lives long enough.
-        menu.popUp(positioning: selected, at: NSEvent.mouseLocation, in: nil)
-        withExtendedLifetime(target) {}
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+    }
+
+    private func toggle() {
+        if open { DropdownWindow.close(); return }
+        guard let view = anchor.view, let window = view.window else { return }
+        let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
+        open = true
+        DropdownWindow.show(below: rect, content: DropdownList(options: options(), selection: selection) { id in
+            pick(id)
+            DropdownWindow.close()
+        }) {
+            open = false
+        }
     }
 }
 
-private final class MenuTarget: NSObject {
-    let onPick: (Terminal) -> Void
-    init(_ onPick: @escaping (Terminal) -> Void) { self.onPick = onPick }
+/// Holds the trigger's NSView so the list can be placed under it.
+final class AnchorBox {
+    weak var view: NSView?
+}
 
-    @objc func pick(_ sender: NSMenuItem) {
-        if let raw = sender.representedObject as? String, let t = Terminal(rawValue: raw) { onPick(t) }
+struct AnchorView: NSViewRepresentable {
+    let box: AnchorBox
+    func makeNSView(context: Context) -> NSView {
+        let v = NSView()
+        box.view = v
+        return v
     }
+    func updateNSView(_ nsView: NSView, context: Context) { box.view = nsView }
+}
+
+/// The floating list: a borderless glass panel with no arrow, under the
+/// trigger, closing on a click elsewhere, Esc, or a choice.
+@MainActor
+enum DropdownWindow {
+    private static var panel: NSPanel?
+    private static var monitors: [Any] = []
+    private static var onClose: (() -> Void)?
+    /// The trigger, in screen points: a click there is the trigger's own
+    /// toggle, not "elsewhere".
+    private static var anchorRect: NSRect = .zero
+
+    static func show<V: View>(below anchor: NSRect, content: V, onClose: @escaping () -> Void) {
+        close()
+        anchorRect = anchor
+        let host = NSHostingView(rootView: content
+            .glassPanel(cornerRadius: 16)
+            .padding(10)) // room for the shadow
+        host.layoutSubtreeIfNeeded()
+        let size = host.fittingSize
+        let p = DropdownPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
+                         backing: .buffered, defer: false)
+        p.isOpaque = false
+        p.backgroundColor = .clear
+        p.hasShadow = true
+        p.level = .popUpMenu
+        p.contentView = host
+        // Right edges line up, just below the trigger, kept on screen.
+        var origin = NSPoint(x: anchor.maxX - size.width + 10, y: anchor.minY - size.height + 4)
+        if let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) }) ?? NSScreen.main {
+            origin.x = min(max(origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - size.width)
+            origin.y = max(origin.y, screen.visibleFrame.minY)
+        }
+        p.setFrameOrigin(origin)
+        p.makeKeyAndOrderFront(nil)
+        panel = p
+        self.onClose = onClose
+        monitors.append(NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { e in
+            if e.window !== panel, !anchorRect.contains(NSEvent.mouseLocation) { close() }
+            return e
+        } as Any)
+        monitors.append(NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
+            Task { @MainActor in close() }
+        } as Any)
+        monitors.append(NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
+            if e.keyCode == 53 { close(); return nil } // Esc
+            return e
+        } as Any)
+    }
+
+    static func close() {
+        monitors.forEach { NSEvent.removeMonitor($0) }
+        monitors.removeAll()
+        panel?.orderOut(nil)
+        panel = nil
+        let done = onClose
+        onClose = nil
+        done?()
+    }
+}
+
+/// One choice in a `DropdownList`.
+struct DropdownOption<ID: Hashable>: Identifiable {
+    let id: ID
+    let title: String
+    var image: NSImage?
+    var symbol: String?
+    var badge: String?
+}
+
+/// The list a dropdown opens: a search field, then roomy rows with icons;
+/// the chosen one sits on a grey block (Raycast's look, no tick).
+struct DropdownList<ID: Hashable>: View {
+    let options: [DropdownOption<ID>]
+    let selection: ID?
+    let pick: (ID) -> Void
+    @State private var hovered: ID?
+    @State private var query = ""
+    @FocusState private var searching: Bool
+
+    private var shown: [DropdownOption<ID>] {
+        let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        return q.isEmpty ? options : options.filter { $0.title.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField(L.t("Search…", "搜索…"), text: $query)
+                .textFieldStyle(.plain)
+                .font(.system(size: 14))
+                .focused($searching)
+                .onSubmit { if let first = shown.first { pick(first.id) } }
+                .padding(.horizontal, 16)
+                .frame(height: 44)
+            Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
+            VStack(spacing: 2) {
+                ForEach(shown) { option in
+                    Button { pick(option.id) } label: {
+                        HStack(spacing: 12) {
+                            if let image = option.image {
+                                Image(nsImage: image).resizable().interpolation(.high).frame(width: 20, height: 20)
+                            } else if let symbol = option.symbol {
+                                Image(systemName: symbol).font(.system(size: 14)).frame(width: 20)
+                            }
+                            Text(option.title).font(.system(size: 14))
+                            if let badge = option.badge {
+                                Text(badge)
+                                    .font(.system(size: 10, weight: .medium))
+                                    .foregroundStyle(.secondary)
+                                    .padding(.horizontal, 6)
+                                    .frame(height: 17)
+                                    .background(Capsule().fill(Color.primary.opacity(0.07)))
+                            }
+                            Spacer(minLength: 24)
+                        }
+                        .padding(.horizontal, 12)
+                        .frame(height: 40)
+                        .background(
+                            RoundedRectangle(cornerRadius: 10)
+                                .fill(Color.primary.opacity(option.id == selection ? 0.10 : (hovered == option.id ? 0.05 : 0)))
+                        )
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .focusable(false)
+                    .onHover { inside in hovered = inside ? option.id : (hovered == option.id ? nil : hovered) }
+                }
+                if shown.isEmpty {
+                    Text(L.t("Nothing matches", "没有对得上的"))
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(height: 40)
+                }
+            }
+            .padding(8)
+        }
+        .frame(width: 260)
+        .focusEffectDisabled()
+        .onAppear { searching = true }
+    }
+}
+
+/// A borderless panel that can take typing (for the dropdown's search field).
+final class DropdownPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
 }
