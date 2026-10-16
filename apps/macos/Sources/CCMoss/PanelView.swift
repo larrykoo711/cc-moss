@@ -12,8 +12,11 @@ struct PanelView: View {
     @State private var toast: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.closePanel) private var closePanel
     /// Which shortcut's key caps are lit right now ("↵" or "⌘K").
     @State private var litKey: String?
+    /// The row under the pointer, which shows its open button.
+    @State private var hoveredID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -30,6 +33,9 @@ struct PanelView: View {
             actionBar
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        // Keyboard focus lives in the search field; buttons never take it,
+        // so no focus ring lands on the filter or the action pill.
+        .focusEffectDisabled()
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
@@ -39,9 +45,20 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
             }
         }
+        .overlay(alignment: .bottom) {
+            if let problem = model.openProblem {
+                OpenProblemCard(problem: problem, copy: copy) { model.openProblem = nil }
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 50)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+        }
         .animation(.easeOut(duration: 0.12), value: showActions)
+        .animation(.easeOut(duration: 0.15), value: model.openProblem)
+        .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true
+            model.terminals.rescan()
             model.refresh()
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
@@ -139,14 +156,24 @@ struct PanelView: View {
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
                         ForEach(project.sessions) { s in
-                            SessionRow(session: s, selected: s.id == model.selected?.id)
+                            // A click only selects; opening is deliberate: the
+                            // button that appears at the end of the hovered row,
+                            // the action pill below, or Return (user 2026-10-16).
+                            SessionRow(session: s, selected: s.id == model.selected?.id,
+                                       action: s.id == hoveredID ? primaryAction : nil,
+                                       perform: { perform($0) })
                                 .id(s.id)
                                 .contentShape(Rectangle())
-                                .onHover { inside in if inside { model.selectedID = s.id } }
-                                .onTapGesture {
-                                    model.selectedID = s.id
-                                    perform(primaryAction)
+                                .onHover { inside in
+                                    if inside {
+                                        hoveredID = s.id
+                                        model.selectedID = s.id
+                                    } else if hoveredID == s.id {
+                                        hoveredID = nil
+                                    }
                                 }
+                                .onTapGesture { model.selectedID = s.id }
+                                .handCursor()
                         }
                     }
                 }
@@ -179,12 +206,13 @@ struct PanelView: View {
                 if let primary = primaryAction {
                     PillButton(action: { perform(primary) }) {
                         HStack(spacing: 6) {
-                            Image(systemName: primary.icon).font(.system(size: 11))
+                            ActionIcon(action: primary, symbolSize: 11)
                             Text(primary.title).font(.system(size: 12, weight: .medium))
                                 .lineLimit(1).fixedSize()
                             KeyCap(text: "↵", lit: litKey == "↵")
                         }
                     }
+                    .tip(primary.help ?? primary.title)
                     Rectangle().fill(Theme.hairline(scheme)).frame(width: 1, height: 16)
                 }
                 PillButton(action: { showActions.toggle() }) {
@@ -212,18 +240,43 @@ struct PanelView: View {
 
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
-        return PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "↵") {
-            copy(model.attachCommand(s))
+        if s.state == .interrupted {
+            // T1.3 turns this into a one-click restore.
+            return PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "↵",
+                               help: L.t("This session stopped. Paste the command in a terminal to bring it back.",
+                                         "这个会话断了。把命令贴进终端，就能把它找回来。")) {
+                copy(model.restoreCommand(s))
+            }
+        }
+        if !s.inTmux {
+            // An attach command is no use for it; its folder is (user 2026-10-16).
+            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copy, shortcut: "↵",
+                               help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
+                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。")) {
+                copy(s.cwd)
+            }
+        }
+        let terminal = model.terminals.current
+        return PanelAction(title: L.t("Open", "打开"), icon: Icons.open, shortcut: "↵",
+                           image: terminal.map { TerminalPrefs.icon($0, size: 16) },
+                           help: terminal.map { L.t("Open in \($0.terminal.displayName)", "在\(zhPad($0.terminal.displayName))里打开") }) {
+            open(s)
         }
     }
 
     private var actions: [PanelAction] {
         var list: [PanelAction] = []
+        // The main action leads the list too, unless it is the copy below.
+        if let s = model.selected, s.inTmux || s.state == .interrupted, let primary = primaryAction {
+            list.append(primary)
+        }
         if let s = model.selected, model.phase == .ready {
-            list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                copy(model.attachCommand(s))
-            })
-            list.append(PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: "") {
+            if s.inTmux || s.state == .interrupted {
+                list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                    copy(model.attachCommand(s))
+                })
+            }
+            list.append(PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: s.inTmux ? "" : "↵") {
                 copy(s.cwd)
             })
         }
@@ -238,6 +291,13 @@ struct PanelView: View {
     private func perform(_ action: PanelAction?) {
         showActions = false
         action?.perform()
+    }
+
+    /// Open in the chosen terminal and get out of the way; if that fails,
+    /// stay and say what to do instead.
+    private func open(_ s: Session) {
+        let panel = NSApplication.shared.keyWindow
+        if model.open(s) { panel?.close() }
     }
 
     private func copy(_ text: String) {
@@ -259,7 +319,7 @@ struct PanelView: View {
     }
 
     private func showSettings() {
-        NSApplication.shared.keyWindow?.close()
+        closePanel()
         openWindow(id: "settings")
         SettingsWindow.bringToFront()
     }
@@ -267,12 +327,14 @@ struct PanelView: View {
     private func escape() {
         if showActions {
             showActions = false
+        } else if model.openProblem != nil {
+            model.openProblem = nil
         } else if model.stateFilter != nil {
             model.stateFilter = nil
         } else if !model.query.isEmpty {
             model.query = ""
         } else {
-            NSApplication.shared.keyWindow?.close()
+            closePanel()
         }
     }
 
@@ -296,5 +358,8 @@ struct PanelAction: Identifiable {
     let title: String
     var icon: String = Icons.copy
     let shortcut: String
+    /// Shown instead of `icon`: the chosen terminal's own app icon.
+    var image: NSImage?
+    var help: String?
     let perform: () -> Void
 }

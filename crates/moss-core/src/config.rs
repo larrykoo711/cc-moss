@@ -1,5 +1,6 @@
 //! `~/.config/cc-moss/config.toml`. Every field is optional.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -13,6 +14,11 @@ pub struct Config {
     pub tmux: TmuxConfig,
     pub ui: UiConfig,
     pub update: UpdateConfig,
+    /// Native aliases: `name = "subcommand args…"` (see [`crate::aliases`]).
+    /// An entry that is not a string is skipped (doctor names it) instead of
+    /// making the whole file unreadable for every command.
+    #[serde(deserialize_with = "string_entries")]
+    pub aliases: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -106,6 +112,20 @@ impl Config {
             .filter(|s| !s.is_empty())
             .or_else(|| self.tmux.socket.clone())
     }
+}
+
+fn string_entries<'de, D>(d: D) -> Result<BTreeMap<String, String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = BTreeMap::<String, toml::Value>::deserialize(d)?;
+    Ok(raw
+        .into_iter()
+        .filter_map(|(k, v)| match v {
+            toml::Value::String(s) => Some((k, s)),
+            _ => None,
+        })
+        .collect())
 }
 
 /// `$CC_MOSS_CONFIG`, else `$XDG_CONFIG_HOME/cc-moss/config.toml`, else `~/.config/cc-moss/config.toml`.

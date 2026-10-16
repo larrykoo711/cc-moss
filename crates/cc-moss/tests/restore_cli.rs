@@ -7,7 +7,7 @@ fn interrupted_world(test: &str) -> (World, String) {
     let w = World::new(test);
     w.new_session("job-a");
     let id = w.session_id("job-a");
-    w.send(&id, "prompt job-a");
+    w.first_prompt(&id, "job-a");
     w.tmux(&["kill-server"]);
     wait_for(|| {
         (ls_json(&w.state(), false)["sessions"][0]["status"] == "interrupted").then_some(())

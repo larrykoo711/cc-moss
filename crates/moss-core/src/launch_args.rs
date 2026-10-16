@@ -55,6 +55,53 @@ pub fn whitelist(argv: &[&str]) -> Vec<String> {
     out
 }
 
+/// `cc-moss new`'s own flags; everything else that looks like a flag is
+/// Claude Code's.
+const NEW_OWN_WITH_VALUE: [&str; 2] = ["-C", "--dir"];
+const NEW_OWN_BOOLEAN: [&str; 4] = ["--detach", "--yes", "-h", "--help"];
+
+/// Let `cc-moss new` take Claude Code's flags directly, anywhere on the line:
+/// `new --dangerously-skip-permissions login-page` becomes
+/// `new login-page -- --dangerously-skip-permissions`. `args` are the words
+/// after `new`. Flags Claude Code takes a value for (`--model opus`) keep it;
+/// anything after an explicit `--` follows the moved flags unchanged.
+pub fn normalize_new(args: &[String]) -> Vec<String> {
+    let mut own = Vec::new();
+    let mut claude = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        i += 1;
+        if arg == "--" {
+            claude.extend(args[i..].iter().cloned());
+            break;
+        }
+        let flag = arg.split_once('=').map_or(arg.as_str(), |(f, _)| f);
+        if NEW_OWN_BOOLEAN.contains(&arg.as_str()) {
+            own.push(arg.clone());
+        } else if NEW_OWN_WITH_VALUE.contains(&flag) {
+            own.push(arg.clone());
+            if !arg.contains('=') && i < args.len() {
+                own.push(args[i].clone());
+                i += 1;
+            }
+        } else if arg.starts_with('-') && arg.len() > 1 {
+            claude.push(arg.clone());
+            if WITH_VALUE.contains(&flag) && !arg.contains('=') && i < args.len() {
+                claude.push(args[i].clone());
+                i += 1;
+            }
+        } else {
+            own.push(arg.clone());
+        }
+    }
+    if !claude.is_empty() {
+        own.push("--".into());
+        own.extend(claude);
+    }
+    own
+}
+
 /// Whitelisted arguments of a running process, from `ps`. Arguments that
 /// contain spaces cannot be recovered exactly (see the T1.3 spec).
 pub fn capture(pid: u32) -> Vec<String> {

@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "ok": true,
+  "dir": "/Users/demo/.local/bin",
+  "entry": "/opt/homebrew/bin/cc-moss",
+  "config": "/Users/demo/.config/cc-moss/config.toml",
+  "dir_on_path": true,
+  "aliases": [
+    {
+      "name": "t",
+      "command": "pick",
+      "status": "ok",
+      "link": "ok",
+      "shadow": "none",
+      "detail": null,
+      "fix": null
+    },
+    {
+      "name": "tn",
+      "command": "new --detach",
+      "status": "ok",
+      "link": "ok",
+      "shadow": "none",
+      "detail": null,
+      "fix": null
+    },
+    {
+      "name": "tback",
+      "command": "restore --yes",
+      "status": "ok",
+      "link": "ok",
+      "shadow": "none",
+      "detail": null,
+      "fix": null
+    },
+    {
+      "name": "api",
+      "command": "pick api",
+      "status": "shadowed",
+      "link": "ok",
+      "shadow": "function",
+      "detail": "被同名的 shell 函数遮住了",
+      "fix": "把 shell 启动文件里的那个 `api` 删掉"
+    },
+    {
+      "name": "billing",
+      "command": "attach billing",
+      "status": "missing",
+      "link": "missing",
+      "shadow": "none",
+      "detail": "还没有链接",
+      "fix": "cc-moss doctor --fix"
+    }
+  ]
+}

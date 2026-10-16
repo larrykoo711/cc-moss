@@ -1,0 +1,457 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mo Interaction Prototype</title>
+<!--
+  cc-moss desktop pet, interaction prototype (T3.1). Self-contained: no network.
+  The pet is drawn from the Continuum curve x = 32 + 27 cos t, y = 32 + 12.9 sin 2t.
+  This page simulates the Director (merge, throttle, do-not-disturb, fullscreen)
+  so the rules in DESIGN-pet.md can be felt, not just read.
+-->
+<style>
+:root {
+  --bg: #f6f6f8; --surface: #ffffff; --text: #1d1d1f; --muted: #6e6e73; --hair: rgba(0,0,0,.08);
+  --chip: rgba(0,0,0,.05); --desk1: #a8c2db; --desk2: #dcd1c7; --brand: #ff5a3c; --amber: #e6ad4d;
+  --green: #34c759; --shadow: 0 8px 28px rgba(0,0,0,.14);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #161618; --surface: #2c2c2f; --text: #f2f2f4; --muted: #a1a1a6; --hair: rgba(255,255,255,.09);
+    --chip: rgba(255,255,255,.08); --desk1: #1f2638; --desk2: #332b3d; --shadow: 0 8px 28px rgba(0,0,0,.5);
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #161618; --surface: #2c2c2f; --text: #f2f2f4; --muted: #a1a1a6; --hair: rgba(255,255,255,.09);
+  --chip: rgba(255,255,255,.08); --desk1: #1f2638; --desk2: #332b3d; --shadow: 0 8px 28px rgba(0,0,0,.5);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Helvetica Neue", sans-serif; }
+header { max-width: 1100px; margin: 0 auto; padding: 24px 16px 8px; display: flex; gap: 16px; align-items: end; flex-wrap: wrap; }
+header h1 { font-size: 20px; margin: 0; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+header .spacer { flex: 1; }
+.seg { display: inline-flex; background: var(--chip); border-radius: 8px; padding: 2px; }
+.seg button { border: 0; background: transparent; color: var(--muted); padding: 4px 10px; border-radius: 6px; font: inherit; font-size: 12px; cursor: pointer; }
+.seg button.on { background: var(--surface); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+main { max-width: 1100px; margin: 0 auto; padding: 8px 16px 32px; display: grid; grid-template-columns: 1fr 300px; gap: 16px; }
+@media (max-width: 860px) { main { grid-template-columns: 1fr; } }
+.desk { position: relative; height: 560px; border-radius: 14px; overflow: hidden;
+  background: linear-gradient(135deg, var(--desk1), var(--desk2)); user-select: none; }
+.desk .menubar { position: absolute; inset: 0 0 auto 0; height: 26px; background: rgba(255,255,255,.35);
+  backdrop-filter: blur(10px); display: flex; align-items: center; justify-content: flex-end; padding: 0 12px; gap: 12px; font-size: 12px; }
+:root[data-theme="dark"] .desk .menubar { background: rgba(0,0,0,.3); }
+.desk .fs { position: absolute; inset: 0; background: #0b0b0c; color: #888; display: none; align-items: center; justify-content: center; font-size: 13px; }
+.desk.fullscreen .fs { display: flex; }
+.pet { position: absolute; width: 96px; height: 110px; cursor: grab; touch-action: none; }
+.pet.dragging { cursor: grabbing; }
+.pet.hidden { opacity: 0; pointer-events: none; transition: opacity .25s; }
+.pet svg { width: 100%; height: 100%; overflow: visible; }
+.pet .bodywrap { transform-origin: 48px 100px; }
+/* idle breathing: 4 s, scale 1 → 1.025 */
+.pet.idle .bodywrap, .pet.working .bodywrap { animation: breathe 4s ease-in-out infinite; }
+@keyframes breathe { 50% { transform: scale(1.025, 1.02); } }
+.pet.working .eye-full { animation: orbit 1.6s linear infinite; }
+@keyframes orbit { from { stroke-dashoffset: 19.5; } to { stroke-dashoffset: -80.5; } }
+.pet.needs .bodywrap { animation: hop .9s cubic-bezier(.3,1.6,.5,1) 2; }
+@keyframes hop { 30% { transform: translateY(-10px); } 60% { transform: translateY(0); } }
+.pet.needs .antenna { animation: wave .6s ease-in-out infinite alternate; transform-origin: 48px 30px; }
+@keyframes wave { from { transform: rotate(-22deg); } to { transform: rotate(22deg); } }
+.pet.happy .bodywrap { animation: hop .7s cubic-bezier(.3,1.6,.5,1) 1; }
+.pet.broken .bodywrap { transform: scale(1.03, .95); transition: transform .4s; }
+.pet.sleep .bodywrap { opacity: .8; }
+.pet.sleep .zzz { animation: zzz 3s ease-in-out infinite; }
+@keyframes zzz { 0% { opacity: 0; transform: translate(0,4px); } 40% { opacity: 1; } 100% { opacity: 0; transform: translate(6px,-8px); } }
+.pet.blink .eye-full { transform: scaleY(.12); transform-origin: 48px 58px; transition: transform .09s; }
+.pet .badge { display: none; }
+.pet.held .badge { display: block; }
+@media (prefers-reduced-motion: reduce) {
+  .pet *, .pet .bodywrap { animation: none !important; transition: none !important; }
+}
+.bubble { position: absolute; width: 280px; background: var(--surface); border: 1px solid var(--hair); border-radius: 14px;
+  box-shadow: var(--shadow); padding: 12px; font-size: 13px; opacity: 0; transform: translateY(6px) scale(.98);
+  transition: opacity .18s, transform .18s; pointer-events: none; }
+.bubble.show { opacity: 1; transform: none; pointer-events: auto; }
+.bubble .row { display: flex; gap: 8px; align-items: center; }
+.bubble .tile { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.bubble .title { font-weight: 600; flex: 1; }
+.bubble .msg { color: var(--muted); margin: 6px 0 0; }
+.bubble .acts { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
+.bubble .acts button { border: 0; border-radius: 999px; padding: 4px 11px; font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; background: var(--chip); color: var(--text); }
+.bubble .acts button.primary { color: #fff; }
+.bubble .acts button:hover { filter: brightness(1.06); }
+.bubble .acts button:active { transform: scale(.96); }
+.bubble .reserved { margin-top: 8px; border: 1px dashed var(--muted); opacity: .55; border-radius: 999px; text-align: center; font-size: 11px; padding: 3px; color: var(--muted); }
+.bubble .x { border: 0; background: none; color: var(--muted); cursor: pointer; font-size: 13px; }
+.bubble .spk { color: var(--muted); font-size: 12px; }
+.menu { position: absolute; background: var(--surface); border: 1px solid var(--hair); border-radius: 10px; box-shadow: var(--shadow);
+  padding: 5px; min-width: 190px; display: none; font-size: 13px; z-index: 5; }
+.menu.show { display: block; }
+.menu button { display: flex; width: 100%; justify-content: space-between; border: 0; background: none; color: var(--text); text-align: left; padding: 5px 9px; border-radius: 6px; font: inherit; cursor: pointer; }
+.menu button:hover { background: var(--brand); color: #fff; }
+.menu hr { border: 0; border-top: 1px solid var(--hair); margin: 4px 6px; }
+.panel { position: absolute; top: 30px; right: 70px; width: 300px; background: var(--surface); border-radius: 12px; box-shadow: var(--shadow);
+  border: 1px solid var(--hair); padding: 12px; display: none; font-size: 12px; z-index: 4; }
+.panel.show { display: block; }
+.panel .line { display: flex; justify-content: space-between; padding: 6px 4px; border-bottom: 1px solid var(--hair); }
+aside { display: flex; flex-direction: column; gap: 12px; }
+.card { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 12px; }
+.card h2 { font-size: 12px; margin: 0 0 8px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.card .btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.card button.ev { border: 1px solid var(--hair); background: var(--chip); color: var(--text); border-radius: 8px; padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+.card button.ev:hover { border-color: var(--brand); }
+.card button.ev:active { transform: scale(.97); }
+.toggle { display: flex; justify-content: space-between; align-items: center; padding: 4px 0; font-size: 13px; }
+.toggle input { accent-color: var(--brand); }
+.log { font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); max-height: 220px; overflow: auto; margin: 0; padding: 0; list-style: none; }
+.log li { padding: 2px 0; border-bottom: 1px dashed var(--hair); }
+.log b { color: var(--text); font-weight: 600; }
+.hint { color: var(--muted); font-size: 12px; margin: 6px 0 0; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="h-title"></h1>
+    <p id="h-sub"></p>
+  </div>
+  <div class="spacer"></div>
+  <div class="seg" id="lang"><button data-v="zh">中文</button><button data-v="en">English</button></div>
+  <div class="seg" id="theme"><button data-v="light">☼</button><button data-v="dark">☾</button></div>
+</header>
+<main>
+  <div class="desk" id="desk">
+    <div class="menubar"><span id="mb-icon">∞</span><span>12:00</span></div>
+    <div class="panel" id="panel"></div>
+    <div class="bubble" id="bubble"></div>
+    <div class="menu" id="menu"></div>
+    <div class="pet idle" id="pet" role="img">
+      <svg viewBox="0 0 96 110" aria-hidden="true">
+        <ellipse class="floor" cx="48" cy="104" rx="28" ry="3.5" fill="rgba(0,0,0,.2)"/>
+        <g class="bodywrap">
+          <g class="antenna">
+            <rect x="46.6" y="14" width="2.8" height="16" rx="1.4" fill="rgba(255,255,255,.35)"/>
+            <circle class="lamp" cx="48" cy="12" r="5"/>
+          </g>
+          <rect x="11" y="28" width="74" height="68" rx="30" fill="url(#g)" stroke="rgba(255,255,255,.1)"/>
+          <g transform="translate(20 34) scale(.875)">
+            <path class="eye eye-full" pathLength="100" fill="none" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="89 11" stroke-dashoffset="19.5"/>
+            <path class="eye eye-arc" fill="none" stroke-width="6.5" stroke-linecap="round"/>
+          </g>
+          <circle class="badge" cx="80" cy="32" r="7" fill="var(--brand)" stroke="#fff" stroke-width="1.5"/>
+          <text class="badge" id="badge-n" x="80" y="35.5" font-size="9" font-weight="700" fill="#fff" text-anchor="middle"></text>
+        </g>
+        <text class="zzz" x="80" y="22" font-size="12" font-weight="600" fill="var(--muted)" style="display:none">z z</text>
+        <defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2b2e36"/><stop offset="1" stop-color="#141519"/></linearGradient></defs>
+      </svg>
+    </div>
+    <div class="fs" id="fs"></div>
+  </div>
+  <aside>
+    <div class="card">
+      <h2 id="c-events"></h2>
+      <div class="btns" id="events"></div>
+      <p class="hint" id="c-events-hint"></p>
+    </div>
+    <div class="card">
+      <h2 id="c-env"></h2>
+      <label class="toggle"><span id="t-voice"></span><input type="checkbox" id="voice"></label>
+      <label class="toggle"><span id="t-dnd"></span><input type="checkbox" id="dnd"></label>
+      <label class="toggle"><span id="t-fs"></span><input type="checkbox" id="fullscreen"></label>
+      <label class="toggle"><span id="t-chatty"></span>
+        <select id="chatty"><option value="quiet"></option><option value="normal"></option><option value="lively"></option></select></label>
+    </div>
+    <div class="card">
+      <h2 id="c-log"></h2>
+      <ul class="log" id="log"></ul>
+    </div>
+  </aside>
+</main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const S = {
+    zh: {
+      title: '小莫 · 交互原型', sub: '点下面的事件，看宠物怎么演；拖动它、单击开面板、右键看菜单。',
+      events: '会话事件', eventsHint: '「做完」默认只点头不冒泡；把「话多不多」调到话痨，再点「做完 ×2」看 1.5 秒内的同类合并。勿扰与全屏时气泡会被攒起来。',
+      env: '环境与设置', voice: '语音播报（默认关）', dnd: '勿扰', fs: '有 App 在全屏 / 演示', chatty: '话多不多',
+      quiet: '安静（只说需要你的）', normal: '正常（默认）', lively: '话痨（每轮做完都说）', log: '导演的决定',
+      ev: { needs: '需要你', finished: '做完了', finished2: '做完 ×2', interrupted: '断了', restored: '找回了', working: '开始干活' },
+      needsT: (n) => `${n} 需要你`, needsM: 'Claude 想运行一条命令，在等你点头。',
+      finT: (n) => `${n} 这一轮做完了`, finM: '回来看看吧。',
+      fin2T: (k) => `${k} 个会话在等你`, fin2M: (ns) => `${ns.join(' 和 ')} 这一轮都做完了。`,
+      intT: (n) => `${n} 断了`, intM: '别慌，进度都在。点一下就找回来。',
+      resT: (k) => k > 1 ? `${k} 个会话都找回来了` : '找回来了', resM: '文明会延续，对话也是。',
+      open: '去看看', later: '稍后', bring: '找回', notNow: '先不', show: '看看',
+      reserved: '在这里同意 / 拒绝（004）',
+      menu: { panel: '打开面板', dnd1: '勿扰一小时', dndDay: '今天勿扰', tuck: '收到屏幕边上', mute: '静音', settings: '宠物设置…', hide: '隐藏宠物' },
+      fsText: '全屏 App 中：宠物先躲起来，攒着的事等你出来再说', away: (k) => `你不在的时候有 ${k} 件事`,
+      panel: '（这里是状态栏面板，T1.1）',
+      log_merge: '合并', log_hold: '攒着（勿扰）', log_hide: '攒着（全屏）', log_quiet: '只动不说（话少档）', log_voice: '播报', log_skip: '跳过（60 秒内同一件事）',
+    },
+    en: {
+      title: 'Mo · interaction prototype', sub: 'Fire events below and watch the pet act; drag it, click for the panel, right-click for the menu.',
+      events: 'Session events', eventsHint: '"Finished" only nods by default; set Chattiness to Lively and press "Finished ×2" to see the 1.5 s merge. In DND or fullscreen, bubbles are held for later.',
+      env: 'Environment and settings', voice: 'Speak (off by default)', dnd: 'Do not disturb', fs: 'An app is fullscreen / presenting', chatty: 'Chattiness',
+      quiet: 'Quiet (only when you are needed)', normal: 'Normal (default)', lively: 'Lively (every finished turn)', log: 'Director decisions',
+      ev: { needs: 'Needs you', finished: 'Finished', finished2: 'Finished ×2', interrupted: 'Dropped', restored: 'Restored', working: 'Starts working' },
+      needsT: (n) => `${n} needs you`, needsM: 'Claude wants to run a command and is waiting for your nod.',
+      finT: (n) => `${n} is done for now`, finM: 'Come take a look.',
+      fin2T: (k) => `${k} sessions are waiting`, fin2M: (ns) => `${ns.join(' and ')} finished their turns.`,
+      intT: (n) => `${n} dropped`, intM: 'Nothing is lost. One click brings it back.',
+      resT: (k) => k > 1 ? `All ${k} sessions are back` : 'It is back', resM: 'Civilizations carry on. So do conversations.',
+      open: 'Open', later: 'Later', bring: 'Bring back', notNow: 'Not now', show: 'Show',
+      reserved: 'Allow / Deny here (004)',
+      menu: { panel: 'Open panel', dnd1: 'Quiet for an hour', dndDay: 'Quiet for today', tuck: 'Tuck to the edge', mute: 'Mute voice', settings: 'Pet settings…', hide: 'Hide the pet' },
+      fsText: 'Fullscreen app: the pet steps aside and keeps a list for later', away: (k) => `${k} things happened while you were away`,
+      panel: '(the menu bar panel goes here, T1.1)',
+      log_merge: 'merged', log_hold: 'held (DND)', log_hide: 'held (fullscreen)', log_quiet: 'moved, no bubble (quiet)', log_voice: 'spoke', log_skip: 'skipped (same thing within 60 s)',
+    },
+  };
+  let lang = (navigator.language || 'zh').startsWith('zh') ? 'zh' : 'en';
+  const t = () => S[lang];
+
+  // ---- the Continuum face
+  function loopPath({ amp = 12.9, left = 1, right = 1, droop = 0, part = 'full' } = {}) {
+    const pt = (u) => {
+      const c = Math.cos(u), sc = c < 0 ? left : right;
+      return [32 + 27 * c, 32 + amp * Math.sin(2 * u) * sc + droop * Math.abs(c) ** 3];
+    };
+    const seg = (a, b) => { let d = ''; for (let i = 0; i <= 60; i++) { const [x, y] = pt(a + (b - a) * i / 60); d += (i ? 'L' : 'M') + x.toFixed(2) + ' ' + y.toFixed(2); } return d; };
+    if (part === 'upper') return seg(Math.PI / 2 + .25, Math.PI) + seg(1.5 * Math.PI + .25, 2 * Math.PI);
+    if (part === 'lower') return seg(Math.PI, 1.5 * Math.PI - .25) + seg(0, Math.PI / 2 - .25);
+    return seg(0, 2 * Math.PI);
+  }
+  const brand = '#ff5a3c', amber = '#e6ad4d';
+  const POSE = {
+    idle:    { face: {}, color: brand, lamp: 'rgba(255,90,60,.55)', cls: 'idle' },
+    working: { face: {}, color: brand, lamp: brand, cls: 'working' },
+    needs:   { face: { amp: 15.5, left: 1.1, right: 1.1 }, color: brand, lamp: brand, cls: 'needs', gap: '94 6' },
+    broken:  { face: { amp: 11, droop: 5 }, color: amber, lamp: amber, cls: 'broken', gap: '70 30' },
+    happy:   { face: { amp: 16, part: 'upper' }, color: brand, lamp: brand, cls: 'happy' },
+    sleep:   { face: { amp: 6, part: 'lower' }, color: 'rgba(255,90,60,.55)', lamp: '#777', cls: 'sleep' },
+  };
+  const pet = $('pet'), full = pet.querySelector('.eye-full'), arc = pet.querySelector('.eye-arc');
+  let pose = 'idle';
+  function setPose(p) {
+    pose = p; const P = POSE[p];
+    const isArc = P.face.part;
+    full.setAttribute('d', isArc ? '' : loopPath(P.face));
+    arc.setAttribute('d', isArc ? loopPath(P.face) : '');
+    full.setAttribute('stroke-dasharray', P.gap || '89 11');
+    [full, arc].forEach((e) => e.setAttribute('stroke', P.color));
+    pet.querySelector('.lamp').setAttribute('fill', P.lamp);
+    pet.querySelector('.zzz').style.display = p === 'sleep' ? '' : 'none';
+    pet.className = 'pet ' + P.cls + (held.length ? ' held' : '') + (fullscreen() ? ' hidden' : '');
+    pet.setAttribute('aria-label', 'cc-moss pet: ' + p);
+    $('badge-n').textContent = held.length || '';
+  }
+  // Blink every 6–12 s while idle or working.
+  (function blink() {
+    setTimeout(() => {
+      if (pose === 'idle' || pose === 'working') { pet.classList.add('blink'); setTimeout(() => pet.classList.remove('blink'), 180); }
+      blink();
+    }, 6000 + Math.random() * 6000);
+  })();
+
+  // ---- placement: drag, remember, snap to the nearest edge
+  const desk = $('desk');
+  let pos = { x: 0, y: 0 };
+  try { pos = JSON.parse(localStorage.getItem('mo-pos')) || pos; } catch (e) {}
+  function place() {
+    const r = desk.getBoundingClientRect();
+    if (!pos.x) pos = { x: r.width - 120, y: r.height - 130 };
+    pos.x = Math.min(Math.max(8, pos.x), r.width - 104); pos.y = Math.min(Math.max(32, pos.y), r.height - 116);
+    pet.style.left = pos.x + 'px'; pet.style.top = pos.y + 'px';
+    placeBubble();
+  }
+  let drag = null, moved = false;
+  pet.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    drag = { dx: e.clientX - pos.x, dy: e.clientY - pos.y }; moved = false;
+    pet.setPointerCapture(e.pointerId); pet.classList.add('dragging');
+  });
+  pet.addEventListener('pointermove', (e) => {
+    if (!drag) return; moved = true; pos = { x: e.clientX - drag.dx, y: e.clientY - drag.dy }; place();
+  });
+  pet.addEventListener('pointerup', () => {
+    if (!drag) return; drag = null; pet.classList.remove('dragging');
+    if (moved) { try { localStorage.setItem('mo-pos', JSON.stringify(pos)); } catch (e) {} }
+    else { togglePanel(); }
+  });
+  pet.addEventListener('contextmenu', (e) => { e.preventDefault(); openMenu(); });
+  window.addEventListener('resize', place);
+
+  // ---- bubble
+  const bubble = $('bubble');
+  let current = null, dismissTimer = null;
+  function placeBubble() {
+    const r = desk.getBoundingClientRect();
+    const left = pos.x + 48 > r.width / 2 ? pos.x + 96 - 280 : pos.x;
+    bubble.style.left = Math.max(8, left) + 'px';
+    bubble.style.top = Math.max(32, pos.y - bubble.offsetHeight - 6) + 'px';
+  }
+  function showBubble(b) {
+    current = b; clearTimeout(dismissTimer);
+    const tint = { needs: brand, broken: amber, happy: 'var(--green)', quiet: 'var(--muted)' }[b.tone];
+    const glyph = { needs: '!', broken: '↺', happy: '✓', quiet: '…' }[b.tone];
+    bubble.innerHTML = `<div class="row"><span class="tile" style="background:color-mix(in srgb, ${tint} 16%, transparent);color:${tint}">${glyph}</span>
+      <span class="title"></span>${b.spoken ? '<svg class="spk" width="14" height="12" viewBox="0 0 14 12" aria-label="spoken"><path d="M1 4h3l4-3v10L4 8H1z" fill="currentColor"/><path d="M10 3.5a3.5 3.5 0 0 1 0 5M11.5 1.5a6 6 0 0 1 0 9" stroke="currentColor" fill="none" stroke-width="1.2" stroke-linecap="round"/></svg>' : ''}<button class="x" aria-label="close">✕</button></div>
+      <p class="msg"></p><div class="acts"></div>${b.reserved ? `<div class="reserved">${t().reserved}</div>` : ''}`;
+    bubble.querySelector('.title').textContent = b.title;
+    bubble.querySelector('.msg').textContent = b.msg;
+    const acts = bubble.querySelector('.acts');
+    (b.actions || []).forEach(([label, fn], i) => {
+      const btn = document.createElement('button'); btn.textContent = label;
+      if (i === 0) { btn.className = 'primary'; btn.style.background = tint; }
+      btn.onclick = () => { fn && fn(); hideBubble(); }; acts.appendChild(btn);
+    });
+    bubble.querySelector('.x').onclick = hideBubble;
+    bubble.classList.add('show'); placeBubble();
+    if (b.ttl) dismissTimer = setTimeout(hideBubble, b.ttl);
+  }
+  function hideBubble() {
+    bubble.classList.remove('show'); current = null;
+    if (pose !== 'sleep' && !fullscreen()) setPose(working ? 'working' : 'idle');
+  }
+
+  // ---- director: merge, throttle, DND, fullscreen, chattiness, voice
+  const names = ['api-review', 'term-kit', 'billing', 'fix-invoice'];
+  let working = false, held = [], pending = [], mergeTimer = null;
+  const lastSaid = {};
+  const dnd = () => $('dnd').checked, fullscreen = () => $('fullscreen').checked, voiceOn = () => $('voice').checked;
+  function log(kind, what) {
+    const li = document.createElement('li');
+    li.innerHTML = `<b>${new Date().toLocaleTimeString()}</b> ${kind} → ${what}`;
+    $('log').prepend(li);
+  }
+  function fire(kind, name) {
+    const key = kind + ':' + name, now = Date.now();
+    if (kind !== 'working' && lastSaid[key] && now - lastSaid[key] < 60000 && kind !== 'needs') { log(kind, t().log_skip); return; }
+    lastSaid[key] = now;
+    pending.push({ kind, name });
+    clearTimeout(mergeTimer);
+    mergeTimer = setTimeout(flush, kind === 'needs' ? 0 : 1500); // needs-you never waits
+  }
+  function flush() {
+    const batch = pending; pending = [];
+    const order = ['needs', 'interrupted', 'restored', 'finished', 'working'];
+    batch.sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
+    const groups = {};
+    batch.forEach((e) => (groups[e.kind] = groups[e.kind] || []).push(e.name));
+    Object.keys(groups).sort((a, b) => order.indexOf(a) - order.indexOf(b)).forEach((k) => perform(k, groups[k]));
+  }
+  function perform(kind, ns) {
+    if (kind === 'working') { working = true; if (!current && pose !== 'sleep') setPose('working'); log(kind, 'pose working'); return; }
+    if (kind === 'finished') working = false;
+    if (ns.length > 1) log(kind, `${t().log_merge} ×${ns.length}`);
+    const b = bubbleFor(kind, ns);
+    if (fullscreen()) { held.push(b); log(kind, t().log_hide); setPose(pose); return; }
+    if (dnd()) { held.push(b); log(kind, t().log_hold); setPose('sleep'); return; }
+    const level = $('chatty').value;
+    const showsBubble = kind === 'needs' || kind === 'interrupted' || (kind === 'restored' && level !== 'quiet') || (kind === 'finished' && level === 'lively');
+    setPose(b.pose);
+    if (!showsBubble) { log(kind, t().log_quiet); if (kind !== 'needs') setTimeout(() => !current && setPose(working ? 'working' : 'idle'), 1600); return; }
+    b.spoken = voiceOn() && (kind === 'needs' || kind === 'interrupted' || level === 'lively');
+    showBubble(b); log(kind, 'bubble');
+    if (b.spoken) speak(b.title);
+  }
+  function bubbleFor(kind, ns) {
+    const s = t();
+    switch (kind) {
+      case 'needs': return { tone: 'needs', pose: 'needs', title: s.needsT(ns[0]), msg: s.needsM, reserved: true, actions: [[s.open, () => togglePanel(true)], [s.later]] };
+      case 'interrupted': return { tone: 'broken', pose: 'broken', title: ns.length > 1 ? s.intT(ns.join(', ')) : s.intT(ns[0]), msg: s.intM, ttl: 20000, actions: [[s.bring, () => fire('restored', ns[0])], [s.notNow]] };
+      case 'restored': return { tone: 'happy', pose: 'happy', title: s.resT(ns.length), msg: s.resM, ttl: 5000 };
+      default: return ns.length > 1
+        ? { tone: 'quiet', pose: 'idle', title: s.fin2T(ns.length), msg: s.fin2M(ns), ttl: 8000, actions: [[s.show, () => togglePanel(true)]] }
+        : { tone: 'quiet', pose: 'idle', title: s.finT(ns[0]), msg: s.finM, ttl: 6000, actions: [[s.show, () => togglePanel(true)]] };
+    }
+  }
+  let lastVoice = 0;
+  function speak(text) {
+    if (!('speechSynthesis' in window) || Date.now() - lastVoice < 30000) return;
+    lastVoice = Date.now();
+    const u = new SpeechSynthesisUtterance(text); u.lang = lang === 'zh' ? 'zh-CN' : 'en-US'; u.rate = 1.05;
+    speechSynthesis.speak(u); log('voice', t().log_voice);
+  }
+  function releaseHeld() {
+    if (!held.length || dnd() || fullscreen()) return;
+    const urgent = held.find((b) => b.tone === 'needs' || b.tone === 'broken');
+    const list = held, k = list.length; held = [];
+    if (k === 1 || urgent) { const b = urgent || list[0]; showBubble(Object.assign({}, b, { title: k > 1 ? t().away(k) + ' · ' + b.title : b.title })); setPose(b.pose); }
+    else showBubble({ tone: 'quiet', pose: 'idle', title: t().away(k), msg: '', ttl: 8000, actions: [[t().show, () => togglePanel(true)]] });
+  }
+
+  // ---- panel and context menu
+  function togglePanel(open) {
+    const p = $('panel'); const on = open === true ? true : !p.classList.contains('show');
+    p.classList.toggle('show', on);
+    p.innerHTML = `<div class="line"><b>cc-moss</b><span>${t().panel}</span></div>` + names.map((n) => `<div class="line"><span>${n}</span><span>·</span></div>`).join('');
+  }
+  function openMenu() {
+    const m = $('menu'), s = t().menu;
+    const items = [[s.panel, () => togglePanel(true)], null, [s.dnd1, () => { $('dnd').checked = true; onEnv(); }], [s.dndDay, () => { $('dnd').checked = true; onEnv(); }], [s.mute, () => { $('voice').checked = false; }], [s.tuck, tuck], null, [s.settings], [s.hide]];
+    m.innerHTML = '';
+    items.forEach((it) => {
+      if (!it) { m.appendChild(document.createElement('hr')); return; }
+      const b = document.createElement('button'); b.textContent = it[0]; b.onclick = () => { m.classList.remove('show'); it[1] && it[1](); }; m.appendChild(b);
+    });
+    m.style.left = Math.max(8, pos.x - 100) + 'px'; m.style.top = Math.max(32, pos.y - 120) + 'px';
+    m.classList.add('show');
+  }
+  document.addEventListener('pointerdown', (e) => { if (!$('menu').contains(e.target)) $('menu').classList.remove('show'); });
+  function tuck() { const r = desk.getBoundingClientRect(); pos.x = r.width - 60; place(); }
+
+  // ---- environment
+  function onEnv() {
+    desk.classList.toggle('fullscreen', fullscreen());
+    if (fullscreen()) { hideBubble(); }
+    if (dnd()) { hideBubble(); setPose('sleep'); }
+    else if (pose === 'sleep') setPose(working ? 'working' : 'idle');
+    setPose(pose);
+    $('badge-n').textContent = held.length || '';
+    releaseHeld();
+    $('badge-n').textContent = held.length || '';
+  }
+  ['dnd', 'fullscreen'].forEach((id) => $(id).addEventListener('change', onEnv));
+
+  // ---- text
+  function render() {
+    const s = t();
+    document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+    $('h-title').textContent = s.title; $('h-sub').textContent = s.sub;
+    $('c-events').textContent = s.events; $('c-events-hint').textContent = s.eventsHint;
+    $('c-env').textContent = s.env; $('t-voice').textContent = s.voice; $('t-dnd').textContent = s.dnd; $('t-fs').textContent = s.fs; $('t-chatty').textContent = s.chatty;
+    const opts = $('chatty').options; opts[0].text = s.quiet; opts[1].text = s.normal; opts[2].text = s.lively;
+    $('c-log').textContent = s.log; $('fs').textContent = s.fsText;
+    const ev = $('events'); ev.innerHTML = '';
+    let i = 0;
+    [['working', 'working'], ['needs', 'needs'], ['finished', 'finished'], ['finished2', 'finished'], ['interrupted', 'interrupted'], ['restored', 'restored']].forEach(([label, kind]) => {
+      const b = document.createElement('button'); b.className = 'ev'; b.textContent = s.ev[label];
+      b.onclick = () => {
+        if (label === 'finished2') { fire('finished', names[1]); fire('finished', names[2]); return; }
+        fire(kind, names[(i++) % names.length]);
+      };
+      ev.appendChild(b);
+    });
+    document.querySelectorAll('#lang button').forEach((b) => b.classList.toggle('on', b.dataset.v === lang));
+  }
+  document.querySelectorAll('#lang button').forEach((b) => b.onclick = () => { lang = b.dataset.v; render(); });
+  document.querySelectorAll('#theme button').forEach((b) => b.onclick = () => {
+    document.documentElement.dataset.theme = b.dataset.v;
+    document.querySelectorAll('#theme button').forEach((x) => x.classList.toggle('on', x === b));
+  });
+  $('chatty').value = 'normal';
+  render(); setPose('idle'); place();
+  // ?demo=needs|interrupted|finished2|dnd for static screenshots.
+  const demo = new URLSearchParams(location.search).get('demo');
+  if (demo === 'dnd') { fire('needs', names[0]); $('dnd').checked = true; onEnv(); fire('finished', names[1]); }
+  else if (demo === 'finished2') { $('chatty').value = 'lively'; fire('finished', names[1]); fire('finished', names[2]); }
+  else if (demo === 'menu') { openMenu(); }
+  else if (demo) { fire(demo, names[demo === 'interrupted' ? 3 : 0]); }
+})();
+</script>
+</body>
+</html>

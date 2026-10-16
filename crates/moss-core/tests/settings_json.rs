@@ -284,8 +284,9 @@ fn hook_binaries_lists_the_path_of_every_entry() {
 }
 
 #[test]
-fn stable_exe_prefers_the_path_entry_for_the_same_file() {
-    use moss_core::settings_json::stable_exe;
+fn hooks_exe_prefers_the_path_entry_for_the_same_file() {
+    // Hooks and alias links share one helper.
+    use moss_core::aliases::stable_entry as stable_exe;
     use std::os::unix::fs::symlink;
     let dir = tempfile::tempdir().unwrap();
     let cellar = dir.path().join("Cellar/cc-moss/0.1.0/bin");
@@ -305,14 +306,23 @@ fn stable_exe_prefers_the_path_entry_for_the_same_file() {
         bin.join("cc-moss"),
         "the PATH link, unresolved; a different cc-moss earlier on PATH is skipped"
     );
+    // Not on PATH: the prefix's `bin` next to the Cellar.
     let path = std::env::join_paths([&other]).unwrap();
-    assert_eq!(stable_exe(&real, Some(&path)), real, "not on PATH: as is");
-    assert_eq!(stable_exe(&real, None), real);
+    assert_eq!(stable_exe(&real, Some(&path)), bin.join("cc-moss"));
+    assert_eq!(stable_exe(&real, None), bin.join("cc-moss"));
     let relative = std::ffi::OsString::from("bin");
     assert_eq!(
         stable_exe(&real, Some(&relative)),
-        real,
+        bin.join("cc-moss"),
         "relative PATH entries are ignored"
+    );
+    // Nothing stable at all: the real file, never a link it was started by.
+    std::fs::remove_file(bin.join("cc-moss")).unwrap();
+    let started_by = other.join("t");
+    symlink(&real, &started_by).unwrap();
+    assert_eq!(
+        stable_exe(&started_by, None),
+        std::fs::canonicalize(&real).unwrap()
     );
 }
 

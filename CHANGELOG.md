@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- Native aliases: `cc-moss alias add tn new` makes `tn` work in every shell right away. Aliases are links in
+  `~/.local/bin`, never go through a shell, and can be managed from the menubar app's Settings › Aliases.
+  `doctor` reports broken or hidden ones; `doctor --fix` relinks them.
+
+### Changed
+
+- `t` is now a native alias instead of a zsh function, so bash and fish users get it too. `setup` and `install`
+  take the old function out of `.zshrc` (only cc-moss's own block).
+
 ## [0.1.1] - 2026-10-16
 
 ### Changed

@@ -59,10 +59,17 @@ enum Icons {
     static let settings = "gearshape"
     static let general = "gearshape"
     static let about = "info.circle"
+    static let aliases = "link"
     static let choose = "folder.badge.gearshape"
     static let update = "arrow.down.circle"
     static let github = "chevron.left.forwardslash.chevron.right"
     static let copied = "checkmark.circle.fill"
+    static let open = "arrow.up.forward.app"
+    static let download = "arrow.down.circle"
+    static let locked = "lock.shield"
+    static let warning = "exclamationmark.triangle"
+    /// A session is asking you something (permission, a question).
+    static let needsYou = "hand.raised"
 
     static func state(_ state: SessionState) -> String {
         switch state {
