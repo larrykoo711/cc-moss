@@ -141,6 +141,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("restore", "dry_run", "只列出会恢复哪些，不做任何改动"),
     (
         "restore",
+        "json",
+        "配合 --yes：把每个会话的结果按 JSON 输出（给菜单栏 App 用）",
+    ),
+    (
+        "restore",
         "names",
         "只恢复这些会话（Claude 名、tmux 名或 id 前缀）",
     ),

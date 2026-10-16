@@ -149,6 +149,9 @@ enum Command {
         /// List what would be restored; change nothing.
         #[arg(long)]
         dry_run: bool,
+        /// With --yes: print each session's result as JSON (for the menubar app).
+        #[arg(long, requires = "yes", conflicts_with = "dry_run")]
+        json: bool,
         /// Only these sessions (Claude name, tmux name or id prefix).
         names: Vec<String>,
     },
@@ -358,10 +361,12 @@ fn main() -> std::process::ExitCode {
         Command::Restore {
             yes,
             dry_run,
+            json,
             names,
         } => report(cmd::restore::run(cmd::restore::RestoreArgs {
             yes,
             dry_run,
+            json,
             names,
         })),
         Command::Attach { name } => report(cmd::attach::run(&name)),

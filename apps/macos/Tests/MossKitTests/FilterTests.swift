@@ -34,7 +34,7 @@ import Testing
         let c = StateCounts(sessions([
             sessionJSON(id: "A", busy: true), sessionJSON(id: "B"), sessionJSON(id: "C"),
             sessionJSON(id: "D", status: "interrupted"), sessionJSON(id: "E", status: "closed"),
-        ]))
+        ]), now: ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!)
         #expect(c == { var x = StateCounts([]); x.working = 1; x.waiting = 2; x.interrupted = 1; return x }())
     }
 }

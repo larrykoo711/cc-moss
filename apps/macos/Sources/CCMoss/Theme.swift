@@ -71,6 +71,19 @@ enum Icons {
     static let warning = "exclamationmark.triangle"
     /// A session is asking you something (permission, a question).
     static let needsYou = "hand.raised"
+    /// Bring an interrupted session back.
+    static let restore = "arrow.counterclockwise"
+    /// Stop reminding: never offer this session for restore again.
+    static let dismiss = "bell.slash"
+    /// It could not come back, and why.
+    static let cannotRestore = "exclamationmark.circle"
+    /// The folded group of sessions that stopped long ago.
+    static let older = "clock.arrow.circlepath"
+    static let expand = "chevron.right"
+    /// Start a new named session.
+    static let newSession = "plus"
+    /// Pick another folder for it.
+    static let chooseFolder = "folder.badge.plus"
 
     static func state(_ state: SessionState) -> String {
         switch state {

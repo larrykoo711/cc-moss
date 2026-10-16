@@ -213,7 +213,7 @@ fn existing_session(
             format!("{name} changed meanwhile (resumed elsewhere?); try again"),
             format!("{name} 刚刚有了变化（可能已在别处恢复？），再试一次")
         )),
-        Launched::Failed => bail!(tr!(
+        Launched::Failed(..) => bail!(tr!(
             format!("could not restore {name}"),
             format!("没能恢复 {name}")
         )),
