@@ -183,6 +183,17 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 - commit：`docs: readme and license`、`ci: build, test and release workflows`
 - 依赖：T3.2
 
+### T4.2 新版本提醒与 `cc-moss update`
+
+- 仓：cc-moss
+- 目标：0.1.0 起就能发现新版本并一键升级（用户要求赶在首发前带上）
+- spec：`tasks/in-progress/T4.2-update.spec.md`
+- 内容：每天最多一次查最新 Release（只在选择器、update、doctor；钩子永不联网，可关闭）；选择器页头提醒与「升级到 X.Y.Z」一项；
+  `cc-moss update` 按 Homebrew / cargo / Release 二进制三种安装方式升级，二进制下载后校验 sha256、自检再原子替换
+- 验收：离线 e2e（桩 curl/brew/cargo + 夹具 tarball）；发版后真实从旧版本升级一次
+- commit：`feat: update notice and cc-moss update`
+- 依赖：T4.1
+
 ## Kanban
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
@@ -200,10 +211,12 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 | **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | ✅ Done | done/T3.1-install-doctor.spec.md | 临时 HOME 幂等 + doctor 绿 |
 | **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | ✅ Done | done/T3.2-private-switch.spec.md | 本机日常流程走通 |
 | **T4.1** 开源发布 | cc-moss | T3.2 | 🟩 Review | in-progress/T4.1-open-source.spec.md | 干净机器 brew 全流程 |
+| **T4.2** 新版本提醒与 update | cc-moss | T4.1 | 🟨 In Progress | in-progress/T4.2-update.spec.md | 旧版本经 update 升到新版本 |
 
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- REVIEW 2026-10-16 T4.2 安全向独立评审：高 1（sudo 升级时 tar 还原构建机 uid，新二进制归属本机其他用户）、中 4（brew/cargo 没升也报成功；tmux 弹窗里结果一闪而过；Ctrl-D 被当成「是」；测试用环境变量在正式版生效）、低 8。已修：tar 不还原属主 + 新文件沿用旧属主 + release 包属主为 0；下载包里的符号链接在执行前拒绝；包管理器升级后核对版本；EOF 不算同意；选择器升级后等回车；两个覆盖变量只在 debug 构建生效；预发布标签发成 pre-release；预发布 crate 版本不再 panic。未修（低）：Ctrl-C 残留临时目录、配置解析失败时 doctor 仍联网、doctor 检查会阻塞约 4 秒的措辞。真实 GitHub `releases/latest` 跳转格式已用公开仓库核实；无 Release 时不带 tag 的跳转按「未知」处理。release.yml 缺 TAP_TOKEN 时跳过公式更新并提示
 - REVIEW 2026-10-16 T4.1 开源前五路评审（用户要求「全方位 review」）：隐私（中 1 低 5，含档案里一句描述个人设备的话与源自真实项目名的测试前缀，均已改）、文档与首次上手（高 3 中 9 低 15）、代码与打包（高 5 中 11 低 10）、仓库卫生与装修（10 项决策建议），以及合并后代码复审（中 2 低 8）。两名实施 agent 分线修复（稳健性：钩子在二进制删除后静默、大输出不卡死、/proc 判活与 busybox、僵尸进程判死、写锁内不起子进程、新版登记表只读、钩子永不非零退出、状态文件 0700/0600；交互：tmux<3.2 兼容、claude 绝对路径与启动即退出检测、install --uninstall、非 zsh 用户、ls --json 字段改为 sessions/id、pick 初始搜索、「中断」统一）。controller 自修：tmux 3.5 把 -F 输出里的制表符换成 `_` 导致 Linux 上 `new` 全挂（分隔符改为 `|:|`）、rust-version 实测改 1.89、卸载删文件前备份。不修：Linux 上预发布版本跨升级的起始时间格式（无已发布版本、无 Linux 安装）；restore 每个会话串行等 500 ms（待优化）。验证：macOS 295 测试全绿；Linux（Debian、tmux 3.5a、`--init`）全量绿；musl 静态二进制在 Ubuntu 20.04（tmux 3.0）/Debian 12/Ubuntu 24.04 clean-room 通过、Alpine busybox 判活正确；Debian 11 因官方安全源下线无法搭环境（非本项目问题）。LESSONS L16–L17
 - CHANGE 2026-10-16 T4.1 仓库装修（用户要求）：简介、20 个 topics、只留 squash 合并且合并后删分支、关 Projects/Wiki、4 个标签；社区文件、CI、release（四目标 + sha256 + 第三方许可证 + 自动更新 tap）、Homebrew 公式模板；homebrew-tap 里的已有公式与其上游模板按 brew audit 修正（本地分支，未推送）
 - AMEND 2026-10-16 T4.1: 范围扩大（非弱化）——四路开源前评审发现代码稳健性问题（高 5 / 中 11），纳入本任务修复；homebrew-tap 已存在，改为往现有 tap 加公式 approved-by=controller（扩大范围，按用户「全方位 review…清理」的要求）

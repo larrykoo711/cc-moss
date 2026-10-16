@@ -412,12 +412,13 @@ const TASKS = [
   {id:'T3.1', t:'终端资产 install/doctor', repo:'cc-moss', dep:'T1.2,T2.1', st:'done', sdd:'done/T3.1-install-doctor.spec.md', ac:'临时 HOME 幂等 + doctor 绿', steps:[]},
   {id:'T3.2', t:'私有仓切换', repo:'私有仓', dep:'T2.1,T3.1', st:'done', sdd:'in-progress/T3.2-private-switch.spec.md', ac:'本机日常流程走通', steps:[]},
   {id:'T4.1', t:'开源发布', repo:'cc-moss', dep:'T3.2', st:'review', sdd:'—', ac:'干净机器 brew 全流程', steps:[]},
+  {id:'T4.2', t:'新版本提醒与 update', repo:'cc-moss', dep:'T4.1', st:'doing', sdd:'—', ac:'旧版本经 update 升到新版本', steps:[]},
 ];
 const PHASES = [
   {k:'P1', name:'MVP：重启后能列出并恢复会话', ids:['T1.1','T1.2','T1.3','T1.4','T1.5']},
   {k:'P2', name:'会话选择器', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
   {k:'P3', name:'终端资产并入', ids:['T3.1','T3.2']},
-  {k:'P4', name:'开源发布', ids:['T4.1']},
+  {k:'P4', name:'开源发布', ids:['T4.1','T4.2']},
 ];
 
 /* ═══ 以下为通用渲染 + 空态/主题/导航逻辑，无需改 ═══ */
