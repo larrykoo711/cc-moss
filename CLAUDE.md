@@ -15,6 +15,8 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 | `docs/assets/` | README images (banner, picker screenshots rendered from demo data) |
 | `.sdd/` | Spec-driven development archive (config, per-iteration designs, plans, specs) |
 | `.sdd/001-cli/` | Stage 1: terminal edition |
+| `packaging/homebrew/` | Homebrew formula template; `release.yml` renders it into `larrykoo711/homebrew-tap` |
+| `.github/` | CI, release, issue forms |
 
 ## Conventions
 
@@ -22,3 +24,5 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 - Commits: English Conventional Commits, one subject line plus bullet points.
 - README ships in English (`README.md`) and Simplified Chinese (`README.zh-CN.md`); change both together.
 - End-to-end tests run against an isolated tmux socket and a temporary `HOME`, never the user's live tmux server or `~/.claude`.
+- Before committing, run what CI runs: `cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all`.
+- Contributor guide: `CONTRIBUTING.md` (English) and `CONTRIBUTING.zh-CN.md`.

@@ -7,10 +7,11 @@
 </p>
 
 <p align="center">
-  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-3b82f6?style=flat-square"></a>
-  <img alt="Rust 1.80+" src="https://img.shields.io/badge/rust-1.80%2B-f74c00?style=flat-square&logo=rust&logoColor=white">
-  <img alt="tmux" src="https://img.shields.io/badge/tmux-required-1bb91f?style=flat-square&logo=tmux&logoColor=white">
-  <img alt="Status: alpha" src="https://img.shields.io/badge/status-alpha-a855f7?style=flat-square">
+  <a href="https://github.com/larrykoo711/cc-moss/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/larrykoo711/cc-moss/ci.yml?branch=main&style=flat-square&label=CI"></a>
+  <a href="https://github.com/larrykoo711/cc-moss/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/larrykoo711/cc-moss?style=flat-square&color=FF5A3C"></a>
+  <a href="LICENSE"><img alt="许可证：MIT" src="https://img.shields.io/badge/license-MIT-3b82f6?style=flat-square"></a>
+  <img alt="平台：macOS | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-71717a?style=flat-square">
+  <img alt="状态：alpha" src="https://img.shields.io/badge/status-alpha-a855f7?style=flat-square">
 </p>
 
 ---
@@ -19,7 +20,7 @@
 接下来只能一份份翻会话记录，回忆哪个会话在做什么、做到了哪一步。
 
 **cc-moss** 为每个交互式 Claude Code 会话做登记，让每个会话独占一个 tmux 会话；中断之后一条命令就能全部找回：
-目录对、启动参数对、对话也接得上。
+目录对、对话接得上，模型和权限模式也和原来一样。
 
 <p align="center">
   <img src="docs/assets/picker.zh-CN.svg" alt="cc-moss 会话选择器" width="92%">
@@ -30,50 +31,79 @@
 - **不用记任何东西**：通过 Claude Code 钩子，会话的启动、改名、工作、结束都会自动登记。
   装好之前就在跑的会话，下次打开时也会被自动认领。
 - **崩溃后一键恢复**：`cc-moss restore` 把每个中断的会话用 `claude --resume` 拉回各自的 tmux 会话，
-  工作目录和启动参数保持原样（看起来像密钥的参数会被丢弃）。
+  回到原来的目录，带上原来那几个关键参数（见[恢复时带回什么](#恢复时带回什么)）。
 - **一个名字只对应一个会话**：`cc-moss new api-gateway` 时，同名会话在运行就直接进入，已中断就提示恢复，
   都没有才新建。在 Claude Code 里 `/rename` 改名，tmux 会话名也会跟着改。
 - **备注不会丢**：写下会话在做什么、停在哪里，第二天打开还在。
 - **人人都会用的选择器**：打字即搜索（或输入新会话的名字），方向键移动，回车打开，→ 更多操作，Esc 返回，
   也支持鼠标。没有要背的快捷键。git worktree 会标出它所属的主仓。
-- **说你的语言**：界面支持英文和简体中文，自动跟随系统语言。
-- **本地、私密**：数据只是本机上的一个 SQLite 文件，cc-moss 不会联网。
+- **中英双语**：界面跟随系统语言。
+- **数据留在本机**：只是本机上的一个 SQLite 文件，没有任何统计上报，详见[隐私](#隐私)。
 
 ## 安装
 
-需要：macOS 或 Linux、[tmux](https://github.com/tmux/tmux)、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)，
-从源码构建还需要 Rust 工具链（1.80 及以上）。
+**需要：** macOS 或 Linux、[Claude Code](https://code.claude.com/docs)、[tmux](https://github.com/tmux/tmux)
+（弹出式选择器需要 3.2 及以上），`t` 快捷命令和 shell 区块需要 zsh（bash、fish 用户其余功能照常可用，见[常见问题](#常见问题)）。
+自带的 starship 提示符配合 [Nerd Font](https://www.nerdfonts.com) 显示效果最好。
 
 ```sh
-cargo install --git https://github.com/larrykoo711/cc-moss cc-moss
-cc-moss install     # 每处改动都先展示、问过再写
-cc-moss doctor      # 体检，看看是否都装好了
+brew install larrykoo711/tap/cc-moss     # macOS 与 Linux
+cc-moss install                          # 先把每处改动给你看，问过再改
+cc-moss doctor                           # 检查是否都装好了
 ```
 
-`cc-moss install` 一次装好整套终端环境，不覆盖你自己的任何配置：
+<details>
+<summary>其他安装方式</summary>
+
+- **预编译二进制**：macOS（Apple 芯片、Intel）与 Linux（x86_64、arm64，静态链接）见
+  [Releases 页面](https://github.com/larrykoo711/cc-moss/releases)，解压后把 `cc-moss` 放进 `PATH` 即可。
+- **从源码构建**（Rust 1.89 及以上，另需 C 编译器来编译内置的 SQLite）：
+  `cargo install --locked --git https://github.com/larrykoo711/cc-moss cc-moss`
+
+</details>
+
+`cc-moss install` 会把整套终端配置装好，只往你的文件里追加，不覆盖：
 
 | 部分 | 做什么 |
 |---|---|
-| `hooks` | 在 `~/.claude/settings.json` 加 4 个钩子，让 Claude Code 报告会话事件；在 `~/.zshrc` 加 `t` 快捷命令 |
-| `tmux` | 一份调好的配置放在 `~/.config/cc-moss/tmux.conf`，只在你的 `~/.tmux.conf` 顶部加一行加载它（你写在下面的设置优先）；`prefix + t` 打开选择器 |
-| `starship` | starship 提示符，只在你还没有 starship 配置时安装（想换掉自己的，加 `--replace-starship`） |
-| `shell` | ssh 断线后复位终端；让非交互 shell（`ssh 主机 命令`、cron）也能找到 Homebrew 装的工具 |
-| `aliases` | 可选（`--with aliases`）：给 eza、bat、fd 起短名字；`ls`、`cat`、`grep` 保持原样 |
+| `hooks` | 在 `~/.claude/settings.json` 写入四个钩子，让 Claude Code 上报会话事件；在 `~/.zshrc` 加上 `t` 快捷命令 |
+| `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
+| `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
+| `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
+| `aliases` | 可选（`--with aliases`）：`ll`、`lla`、`psg`、`gl`，装了对应工具时再加 `lg`/`lt`（eza）、`catp`/`catn`（bat）、`ff`（fd）、`psp`（procs）。`ls`、`cat`、`grep`、`cd` 保持原样 |
 
-不想要某一部分，用 `--skip <部分>`。对 shell 的改动都放在带标记的区块里，每个改动的文件都会留带时间戳、权限不变的备份。
-缺的工具会列出安装命令，你同意了才执行：macOS 用 Homebrew；Debian 和 Ubuntu 用 apt，starship 则用官方安装脚本（经 HTTPS
-先下载、再执行）装到 `~/.local/bin`。其他系统只列出工具名，由你自己安装。
+用 `--skip <部分>` 跳过某一项。shell 里的改动都放在醒目的 `# >>> cc-moss: … >>>` 区块中，每个被改动的文件都会留一份
+带时间戳、权限不变的备份。缺少的工具会连同安装命令一起列出来，你同意才执行：macOS 用 Homebrew；Debian 与 Ubuntu 用 apt，
+starship 则用官方安装脚本（先经 HTTPS 下载，再执行）装到 `~/.local/bin`。其他系统只列出工具名，由你自己安装。
 
-只想要会话管理？`cc-moss setup` 只装钩子和 `t`。想撤销：`cc-moss setup --uninstall` 移除这两项；其余改动是带
-`# >>> cc-moss… >>>` 标记的区块（删掉即可）和 `~/.config/cc-moss/tmux.conf`，也可以直接用各文件旁的备份恢复。
+<details>
+<summary>tmux 配置改了什么</summary>
+
+前缀键仍是 `Ctrl-b`。在 tmux 默认值之上打开了鼠标、复制模式的 vi 按键、5 万行历史、窗口从 1 开始编号，以及一条状态栏。
+前缀键之后新绑定的按键：`t` 打开选择器（原来是时钟），`r` 重载配置，`|` 和 `-` 分屏，`c` 在当前目录开新窗口，
+`h` `j` `k` `l` 在面板间移动（所以 `l` 不再跳回上一个窗口），`H` `J` `K` `L` 调整面板大小。
+想换回哪个，就在 `~/.tmux.conf` 里 cc-moss 区块之后写上你自己的 `bind`。
+
+</details>
+
+只想要会话登记？`cc-moss setup` 只装钩子和 `t`。
+
+### 卸载
+
+```sh
+cc-moss install --uninstall      # 移除钩子、所有 cc-moss 区块和它创建的文件；先给你看，问过再改
+brew uninstall cc-moss           # 或删掉二进制；放在第二步，确保钩子已经先撤掉
+rm -rf ~/.local/state/cc-moss    # 可选：登记表和它的日志
+```
 
 ## 用法
 
 ```sh
 t                                    # 打开选择器（等同于直接运行 `cc-moss`）
+t api                                # 打开时已经在搜「api」
 cc-moss new api-gateway              # 新建、进入或恢复名为 api-gateway 的会话
 cc-moss new -C ~/code/acme -- --model opus   # 指定目录，并把参数透传给 claude
-cc-moss note api-gateway --state "等生产环境的 key"
+cc-moss note api-gateway --state "在等预发环境的配置"
 cc-moss ls                           # 先列中断的会话，再列运行中的
 cc-moss restore                      # 崩溃之后：全部找回来
 ```
@@ -82,9 +112,9 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 | 标记 | 含义 |
 |:---:|---|
-| ⣤ | Claude 正在工作（点沿 8 字轨迹游走） |
-| ● | 在等你回复 |
-| ↺ | 已中断：回车即可恢复 |
+| ⣤ | Claude 正在干活（点沿着 8 字跑） |
+| ● | 在等你 |
+| ↺ | 中断了：按回车恢复 |
 | ○ | 普通 tmux 会话，没有 Claude Code |
 
 <table>
@@ -93,25 +123,27 @@ cc-moss restore                      # 崩溃之后：全部找回来
     <td width="50%"><img src="docs/assets/picker-menu.zh-CN.svg" alt="会话菜单"></td>
   </tr>
   <tr>
-    <td align="center"><sub>中断的会话保留备注和最后一条消息</sub></td>
-    <td align="center"><sub>→ 打开菜单：打开、写备注、结束会话</sub></td>
+    <td align="center"><sub>中断的会话保留着备注和最后一句话</sub></td>
+    <td align="center"><sub>按 → 打开菜单：进入、写备注、结束会话</sub></td>
   </tr>
 </table>
 
-### 命令一览
+### 命令
 
-| 命令 | 作用 |
+| 命令 | 做什么 |
 |---|---|
-| `cc-moss` / `cc-moss pick` | 选择会话、中断的会话或目录 |
-| `cc-moss new [NAME] [-C DIR] [-- ARGS]` | 在独立的 tmux 会话中启动命名会话；名字已存在则复用 |
-| `cc-moss ls [--all] [--json]` | 列出会话；`--json` 输出稳定、带版本号的结构 |
-| `cc-moss restore [NAMES] [--dry-run] [--yes]` | 恢复中断的会话 |
-| `cc-moss attach NAME` | 跳到会话所在的 tmux 会话 |
-| `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | 查看或设置会话备注 |
-| `cc-moss close NAMES` | 不再提示恢复这些会话 |
-| `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--dry-run] [--yes]` | 装好钩子、tmux、starship 和 shell 区块，以及它们需要的工具 |
+| `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
+| `cc-moss new [名字] [-C 目录] [--detach] [--yes] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用 |
+| `cc-moss ls [--all] [--json]` | 列出会话（`--json` 给脚本用；1.0 之前格式仍可能调整） |
+| `cc-moss restore [名字…] [--dry-run] [--yes]` | 把中断的会话恢复回来 |
+| `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
+| `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注 |
+| `cc-moss close 名字…` | 不再提示恢复这些会话 |
+| `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
 | `cc-moss doctor` | 逐项体检，并告诉你怎么修 |
-| `cc-moss setup [--dry-run] [--uninstall]` | 只安装或移除钩子与 `t` 快捷命令 |
+| `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 快捷命令 |
+
+`名字` 可以是 Claude Code 里的会话名、tmux 会话名，或会话 id 的开头几位。
 
 ## 工作原理
 
@@ -126,9 +158,36 @@ flowchart LR
     P --> T
 ```
 
-每个会话在登记表里占一个槽位，记录 Claude Code 会话 id、目录、启动参数、进程和 tmux 会话。
+每个会话在登记表里有一条记录：Claude Code 会话 id、目录、启动参数、进程和 tmux 会话。
 没有正常告别就消失的会话（崩溃、重启、终端被关）记为**中断**；你主动结束的记为**关闭**，之后不再提示恢复。
-登记表位于 `~/.local/state/cc-moss/registry.db`。
+钩子尽量不打扰你：几毫秒就结束，从不阻塞提问；cc-moss 的二进制不在了，它就什么都不做。
+
+### 恢复时带回什么
+
+`restore` 在原来的目录里接上同一段对话（`claude --resume <id>`），如果会话启动时带了下面这些参数，也会原样带上：
+`--model`、`--permission-mode`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`。
+其他参数（`--mcp-config`、`--settings`、系统提示词等）不会带回，看起来像密钥的值一律丢弃。
+
+## 和其他方案比
+
+| | 找回 Claude 对话 | 知道哪个会话在哪 | 重启之后 |
+|---|:---:|:---:|:---:|
+| `claude --resume` / `--continue` | 一次一个，自己挑 | 不知道 | 逐个手动 |
+| tmux-resurrect / continuum | 不能（恢复的是面板和 shell） | 只有面板 | 可以 |
+| **cc-moss** | 所有中断的会话，一次找回 | 知道：名字、目录、备注 | 一条命令 |
+
+两者也能一起用：cc-moss 本身跑在 tmux 里，resurrect 照看其他面板，cc-moss 照看 Claude。
+
+## 隐私
+
+cc-moss 只在本机运行，不往任何地方发送数据。它保存：
+
+- `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，
+  以及最近一次提问的前 200 个字符（在选择器里显示）。
+- `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
+
+状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。
+唯一的联网发生在 `cc-moss install` 安装工具时，而且要你同意才会执行。
 
 ## 配置
 
@@ -139,32 +198,57 @@ flowchart LR
 default_args = ["--dangerously-skip-permissions"]   # 每次 `cc-moss new` 都会带上
 
 [naming]
-host_prefix = true        # tmux 会话名为 <主机名>_<名字>，在多台机器间 ssh 时更好区分
+host_prefix = true        # 默认开启：tmux 会话名为 <主机名>_<名字>，在多台机器间 ssh 时更好区分
 
 [tmux]
 socket = "work"           # tmux -L 的名字或 socket 路径；不设置则用默认 server
 
 [ui]
 icons = "auto"            # Nerd Font 图标："auto"（检测到 starship 时启用）、"nerd" 或 "text"
-language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"；环境变量 CC_MOSS_LANG 优先
+language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
 ```
+
+<details>
+<summary>环境变量</summary>
+
+| 变量 | 作用 |
+|---|---|
+| `CC_MOSS_LANG` | `en` 或 `zh`，优先于 `[ui] language` 和系统语言 |
+| `CC_MOSS_CONFIG` | 配置文件路径 |
+| `CC_MOSS_STATE_DIR` | 登记表所在目录（默认 `$XDG_STATE_HOME/cc-moss` 或 `~/.local/state/cc-moss`） |
+| `CC_MOSS_TMUX_SOCKET` | 同 `[tmux] socket` |
+| `CLAUDE_CONFIG_DIR` | Claude Code 的 `settings.json` 所在目录（默认 `~/.claude`） |
+| `ZDOTDIR`、`STARSHIP_CONFIG`、`XDG_CONFIG_HOME` | 查找 `.zshrc`、starship 配置和 `~/.config` 时会遵循 |
+| `NO_COLOR` | 输出不带颜色 |
+
+所有中文地区（包括繁体中文地区）都使用简体中文界面。
+
+</details>
+
+## 常见问题
+
+**装完后提示 `t: command not found`。** 新开一个终端（或执行 `exec zsh`），让 `~/.zshrc` 重新加载。
+
+**我用 bash 或 fish。** `cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；
+想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。用 `cc-moss pick`（或给它绑个键）代替 `t`。
+
+**有会话没被登记上。** 运行 `cc-moss doctor`：它会检查钩子、tmux、提示符和各个工具，并告诉你每一项怎么修。
+
+**我有好几台机器。** 每台机器各有自己的登记表。`host_prefix` 默认开启，tmux 会话名带着 `<主机名>_` 前缀，ssh 过去也分得清。
 
 ## 路线图
 
 - [x] 会话登记、钩子、恢复与备注
 - [x] `t` 选择器
 - [x] `cc-moss install` / `doctor`：一套精选的 tmux 与 starship 配置
-- [ ] 预编译二进制与 Homebrew tap
+- [x] 预编译二进制与 Homebrew tap
 - [ ] macOS 原生菜单栏 App
 
-## 开发
+变更记录见 [CHANGELOG](CHANGELOG.md)。cc-moss 目前是 alpha（0.x），1.0 之前命令和 `ls --json` 的格式仍可能调整。
 
-```sh
-cargo test --all          # 端到端测试跑在独立的 tmux socket 和临时 HOME 上
-cargo clippy --all-targets -- -D warnings
-scripts/clean-room.sh <Linux 二进制>   # 在 Docker 里的全新 Ubuntu 上用真实 apt 跑 install + doctor
-```
+## 参与
 
+欢迎报 bug、提想法、发 PR，先看 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)；安全问题请走 [SECURITY.md](SECURITY.md)。
 设计说明、计划与 spec 位于 [`.sdd/`](.sdd/)。
 
 ## 为什么叫 MOSS？
@@ -174,4 +258,4 @@ MOSS 是《流浪地球》里的人工智能，使命是让人类文明延续下
 
 ## 许可证
 
-[MIT](LICENSE)
+[MIT](LICENSE)。cc-moss 是独立项目，与 Anthropic 没有关联。

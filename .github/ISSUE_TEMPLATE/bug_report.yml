@@ -1,0 +1,93 @@
+name: Bug report
+description: Something broke, or a session didn't come back.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. A good bug report is half the fix.
+        Please remove anything private (hostnames, paths you'd rather not share, tokens) before posting.
+        中文描述也完全没问题。
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: And what did you expect to happen instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. cc-moss new api
+        2. kill the terminal
+        3. cc-moss restore
+        4. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: cc-moss version
+      description: Output of `cc-moss --version | cat` (piping prints the plain one-liner).
+      placeholder: cc-moss 0.1.0
+    validations:
+      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: "`cc-moss doctor` output"
+      description: Paste the full output. It is rendered as plain text, so no backticks are needed.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - macOS (Apple silicon)
+        - macOS (Intel)
+        - Linux (Debian / Ubuntu)
+        - Linux (other)
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: os-version
+    attributes:
+      label: OS version
+      placeholder: macOS 15.6 / Ubuntu 24.04 / ...
+  - type: input
+    id: tmux
+    attributes:
+      label: tmux version
+      description: Output of `tmux -V`.
+      placeholder: tmux 3.5a
+    validations:
+      required: true
+  - type: input
+    id: claude
+    attributes:
+      label: Claude Code version
+      description: Output of `claude --version`.
+    validations:
+      required: true
+  - type: input
+    id: shell
+    attributes:
+      label: Shell and terminal
+      placeholder: zsh 5.9, Ghostty / iTerm2 / over ssh ...
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: "`cc-moss ls --all --json`, screenshots of the picker, your `~/.config/cc-moss/config.toml`: whatever helps."
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and this isn't a duplicate.
+          required: true

@@ -1,0 +1,4 @@
+* text=auto eol=lf
+.sdd/** linguist-documentation
+docs/** linguist-documentation
+crates/cc-moss/tests/fixtures/* linguist-vendored
