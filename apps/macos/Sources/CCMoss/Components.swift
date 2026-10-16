@@ -168,6 +168,9 @@ struct SectionHeader: View {
 struct SessionRow: View {
     let session: Session
     let selected: Bool
+    /// The row's main action, shown as a button while the row is hovered.
+    var action: PanelAction?
+    var perform: (PanelAction) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -199,9 +202,17 @@ struct SessionRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(L.ago(session.lastActiveAt))
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+            ZStack(alignment: .trailing) {
+                Text(L.ago(session.lastActiveAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .opacity(action == nil ? 1 : 0)
+                if let action {
+                    RowActionButton(action: action, perform: perform)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: action == nil)
         }
         .padding(.horizontal, 10)
         .frame(height: 48)
@@ -371,5 +382,36 @@ struct SlidingPicker<Value: Hashable>: View {
         .padding(2)
         .background(RoundedRectangle(cornerRadius: 8).fill(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.055)))
         .fixedSize()
+    }
+}
+
+/// The small button at the end of a hovered session row: the chosen
+/// terminal's icon to open it, or the action that fits (bring back, copy).
+struct RowActionButton: View {
+    let action: PanelAction
+    let perform: (PanelAction) -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button { perform(action) } label: {
+            Group {
+                if let image = action.image {
+                    Image(nsImage: image).resizable().interpolation(.high).frame(width: 18, height: 18)
+                } else {
+                    Image(systemName: action.icon).font(.system(size: 13, weight: .medium))
+                }
+            }
+            .frame(width: 30, height: 30)
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hovering ? Theme.hairline(scheme) : .clear))
+            .shadow(color: .black.opacity(hovering ? 0.08 : 0), radius: 2, y: 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
+        .help(action.help ?? action.title)
+        .accessibilityLabel(action.title)
     }
 }

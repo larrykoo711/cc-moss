@@ -27,6 +27,8 @@ const GIT_URL: &str = "https://github.com/larrykoo711/cc-moss";
 pub struct UpdateArgs {
     /// Only report; change nothing.
     pub check: bool,
+    /// With `check`: answer as JSON, `{schema, current, latest, available, notes}`.
+    pub json: bool,
     /// Do not ask.
     pub yes: bool,
 }
@@ -125,6 +127,21 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             format!("没能检查新版本（{e}），看看网络再试一次")
         ))
     })?;
+    if args.json {
+        let available = latest.is_newer_than(&current);
+        let notes = available.then(|| format!("{}/tag/v{latest}", update::releases_url()));
+        println!(
+            "{}",
+            serde_json::json!({
+                "schema": 1,
+                "current": current.to_string(),
+                "latest": latest.to_string(),
+                "available": available,
+                "notes": notes,
+            })
+        );
+        return Ok(());
+    }
     if !latest.is_newer_than(&current) {
         println!(
             "{}",

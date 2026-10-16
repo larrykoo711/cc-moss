@@ -116,6 +116,26 @@ enum Opener {
         return "/bin/zsh"
     }
 
+    /// Run an already quoted cc-moss `command` (e.g. `cc-moss update`) in a
+    /// new window of `terminal`, so the user watches it happen.
+    static func run(command: String, in terminal: InstalledTerminal?) -> OpenProblem? {
+        guard let terminal else {
+            return OpenProblem(kind: .noTerminal, terminalName: L.t("a terminal", "终端"), command: command)
+        }
+        let name = terminal.terminal.displayName
+        let plan: LaunchPlan
+        do {
+            plan = try LaunchPlan.make(for: terminal, command: command, shell: loginShell)
+        } catch {
+            return OpenProblem(kind: .unsafeName, terminalName: name, command: command)
+        }
+        switch run(plan) {
+        case .opened: return nil
+        case .denied: return OpenProblem(kind: .denied, terminalName: name, command: command)
+        case .failed(let why): return OpenProblem(kind: .failed(why), terminalName: name, command: command)
+        }
+    }
+
     /// Open `handle` in `terminal`. AppleScript runs on the main thread (as
     /// NSAppleScript requires); the first time, macOS asks the user for
     /// Automation permission while this waits.

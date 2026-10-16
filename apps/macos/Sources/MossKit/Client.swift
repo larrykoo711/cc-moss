@@ -49,6 +49,16 @@ extension MossClient {
         return out.split(separator: " ").last.map(String.init) ?? out
     }
 
+    /// Is there a newer cc-moss? From `cc-moss update --check --json`.
+    public func updateInfo() async throws -> UpdateInfo {
+        let out = try await plain(["update", "--check", "--json"], timeout: 20)
+        do {
+            return try UpdateInfo.decode(Data(out.utf8))
+        } catch {
+            throw Failure.unreadable("\(error)")
+        }
+    }
+
     /// What `cc-moss update --check` says, in its own words.
     public func updateCheck() async throws -> String {
         try await plain(["update", "--check"], timeout: 20)
@@ -75,4 +85,19 @@ func firstLine(_ text: String) -> String? {
     text.split(whereSeparator: \.isNewline)
         .map { $0.trimmingCharacters(in: .whitespaces) }
         .first { !$0.isEmpty }
+}
+
+/// The answer of `cc-moss update --check --json` (schema 1).
+public struct UpdateInfo: Decodable, Equatable, Sendable {
+    public var current: String
+    public var latest: String
+    public var available: Bool
+    public var notes: String?
+
+    public static func decode(_ data: Data) throws -> UpdateInfo {
+        struct Head: Decodable { var schema: Int }
+        let head = try JSONDecoder().decode(Head.self, from: data)
+        guard head.schema <= 1 else { throw SnapshotError.newerSchema(head.schema) }
+        return try JSONDecoder().decode(UpdateInfo.self, from: data)
+    }
 }

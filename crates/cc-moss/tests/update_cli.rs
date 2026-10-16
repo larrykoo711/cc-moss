@@ -505,3 +505,39 @@ fn doctor_skips_the_version_when_checking_is_off() {
         "{row}"
     );
 }
+
+#[test]
+fn check_json_reports_a_newer_version() {
+    let env = Env::new();
+    env.serve_latest("9.9.9");
+    let exe = env.installed("opt/bin/cc-moss");
+    let out = env.update(&exe, &["--check", "--json"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON on stdout");
+    assert_eq!(v["schema"], 1);
+    assert_eq!(v["current"], CURRENT);
+    assert_eq!(v["latest"], "9.9.9");
+    assert_eq!(v["available"], true);
+    assert_eq!(v["notes"], format!("{RELEASES}/tag/v9.9.9"));
+}
+
+#[test]
+fn check_json_when_already_latest() {
+    let env = Env::new();
+    env.serve_latest(CURRENT);
+    let exe = env.installed("opt/bin/cc-moss");
+    let out = env.update(&exe, &["--check", "--json"]);
+    assert!(out.status.success(), "{}", text(&out));
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("JSON on stdout");
+    assert_eq!(v["available"], false);
+    assert_eq!(v["latest"], CURRENT);
+    assert!(v["notes"].is_null());
+}
+
+#[test]
+fn json_needs_check() {
+    let env = Env::new();
+    let exe = env.installed("opt/bin/cc-moss");
+    let out = env.update(&exe, &["--json"]);
+    assert!(!out.status.success(), "--json without --check must be refused");
+}

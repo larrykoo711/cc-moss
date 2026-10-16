@@ -128,6 +128,9 @@ enum Command {
         /// Only look; change nothing.
         #[arg(long)]
         check: bool,
+        /// With --check: print the answer as JSON (for the menubar app).
+        #[arg(long, requires = "check")]
+        json: bool,
         /// Update without asking.
         #[arg(long)]
         yes: bool,
@@ -347,8 +350,8 @@ fn main() -> std::process::ExitCode {
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
         },
-        Command::Update { check, yes } => {
-            report(cmd::update::run(cmd::update::UpdateArgs { check, yes }))
+        Command::Update { check, json, yes } => {
+            report(cmd::update::run(cmd::update::UpdateArgs { check, json, yes }))
         }
         Command::Restore {
             yes,

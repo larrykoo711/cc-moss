@@ -54,4 +54,13 @@ struct FakeRunner: CommandRunner {
         let client = MossClient(executable: "/x/cc-moss", runner: FakeRunner(result: .init(status: 0, stdout: Data("cc-moss 0.2.0\n".utf8), stderr: "")))
         #expect(try await client.version() == "0.2.0")
     }
+
+    @Test func decodesUpdateInfo() throws {
+        let json = #"{"schema":1,"current":"0.1.1","latest":"0.2.0","available":true,"notes":"https://example.com/tag/v0.2.0"}"#
+        let info = try UpdateInfo.decode(Data(json.utf8))
+        #expect(info.available && info.latest == "0.2.0" && info.notes != nil)
+        #expect(throws: SnapshotError.newerSchema(2)) {
+            try UpdateInfo.decode(Data(#"{"schema":2}"#.utf8))
+        }
+    }
 }

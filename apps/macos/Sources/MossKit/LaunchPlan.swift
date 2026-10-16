@@ -46,10 +46,23 @@ public enum LaunchPlan: Equatable, Sendable {
     public static func make(
         for terminal: InstalledTerminal, cli: String, handle: String, shell: String
     ) throws -> LaunchPlan {
-        guard !hasControlCharacters(handle), !hasControlCharacters(cli), !hasControlCharacters(shell) else {
+        guard !hasControlCharacters(handle), !hasControlCharacters(cli) else {
             throw Failure.unsafeName
         }
-        let cmd = attachCommand(cli: cli, handle: handle)
+        return try make(for: terminal, command: attachCommand(cli: cli, handle: handle), shell: shell)
+    }
+
+    /// `cc-moss update` (or another cc-moss command) in a new terminal
+    /// window, so the user sees what it does.
+    public static func cliCommand(cli: String, _ words: [String]) -> String {
+        ([quoteAlways(cli)] + words.map(quoteAlways)).joined(separator: " ")
+    }
+
+    /// The plan for running an already quoted shell `command` in `terminal`.
+    public static func make(for terminal: InstalledTerminal, command cmd: String, shell: String) throws -> LaunchPlan {
+        guard !hasControlCharacters(cmd), !hasControlCharacters(shell) else {
+            throw Failure.unsafeName
+        }
         let viaShell = [shell, "-lc", cmd]
         let viaShellLine = viaShell.map(quoteAlways).joined(separator: " ")
         let app = terminal.appPath

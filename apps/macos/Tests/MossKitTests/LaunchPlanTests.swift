@@ -115,4 +115,14 @@ import Testing
         let ok = NSAppleScript(source: source)?.compileAndReturnError(&error) ?? false
         #expect(ok, "\(error ?? [:])")
     }
+
+    @Test func runsAnUpdateCommandInTheTerminal() throws {
+        let cmd = LaunchPlan.cliCommand(cli: "/opt/homebrew/bin/cc-moss", ["update"])
+        #expect(cmd == "'/opt/homebrew/bin/cc-moss' 'update'")
+        let t = InstalledTerminal(terminal: .terminal, appPath: "/System/Applications/Utilities/Terminal.app", version: nil)
+        guard case .appleScript(let script) = try LaunchPlan.make(for: t, command: cmd, shell: "/bin/zsh") else {
+            Issue.record("expected AppleScript"); return
+        }
+        #expect(script.contains("do script \"'/opt/homebrew/bin/cc-moss' 'update'\""))
+    }
 }

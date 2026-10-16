@@ -15,6 +15,8 @@ struct PanelView: View {
     @Environment(\.closePanel) private var closePanel
     /// Which shortcut's key caps are lit right now ("↵" or "⌘K").
     @State private var litKey: String?
+    /// The row under the pointer, which shows its open button.
+    @State private var hoveredID: String?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -154,14 +156,23 @@ struct PanelView: View {
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
                         ForEach(project.sessions) { s in
-                            SessionRow(session: s, selected: s.id == model.selected?.id)
+                            // A click only selects; opening is deliberate: the
+                            // button that appears at the end of the hovered row,
+                            // the action pill below, or Return (user 2026-10-16).
+                            SessionRow(session: s, selected: s.id == model.selected?.id,
+                                       action: s.id == hoveredID ? primaryAction : nil,
+                                       perform: { perform($0) })
                                 .id(s.id)
                                 .contentShape(Rectangle())
-                                .onHover { inside in if inside { model.selectedID = s.id } }
-                                .onTapGesture {
-                                    model.selectedID = s.id
-                                    perform(primaryAction)
+                                .onHover { inside in
+                                    if inside {
+                                        hoveredID = s.id
+                                        model.selectedID = s.id
+                                    } else if hoveredID == s.id {
+                                        hoveredID = nil
+                                    }
                                 }
+                                .onTapGesture { model.selectedID = s.id }
                         }
                     }
                 }
