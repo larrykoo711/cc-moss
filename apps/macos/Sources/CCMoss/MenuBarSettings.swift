@@ -1,14 +1,14 @@
 import MossKit
 import SwiftUI
 
-/// Settings › General › Menu Bar: what the status item shows (A18).
+/// Settings › Menu Bar: what the status item shows (A18).
 struct MenuBarSettings: View {
     let model: AppModel
     @AppStorage(AppModel.showCountKey) private var showCount = false
     @AppStorage(MenuBarIcon.motionKey) private var motion = true
 
     var body: some View {
-        SettingsCard(title: L.t("Menu Bar", "菜单栏")) {
+        SettingsCard(title: L.t("Icon", "图标")) {
             CardRow(
                 title: L.t("Show", "显示"),
                 detail: L.t("Counts what needs you first, then what broke or is busy.",

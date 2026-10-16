@@ -9,8 +9,8 @@ import SwiftUI
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
-///          [--form new|note|close [--form-name <name>]]
-///          [--settings general|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable]]
+///          [--form new|note|close|message|rename [--form-name <name>]]
+///          [--settings general|menuBar|mo|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -73,6 +73,8 @@ enum Render {
                 if let name = value("--form-name") { model.newDraft.name = name; model.newDraft.nameEdited = true }
             case "note": if let s = model.selected { model.editNote(s) }
             case "close": if let s = model.selected { model.askToClose([s]) }
+            case "message": if let s = model.selected { model.writeMessage(s) }
+            case "rename": if let s = model.selected { model.startRename(s) }
             default: break
             }
             let command = model.selected.map(model.attachCommand) ?? ""
@@ -85,12 +87,7 @@ enum Render {
                 // `--aliases <alias ls --json file>` for the aliases page.
                 let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
                     .flatMap { try? AliasList.decode($0) }
-                let page: SettingsView.Tab = switch tab {
-                case "about": .about
-                case "aliases": .aliases
-                case "notifications": .notifications
-                default: .general
-                }
+                let page = SettingsView.Tab(rawValue: tab) ?? .general
                 // `--auth allowed|denied|unavailable`: the notifications page's permission row.
                 NotificationStatus.shared.auth = switch value("--auth") {
                 case "allowed": .allowed

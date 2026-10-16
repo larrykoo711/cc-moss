@@ -564,6 +564,7 @@ final class PetController {
             savePlacement()
             place(animated: true)
         case .settings:
+            SettingsView.show(.mo)
             openSettings?(id: "settings")
             SettingsWindow.bringToFront()
         case .hide:
