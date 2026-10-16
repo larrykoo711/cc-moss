@@ -26,6 +26,11 @@ final class PetController {
     // Hooks for the message box (T3.3): the pointer on Mo, a click on Mo.
     var onHover: ((Bool) -> Void)?
     var onClick: (() -> Void)?
+    /// An alert the router gave to Mo (A23): Mo, not Notification Center,
+    /// tells you about it. T3.3 turns it into a bubble.
+    var onAlert: ((SessionAlert) -> Void)?
+    /// The alerts Mo holds, newest last, until T3.3 shows them.
+    private(set) var alerts: [SessionAlert] = []
     /// Where Mo is on screen, to put a message box beside it.
     var frame: NSRect? { window?.frame }
 
@@ -51,8 +56,6 @@ final class PetController {
     private var timers: [String: Timer] = [:]
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
     private var watching = 0
-    private var lastSeq: Int?
-    private var fetching = false
     private var openSettings: OpenWindowAction?
     private var placement = PetPlacement()
     private var tucked = false
@@ -70,6 +73,22 @@ final class PetController {
     }
 
     var isShown: Bool { window != nil }
+
+    /// Mo is on screen where you can see it: switched on, not tucked away,
+    /// not covered (a full-screen app), the screen awake and unlocked. The
+    /// alert router gives Mo an alert only then (A23).
+    var isVisibleToYou: Bool { window != nil && !offScreen && visible && !tucked }
+
+    static func doNotDisturb(_ defaults: UserDefaults = .standard) -> Bool {
+        defaults.double(forKey: doNotDisturbKey) > Date().timeIntervalSince1970
+    }
+
+    /// The router decided this one is Mo's to tell.
+    func take(_ alert: SessionAlert) {
+        alerts.append(alert)
+        if alerts.count > 20 { alerts.removeFirst(alerts.count - 20) }
+        onAlert?(alert)
+    }
 
     static func enabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: enabledKey) }
 
@@ -119,7 +138,6 @@ final class PetController {
         update()
         watching += 1
         observeModel(watching)
-        fetchEvents()
     }
 
     private func teardown() {
@@ -206,26 +224,17 @@ final class PetController {
             Task { @MainActor in
                 guard let self, self.watching == generation, self.window != nil else { return }
                 self.update()
-                self.fetchEvents()
                 self.observeModel(generation)
             }
         }
     }
 
-    /// Events are read only to catch `restored` (the happy show); poses come
-    /// from the snapshot, so a missed event never leaves Mo in the wrong pose.
-    private func fetchEvents() {
-        guard let client = model.client, !fetching else { return }
-        fetching = true
-        let since = lastSeq
-        Task { [weak self] in
-            let page = try? await client.events(since: since)
-            guard let self else { return }
-            self.fetching = false
-            guard let page else { return }
-            if since != nil, page.events.contains(where: { $0.kind == "restored" }) { self.celebrate() }
-            self.lastSeq = page.lastSeq
-        }
+    /// New events from the app's one reader (`EventFeed`). Mo only looks for
+    /// `restored` (the happy show); poses come from the snapshot, so a missed
+    /// event never leaves Mo in the wrong pose.
+    func received(_ events: [SessionEvent]) {
+        guard window != nil else { return }
+        if events.contains(where: { $0.kind == "restored" }) { celebrate() }
     }
 
     // MARK: - Do not disturb

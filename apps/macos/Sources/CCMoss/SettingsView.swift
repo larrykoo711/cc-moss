@@ -24,11 +24,12 @@ struct SettingsView: View {
     static let size = CGSize(width: 820, height: 560)
 
     enum Tab: CaseIterable, Hashable {
-        case general, aliases, about
+        case general, notifications, aliases, about
 
         var title: String {
             switch self {
             case .general: L.t("General", "通用")
+            case .notifications: L.t("Notifications", "通知")
             case .aliases: L.t("Aliases", "别名")
             case .about: L.t("About", "关于")
             }
@@ -37,6 +38,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: Icons.general
+            case .notifications: Icons.notifications
             case .aliases: Icons.aliases
             case .about: "infinity"
             }
@@ -45,6 +47,7 @@ struct SettingsView: View {
         var tint: [Color] {
             switch self {
             case .general: [Color(white: 0.62), Color(white: 0.45)]
+            case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
             case .aliases: AliasRow.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
@@ -54,6 +57,8 @@ struct SettingsView: View {
         var keywords: [String] {
             switch self {
             case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物")]
+            case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
+                                             "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
             }
@@ -90,6 +95,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         switch tab {
                         case .general: GeneralSettings(model: model)
+                        case .notifications: NotificationSettings()
                         case .aliases: AliasesSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
                         }

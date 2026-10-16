@@ -234,8 +234,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The panel, for code that wants to open it (hotkey, notifications).
     var panel: PanelController? { statusItem?.panel }
 
+    /// The one reader of the event stream, and where its alerts go (T2.3).
+    private var events: EventFeed?
+    private var alerts: AlertCenter?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(model: model)
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
+        startAlerts()
+    }
+
+    private func startAlerts() {
+        let notifier = SystemNotifier.available ? SystemNotifier() : nil
+        notifier?.onAction = { [weak self] action, slot in
+            guard let self else { return }
+            AlertCenter.perform(action, slot: slot, model: self.model) { self.panel?.show() }
+        }
+        let alerts = AlertCenter(model: model, notifier: notifier, context: { [weak self] in
+            AlertContext(
+                mode: AlertMode(defaults: .standard),
+                petEnabled: PetController.enabled(),
+                petVisible: self?.pet?.isVisibleToYou ?? false,
+                panelOpen: self?.panel?.isShown ?? false,
+                doNotDisturb: PetController.doNotDisturb()
+            )
+        }, toPet: { [weak self] alert in self?.pet?.take(alert) })
+        let feed = EventFeed(model: model)
+        feed.listen { [weak self] events in
+            self?.pet?.received(events)
+            alerts.handle(events)
+        }
+        feed.start()
+        self.alerts = alerts
+        self.events = feed
     }
 }
