@@ -23,23 +23,33 @@ pub struct Options {
     pub zshrc: Option<PathBuf>,
 }
 
-/// The `t` shortcut, kept in a managed block of the user's `.zshrc`.
+/// The managed `.zshrc` block where versions before 0.2 kept `t` as a zsh
+/// function. `t` is a native alias now; setup takes this block out.
 pub(super) const ZSH_TAG: &str = "cc-moss";
-pub(super) const ZSH_BODY: &str = "\
-# Managed by `cc-moss setup`; remove with `cc-moss setup --uninstall`.
-unalias t 2>/dev/null
-function t { cc-moss pick \"$@\"; }
-";
 
 pub fn run(opts: Options) -> Result<()> {
     let mut changes = Vec::new();
+    let mut notes = Vec::new();
     if let Some(c) = settings_change(&opts)? {
         changes.push(c);
     }
     if let Some(c) = zshrc_change(&opts)? {
         changes.push(c);
     }
-    files::apply(&changes, &[], opts.dry_run, opts.yes, "setup").map(drop)
+    let place = super::alias::Place::detect()?;
+    let (alias_changes, alias_notes) = if opts.uninstall {
+        super::alias::uninstall_changes(&place)?
+    } else {
+        super::alias::default_changes(&place)?
+    };
+    changes.extend(alias_changes);
+    notes.extend(alias_notes);
+    if changes.is_empty() {
+        for n in &notes {
+            println!("{n}");
+        }
+    }
+    files::apply(&changes, &notes, opts.dry_run, opts.yes, "setup").map(drop)
 }
 
 pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
@@ -92,6 +102,7 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
     }
     Ok(Some(Change {
         remove: Removal::No,
+        link: None,
         original,
         new_text: to_claude_string(&new_doc),
         done: if opts.uninstall {
@@ -115,71 +126,37 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
     }))
 }
 
+/// Take the old `function t` block out of `.zshrc`: `t` is a link now, and
+/// a function of the same name would hide it. Only cc-moss's own block is
+/// touched; a `t` the user wrote is reported by `doctor`, never edited.
 fn zshrc_change(opts: &Options) -> Result<Option<Change>> {
     let Some(path) = opts.zshrc.clone().or_else(default_zshrc_path) else {
         return Ok(None);
     };
     let path = fs::canonicalize(&path).unwrap_or(path);
     let Some(original) = read_optional(&path)? else {
-        if !opts.uninstall {
-            println!(
-                "{}",
-                tr!(
-                    format!(
-                        "No {}, so no `t` shortcut. Add `function t {{ cc-moss pick \"$@\"; }}` to your shell yourself.",
-                        path.display()
-                    ),
-                    format!(
-                        "没找到 {}，先不加 `t` 快捷命令。可以自己把 `function t {{ cc-moss pick \"$@\"; }}` 加进 shell 配置。",
-                        path.display()
-                    )
-                )
-            );
-        }
         return Ok(None);
     };
-    let new_text = if opts.uninstall {
-        managed_block::remove(&original, ZSH_TAG)
-    } else {
-        managed_block::upsert(&original, ZSH_TAG, ZSH_BODY)
-    }
-    .with_context(|| format!("cannot update {}", path.display()))?;
+    let new_text = managed_block::remove(&original, ZSH_TAG)
+        .with_context(|| format!("cannot update {}", path.display()))?;
     if new_text == original {
-        if !opts.uninstall {
-            println!(
-                "{}",
-                tr!(
-                    format!(
-                        "The `t` shortcut in {} is already up to date.",
-                        path.display()
-                    ),
-                    format!("{} 里的 `t` 快捷命令已是最新。", path.display())
-                )
-            );
-        }
         return Ok(None);
     }
     Ok(Some(Change {
         remove: Removal::No,
+        link: None,
         original: Some(original),
         new_text,
-        done: if opts.uninstall {
-            tr!(
-                format!("Removed the `t` shortcut from {}.", path.display()),
-                format!("已从 {} 移除 `t` 快捷命令。", path.display())
+        done: tr!(
+            format!(
+                "Took the old `t` shell function out of {}: `t` is a native alias now.",
+                path.display()
+            ),
+            format!(
+                "已从 {} 移除旧的 `t` shell 函数：`t` 现在是原生别名。",
+                path.display()
             )
-        } else {
-            tr!(
-                format!(
-                    "Added the `t` shortcut to {}. Open a new terminal (or `source` it) and type `t`.",
-                    path.display()
-                ),
-                format!(
-                    "已在 {} 加好 `t` 快捷命令。开个新终端（或 `source` 一下），敲 `t` 试试。",
-                    path.display()
-                )
-            )
-        },
+        ),
         path,
     }))
 }

@@ -145,12 +145,21 @@ fn fresh_home_installs_and_doctor_is_green() {
     let h = Home::with_all();
     ok(h.run(&["install", "--yes"]));
     let zshrc = h.read(".zshrc");
-    for tag in ["cc-moss: prompt", "cc-moss", "cc-moss: ssh-tty-restore"] {
+    for tag in ["cc-moss: prompt", "cc-moss: ssh-tty-restore"] {
         assert!(
             zshrc.contains(&format!("# >>> {tag} >>>")),
             "{tag}:\n{zshrc}"
         );
     }
+    // `t` is a native alias now, not a zsh function.
+    assert!(!zshrc.contains("# >>> cc-moss >>>"), "{zshrc}");
+    assert!(h
+        .read(".config/cc-moss/config.toml")
+        .contains("t = \"pick\""));
+    assert_eq!(
+        fs::read_link(h.path(".local/bin/t")).unwrap(),
+        Path::new(env!("CARGO_BIN_EXE_cc-moss"))
+    );
     assert!(h.read(".zshenv").contains("# >>> cc-moss: path >>>"));
     assert!(h.read(".tmux.conf").starts_with("# >>> cc-moss >>>"));
     assert!(h
@@ -549,15 +558,23 @@ fn bash_users_get_no_zsh_files() {
     assert!(h.read(".tmux.conf").starts_with("# >>> cc-moss >>>"));
     assert!(h.read(".config/starship.toml").contains("[custom.device]"));
     assert!(out.contains("zsh-only"), "{out}");
-    assert!(out.contains("cc-moss pick"), "{out}");
-    assert!(!out.contains("type `t`"), "{out}");
+    // `t` is a plain command, so bash gets it too; PATH needs ~/.local/bin.
+    assert!(out.contains("works in bash too"), "{out}");
+    assert!(h.path(".local/bin/t").exists());
+    assert!(out.contains("is not on your PATH yet"), "{out}");
 }
 
 #[test]
 fn bash_users_get_a_green_doctor_with_zsh_parts_skipped() {
     let h = Home::with_all();
     ok(h.run_with(&["install", "--yes"], BASH));
-    let report = ok(h.run_with(&["doctor"], BASH));
+    // A bash user whose PATH has ~/.local/bin (most distributions add it).
+    let path = format!(
+        "{}:{}:/usr/bin:/bin",
+        h.path(".local/bin").display(),
+        h.stubs.display()
+    );
+    let report = ok(h.run_with(&["doctor"], &[BASH[0], ("PATH", &path)]));
     assert!(!report.contains('✗'), "{report}");
     assert!(report.contains("skipped: zsh only"), "{report}");
     assert!(report.contains("Everything looks healthy"), "{report}");
@@ -568,7 +585,9 @@ fn bash_users_with_a_zshrc_get_the_blocks() {
     let h = Home::with_all();
     h.write(".zshrc", "export A=1\n");
     let out = ok(h.run_with(&["install", "--yes"], BASH));
-    assert!(h.read(".zshrc").contains("# >>> cc-moss >>>"));
+    assert!(h
+        .read(".zshrc")
+        .contains("# >>> cc-moss: ssh-tty-restore >>>"));
     assert!(h.read(".zshenv").contains("# >>> cc-moss: path >>>"));
     assert!(!out.contains("zsh-only"), "{out}");
 }
@@ -626,4 +645,65 @@ fn uninstall_dry_run_leaves_an_empty_config_dir() {
     std::fs::create_dir_all(h.path(".config/cc-moss")).unwrap();
     ok(h.run(&["install", "--uninstall", "--dry-run"]));
     assert!(h.path(".config/cc-moss").is_dir());
+}
+
+#[test]
+fn alias_uninstall_removes_links() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    ok(h.run(&["alias", "add", "tn", "new"]));
+    // Things in ~/.local/bin that are not cc-moss's.
+    h.write(".local/bin/other", "#!/bin/sh\n");
+    std::os::unix::fs::symlink("/usr/bin/vi", h.path(".local/bin/vim")).unwrap();
+    let before = h.snapshot();
+
+    let dry = ok(h.run(&["install", "--uninstall", "--dry-run"]));
+    assert!(dry.contains(".local/bin/t (delete link)"), "{dry}");
+    assert!(dry.contains(".local/bin/tn (delete link)"), "{dry}");
+    assert_eq!(h.snapshot(), before, "a dry run changes nothing");
+
+    let out = ok(h.run(&["install", "--uninstall", "--yes"]));
+    for name in ["t", "tn"] {
+        assert!(
+            fs::symlink_metadata(h.path(&format!(".local/bin/{name}"))).is_err(),
+            "{name} left: {out}"
+        );
+    }
+    assert_eq!(h.read(".local/bin/other"), "#!/bin/sh\n");
+    assert_eq!(
+        fs::read_link(h.path(".local/bin/vim")).unwrap(),
+        Path::new("/usr/bin/vi")
+    );
+    // The user's own alias stays in the config; the `t` install added goes.
+    assert_eq!(
+        h.read(".config/cc-moss/config.toml"),
+        "[aliases]\ntn = \"new\"\n"
+    );
+    assert!(out.contains("Kept your aliases"), "{out}");
+}
+
+#[test]
+fn alias_install_takes_out_the_old_t_function() {
+    let h = Home::with_all();
+    h.write(
+        ".zshrc",
+        "export A=1\n# >>> cc-moss >>>\nunalias t 2>/dev/null\nfunction t { cc-moss pick \"$@\"; }\n# <<< cc-moss <<<\n",
+    );
+    ok(h.run(&["install", "--yes"]));
+    let zshrc = h.read(".zshrc");
+    assert!(!zshrc.contains("function t"), "{zshrc}");
+    assert!(zshrc.starts_with("export A=1\n"), "{zshrc}");
+    assert!(h.path(".local/bin/t").exists());
+    let report = ok(h.run(&["doctor"]));
+    assert!(!report.contains("old zsh function"), "{report}");
+}
+
+#[test]
+fn alias_install_asks_before_linking() {
+    let h = Home::with_all();
+    let out = h.run(&["install"]);
+    assert!(!out.status.success());
+    assert!(text(&out).contains("(new link)"), "{}", text(&out));
+    assert!(fs::symlink_metadata(h.path(".local/bin/t")).is_err());
+    assert!(!h.path(".config/cc-moss/config.toml").exists());
 }

@@ -4,6 +4,7 @@
 compile_error!("cc-moss supports macOS and Linux only");
 
 pub mod agent;
+pub mod aliases;
 pub mod command;
 pub mod config;
 pub mod event;

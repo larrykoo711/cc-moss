@@ -1,3 +1,4 @@
+pub mod alias;
 pub mod attach;
 pub mod close;
 pub mod confirm;

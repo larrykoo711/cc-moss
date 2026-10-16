@@ -1,5 +1,6 @@
 //! `~/.config/cc-moss/config.toml`. Every field is optional.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
@@ -13,6 +14,8 @@ pub struct Config {
     pub tmux: TmuxConfig,
     pub ui: UiConfig,
     pub update: UpdateConfig,
+    /// Native aliases: `name = "subcommand args…"` (see [`crate::aliases`]).
+    pub aliases: BTreeMap<String, String>,
 }
 
 #[derive(Debug, Default, Deserialize)]

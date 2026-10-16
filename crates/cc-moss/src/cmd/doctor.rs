@@ -9,7 +9,7 @@ use moss_core::platform::{on_path, Tool};
 
 use super::files::read_optional;
 use super::install::{self, Paths};
-use super::setup;
+use super::{alias, setup};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -38,8 +38,24 @@ fn check(mark: Mark, what: &str, detail: impl Into<String>, fix: Option<String>)
     }
 }
 
-/// True when nothing is broken.
-pub fn run() -> Result<bool> {
+/// True when nothing is broken. `fix` first recreates alias links that are
+/// missing or broken (never touching a file that is not cc-moss's).
+pub fn run(fix: bool) -> Result<bool> {
+    if fix {
+        let place = alias::Place::detect()?;
+        let config = moss_core::config::Config::load()?;
+        let done = alias::fix_links(&place, &config);
+        if done.is_empty() {
+            println!(
+                "{}",
+                tr!("No alias links to fix.", "没有需要修复的别名链接。")
+            );
+        }
+        for line in &done {
+            println!("{line}");
+        }
+        println!();
+    }
     let checks = checks()?;
     let color = std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none();
     println!("{}", tr!("cc-moss doctor", "cc-moss 体检"));
@@ -207,18 +223,7 @@ fn checks() -> Result<Vec<Check>> {
             ),
         ));
     }
-    out.push(if !zsh {
-        skipped("t")
-    } else if has(&zshrc, setup::ZSH_TAG) {
-        check(Mark::Ok, "t", tr!("ready", "可用"), None)
-    } else {
-        check(
-            Mark::Warn,
-            "t",
-            tr!("not set up", "还没设置"),
-            fix_setup.clone(),
-        )
-    });
+    out.extend(alias_checks(&zshrc, zsh, &zshenv));
 
     // tmux and its configuration.
     out.push(if on_path(&["tmux"]) {
@@ -401,14 +406,14 @@ fn checks() -> Result<Vec<Check>> {
         out.push(if twins.is_empty() {
             check(
                 Mark::Ok,
-                tr!("aliases", "别名"),
+                tr!("shell aliases", "shell 别名"),
                 tr!("installed", "已安装"),
                 None,
             )
         } else {
             check(
                 Mark::Warn,
-                tr!("aliases", "别名"),
+                tr!("shell aliases", "shell 别名"),
                 tr!(
                     format!("also defined by hand: {}", twins.join(", ")),
                     format!("手写的同名别名：{}", twins.join("、"))
@@ -441,12 +446,117 @@ fn checks() -> Result<Vec<Check>> {
     } else {
         out.push(check(
             Mark::Note,
-            tr!("aliases", "别名"),
+            tr!("shell aliases", "shell 别名"),
             tr!("optional, not installed", "可选，没装"),
             Some("cc-moss install --with aliases".into()),
         ));
     }
     Ok(out)
+}
+
+/// `t` and every other native alias: its link, its command, whether the
+/// shell hides it, and whether `~/.local/bin` is on `PATH`.
+fn alias_checks(zshrc: &str, zsh: bool, zshenv: &str) -> Vec<Check> {
+    let mut out = Vec::new();
+    let place = match alias::Place::detect() {
+        Ok(p) => p,
+        Err(e) => return vec![check(Mark::Fail, "t", format!("{e:#}"), None)],
+    };
+    let config = match moss_core::config::Config::load() {
+        Ok(c) => c,
+        Err(e) => {
+            return vec![check(
+                Mark::Fail,
+                tr!("aliases", "别名"),
+                format!("{e:#}"),
+                None,
+            )]
+        }
+    };
+    let rows = alias::rows(&place, &config, true);
+    let fix_doctor = Some("cc-moss doctor --fix".to_string());
+    if !rows.iter().any(|r| r.name == alias::DEFAULT_NAME) {
+        out.push(check(
+            Mark::Warn,
+            "t",
+            tr!("not set up", "还没设置"),
+            Some("cc-moss setup".into()),
+        ));
+    }
+    // The 0.1 `t` was a zsh function in cc-moss's block; it hides the link.
+    if zsh && managed_block::contains(zshrc, setup::ZSH_TAG) {
+        out.push(check(
+            Mark::Warn,
+            "t",
+            tr!(
+                "still the old zsh function from cc-moss 0.1",
+                "还是 cc-moss 0.1 的旧 zsh 函数"
+            ),
+            Some("cc-moss setup".into()),
+        ));
+    }
+    for row in &rows {
+        let what = row.name.clone();
+        let runs = format!("→ {}", row.command);
+        out.push(match row.problem(&place) {
+            None => check(Mark::Ok, &what, runs, None),
+            Some((detail, fix)) => {
+                let mark = match row.status() {
+                    "invalid" | "broken" | "foreign" => Mark::Fail,
+                    _ => Mark::Warn,
+                };
+                let fix = match row.status() {
+                    "missing" | "broken" | "stale" => fix_doctor.clone(),
+                    _ => Some(fix),
+                };
+                check(mark, &what, format!("{runs}: {detail}"), fix)
+            }
+        });
+    }
+    if !rows.is_empty() && !place.dir_on_path() {
+        // install's .zshenv block puts ~/.local/bin on PATH in new shells.
+        out.push(
+            if zsh && managed_block::contains(zshenv, install::TAG_PATH) {
+                check(
+                    Mark::Note,
+                    tr!("alias PATH", "别名 PATH"),
+                    tr!(
+                        format!(
+                            "{} joins PATH in new terminals (~/.zshenv)",
+                            place.dir.display()
+                        ),
+                        format!(
+                            "新开的终端会把 {} 加进 PATH（~/.zshenv）",
+                            place.dir.display()
+                        )
+                    ),
+                    None,
+                )
+            } else {
+                check(
+                    Mark::Warn,
+                    tr!("alias PATH", "别名 PATH"),
+                    tr!(
+                        format!(
+                            "{} is not on PATH: your shell cannot find the aliases",
+                            place.dir.display()
+                        ),
+                        format!("{} 不在 PATH 里：shell 找不到这些别名", place.dir.display())
+                    ),
+                    Some(if zsh {
+                        "cc-moss install".to_string()
+                    } else {
+                        tr!(
+                        "add `export PATH=\"$HOME/.local/bin:$PATH\"` to your shell's startup file",
+                        "在 shell 启动文件里加一行 `export PATH=\"$HOME/.local/bin:$PATH\"`"
+                    )
+                        .to_string()
+                    }),
+                )
+            },
+        );
+    }
+    out
 }
 
 /// This version, and whether a newer one is out. Doctor is interactive, so

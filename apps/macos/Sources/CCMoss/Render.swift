@@ -8,6 +8,7 @@ import SwiftUI
 ///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
+///          [--settings general|aliases|about [--aliases <alias ls --json file>]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -58,7 +59,15 @@ enum Render {
             default: break
             }
             if let tab = value("--settings") {
-                drawSettings(model: model, tab: tab == "about" ? .about : .general, dark: args.contains("--dark"), out: out)
+                // `--aliases <alias ls --json file>` for the aliases page.
+                let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
+                    .flatMap { try? AliasList.decode($0) }
+                let page: SettingsView.Tab = switch tab {
+                case "about": .about
+                case "aliases": .aliases
+                default: .general
+                }
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"), out: out)
             } else {
                 draw(model: model, dark: args.contains("--dark"), actions: args.contains("--actions"), out: out)
             }
@@ -225,8 +234,8 @@ enum Render {
         app.run()
     }
 
-    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, dark: Bool, out: String) {
-        let root = SettingsView(model: model, tab: tab)
+    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool, out: String) {
+        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         let size = host.fittingSize
