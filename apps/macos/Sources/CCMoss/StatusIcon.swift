@@ -94,6 +94,23 @@ struct PressStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
             .opacity(configuration.isPressed ? 0.8 : 1)
             .animation(.easeOut(duration: 0.08), value: configuration.isPressed)
+            .handCursor()
+    }
+}
+
+extension View {
+    /// The pointing hand while the pointer is over something you can click.
+    @ViewBuilder func handCursor() -> some View {
+        if #available(macOS 15.0, *) {
+            self.pointerStyle(.link)
+        } else {
+            self.onContinuousHover { phase in
+                switch phase {
+                case .active: NSCursor.pointingHand.set()
+                case .ended: NSCursor.arrow.set()
+                }
+            }
+        }
     }
 }
 

@@ -31,6 +31,7 @@ struct MenuBarSettings: View {
             ) {
                 Toggle("", isOn: $motion)
                     .toggleStyle(.switch)
+                    .handCursor()
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: motion) { _, _ in model.syncIcon() }

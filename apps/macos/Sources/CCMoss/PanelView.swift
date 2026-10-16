@@ -173,6 +173,7 @@ struct PanelView: View {
                                     }
                                 }
                                 .onTapGesture { model.selectedID = s.id }
+                                .handCursor()
                         }
                     }
                 }

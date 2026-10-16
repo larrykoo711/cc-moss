@@ -364,6 +364,7 @@ struct GeneralSettings: View {
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
+                    .handCursor()
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
