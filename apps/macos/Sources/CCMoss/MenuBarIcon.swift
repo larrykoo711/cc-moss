@@ -10,6 +10,11 @@ import SwiftUI
 enum StatusIcon {
     static let side: CGFloat = 18
     static let lineWidth: CGFloat = 2.1
+    /// Working: how dim the mark is under the travelling spot, how long the
+    /// spot's tail is (a fraction of the loop) and in how many fading pieces.
+    static let dimmed: CGFloat = 0.4
+    static let tail = 0.16
+    static let pieces = 4
     /// Space between the mark and the number.
     static let gap: CGFloat = 3
 
@@ -35,11 +40,13 @@ enum StatusIcon {
     }
 
     /// The icon for one frame, drawn on demand so it is sharp at any scale.
-    static func image(_ frame: IconFrame, badge: Int?) -> NSImage {
+    /// `mark: false` leaves the mark's square empty (the animated layers sit
+    /// there) and draws only the number.
+    static func image(_ frame: IconFrame, badge: Int?, mark: Bool = true) -> NSImage {
         let size = size(badge: badge)
         let image = NSImage(size: size, flipped: true) { rect in
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
-            draw(frame, badge: badge, in: ctx, rect: rect, ink: .black)
+            draw(frame, badge: badge, in: ctx, rect: rect, ink: .black, mark: mark)
             return true
         }
         image.isTemplate = isTemplate(frame.state)
@@ -69,14 +76,14 @@ enum StatusIcon {
 
     /// Draws into a y-down context. `ink` is what template parts are drawn
     /// with: black for the real (tinted) icon, the bar's text colour in previews.
-    static func draw(_ frame: IconFrame, badge: Int?, in ctx: CGContext, rect: CGRect, ink: NSColor) {
+    static func draw(_ frame: IconFrame, badge: Int?, in ctx: CGContext, rect: CGRect, ink: NSColor, mark drawMark: Bool = true) {
         let box = CGRect(x: rect.minX, y: rect.minY + (rect.height - side) / 2, width: side, height: side)
         let colour: NSColor = switch frame.state {
         case .needsYou: brand
         case .interrupted: amber
         default: ink
         }
-        mark(frame, in: box, colour, ctx)
+        if drawMark { mark(frame, in: box, colour, ctx) }
         if let badge {
             let text = NSAttributedString(string: "\(badge)", attributes: [.font: font(), .foregroundColor: colour])
             let h = text.size().height
@@ -105,11 +112,10 @@ enum StatusIcon {
             stroke(Continuum().path(in: box), colour, ctx)
             dot(in: box, colour, ctx)
         case .working:
-            flow(frame.index, in: box, colour, ctx)
+            flow(frame.progress, in: box, colour, ctx)
         case .needsYou:
             // A gentle breath: 1.0 → 1.08 → 1.0 over the loop.
-            let n = Double(IconMotion.frameCount(.needsYou))
-            let s = 1 + 0.04 * (1 - cos(2 * .pi * Double(frame.index) / n))
+            let s = 1 + 0.04 * (1 - cos(2 * .pi * frame.progress))
             ctx.translateBy(x: box.midX, y: box.midY)
             ctx.scaleBy(x: s, y: s)
             ctx.translateBy(x: -box.midX, y: -box.midY)
@@ -125,12 +131,8 @@ enum StatusIcon {
 
     /// Working: the mark dimmed, a brighter spot with a short fading tail
     /// travelling round it.
-    private static func flow(_ index: Int, in box: CGRect, _ colour: NSColor, _ ctx: CGContext) {
-        let n = Double(IconMotion.frameCount(.working))
-        let head = Double(index) / n
-        stroke(Continuum().path(in: box), colour, ctx, alpha: 0.4)
-        let tail = 0.16
-        let pieces = 4
+    private static func flow(_ head: Double, in box: CGRect, _ colour: NSColor, _ ctx: CGContext) {
+        stroke(Continuum().path(in: box), colour, ctx, alpha: dimmed)
         for i in 0..<pieces {
             let from = head - tail + tail * Double(i) / Double(pieces)
             let to = head - tail + tail * Double(i + 1) / Double(pieces)
@@ -153,109 +155,3 @@ enum StatusIcon {
     }
 }
 
-/// Runs the menu bar's timer: a plain run-loop timer, also ticking while a
-/// menu is open, with some tolerance so the system can batch wake-ups.
-final class RunLoopTicks: TickScheduler {
-    private var timer: Timer?
-
-    func start(interval: TimeInterval, _ tick: @escaping () -> Void) {
-        timer?.invalidate()
-        let t = Timer(timeInterval: interval, repeats: true) { _ in tick() }
-        t.tolerance = interval * 0.25
-        RunLoop.main.add(t, forMode: .common)
-        timer = t
-    }
-
-    func stop() {
-        timer?.invalidate()
-        timer = nil
-    }
-}
-
-/// The status item's picture: what the sessions say, the system's motion
-/// and sleep state, and the frame that results. Deliberately not observable:
-/// each frame goes straight to `onImage` (the status button), with no
-/// SwiftUI update on the per-frame path.
-@MainActor
-final class MenuBarIcon {
-    private(set) var image: NSImage
-    private(set) var state: IconState = .idle
-    /// Called with every new picture.
-    var onImage: ((NSImage) -> Void)?
-
-    private let animator: IconAnimator
-    private var badge: Int?
-    private var observers: [NSObjectProtocol] = []
-    private var screensOff = false
-    private var locked = false
-
-    init(scheduler: TickScheduler = RunLoopTicks()) {
-        animator = IconAnimator(clock: { ProcessInfo.processInfo.systemUptime }, scheduler: scheduler)
-        image = NSImage()
-        animator.onFrame = { [weak self] frame in
-            MainActor.assumeIsolated { self?.redraw(frame) }
-        }
-        redraw(animator.frame)
-        animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        watchSystem()
-    }
-
-    /// New sessions from a refresh; `showCount` is the "Icon and number" setting.
-    func update(_ sessions: [Session], showCount: Bool) {
-        let nextBadge = showCount ? IconBadge.count(sessions) : nil
-        let badgeChanged = nextBadge != badge
-        badge = nextBadge
-        state = IconState(sessions)
-        let before = animator.frame
-        animator.state = state
-        // The animator only reports frame changes; a new number alone needs a redraw too.
-        if badgeChanged, animator.frame == before { redraw(animator.frame) }
-    }
-
-    /// Every picture is drawn once and reused: an animation loops through
-    /// the same few frames, and drawing each anew kept the CPU busy.
-    private var cache: [CacheKey: NSImage] = [:]
-
-    private struct CacheKey: Hashable {
-        let frame: IconFrame
-        let badge: Int?
-    }
-
-    private func redraw(_ frame: IconFrame) {
-        let key = CacheKey(frame: frame, badge: badge)
-        let picture: NSImage
-        if let hit = cache[key] {
-            picture = hit
-        } else {
-            // Bake to a bitmap now; a drawing-handler image would redraw itself
-            // every time the menu bar displays it.
-            picture = StatusIcon.bitmap(StatusIcon.image(frame, badge: badge))
-            if cache.count > 200 { cache.removeAll() }
-            cache[key] = picture
-        }
-        guard picture !== image else { return }
-        image = picture
-        onImage?(picture)
-    }
-
-    private func watchSystem() {
-        let ws = NSWorkspace.shared.notificationCenter
-        let dist = DistributedNotificationCenter.default()
-        func on(_ center: NotificationCenter, _ name: Notification.Name, _ body: @escaping @MainActor (MenuBarIcon) -> Void) {
-            observers.append(center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { if let self { body(self) } }
-            })
-        }
-        on(ws, NSWorkspace.screensDidSleepNotification) { $0.screensOff = true; $0.syncSleep() }
-        on(ws, NSWorkspace.screensDidWakeNotification) { $0.screensOff = false; $0.syncSleep() }
-        on(dist, Notification.Name("com.apple.screenIsLocked")) { $0.locked = true; $0.syncSleep() }
-        on(dist, Notification.Name("com.apple.screenIsUnlocked")) { $0.locked = false; $0.syncSleep() }
-        on(ws, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) {
-            $0.animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        }
-    }
-
-    private func syncSleep() {
-        animator.screensAsleep = screensOff || locked
-    }
-}

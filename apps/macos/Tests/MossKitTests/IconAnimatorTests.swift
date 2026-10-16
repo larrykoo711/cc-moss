@@ -2,121 +2,92 @@ import Foundation
 import Testing
 @testable import MossKit
 
-/// A scheduler that never fires on its own: tests call `fire()`.
-final class ManualTicks: TickScheduler {
-    private(set) var running = false
-    private(set) var interval: TimeInterval?
-    private(set) var starts = 0
-    private var tick: (() -> Void)?
+/// Records what the animator asks for instead of animating.
+final class FakeMotion: MotionDriver {
+    private(set) var playing: IconState?
+    private(set) var starts: [IconState] = []
+    private(set) var stops = 0
 
-    func start(interval: TimeInterval, _ tick: @escaping () -> Void) {
-        running = true
-        starts += 1
-        self.interval = interval
-        self.tick = tick
+    func startMotion(_ state: IconState) {
+        #expect(playing == nil, "started \(state) while \(String(describing: playing)) was playing")
+        playing = state
+        starts.append(state)
     }
 
-    func stop() {
-        running = false
-        tick = nil
+    func stopMotion() {
+        playing = nil
+        stops += 1
     }
-
-    func fire() { tick?() }
-}
-
-final class FakeClock {
-    var now: TimeInterval = 1000
 }
 
 @Suite struct IconAnimatorTests {
-    func make(_ state: IconState = .idle) -> (IconAnimator, ManualTicks, FakeClock) {
-        let ticks = ManualTicks()
-        let clock = FakeClock()
-        let a = IconAnimator(clock: { clock.now }, scheduler: ticks)
+    func make(_ state: IconState = .idle) -> (IconAnimator, FakeMotion) {
+        let motion = FakeMotion()
+        let a = IconAnimator(driver: motion)
         a.state = state
-        return (a, ticks, clock)
+        return (a, motion)
     }
 
     @Test func timerOnlyForAnimatedStates() {
-        let (a, ticks, _) = make()
+        let (a, motion) = make()
         for still in [IconState.idle, .waiting, .interrupted] {
             a.state = still
-            #expect(!ticks.running, "\(still) should not tick")
-            #expect(a.frame == IconFrame(state: still, index: 0))
+            #expect(motion.playing == nil, "\(still) should not move")
         }
         for moving in [IconState.working, .needsYou] {
             a.state = moving
-            #expect(ticks.running, "\(moving) should tick")
-            #expect(ticks.interval == IconMotion.frameInterval)
+            #expect(motion.playing == moving)
         }
         a.state = .idle
-        #expect(!ticks.running)
+        #expect(motion.playing == nil)
+        #expect(a.moving == nil)
     }
 
-    @Test func framesFollowTheClock() {
-        let (a, ticks, clock) = make(.working)
-        #expect(a.frame == IconFrame(state: .working, index: 0))
-        clock.now += IconMotion.frameInterval * 3 + 0.001
-        ticks.fire()
-        #expect(a.frame.index == 3)
-        // One full period later the loop is back where it was.
-        clock.now += IconMotion.period(.working)
-        ticks.fire()
-        #expect(a.frame.index == 3)
-    }
-
-    @Test func reportsOnlyChangedFrames() {
-        let (a, ticks, clock) = make(.needsYou)
-        var seen: [IconFrame] = []
-        a.onFrame = { seen.append($0) }
-        ticks.fire() // same instant: nothing new
-        clock.now += IconMotion.frameInterval + 0.001
-        ticks.fire()
-        #expect(seen == [IconFrame(state: .needsYou, index: 1)])
+    @Test func switchingAnimatedStatesSwapsTheAnimation() {
+        let (a, motion) = make(.working)
+        a.state = .needsYou
+        #expect(motion.starts == [.working, .needsYou])
+        #expect(motion.stops == 1)
+        #expect(motion.playing == .needsYou)
     }
 
     @Test func reduceMotionStopsFrames() {
-        let (a, ticks, clock) = make(.working)
+        let (a, motion) = make(.working)
         a.reduceMotion = true
-        #expect(!ticks.running)
-        clock.now += 1
-        ticks.fire()
-        // The state still shows, as its still frame.
-        #expect(a.frame == IconFrame(state: .working, index: 0))
+        #expect(motion.playing == nil)
+        // The state still changes (its colour and still form do), without motion.
         a.state = .needsYou
-        #expect(!ticks.running)
-        #expect(a.frame == IconFrame(state: .needsYou, index: 0))
+        #expect(motion.playing == nil)
+        #expect(a.state == .needsYou)
         a.reduceMotion = false
-        #expect(ticks.running)
+        #expect(motion.playing == .needsYou)
     }
 
     @Test func pausesWhileScreensSleep() {
-        let (a, ticks, clock) = make(.working)
+        let (a, motion) = make(.working)
         a.screensAsleep = true
-        #expect(!ticks.running)
-        // A state change while asleep must not wake the timer either.
+        #expect(motion.playing == nil)
+        // A state change while asleep must not start anything either.
         a.state = .needsYou
-        #expect(!ticks.running)
-        #expect(a.frame.state == .needsYou)
-        clock.now += 5
+        #expect(motion.playing == nil)
         a.screensAsleep = false
-        #expect(ticks.running)
-        #expect(a.frame == IconFrame(state: .needsYou, index: 0))
+        #expect(motion.playing == .needsYou)
     }
 
     @Test func sameStateDoesNotRestartTheLoop() {
-        let (a, ticks, clock) = make(.working)
-        clock.now += IconMotion.frameInterval * 2 + 0.001
-        ticks.fire()
+        let (a, motion) = make(.working)
         a.state = .working // a snapshot refresh with nothing new
-        #expect(ticks.starts == 1)
-        #expect(a.frame.index == 2)
+        a.reduceMotion = false
+        a.screensAsleep = false
+        #expect(motion.starts == [.working])
+        #expect(motion.stops == 0)
     }
 
-    @Test func frameCountsMatchTheirPeriods() {
-        // 10 frames a second: 1.6 s of flow, 1.2 s of pulse.
-        #expect(IconMotion.frameCount(.working) == 16)
-        #expect(IconMotion.frameCount(.needsYou) == 12)
-        #expect(IconMotion.frameCount(.idle) == 1)
+    @Test func samplesForReview() {
+        // Ten a second: 1.6 s of flow, 1.2 s of pulse.
+        #expect(IconMotion.sampleCount(.working) == 16)
+        #expect(IconMotion.sampleCount(.needsYou) == 12)
+        #expect(IconMotion.sampleCount(.idle) == 1)
+        #expect(IconFrame(state: .working, index: 4).progress == 0.25)
     }
 }

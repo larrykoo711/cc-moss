@@ -98,10 +98,10 @@ enum Render {
             frames = [.needsYou, .interrupted, .working, .waiting, .idle].map { IconFrame(state: $0, index: 0) }
         } else if let state = states[name] {
             if args.contains("--sheet") {
-                frames = (0..<IconMotion.frameCount(state)).map { IconFrame(state: state, index: $0) }
+                frames = (0..<IconMotion.sampleCount(state)).map { IconFrame(state: state, index: $0) }
             } else {
                 let n = Int(value("--frame") ?? "0") ?? 0
-                frames = [IconFrame(state: state, index: n % IconMotion.frameCount(state))]
+                frames = [IconFrame(state: state, index: n % IconMotion.sampleCount(state))]
             }
         } else {
             FileHandle.standardError.write(Data("--icon: one of \(states.keys.sorted().joined(separator: ", ")), all\n".utf8))
@@ -128,9 +128,25 @@ enum Render {
         ctx.setFillColor(background.cgColor)
         ctx.fill(CGRect(x: 0, y: 0, width: width, height: bar))
         let ink = dark ? NSColor.white : NSColor.black.withAlphaComponent(0.85)
+        // `--layers`: draw animated states with the app's Core Animation
+        // layers (posed at each moment) instead of the still-image drawing.
+        let layers = args.contains("--layers")
+        let motion = IconMotionView(frame: NSRect(x: 0, y: 0, width: StatusIcon.side, height: StatusIcon.side))
+        motion.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         for (i, frame) in frames.enumerated() {
             let x = pad + CGFloat(i) * (cell.width + pad)
-            StatusIcon.draw(frame, badge: badge, in: ctx, rect: CGRect(x: x, y: 0, width: cell.width, height: bar), ink: ink)
+            let rect = CGRect(x: x, y: 0, width: cell.width, height: bar)
+            let viaLayers = layers && IconMotion.animates(frame.state)
+            StatusIcon.draw(frame, badge: badge, in: ctx, rect: rect, ink: ink, mark: !viaLayers)
+            if viaLayers, let layer = motion.layer {
+                motion.pose(frame)
+                ctx.saveGState()
+                // Layers are y-up.
+                ctx.translateBy(x: x, y: (bar + StatusIcon.side) / 2)
+                ctx.scaleBy(x: 1, y: -1)
+                layer.render(in: ctx)
+                ctx.restoreGState()
+            }
         }
         ctx.flush()
         guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
@@ -143,10 +159,10 @@ enum Render {
         exit(0)
     }
 
-    /// `CCMoss --bench-icon working|needsYou|idle [--seconds n]`: run the icon's
-    /// real timer into an off-screen button and print this process's CPU use.
-    /// It covers our side of a frame (timer, cache, setting the image), not
-    /// the menu bar's own redraw.
+    /// `CCMoss --bench-icon working|needsYou|idle [--seconds n]`: the real icon
+    /// model and motion layers on a button in a window parked off-screen;
+    /// prints this process's CPU use and how often the app touched the icon.
+    /// The render server's work for the animation is not counted.
     @MainActor static func benchIcon(args: [String]) {
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
@@ -164,15 +180,21 @@ enum Render {
         guard let snap = try? Snapshot.decode(Data(json.utf8)) else { exit(1) }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 60, height: 24), styleMask: [.borderless], backing: .buffered, defer: false)
-        let button = NSButton(frame: window.contentLayoutRect)
+        let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 60, height: 24), styleMask: [.borderless], backing: .buffered, defer: false)
+        let button = NSButton(frame: NSRect(x: 0, y: 0, width: 60, height: 24))
+        button.isBordered = false
         window.contentView = button
+        window.orderFront(nil)
+        let motion = IconMotionView(frame: NSRect(x: 21, y: 3, width: StatusIcon.side, height: StatusIcon.side))
+        button.addSubview(motion)
         let icon = MenuBarIcon()
-        var frames = 0
-        icon.onImage = { image in
-            button.image = image
-            button.display()
-            frames += 1
+        var touches = 0
+        icon.onChange = {
+            touches += 1
+            button.image = icon.image
+            if motion.playing != icon.moving {
+                if let s = icon.moving { motion.play(s) } else { motion.stop() }
+            }
         }
         icon.update(snap.sessions, showCount: false)
         func cpu() -> Double {
@@ -181,14 +203,13 @@ enum Render {
             return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
                 + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
         }
-        // Let the first frames be drawn and cached before measuring.
         RunLoop.main.run(until: Date().addingTimeInterval(2))
-        let start = cpu(), began = Date(), startFrames = frames
+        let start = cpu(), began = Date(), startTouches = touches
         RunLoop.main.run(until: Date().addingTimeInterval(seconds))
         let wall = Date().timeIntervalSince(began)
         let used = cpu() - start
-        print(String(format: "%@: %.2f%% CPU over %.1f s, %d frames (%.1f fps)",
-                     state, used / wall * 100, wall, frames - startFrames, Double(frames - startFrames) / wall))
+        print(String(format: "%@: %.2f%% CPU over %.1f s, icon updated %d times while measuring, playing: %@",
+                     state, used / wall * 100, wall, touches - startTouches, String(describing: motion.playing)))
         exit(0)
     }
 
