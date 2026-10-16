@@ -56,6 +56,8 @@ fn to_json(st: Status, s: &Slot) -> Value {
         "pid": s.pid,
         "end_reason": s.end_reason,
         "busy": s.busy,
+        // Only a live session can be waiting for you.
+        "attention": s.attention.as_deref().filter(|_| st == Status::Running),
         "last_prompt": s.last_prompt,
         "notes": { "goal": s.notes.goal, "state": s.notes.state, "note": s.notes.note },
         "created_at": rfc3339(s.created_at_ms),

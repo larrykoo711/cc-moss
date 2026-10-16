@@ -85,7 +85,14 @@ fn install_then_uninstall_is_byte_identical() {
     let out = setup(dir.path(), &["--yes"]);
     assert!(out.status.success(), "install: {}", stderr(&out));
     let installed = fs::read_to_string(&path).unwrap();
-    for name in ["session-start", "user-prompt-submit", "stop", "session-end"] {
+    for name in [
+        "session-start",
+        "user-prompt-submit",
+        "stop",
+        "session-end",
+        "notification",
+        "post-tool-use",
+    ] {
         assert!(
             installed.contains(&format!("cc-moss hook {name}")),
             "{name}"
@@ -288,4 +295,84 @@ fn setup_upgrades_unguarded_hooks_without_duplicates() {
     let command = stop[0]["hooks"][0]["command"].as_str().unwrap();
     assert!(command.starts_with("[ -x "), "{command}");
     assert!(!command.contains("/old/place"), "{command}");
+}
+
+/// The settings a 0.1.x `setup` left: `CLAUDE_FORMATTED` plus the first four
+/// cc-moss hooks, written the way Claude Code formats the file.
+fn settings_from_0_1(dir: &Path) -> String {
+    let path = dir.join("settings.json");
+    fs::write(&path, CLAUDE_FORMATTED).unwrap();
+    assert!(setup(dir, &["--yes"]).status.success());
+    let mut doc: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let hooks = doc["hooks"].as_object_mut().unwrap();
+    hooks.shift_remove("Notification");
+    let post = hooks["PostToolUse"].as_array_mut().unwrap();
+    post.retain(|g| g["matcher"] == "Edit");
+    let text = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+    fs::write(&path, &text).unwrap();
+    for b in backups(dir) {
+        fs::remove_file(b).unwrap();
+    }
+    text
+}
+
+#[test]
+fn new_hooks_added_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let old = settings_from_0_1(dir.path());
+    assert!(!old.contains("hook notification") && !old.contains("hook post-tool-use"));
+
+    let dry = setup(dir.path(), &["--dry-run"]);
+    let diff = stdout(&dry);
+    let added: Vec<&str> = diff
+        .lines()
+        .filter(|l| l.starts_with('+') && l.contains("cc-moss hook"))
+        .collect();
+    assert_eq!(added.len(), 2, "only the two new hooks: {diff}");
+    assert!(
+        added.iter().any(|l| l.contains("hook notification")),
+        "{diff}"
+    );
+    assert!(
+        added.iter().any(|l| l.contains("hook post-tool-use")),
+        "{diff}"
+    );
+    assert!(
+        !diff
+            .lines()
+            .any(|l| l.starts_with('-') && l.contains("cc-moss hook")),
+        "the four existing hooks stay as they are: {diff}"
+    );
+
+    let out = setup(dir.path(), &["--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let again = setup(dir.path(), &["--yes"]);
+    assert!(
+        stdout(&again).contains("already up to date"),
+        "{}",
+        stdout(&again)
+    );
+    let installed = fs::read_to_string(&path).unwrap();
+    for name in [
+        "session-start",
+        "user-prompt-submit",
+        "stop",
+        "session-end",
+        "notification",
+        "post-tool-use",
+    ] {
+        let n = installed.matches(&format!("cc-moss hook {name} ")).count();
+        assert_eq!(n, 1, "{name}: {installed}");
+    }
+    let doc: serde_json::Value = serde_json::from_str(&installed).unwrap();
+    let post = doc["hooks"]["PostToolUse"].as_array().unwrap();
+    assert_eq!(post[0]["matcher"], "Edit", "the user's group stays first");
+    assert_eq!(post[1]["matcher"], "*");
+    assert!(doc["hooks"]["Notification"][0].get("matcher").is_none());
+
+    let out = setup(dir.path(), &["--uninstall", "--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(fs::read(&path).unwrap(), CLAUDE_FORMATTED.as_bytes());
 }

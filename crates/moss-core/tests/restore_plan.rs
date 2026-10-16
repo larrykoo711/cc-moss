@@ -29,6 +29,7 @@ fn slot(name: &str, status: Status) -> Slot {
         restore_started_at_ms: None,
         busy: false,
         last_prompt: None,
+        attention: None,
         created_at_ms: 0,
         last_active_at_ms: 0,
         ended_at_ms: None,

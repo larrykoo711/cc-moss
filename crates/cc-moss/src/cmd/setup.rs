@@ -217,6 +217,9 @@ pub(super) enum HookStatus {
     Current,
     /// Missing, or written by another cc-moss install or version.
     Outdated,
+    /// Installed, but without hooks a newer cc-moss added (Claude Code
+    /// event names, e.g. `Notification`).
+    Incomplete(Vec<&'static str>),
     /// A hook runs a cc-moss that is gone or cannot be executed.
     Broken {
         path: String,
@@ -236,6 +239,12 @@ pub(super) fn hook_status() -> Result<HookStatus> {
         if let Some(missing) = unusable(&bin) {
             return Ok(HookStatus::Broken { path: bin, missing });
         }
+    }
+    let missing = settings_json::missing_hooks(&doc);
+    if !missing.is_empty() && missing.len() < moss_core::agent::HookKind::ALL.len() {
+        return Ok(HookStatus::Incomplete(
+            missing.into_iter().map(settings_json::event_name).collect(),
+        ));
     }
     Ok(if settings_json::install(&doc, &hook_exe()?)? == doc {
         HookStatus::Current

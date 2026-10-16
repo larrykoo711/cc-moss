@@ -1,11 +1,12 @@
 //! Claude Code adapter. Field names verified against Claude Code 2.1.300
-//! (see `.sdd/001-cli/notes/hook-probe.md`).
+//! (see `.sdd/001-cli/notes/hook-probe.md`) and, for Notification and
+//! PostToolUse, 2.1.301 (`.sdd/002-menubar/notes/hook-probe-2.md`).
 
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 
 use super::{Agent, HookKind};
-use crate::event::{EndReason, Event, StartSource};
+use crate::event::{AttentionReason, EndReason, Event, StartSource};
 
 pub struct ClaudeAgent;
 
@@ -24,19 +25,27 @@ struct Payload {
     session_title: Option<String>,
     #[serde(default)]
     prompt: Option<String>,
+    #[serde(default)]
+    notification_type: Option<String>,
+    #[serde(default)]
+    message: Option<String>,
 }
+
+/// Notification types cc-moss knows and leaves alone (idle reminders,
+/// completions, account notices).
+const IGNORED_NOTIFICATIONS: &[&str] = &["idle_prompt", "agent_completed", "auth_success"];
 
 impl Agent for ClaudeAgent {
     fn name(&self) -> &'static str {
         "claude"
     }
 
-    fn parse_hook(&self, kind: HookKind, payload: &str) -> Result<Event> {
+    fn parse_hook(&self, kind: HookKind, payload: &str) -> Result<Option<Event>> {
         let p: Payload = serde_json::from_str(payload).context("hook payload is not valid JSON")?;
         if p.session_id.is_empty() {
             bail!("hook payload has an empty session_id");
         }
-        Ok(match kind {
+        Ok(Some(match kind {
             HookKind::SessionStart => Event::Start {
                 source: match p.source.as_deref() {
                     Some("resume") => StartSource::Resume,
@@ -61,7 +70,26 @@ impl Agent for ClaudeAgent {
                 session_id: p.session_id,
                 reason: EndReason::parse(p.reason.as_deref().unwrap_or("")),
             },
-        })
+            HookKind::PostToolUse => Event::ToolDone {
+                session_id: p.session_id,
+            },
+            HookKind::Notification => {
+                // 2.1.301 reports AskUserQuestion as `permission_prompt` too
+                // (`.sdd/002-menubar/notes/hook-probe-2.md` N3).
+                let reason = match p.notification_type.as_deref().unwrap_or("") {
+                    "permission_prompt" => AttentionReason::Permission,
+                    "elicitation_dialog" | "elicitation_url_dialog" => AttentionReason::Question,
+                    "agent_needs_input" => AttentionReason::Input,
+                    t if IGNORED_NOTIFICATIONS.contains(&t) => return Ok(None),
+                    other => bail!("ignored unknown notification type `{other}`"),
+                };
+                Event::Attention {
+                    session_id: p.session_id,
+                    reason,
+                    message: p.message.filter(|m| !m.is_empty()),
+                }
+            }
+        }))
     }
 }
 

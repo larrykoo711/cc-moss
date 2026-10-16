@@ -150,6 +150,23 @@ fn checks() -> Result<Vec<Check>> {
             ),
             fix_setup.clone(),
         ),
+        Ok(setup::HookStatus::Incomplete(missing)) => check(
+            Mark::Fail,
+            tr!("hooks", "钩子"),
+            tr!(
+                format!(
+                    "{} hook(s) missing ({}): session events are incomplete",
+                    missing.len(),
+                    missing.join(", ")
+                ),
+                format!(
+                    "少了 {} 个钩子（{}）：会话事件不完整",
+                    missing.len(),
+                    missing.join("、")
+                )
+            ),
+            fix_setup.clone(),
+        ),
         Ok(setup::HookStatus::Broken { path, missing }) => check(
             Mark::Fail,
             tr!("hooks", "钩子"),

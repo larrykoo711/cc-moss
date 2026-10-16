@@ -7,8 +7,8 @@ use anyhow::Result;
 use moss_core::agent::claude::{self, LiveSession};
 use moss_core::config::Config;
 use moss_core::event::{Context, Event, StartSource};
-use moss_core::registry::Registry;
-use moss_core::slot::now_ms;
+use moss_core::registry::{Registry, EVENT_RETENTION_MS};
+use moss_core::slot::{now_ms, Status};
 use moss_core::tmux::{locate_in_panes, Socket, Tmux};
 use moss_core::{launch_args, proc, store_dir};
 
@@ -31,7 +31,23 @@ pub fn run() -> Result<Registry> {
         adopt(&mut registry, &live)?;
     }
     registry.backfill_names()?;
+    record_lost(&registry)?;
+    registry.prune_events(now_ms() - EVENT_RETENTION_MS)?;
     Ok(registry)
+}
+
+/// Report running slots whose process is gone without a SessionEnd
+/// (SIGKILL, power loss) as interrupted, once each.
+fn record_lost(registry: &Registry) -> Result<()> {
+    let now = now_ms();
+    for slot in registry.slots()? {
+        if slot.status == Status::Running
+            && slot.effective_status(proc::is_alive) == Status::Interrupted
+        {
+            registry.record_lost(&slot.slot_id, now)?;
+        }
+    }
+    Ok(())
 }
 
 /// Register running sessions the registry does not know (or knows under an

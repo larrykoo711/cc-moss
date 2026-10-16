@@ -2,6 +2,7 @@ pub mod attach;
 pub mod close;
 pub mod confirm;
 pub mod doctor;
+pub mod events;
 pub mod files;
 pub mod hook;
 pub mod install;
