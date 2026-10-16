@@ -1316,8 +1316,10 @@ fn dry_run_json_marks_ready_after_install() {
 #[test]
 fn dry_run_json_names_a_missing_tool() {
     let h = Home::new(&["claude", "starship"]);
-    ok(h.run(&["install", "--yes", "--skip", "app"]));
-    let p = plan(&h);
+    // Sealed: a tmux on this machine (an apt one on CI) must not count.
+    ok(h.run_sealed(&["install", "--yes", "--skip", "app"], &[]));
+    let out = ok(h.run_sealed(&["install", "--dry-run", "--json", "--skip", "app"], &[]));
+    let p: serde_json::Value = serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"));
     assert_eq!(state(&p, "tmux"), "changes", "{p}");
     assert!(
         p["parts"][1]["summary"].as_str().unwrap().contains("tmux"),
