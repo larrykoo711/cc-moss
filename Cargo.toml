@@ -13,15 +13,15 @@ homepage = "https://github.com/larrykoo711/cc-moss"
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.28"
+crossterm = "0.29"
 nucleo-matcher = "0.3"
-ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
-rusqlite = { version = "0.32", features = ["bundled"] }
+ratatui = { version = "0.30", default-features = false, features = ["crossterm"] }
+rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 time = { version = "0.3", features = ["formatting"] }
-toml = "0.8"
-ulid = "1"
+toml = "1"
+ulid = "3"
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3"
 
