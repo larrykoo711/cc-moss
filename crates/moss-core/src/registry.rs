@@ -15,6 +15,12 @@ use crate::event::{Context, EndReason, Event, StartSource, TmuxLoc};
 use crate::slot::{Notes, Slot, Status};
 
 const SCHEMA_VERSION: i64 = 1;
+/// `needs_you` keeps at most this many characters of the agent's message.
+pub const MESSAGE_MAX: usize = 200;
+/// Events older than this are pruned when `ls` or the picker opens.
+pub const EVENT_RETENTION_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+/// What `events` returns without `--since`.
+pub const RECENT_EVENTS: usize = 50;
 /// Writes give up after this long. Hooks have their own timeout (T1.2 sets
 /// 10s), and uncontended writes take a few milliseconds; no process is
 /// spawned while the lock is held, so waiting this long means a real stall.
@@ -139,6 +145,15 @@ impl Registry {
         }
     }
 
+    /// A write transaction that takes the lock up front, so a read inside it
+    /// cannot leave it unable to write under a concurrent hook.
+    fn write_tx(&self) -> Result<rusqlite::Transaction<'_>> {
+        Ok(rusqlite::Transaction::new_unchecked(
+            self.write()?,
+            TransactionBehavior::Immediate,
+        )?)
+    }
+
     /// Apply one event, treating every other recorded process as dead.
     /// Convenient for tests; the hook uses [`Registry::apply_with`].
     pub fn apply(&mut self, event: &Event, ctx: &Context) -> Result<()> {
@@ -148,6 +163,11 @@ impl Registry {
     /// Apply one event. Events for sessions we never saw are ignored.
     pub fn apply_with(&mut self, event: &Event, ctx: &Context, is_alive: IsAlive) -> Result<()> {
         self.write()?;
+        if let Event::ToolDone { session_id } = event {
+            // Runs after every tool call: read one row, write only when a
+            // mark is there to clear, and check no process.
+            return self.clear_attention_of(session_id);
+        }
         // A liveness check spawns `ps`; doing it under the write lock would
         // make concurrent hooks wait on it and possibly drop their events.
         // So check every process the event could be compared with first,
@@ -202,13 +222,28 @@ impl Registry {
                         }
                     }
                 };
+                let created = existing.is_none();
+                // `cc-moss restore` launched this one: its `restored` event
+                // already says the session is back.
+                let restoring = *source == StartSource::Resume && match &existing {
+                    Some(id) => tx
+                        .query_row(
+                            "SELECT restore_started_at IS NOT NULL FROM slots WHERE slot_id = ?1",
+                            [id],
+                            |r| r.get::<_, bool>(0),
+                        )
+                        .optional()?
+                        .unwrap_or(false),
+                    None => false,
+                };
                 let slot_id = match existing {
                     Some(id) => {
                         tx.execute(
                             "UPDATE slots SET session_id=?2, cwd=?3,
                                pid=COALESCE(?4, pid), pid_start=COALESCE(?5, pid_start),
                                status='running', end_reason=NULL, ended_at=NULL, last_active_at=?6,
-                               restore_started_at=NULL, busy=0
+                               restore_started_at=NULL, busy=0, attention=NULL,
+                               lost_reported_at=NULL
                              WHERE slot_id=?1",
                             params![id, session_id, cwd, ctx.pid, ctx.pid_start, ctx.now_ms],
                         )?;
@@ -228,11 +263,19 @@ impl Registry {
                 if ctx.tmux.is_some() || ctx.pid.is_some() {
                     set_tmux(&tx, &slot_id, ctx.tmux.as_ref())?;
                 }
+                let started = match source {
+                    StartSource::Resume if restoring => None,
+                    StartSource::Startup => Some("startup"),
+                    StartSource::Resume => Some("resume"),
+                    StartSource::Clear | StartSource::Compact => None,
+                };
+                if let Some(source) = started {
+                    let detail = serde_json::json!({ "source": source });
+                    record_event(&tx, &slot_id, "started", &detail, ctx.now_ms)?;
+                }
                 if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
-                    tx.execute(
-                        "UPDATE slots SET name=?2 WHERE slot_id=?1",
-                        params![slot_id, t],
-                    )?;
+                    // The name a new slot is born with is part of `started`.
+                    rename(&tx, &slot_id, t, !created, ctx.now_ms)?;
                 }
                 record_session(&tx, &slot_id, session_id, transcript_path.as_deref())?;
                 if let Some(args) = &ctx.launch_args {
@@ -252,7 +295,14 @@ impl Registry {
             } => {
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
                     touch_and_repair(&tx, &id, ctx, is_alive)?;
-                    tx.execute("UPDATE slots SET busy = 1 WHERE slot_id = ?1", [&id])?;
+                    let began = tx.execute(
+                        "UPDATE slots SET busy = 1 WHERE slot_id = ?1 AND busy = 0",
+                        [&id],
+                    )?;
+                    if began == 1 {
+                        record_event(&tx, &id, "working", &empty(), ctx.now_ms)?;
+                    }
+                    clear_attention(&tx, &id)?;
                     if let Some(preview) = prompt.as_deref().and_then(preview) {
                         tx.execute(
                             "UPDATE slots SET last_prompt = ?2 WHERE slot_id = ?1",
@@ -260,14 +310,21 @@ impl Registry {
                         )?;
                     }
                     if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
-                        tx.execute("UPDATE slots SET name=?2 WHERE slot_id=?1", params![id, t])?;
+                        rename(&tx, &id, t, true, ctx.now_ms)?;
                     }
                 }
             }
             Event::Stop { session_id } => {
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
                     touch_and_repair(&tx, &id, ctx, is_alive)?;
-                    tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
+                    let done = tx.execute(
+                        "UPDATE slots SET busy = 0 WHERE slot_id = ?1 AND busy = 1",
+                        [&id],
+                    )?;
+                    if done == 1 {
+                        record_event(&tx, &id, "finished", &empty(), ctx.now_ms)?;
+                    }
+                    clear_attention(&tx, &id)?;
                 }
             }
             Event::End { session_id, reason } => {
@@ -275,6 +332,7 @@ impl Registry {
                 // pre-/clear id must not close the live process.
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
                     tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
+                    clear_attention(&tx, &id)?;
                     let (status, raw) = match reason {
                         EndReason::Clear => (None, None),
                         EndReason::Closed(r) => (Some(Status::Closed), Some(r)),
@@ -283,14 +341,38 @@ impl Registry {
                     if let Some(status) = status {
                         // A slot the user closed stays closed: killing its tmux
                         // session makes claude report SessionEnd(other) afterwards.
-                        tx.execute(
+                        let changed = tx.execute(
                             "UPDATE slots SET status=?2, end_reason=?3, ended_at=?4
                              WHERE slot_id=?1 AND status <> 'closed'",
                             params![id, status.as_str(), raw, ctx.now_ms],
                         )?;
+                        let detail = serde_json::json!({ "reason": raw });
+                        if changed == 1 && status == Status::Closed {
+                            record_event(&tx, &id, "ended", &detail, ctx.now_ms)?;
+                        } else if changed == 1 {
+                            record_interrupted(&tx, &id, &detail, ctx.now_ms)?;
+                        }
                     }
                 }
             }
+            Event::Attention {
+                session_id,
+                reason,
+                message,
+            } => {
+                if let Some(id) = current_slot(&tx, session_id, ctx)? {
+                    tx.execute(
+                        "UPDATE slots SET attention = ?2 WHERE slot_id = ?1",
+                        params![id, reason.as_str()],
+                    )?;
+                    let message = message.as_deref().map(truncate_message);
+                    let detail =
+                        serde_json::json!({ "reason": reason.as_str(), "message": message });
+                    record_event(&tx, &id, "needs_you", &detail, ctx.now_ms)?;
+                }
+            }
+            // Handled before the transaction.
+            Event::ToolDone { .. } => {}
         }
         tx.commit()?;
         Ok(())
@@ -338,10 +420,9 @@ impl Registry {
 
     /// Set a slot's name (found outside the hook payload, e.g. in its transcript).
     pub fn set_name(&self, slot_id: &str, name: &str) -> Result<()> {
-        self.write()?.execute(
-            "UPDATE slots SET name = ?2 WHERE slot_id = ?1",
-            params![slot_id, name],
-        )?;
+        let tx = self.write_tx()?;
+        rename(&tx, slot_id, name, true, crate::slot::now_ms())?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -399,11 +480,17 @@ impl Registry {
 
     /// The user does not want this session back: drop it from restore candidates.
     pub fn close_by_user(&self, slot_id: &str, now_ms: i64) -> Result<()> {
-        self.write()?.execute(
-            "UPDATE slots SET status = 'closed', end_reason = 'closed-by-user', ended_at = ?2
+        let tx = self.write_tx()?;
+        let changed = tx.execute(
+            "UPDATE slots SET status = 'closed', end_reason = 'closed-by-user', ended_at = ?2,
+               attention = NULL
              WHERE slot_id = ?1",
             params![slot_id, now_ms],
         )?;
+        if changed == 1 {
+            record_event(&tx, slot_id, "closed", &empty(), now_ms)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -450,10 +537,11 @@ impl Registry {
         now_ms: i64,
     ) -> Result<()> {
         // last_active_at moves too: a pid recorded after boot must look it.
-        self.write()?.execute(
+        let tx = self.write_tx()?;
+        let changed = tx.execute(
             "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL,
                ended_at = NULL, tmux_socket = ?4, tmux_session_id = ?5, tmux_session_name = ?6,
-               tmux_pane = ?7, last_active_at = ?8
+               tmux_pane = ?7, last_active_at = ?8, attention = NULL, lost_reported_at = NULL
              WHERE slot_id = ?1",
             params![
                 slot_id,
@@ -466,6 +554,10 @@ impl Registry {
                 now_ms
             ],
         )?;
+        if changed == 1 {
+            record_event(&tx, slot_id, "restored", &empty(), now_ms)?;
+        }
+        tx.commit()?;
         Ok(())
     }
 
@@ -507,6 +599,210 @@ impl Registry {
         tx.commit()?;
         Ok(slots)
     }
+
+    /// The PostToolUse fast path: clear the attention mark of the slot(s)
+    /// whose current id is `session_id`, writing only when one is set.
+    fn clear_attention_of(&self, session_id: &str) -> Result<()> {
+        let marked = self
+            .conn
+            .prepare_cached(
+                "SELECT 1 FROM slots WHERE session_id = ?1 AND attention IS NOT NULL LIMIT 1",
+            )?
+            .exists([session_id])?;
+        if marked {
+            self.conn.execute(
+                "UPDATE slots SET attention = NULL WHERE session_id = ?1 AND attention IS NOT NULL",
+                [session_id],
+            )?;
+        }
+        Ok(())
+    }
+
+    /// Record that a running slot's process is gone without a SessionEnd
+    /// (SIGKILL, power loss). Once per interruption: nothing is recorded when
+    /// the slot's latest event already is `interrupted`.
+    pub fn record_lost(&self, slot_id: &str, now_ms: i64) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let detail = serde_json::json!({ "reason": "process-gone" });
+        let recorded = record_interrupted(&tx, slot_id, &detail, now_ms)?;
+        clear_attention(&tx, slot_id)?;
+        tx.commit()?;
+        Ok(recorded)
+    }
+
+    /// Drop events recorded before `before_ms`. Returns how many went.
+    pub fn prune_events(&self, before_ms: i64) -> Result<usize> {
+        Ok(self
+            .write()?
+            .execute("DELETE FROM events WHERE at < ?1", [before_ms])?)
+    }
+
+    /// Events after `since` in order, at most `limit`; without `since`, the
+    /// latest [`RECENT_EVENTS`] (also capped by `limit`), oldest first.
+    pub fn events(&self, since: Option<i64>, limit: usize) -> Result<Vec<SessionEvent>> {
+        if !has_events_table(&self.conn)? {
+            // A registry from a newer cc-moss, opened read-only, may lack it.
+            return Ok(Vec::new());
+        }
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let select = "SELECT e.seq, e.slot_id, s.name, e.kind, e.detail, e.at
+                        FROM events e LEFT JOIN slots s ON s.slot_id = e.slot_id";
+        let mut rows = match since {
+            Some(since) => {
+                let mut stmt = self.conn.prepare(&format!(
+                    "{select} WHERE e.seq > ?1 ORDER BY e.seq LIMIT ?2"
+                ))?;
+                let rows = stmt.query_map(params![since, limit], read_event)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            }
+            None => {
+                let recent = limit.min(RECENT_EVENTS as i64);
+                let mut stmt = self
+                    .conn
+                    .prepare(&format!("{select} ORDER BY e.seq DESC LIMIT ?1"))?;
+                let rows = stmt.query_map([recent], read_event)?;
+                rows.collect::<rusqlite::Result<Vec<_>>>()?
+            }
+        };
+        rows.sort_by_key(|e| e.seq);
+        Ok(rows)
+    }
+
+    /// The highest sequence number ever handed out, 0 when there is none.
+    /// Pruning does not lower it: SQLite keeps AUTOINCREMENT's high-water
+    /// mark in `sqlite_sequence`.
+    pub fn last_event_seq(&self) -> Result<i64> {
+        if !has_events_table(&self.conn)? {
+            return Ok(0);
+        }
+        let max: i64 =
+            self.conn
+                .query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?;
+        let has_sequence = self
+            .conn
+            .prepare_cached(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'",
+            )?
+            .exists([])?;
+        let high: Option<i64> = if has_sequence {
+            self.conn
+                .query_row(
+                    "SELECT seq FROM sqlite_sequence WHERE name = 'events'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?
+        } else {
+            None
+        };
+        Ok(max.max(high.unwrap_or(0)))
+    }
+}
+
+/// One row of the event stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SessionEvent {
+    /// Increases by one or more with every event; never reused.
+    pub seq: i64,
+    pub slot_id: String,
+    /// The slot's current name.
+    pub name: Option<String>,
+    pub kind: String,
+    pub detail: serde_json::Value,
+    pub at_ms: i64,
+}
+
+fn read_event(r: &rusqlite::Row) -> rusqlite::Result<SessionEvent> {
+    let detail: String = r.get(4)?;
+    Ok(SessionEvent {
+        seq: r.get(0)?,
+        slot_id: r.get(1)?,
+        name: r.get(2)?,
+        kind: r.get(3)?,
+        detail: serde_json::from_str(&detail).unwrap_or_else(|_| serde_json::json!({})),
+        at_ms: r.get(5)?,
+    })
+}
+
+fn has_events_table(conn: &Connection) -> Result<bool> {
+    Ok(conn
+        .prepare_cached("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'events'")?
+        .exists([])?)
+}
+
+fn empty() -> serde_json::Value {
+    serde_json::json!({})
+}
+
+/// The first [`MESSAGE_MAX`] characters of an agent message.
+pub fn truncate_message(message: &str) -> String {
+    message.chars().take(MESSAGE_MAX).collect()
+}
+
+/// Append one event for `slot_id`, in the caller's transaction.
+fn record_event(
+    conn: &Connection,
+    slot_id: &str,
+    kind: &str,
+    detail: &serde_json::Value,
+    at_ms: i64,
+) -> Result<()> {
+    conn.prepare_cached("INSERT INTO events (slot_id, kind, detail, at) VALUES (?1, ?2, ?3, ?4)")?
+        .execute(params![slot_id, kind, detail.to_string(), at_ms])?;
+    Ok(())
+}
+
+/// Record `interrupted` once per interruption, whoever notices it first.
+/// The mark lives on the slot (`lost_reported_at`), not in the events, so
+/// pruning old events does not make an old crash news again; a new process
+/// for the slot (SessionStart, restore, adoption) clears it.
+fn record_interrupted(
+    conn: &Connection,
+    slot_id: &str,
+    detail: &serde_json::Value,
+    at_ms: i64,
+) -> Result<bool> {
+    let fresh = conn.execute(
+        "UPDATE slots SET lost_reported_at = ?2 WHERE slot_id = ?1 AND lost_reported_at IS NULL",
+        params![slot_id, at_ms],
+    )?;
+    if fresh == 0 {
+        return Ok(false);
+    }
+    record_event(conn, slot_id, "interrupted", detail, at_ms)?;
+    Ok(true)
+}
+
+/// Set a slot's name; a change is recorded as `renamed` when `announce`.
+fn rename(conn: &Connection, slot_id: &str, name: &str, announce: bool, at_ms: i64) -> Result<()> {
+    let from: Option<String> = conn
+        .query_row(
+            "SELECT name FROM slots WHERE slot_id = ?1",
+            [slot_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if from.as_deref() == Some(name) {
+        return Ok(());
+    }
+    conn.execute(
+        "UPDATE slots SET name = ?2 WHERE slot_id = ?1",
+        params![slot_id, name],
+    )?;
+    if announce {
+        let detail = serde_json::json!({ "from": from, "to": name });
+        record_event(conn, slot_id, "renamed", &detail, at_ms)?;
+    }
+    Ok(())
+}
+
+fn clear_attention(conn: &Connection, slot_id: &str) -> Result<()> {
+    conn.execute(
+        "UPDATE slots SET attention = NULL WHERE slot_id = ?1 AND attention IS NOT NULL",
+        [slot_id],
+    )?;
+    Ok(())
 }
 
 fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
@@ -515,6 +811,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
                     tmux_socket, tmux_session_id, tmux_session_name, tmux_pane,
                     status, end_reason, created_at, last_active_at, ended_at,
                     note_goal, note_state, note_text, launch_args, restore_started_at, busy, last_prompt,
+                    attention,
                     (SELECT transcript_path FROM slot_sessions ss
                       WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id)
              FROM slots ORDER BY created_at, slot_id",
@@ -553,7 +850,8 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             restore_started_at_ms: r.get(20)?,
             busy: r.get(21)?,
             last_prompt: r.get(22)?,
-            transcript_path: r.get(23)?,
+            attention: r.get(23)?,
+            transcript_path: r.get(24)?,
             created_at_ms: r.get(13)?,
             last_active_at_ms: r.get(14)?,
             ended_at_ms: r.get(15)?,
@@ -606,6 +904,10 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
             "name_scanned_to",
             "name_scanned_to INTEGER NOT NULL DEFAULT 0",
         ),
+        // After 0.1.1: why the session waits for the user, if it does.
+        ("attention", "attention TEXT"),
+        // After 0.1.1: when this slot's current interruption was reported.
+        ("lost_reported_at", "lost_reported_at INTEGER"),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
@@ -614,6 +916,21 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
             // Another process may add it first; that is fine.
             let _ = conn.execute_batch(&format!("ALTER TABLE slots ADD COLUMN {ddl}"));
         }
+    }
+    // After 0.1.1: the event stream. Added without a version bump: 0.1.x reads and
+    // writes the slots as before and simply records no events.
+    if !has_events_table(conn)? {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS events (
+               seq INTEGER PRIMARY KEY AUTOINCREMENT,
+               slot_id TEXT NOT NULL,
+               kind TEXT NOT NULL,
+               detail TEXT NOT NULL DEFAULT '{}',
+               at INTEGER NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS events_slot ON events(slot_id, seq);
+             CREATE INDEX IF NOT EXISTS events_at ON events(at);",
+        )?;
     }
     Ok(())
 }
@@ -678,7 +995,9 @@ fn event_session_id(event: &Event) -> &str {
         Event::Start { session_id, .. }
         | Event::Prompt { session_id, .. }
         | Event::Stop { session_id }
-        | Event::End { session_id, .. } => session_id,
+        | Event::End { session_id, .. }
+        | Event::Attention { session_id, .. }
+        | Event::ToolDone { session_id } => session_id,
     }
 }
 
@@ -839,7 +1158,8 @@ fn touch_and_repair(
         return Ok(());
     }
     conn.execute(
-        "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL, ended_at = NULL
+        "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL, ended_at = NULL,
+           lost_reported_at = NULL
          WHERE slot_id = ?1",
         params![slot_id, pid, ctx.pid_start],
     )?;

@@ -90,3 +90,54 @@ fn current_schema_is_writable() {
     let reg = Registry::open(&path).unwrap();
     assert_eq!(reg.newer_schema(), None);
 }
+
+fn has_table(path: &std::path::Path, name: &str) -> bool {
+    rusqlite::Connection::open(path)
+        .unwrap()
+        .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1")
+        .unwrap()
+        .exists([name])
+        .unwrap()
+}
+
+#[test]
+fn additive_events_keep_version_1() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("registry.db");
+    // A registry as 0.1.x left it: schema 1, no event table, no attention.
+    let mut reg = Registry::open(&path).unwrap();
+    reg.apply(&start("U1"), &ctx()).unwrap();
+    drop(reg);
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch("DROP TABLE events; ALTER TABLE slots DROP COLUMN attention;")
+        .unwrap();
+    assert!(!has_table(&path, "events"));
+    assert_eq!(user_version(&path), 1);
+
+    // The new version fills in what is missing and stays on schema 1.
+    let mut reg = Registry::open(&path).unwrap();
+    assert!(has_table(&path, "events"));
+    assert!(columns(&path).contains(&"attention".to_string()));
+    let ended = Event::End {
+        session_id: "U1".into(),
+        reason: moss_core::event::EndReason::parse("other"),
+    };
+    reg.apply(&ended, &ctx()).unwrap();
+    assert_eq!(reg.events(Some(0), 10).unwrap()[0].kind, "interrupted");
+    drop(reg);
+    assert_eq!(user_version(&path), 1);
+
+    // 0.1.x keeps working on it: its statements name only the old columns.
+    let old = rusqlite::Connection::open(&path).unwrap();
+    old.execute_batch(
+        "UPDATE slots SET busy = 1, last_prompt = 'x', status = 'running';
+         INSERT INTO slots (slot_id, agent, session_id, cwd, status, created_at, last_active_at)
+         VALUES ('S2', 'claude', 'U2', '/work', 'running', 1, 1);",
+    )
+    .unwrap();
+    drop(old);
+    let reg = Registry::open(&path).unwrap();
+    assert_eq!(reg.slots().unwrap().len(), 2);
+    assert_eq!(user_version(&path), 1);
+}

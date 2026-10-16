@@ -15,14 +15,18 @@ pub enum HookKind {
     UserPromptSubmit,
     Stop,
     SessionEnd,
+    Notification,
+    PostToolUse,
 }
 
 impl HookKind {
-    pub const ALL: [HookKind; 4] = [
+    pub const ALL: [HookKind; 6] = [
         HookKind::SessionStart,
         HookKind::UserPromptSubmit,
         HookKind::Stop,
         HookKind::SessionEnd,
+        HookKind::Notification,
+        HookKind::PostToolUse,
     ];
 
     pub fn cli_name(self) -> &'static str {
@@ -31,6 +35,8 @@ impl HookKind {
             HookKind::UserPromptSubmit => "user-prompt-submit",
             HookKind::Stop => "stop",
             HookKind::SessionEnd => "session-end",
+            HookKind::Notification => "notification",
+            HookKind::PostToolUse => "post-tool-use",
         }
     }
 
@@ -44,5 +50,6 @@ pub trait Agent {
     fn name(&self) -> &'static str;
 
     /// Parse one hook payload (the JSON the agent writes to the hook's stdin).
-    fn parse_hook(&self, kind: HookKind, payload: &str) -> Result<Event>;
+    /// `None` when the payload is something cc-moss deliberately ignores.
+    fn parse_hook(&self, kind: HookKind, payload: &str) -> Result<Option<Event>>;
 }

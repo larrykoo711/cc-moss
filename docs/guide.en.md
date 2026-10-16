@@ -29,7 +29,7 @@ cc-moss doctor                           # checks that everything is in place
 
 | Part | What it does |
 |---|---|
-| `hooks` | Four hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` shortcut in `~/.zshrc` |
+| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` shortcut in `~/.zshrc` |
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
@@ -112,6 +112,7 @@ In the picker:
 | `cc-moss` / `cc-moss pick [QUERY]` | Pick a session, an interrupted session or a folder |
 | `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists |
 | `cc-moss ls [--all] [--json]` | List sessions (`--json` for scripts; may still change before 1.0) |
+| `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
 | `cc-moss restore [NAMES] [--dry-run] [--yes]` | Bring interrupted sessions back |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes |
@@ -127,7 +128,7 @@ In the picker:
 
 ```mermaid
 flowchart LR
-    CC["Claude Code"] -- "hooks: start · prompt · stop · end" --> H["cc-moss hook"]
+    CC["Claude Code"] -- "hooks: start · prompt · stop · end · needs you · tool done" --> H["cc-moss hook"]
     H --> DB[("registry<br/>SQLite")]
     A["claude agents"] -. "adopt sessions the hooks missed" .-> DB
     DB --> P["t · picker"]
@@ -140,6 +141,32 @@ Each session gets a record in the registry with its Claude Code session id, fold
 session. A session that disappears without saying goodbye (a crash, a reboot, a killed terminal) is **interrupted**;
 one you end on purpose is **closed** and never offered again. The hook is built to stay out of the way: it finishes in
 a few milliseconds, never blocks a prompt, and does nothing at all if the cc-moss binary is gone.
+
+### Session events
+
+Besides what things look like now, the registry keeps what just happened: a session started, began working, finished
+its turn, needs you, was interrupted, ended, came back, was renamed or closed. Each is one numbered event, kept for 7
+days. `cc-moss events --json` reads them, and `--since <seq>` returns only the newer ones, which suits a menu bar app or
+your own script polling it:
+
+```sh
+cc-moss events --json --since 42
+# {"schema":1,"events":[{"seq":43,"slot_id":"…","name":"api","kind":"needs_you",
+#   "detail":{"reason":"permission","message":"Claude needs your permission"},"at":"2026-10-16T08:00:00Z"}],"last_seq":43}
+```
+
+Pass `last_seq` back as `--since` next time. `kind` is one of `started`, `working`, `finished`, `needs_you`, `renamed`,
+`ended`, `interrupted`, `restored` and `closed`; events never hold your prompts.
+
+**Needs you**: when Claude Code shows a permission prompt, asks a question or waits for input, it sends a notification
+about 6 seconds later. cc-moss records `needs_you`, and the session's `attention` in `ls --json` becomes `permission`,
+`question` or `input`. It clears by itself once you approve (the tool finishes), reply, the turn ends or the session
+exits. cc-moss only takes note: it never answers for you and never holds a prompt back. Claude Code currently reports
+AskUserQuestion as a permission prompt too, so those questions show as `permission`.
+
+The two hooks behind this (`Notification`, `PostToolUse`) came after 0.1.1. Coming from 0.1.1 or earlier,
+`cc-moss doctor` says two hooks are missing; run `cc-moss setup` once to add them. It adds just those two and, as
+always, shows you the diff first.
 
 ### What comes back
 
@@ -163,7 +190,8 @@ They also combine: cc-moss runs inside tmux, so resurrect can keep your other pa
 cc-moss runs locally and sends nothing about you anywhere. It keeps:
 
 - `~/.local/state/cc-moss/registry.db`: for each session, its id, name, folder, launch flags, process id, tmux session,
-  your notes, and the first 200 characters of your latest prompt (shown in the picker).
+  your notes, and the first 200 characters of your latest prompt (shown in the picker); plus the last 7 days of
+  session events, without prompts (a permission prompt's text is kept to 200 characters).
 - `~/.local/state/cc-moss/hook.log`: hook errors, capped at 1 MB.
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
 
@@ -224,6 +252,9 @@ Chinese locales, including Traditional Chinese ones, use the Simplified Chinese 
 **I use bash or fish.** `cc-moss install` still sets up the hooks, tmux and the starship config, and leaves your shell
 files alone: add starship's init line for your shell yourself if you want the prompt. Run `cc-moss pick` (or bind it
 to a key) instead of `t`.
+
+**After upgrading, `doctor` says two hooks are missing.** The new version adds two hooks so it can tell when a session
+is waiting for you. Run `cc-moss setup`: it adds only those two and leaves everything else alone.
 
 **Something isn't being tracked.** Run `cc-moss doctor`: it checks the hooks, tmux, the prompt and the tools, and says
 how to fix each one.

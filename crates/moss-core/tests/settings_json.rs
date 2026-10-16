@@ -4,7 +4,22 @@ use moss_core::settings_json::{install, is_ours, to_claude_string, uninstall};
 use serde_json::{json, Value};
 
 const EXE: &str = "/usr/local/bin/cc-moss";
-const EVENTS: [&str; 4] = ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"];
+const EVENTS: [&str; 6] = [
+    "SessionStart",
+    "UserPromptSubmit",
+    "Stop",
+    "SessionEnd",
+    "Notification",
+    "PostToolUse",
+];
+const NAMES: [&str; 6] = [
+    "session-start",
+    "user-prompt-submit",
+    "stop",
+    "session-end",
+    "notification",
+    "post-tool-use",
+];
 
 fn ours(exe: &str, name: &str) -> Value {
     json!({ "hooks": [{ "type": "command", "command": guarded(exe, name), "timeout": 10 }] })
@@ -20,12 +35,19 @@ fn legacy(exe: &str, name: &str) -> Value {
     json!({ "hooks": [{ "type": "command", "command": format!("{exe} hook {name}"), "timeout": 10 }] })
 }
 
+/// PostToolUse takes a matcher; cc-moss wants every tool.
+fn ours_for_all_tools(exe: &str, name: &str) -> Value {
+    json!({ "matcher": "*", "hooks": [{ "type": "command", "command": guarded(exe, name), "timeout": 10 }] })
+}
+
 fn expected_hooks(exe: &str) -> Value {
     json!({
         "SessionStart": [ours(exe, "session-start")],
         "UserPromptSubmit": [ours(exe, "user-prompt-submit")],
         "Stop": [ours(exe, "stop")],
         "SessionEnd": [ours(exe, "session-end")],
+        "Notification": [ours(exe, "notification")],
+        "PostToolUse": [ours_for_all_tools(exe, "post-tool-use")],
     })
 }
 
@@ -62,7 +84,10 @@ fn keeps_foreign_hooks_on_same_event() {
     let before = json!({ "hooks": { "Stop": [foreign()], "PostToolUse": [foreign()] } });
     let got = install(&before, EXE).unwrap();
     assert_eq!(got["hooks"]["Stop"], json!([foreign(), ours(EXE, "stop")]));
-    assert_eq!(got["hooks"]["PostToolUse"], json!([foreign()]));
+    assert_eq!(
+        got["hooks"]["PostToolUse"],
+        json!([foreign(), ours_for_all_tools(EXE, "post-tool-use")])
+    );
     assert_eq!(
         keys(&got["hooks"]),
         [
@@ -70,7 +95,8 @@ fn keeps_foreign_hooks_on_same_event() {
             "PostToolUse",
             "SessionStart",
             "UserPromptSubmit",
-            "SessionEnd"
+            "SessionEnd",
+            "Notification",
         ]
     );
 }
@@ -82,11 +108,7 @@ fn install_is_idempotent_and_upgrades_path() {
 
     let new_exe = "/Users/me/My Tools/cc-moss";
     let upgraded = install(&once, new_exe).unwrap();
-    for (event, name) in
-        EVENTS
-            .iter()
-            .zip(["session-start", "user-prompt-submit", "stop", "session-end"])
-    {
+    for (event, name) in EVENTS.iter().zip(NAMES) {
         let groups = upgraded["hooks"][event].as_array().unwrap();
         let ours_here: Vec<&Value> = groups
             .iter()
@@ -229,6 +251,8 @@ fn setup_upgrades_unguarded_hooks_in_place() {
         "UserPromptSubmit": [legacy(EXE, "user-prompt-submit")],
         "Stop": [user.clone(), legacy(EXE, "stop")],
         "SessionEnd": [legacy(EXE, "session-end")],
+        "Notification": [legacy(EXE, "notification")],
+        "PostToolUse": [{ "matcher": "*", "hooks": [{ "type": "command", "command": format!("{EXE} hook post-tool-use"), "timeout": 10 }] }],
     } });
     let upgraded = install(&old, EXE).unwrap();
     let mut want = json!({ "hooks": expected_hooks(EXE) });
@@ -290,4 +314,40 @@ fn stable_exe_prefers_the_path_entry_for_the_same_file() {
         real,
         "relative PATH entries are ignored"
     );
+}
+
+#[test]
+fn new_hooks_added_to_an_older_install() {
+    use moss_core::agent::HookKind;
+    use moss_core::settings_json::missing_hooks;
+    // What 0.1.x wrote: the first four hooks only.
+    let mut old = install(&json!({ "hooks": { "Stop": [foreign()] } }), EXE).unwrap();
+    let hooks = old["hooks"].as_object_mut().unwrap();
+    hooks.shift_remove("Notification");
+    hooks.shift_remove("PostToolUse");
+    assert_eq!(
+        missing_hooks(&old),
+        [HookKind::Notification, HookKind::PostToolUse]
+    );
+
+    let new = install(&old, EXE).unwrap();
+    assert!(missing_hooks(&new).is_empty());
+    for event in ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"] {
+        assert_eq!(
+            new["hooks"][event], old["hooks"][event],
+            "{event} untouched"
+        );
+    }
+    assert_eq!(
+        new["hooks"]["Notification"],
+        json!([ours(EXE, "notification")])
+    );
+    assert_eq!(
+        new["hooks"]["PostToolUse"],
+        json!([ours_for_all_tools(EXE, "post-tool-use")])
+    );
+    assert_eq!(missing_hooks(&json!({})).len(), HookKind::ALL.len());
+    // A user's own Notification hook does not count as ours.
+    let users = json!({ "hooks": { "Notification": [foreign()] } });
+    assert!(missing_hooks(&users).contains(&HookKind::Notification));
 }

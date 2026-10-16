@@ -37,6 +37,76 @@ fn hook_p95_under_30ms() {
     assert!(p95.as_millis() < 30, "p95 {p95:?} over 30ms budget");
 }
 
+fn p95(mut samples: Vec<std::time::Duration>) -> std::time::Duration {
+    samples.sort();
+    samples[samples.len() * 95 / 100]
+}
+
+/// Time one hook call.
+fn timed(dir: &std::path::Path, event: &str, payload: &str) -> std::time::Duration {
+    let t = Instant::now();
+    let out = hook(dir, event, payload, Some(std::process::id()));
+    let took = t.elapsed();
+    assert!(out.status.success());
+    took
+}
+
+fn permission_prompt() -> String {
+    serde_json::json!({ "session_id": "P", "hook_event_name": "Notification",
+        "message": "Claude needs your permission", "notification_type": "permission_prompt" })
+    .to_string()
+}
+
+/// PostToolUse runs after every tool call. Usually there is no mark to
+/// clear (read only); after a permission prompt there is (one write).
+#[test]
+#[ignore]
+fn post_tool_use() {
+    let dir = tempfile::tempdir().unwrap();
+    timed(
+        dir.path(),
+        "session-start",
+        &start_json("P", "startup", Some("perf")),
+    );
+    let payload = serde_json::json!({ "session_id": "P", "hook_event_name": "PostToolUse",
+        "tool_name": "Bash", "tool_input": { "command": "ls" },
+        "tool_response": { "stdout": "x".repeat(4000) } })
+    .to_string();
+    let idle: Vec<_> = (0..200)
+        .map(|_| timed(dir.path(), "post-tool-use", &payload))
+        .collect();
+    let clearing: Vec<_> = (0..100)
+        .map(|_| {
+            timed(dir.path(), "notification", &permission_prompt());
+            timed(dir.path(), "post-tool-use", &payload)
+        })
+        .collect();
+    let (idle, clearing) = (p95(idle), p95(clearing));
+    eprintln!("post-tool-use p95: nothing to clear={idle:?} clearing={clearing:?}");
+    assert!(idle.as_millis() < 30, "p95 {idle:?} over 30ms budget");
+    assert!(
+        clearing.as_millis() < 30,
+        "p95 {clearing:?} over 30ms budget"
+    );
+}
+
+#[test]
+#[ignore]
+fn notification() {
+    let dir = tempfile::tempdir().unwrap();
+    timed(
+        dir.path(),
+        "session-start",
+        &start_json("P", "startup", Some("perf")),
+    );
+    let samples: Vec<_> = (0..200)
+        .map(|_| timed(dir.path(), "notification", &permission_prompt()))
+        .collect();
+    let p = p95(samples);
+    eprintln!("notification p95={p:?}");
+    assert!(p.as_millis() < 30, "p95 {p:?} over 30ms budget");
+}
+
 #[test]
 #[ignore]
 fn hook_p95_in_tmux_under_30ms() {

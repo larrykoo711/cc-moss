@@ -54,6 +54,9 @@ pub struct Slot {
     pub transcript_path: Option<String>,
     /// Between a prompt and the end of Claude's reply.
     pub busy: bool,
+    /// Why the session waits for the user (`permission`, `question`,
+    /// `input`), set by a Notification and cleared once it moves on.
+    pub attention: Option<String>,
     /// First line of the last prompt, for previews.
     pub last_prompt: Option<String>,
     /// When `cc-moss restore` last started this slot; cleared by SessionStart.
