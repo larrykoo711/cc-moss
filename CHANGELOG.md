@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-16
+
 ### Changed
 
 - The picker's menu, note box and "end it?" question open right under the session card, where "↵ Open  → More"
@@ -53,5 +55,6 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/larrykoo711/cc-moss/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/larrykoo711/cc-moss/releases/tag/v0.1.0
