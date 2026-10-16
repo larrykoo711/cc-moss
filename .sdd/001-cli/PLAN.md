@@ -216,6 +216,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- CHANGE 2026-10-16 发版自动更新公式改用 deploy key（用户授权「你来搞定」）：homebrew-tap 加一把只对该仓可写的 deploy key，私钥存为 cc-moss 机密 `TAP_DEPLOY_KEY`（本地私钥已删）；比 PAT 范围小、不过期、不挂个人账号。用该私钥实推临时分支再删除，验证可写。release.yml 用 `ssh-key` 检出 tap；同版本重跑不再产生空提交
 - E2E 2026-10-16 v0.1.0 发布：main c3276d3 CI 双平台绿 → tag v0.1.0 → release.yml 四目标构建、校验和、第三方许可证、GitHub Release（说明取自 CHANGELOG）全部成功；无 TAP_TOKEN 时按设计跳过公式更新，公式由 controller 用 SHA256SUMS 渲染推到 tap（brew audit --strict --online 通过）。验收：3 台 macOS 经私有同步脚本改为 brew 安装（先改钩子再停用旧副本），doctor 全绿、`update --check` 真实联网判定最新、运行中 tmux 已重载；干净 Linuxbrew x86_64（brew update 后）`brew install` → `--version` → `update --check` → `brew test` 全过；arm64 Linux 的 Homebrew 不受支持（Homebrew 自身报错），README 注明用 Release 二进制
 - AMEND 2026-10-16 T4.2: 「发版后从旧版本真实升级」改为 deliberately_skipped——0.1.0 是首个带升级功能的版本，无更旧版本可升；以真实网络 `update --check` 替代，完整升级在 0.1.1 补做 approved-by=controller（用户要求赶在首发带上升级功能，此项客观上发版前不可验）
 - REVIEW 2026-10-16 T4.2 安全向独立评审：高 1（sudo 升级时 tar 还原构建机 uid，新二进制归属本机其他用户）、中 4（brew/cargo 没升也报成功；tmux 弹窗里结果一闪而过；Ctrl-D 被当成「是」；测试用环境变量在正式版生效）、低 8。已修：tar 不还原属主 + 新文件沿用旧属主 + release 包属主为 0；下载包里的符号链接在执行前拒绝；包管理器升级后核对版本；EOF 不算同意；选择器升级后等回车；两个覆盖变量只在 debug 构建生效；预发布标签发成 pre-release；预发布 crate 版本不再 panic。未修（低）：Ctrl-C 残留临时目录、配置解析失败时 doctor 仍联网、doctor 检查会阻塞约 4 秒的措辞。真实 GitHub `releases/latest` 跳转格式已用公开仓库核实；无 Release 时不带 tag 的跳转按「未知」处理。release.yml 缺 TAP_TOKEN 时跳过公式更新并提示
