@@ -95,6 +95,8 @@ enum PetBench {
 
     @MainActor static func probe(args: [String]) {
         let mode = value(args, "--pet-probe").flatMap(PetClickThrough.init) ?? .alpha
+        // One line at a time, also when the output goes to a file or a pipe.
+        setvbuf(stdout, nil, _IOLBF, 0)
         let app = NSApplication.shared
         app.setActivationPolicy(.accessory)
         guard let screen = NSScreen.main else { exit(1) }

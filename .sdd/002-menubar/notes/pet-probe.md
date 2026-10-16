@@ -19,6 +19,7 @@
 - 为此留了一个给人用的探针：`CCMoss --pet-probe [alpha|toggle]` 在屏幕中间开一个普通窗口，把小莫叠在它上面，终端打印每次点击落在哪里（`BELOW click at x,y` / `MO click`）。在小莫方框的四个透明角、天线两侧各点几下即可判定
 - 判定规则：`alpha` 下透明角的点击全部打印 `BELOW` → 保持默认；有任何一次被吞掉（两边都不打印）或落到 `MO` → 把默认改成 `toggle`（`PetClickThrough.current` 一行），并把这里的结论改写
 - 主控真机待测：`--pet-probe alpha` 一次、`--pet-probe toggle` 一次，结果追加到本节
+- 2026-10-17 主控真机实测 `alpha`：四个透明角与天线两侧 6 次点击全部 `BELOW`，身体上为 `MO click` → 默认保持 `alpha`，`toggle` 不再需要测。探针输出改为按行刷新（重定向到文件时也能实时看）
 
 ## 开销（离屏，本进程）
 

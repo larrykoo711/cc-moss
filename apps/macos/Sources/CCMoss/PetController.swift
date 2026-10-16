@@ -482,7 +482,7 @@ final class PetController {
             return
         }
         switch count {
-        case 1:
+        case 0, 1: // 0: a click that wasn't counted (synthesized, or from accessibility)
             // Holding a message: the click opens it; otherwise the panel, as always.
             switch director.click(at: now) {
             case .showBox: show()
