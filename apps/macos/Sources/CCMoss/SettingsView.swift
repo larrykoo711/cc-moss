@@ -71,7 +71,8 @@ struct SettingsView: View {
             case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese terminal ghostty iterm wezterm kitty alacritty",
                                        "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
-            case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active", "宠物 桌面 小伙伴 大小 互动 安静 日常 积极")]
+            case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
+                                       "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
             case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
                                              "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]

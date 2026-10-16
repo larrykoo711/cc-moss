@@ -67,12 +67,17 @@ final class PetController {
     /// The right-click bubble is open, and what closes it on a click elsewhere.
     private var menuOpen = false
     private var menuMonitors: [Any] = []
+    /// Mo's voice (T3.4): off, a chime or a spoken title, by Settings › Mo › Voice.
+    private let voice: VoiceOutput
+    private var announcer = VoiceAnnouncer()
 
-    init(model: AppModel, showPanel: @escaping () -> Void, defaults: UserDefaults = .standard, offScreen: Bool = false) {
+    init(model: AppModel, showPanel: @escaping () -> Void, defaults: UserDefaults = .standard, offScreen: Bool = false,
+         voice: VoiceOutput? = nil) {
         self.model = model
         self.showPanel = showPanel
         self.defaults = defaults
         self.offScreen = offScreen
+        self.voice = voice ?? Speaker.shared
         NotificationCenter.default.addObserver(forName: Self.settingsChanged, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated { self?.sync() }
         }
@@ -99,8 +104,23 @@ final class PetController {
         onAlert?(alert)
         guard window != nil else { return }
         director.doNotDisturb = doNotDisturbUntil != nil
-        if director.take(alert, at: now) { view?.flashLamp() }
+        if director.take(alert, at: now) {
+            view?.flashLamp()
+            sound(alert.kind)
+        }
         show()
+    }
+
+    /// Mo just hinted at something new: maybe say its title, or chime
+    /// (DESIGN-pet §6.4). Only alerts routed to Mo get here; Notification
+    /// Center makes its own sound. The bench never makes a sound.
+    private func sound(_ kind: AlertKind) {
+        guard !offScreen, let message = director.message else { return }
+        announcer.announce(kind: kind, phrase: VoicePolicy.phrase(message, names: names(message)),
+                           mode: director.mode, voice: VoiceMode(defaults: defaults),
+                           doNotDisturb: doNotDisturbUntil != nil,
+                           storedVoice: defaults.string(forKey: VoicePicker.key),
+                           installed: { Speaker.installedVoices() }, at: now, to: voice)
     }
 
     static func enabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: enabledKey) }

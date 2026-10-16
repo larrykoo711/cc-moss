@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
-///          [--settings general|menuBar|mo|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable]]
+///          [--settings general|menuBar|mo|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -88,6 +88,15 @@ enum Render {
                 let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
                     .flatMap { try? AliasList.decode($0) }
                 let page = SettingsView.Tab(rawValue: tab) ?? .general
+                // `--pet-on`: show the Mo page as it looks with Mo switched on. The
+                // registration domain lives only in this process; nothing is saved.
+                if args.contains("--pet-on") {
+                    UserDefaults.standard.register(defaults: [PetController.enabledKey: true])
+                }
+                // `--voice off|chime|speak`: the voice card's mode, the same way.
+                if let voice = value("--voice") {
+                    UserDefaults.standard.register(defaults: [VoiceMode.key: voice])
+                }
                 // `--auth allowed|denied|unavailable`: the notifications page's permission row.
                 NotificationStatus.shared.auth = switch value("--auth") {
                 case "allowed": .allowed
@@ -95,7 +104,8 @@ enum Render {
                 case "unavailable": .unavailable
                 default: .notDetermined
                 }
-                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"), out: out)
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"),
+                             height: value("--height").flatMap(Double.init), out: out)
             } else {
                 draw(model: model, dark: args.contains("--dark"), actions: args.contains("--actions"), out: out)
             }
@@ -284,17 +294,26 @@ enum Render {
         app.run()
     }
 
-    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool, out: String) {
+    /// `height`: a taller window than the default, to see a long page whole.
+    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool,
+                                                height: Double?, out: String) {
         let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
-        let size = host.fittingSize
+        var size = host.fittingSize
+        if let height { size.height = max(size.height, height) }
         host.frame = NSRect(origin: .zero, size: size)
         let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+        if height != nil, window.frame.size != size {
+            // The settings window fits itself to its usual size once shown; stretch it back.
+            window.setContentSize(size)
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
