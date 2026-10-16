@@ -122,6 +122,7 @@ struct StateFilterBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .focusable(false)
         .help(seg.title)
         .accessibilityLabel(seg.count.map { "\(seg.title) \($0)" } ?? seg.title)
         .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
@@ -283,6 +284,7 @@ struct GuideCard: View {
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
             }
             .buttonStyle(.plain)
+        .focusable(false)
             .help(L.t("Copy", "复制"))
         }
         .padding(28)
@@ -315,6 +317,7 @@ struct ActionsMenu: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+        .focusable(false)
                 .onHover { if $0 { hovered = a.id } }
             }
         }

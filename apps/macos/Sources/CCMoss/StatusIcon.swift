@@ -77,6 +77,7 @@ struct LogoButton: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .focusable(false)
         .onHover { inside in
             if inside { start = Date() }
             withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
@@ -117,6 +118,7 @@ struct PillButton<Label: View>: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .focusable(false)
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }
 }

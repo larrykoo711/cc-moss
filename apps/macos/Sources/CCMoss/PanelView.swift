@@ -31,6 +31,9 @@ struct PanelView: View {
             actionBar
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        // Keyboard focus lives in the search field; buttons never take it,
+        // so no focus ring lands on the filter or the action pill.
+        .focusEffectDisabled()
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
