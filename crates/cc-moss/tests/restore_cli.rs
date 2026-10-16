@@ -129,3 +129,124 @@ fn a_claude_that_exits_at_once_is_not_counted_as_restored() {
     let again = run(&w, &["restore", "--dry-run"]);
     assert!(String::from_utf8_lossy(&again.stdout).contains("would restore 1"));
 }
+
+fn restore_json(w: &World, names: &[&str]) -> serde_json::Value {
+    let out = w
+        .cc_moss()
+        .args(["restore", "--yes", "--json"])
+        .args(names)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    serde_json::from_slice(&out.stdout).expect("restore --json is valid JSON")
+}
+
+#[test]
+fn json_reports_each_result() {
+    let (w, _) = interrupted_world("json-each");
+    let id = ls_json(&w.state(), false)["sessions"][0]["id"].clone();
+    let v = restore_json(&w, &[]);
+    assert_eq!(v["schema"], 1);
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 1, "{v}");
+    assert_eq!(results[0]["id"], id);
+    assert_eq!(results[0]["name"], "job-a");
+    assert_eq!(results[0]["ok"], true);
+    assert!(results[0].get("reason").is_none(), "{v}");
+    assert_eq!(w.session_names().len(), 1);
+
+    // Named and now running: reported, not restored twice.
+    wait_for(|| (ls_json(&w.state(), false)["sessions"][0]["status"] == "running").then_some(()));
+    let again = restore_json(&w, &["job-a"]);
+    assert_eq!(again["results"][0]["ok"], false, "{again}");
+    assert_eq!(again["results"][0]["reason"], "already_running");
+    assert_eq!(w.session_names().len(), 1);
+}
+
+#[test]
+fn json_empty_session_has_reason_empty() {
+    let w = World::new("json-empty");
+    w.new_session("job-x");
+    w.session_id("job-x");
+    w.tmux(&["kill-server"]);
+    wait_for(|| {
+        (ls_json(&w.state(), false)["sessions"][0]["status"] == "interrupted").then_some(())
+    });
+    let v = restore_json(&w, &[]);
+    let r = &v["results"][0];
+    assert_eq!(r["name"], "job-x");
+    assert_eq!(r["ok"], false);
+    assert_eq!(r["reason"], "empty", "{v}");
+    assert!(r["message"].as_str().is_some_and(|m| !m.is_empty()));
+    assert!(w.session_names().is_empty());
+}
+
+#[test]
+fn json_exit_at_once_and_missing_dir_have_codes() {
+    let (mut w, _) = interrupted_world("json-dies");
+    let dying = w.path("dying-claude");
+    std::fs::write(&dying, "#!/bin/sh\nexit 1\n").unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&dying)
+        .status()
+        .unwrap();
+    w.claude = dying;
+    let out = w
+        .cc_moss()
+        .env("CC_MOSS_STARTUP_GRACE_MS", "5000")
+        .args(["restore", "--yes", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"][0]["reason"], "exited_at_once", "{v}");
+
+    std::fs::remove_dir_all(w.path("work")).unwrap();
+    let v = restore_json(&w, &[]);
+    assert_eq!(v["results"][0]["reason"], "missing_dir", "{v}");
+}
+
+#[test]
+fn json_restores_all_after_a_crash() {
+    let w = World::new("json-crash");
+    for name in ["job-a", "job-b"] {
+        w.new_session(name);
+        let id = w.session_id(name);
+        w.first_prompt(&id, name);
+    }
+    w.tmux(&["kill-server"]);
+    let all = |status: &str| {
+        ls_json(&w.state(), false)["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|s| s["status"] == status)
+    };
+    wait_for(|| all("interrupted").then_some(()));
+    // The very command the app runs for "Bring All Back": every recently
+    // interrupted session by name, after `--`.
+    let v = restore_json(&w, &["--", "job-a", "job-b"]);
+    let results = v["results"].as_array().unwrap();
+    assert_eq!(results.len(), 2, "{v}");
+    assert!(results.iter().all(|r| r["ok"] == true), "{v}");
+    wait_for(|| all("running").then_some(()));
+    assert_eq!(w.session_names().len(), 2);
+}
+
+#[test]
+fn json_leaves_text_output_unchanged() {
+    let (w, _) = interrupted_world("json-text");
+    let out = run(&w, &["restore", "--yes"]);
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(text.contains("Started job-a"), "{text}");
+    assert!(!text.trim_start().starts_with('{'), "{text}");
+}
+
+#[test]
+fn json_needs_yes() {
+    let (w, _) = interrupted_world("json-yes");
+    let out = run(&w, &["restore", "--json"]);
+    assert!(!out.status.success());
+    assert!(w.session_names().is_empty());
+}

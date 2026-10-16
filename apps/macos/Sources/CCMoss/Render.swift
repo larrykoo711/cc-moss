@@ -8,6 +8,7 @@ import SwiftUI
 ///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
+///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--settings general|aliases|about [--aliases <alias ls --json file>]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
@@ -50,6 +51,19 @@ enum Render {
             case "waiting": model.stateFilter = .waiting
             case "interrupted": model.stateFilter = .interrupted
             default: break
+            }
+            if args.contains("--expand-older") { model.olderExpanded = true }
+            switch value("--restore") {
+            case "working": _ = model.restoreFlow.begin(.all(model.restoreGroups.recent.map(\.id)))
+            case "done": model.restoreSummary = RestoreSummary(restored: 2, failed: 0)
+            case "partial": model.restoreSummary = RestoreSummary(restored: 1, failed: 1)
+            default: break
+            }
+            if let failure = value("--failure"), let cut = failure.firstIndex(of: ":") {
+                let id = String(failure[..<cut])
+                let reason = RestoreReason(rawValue: String(failure[failure.index(after: cut)...])) ?? .other
+                _ = model.restoreFlow.begin(.one(id))
+                model.restoreFlow.finish(.one(id), report: RestoreReport(results: [RestoreResult(id: id, name: id, ok: false, reason: reason)]))
             }
             if let id = value("--select") { model.selectedID = id }
             let command = model.selected.map(model.attachCommand) ?? ""

@@ -39,6 +39,15 @@ final class AppModel {
     /// Set when a session could not be opened; the panel shows what to do.
     var openProblem: OpenProblem?
 
+    /// Bringing sessions back: what is in flight and what failed (T1.3).
+    var restoreFlow = RestoreFlow()
+    /// "Brought back N" on the banner, for a moment after bring-all-back.
+    var restoreSummary: RestoreSummary?
+    /// The "stopped earlier" group is open.
+    var olderExpanded = false
+    /// A short line in the action bar after something finished.
+    var notice: String?
+
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
     init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
         self.terminals = terminals ?? TerminalPrefs()
@@ -54,13 +63,15 @@ final class AppModel {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
     }
 
-    /// Projects after the search, in display order.
+    /// Projects after the search, in display order. Sessions that stopped
+    /// long ago are left out: they fold into `olderShown`.
     var projects: [Project] {
-        Filter.apply(query, state: stateFilter, to: Grouping.projects(sessions))
+        Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups.listed(sessions)))
     }
 
-    /// Sessions in the order the arrow keys walk them.
-    var visible: [Session] { projects.flatMap(\.sessions) }
+    /// Sessions in the order the arrow keys walk them (the folded group
+    /// only while it is open).
+    var visible: [Session] { projects.flatMap(\.sessions) + (olderExpanded ? olderShown : []) }
 
     var selected: Session? {
         visible.first { $0.id == selectedID } ?? visible.first
@@ -115,6 +126,7 @@ final class AppModel {
         do {
             let snap = try await client.snapshot()
             sessions = snap.sessions
+            restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }
             if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) { selectFirst() }
@@ -165,7 +177,7 @@ final class AppModel {
 
     /// The command that brings an interrupted session back.
     func restoreCommand(_ s: Session) -> String {
-        LaunchPlan.restoreCommand(cli: cli, handle: s.handle)
+        LaunchPlan.restoreCommand(cli: cli, handle: s.target)
     }
 
     /// Open `s` in the chosen terminal. True when it opened; otherwise

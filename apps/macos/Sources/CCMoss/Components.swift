@@ -172,6 +172,10 @@ struct SessionRow: View {
     /// The row's main action, shown as a button while the row is hovered.
     var action: PanelAction?
     var perform: (PanelAction) -> Void = { _ in }
+    /// Why it could not be brought back; replaces the second line.
+    var problem: String?
+    /// On its way back right now.
+    var restoring = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -191,7 +195,17 @@ struct SessionRow: View {
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
                 }
-                if let sub = session.subtitle {
+                if let problem {
+                    HStack(spacing: 4) {
+                        Image(systemName: Icons.cannotRestore)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.amber)
+                        Text(problem).lineLimit(1).truncationMode(.tail)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .tip(problem)
+                } else if let sub = session.subtitle {
                     HStack(spacing: 4) {
                         Image(systemName: session.subtitleIsNote ? Icons.note : Icons.lastPrompt)
                             .font(.system(size: 10))
@@ -207,8 +221,12 @@ struct SessionRow: View {
                 Text(L.ago(session.lastActiveAt))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
-                    .opacity(action == nil ? 1 : 0)
-                if let action {
+                    .opacity(action == nil && !restoring ? 1 : 0)
+                if restoring {
+                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                        .frame(width: 30, height: 30)
+                        .accessibilityLabel(L.t("Bringing it back", "正在找回"))
+                } else if let action {
                     RowActionButton(action: action, perform: perform)
                         .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }

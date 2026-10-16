@@ -113,7 +113,7 @@ In the picker:
 | `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists |
 | `cc-moss ls [--all] [--json]` | List sessions (`--json` for scripts; may still change before 1.0) |
 | `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
-| `cc-moss restore [NAMES] [--dry-run] [--yes]` | Bring interrupted sessions back |
+| `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes |
 | `cc-moss close NAMES` | Stop offering sessions for restore |

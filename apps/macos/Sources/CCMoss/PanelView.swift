@@ -27,6 +27,12 @@ struct PanelView: View {
                     .padding(.horizontal, 10)
                     .padding(.top, 10)
                     .padding(.bottom, 2)
+                if RestoreBanner.shows(model) {
+                    RestoreBanner(model: model)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -55,6 +61,7 @@ struct PanelView: View {
         }
         .animation(.easeOut(duration: 0.12), value: showActions)
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
+        .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true
@@ -136,7 +143,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty:
+        case .ready where model.projects.isEmpty && model.olderShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -155,25 +162,12 @@ struct PanelView: View {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
-                        ForEach(project.sessions) { s in
-                            // A click only selects; opening is deliberate: the
-                            // button that appears at the end of the hovered row,
-                            // the action pill below, or Return (user 2026-10-16).
-                            SessionRow(session: s, selected: s.id == model.selected?.id,
-                                       action: s.id == hoveredID ? primaryAction : nil,
-                                       perform: { perform($0) })
-                                .id(s.id)
-                                .contentShape(Rectangle())
-                                .onHover { inside in
-                                    if inside {
-                                        hoveredID = s.id
-                                        model.selectedID = s.id
-                                    } else if hoveredID == s.id {
-                                        hoveredID = nil
-                                    }
-                                }
-                                .onTapGesture { model.selectedID = s.id }
-                                .handCursor()
+                        ForEach(project.sessions) { s in row(s) }
+                    }
+                    if !model.olderShown.isEmpty {
+                        OlderGroupHeader(model: model)
+                        if model.olderExpanded {
+                            ForEach(model.olderShown) { s in row(s) }
                         }
                     }
                 }
@@ -188,6 +182,29 @@ struct PanelView: View {
         }
     }
 
+    private func row(_ s: Session) -> some View {
+        // A click only selects; opening is deliberate: the button that
+        // appears at the end of the hovered row, the action pill below, or
+        // Return (user 2026-10-16).
+        SessionRow(session: s, selected: s.id == model.selected?.id,
+                   action: s.id == hoveredID ? primaryAction : nil,
+                   perform: { perform($0) },
+                   problem: model.restoreProblem(s),
+                   restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
+            .id(s.id)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                if inside {
+                    hoveredID = s.id
+                    model.selectedID = s.id
+                } else if hoveredID == s.id {
+                    hoveredID = nil
+                }
+            }
+            .onTapGesture { model.selectedID = s.id }
+            .handCursor()
+    }
+
     // MARK: Action bar
 
     private var actionBar: some View {
@@ -196,6 +213,14 @@ struct PanelView: View {
                 Label(toast, systemImage: Icons.copied)
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.green)
+                    .transition(.opacity)
+            } else if let notice = model.notice {
+                Text(notice)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .tip(notice)
                     .transition(.opacity)
             } else {
                 LogoButton(version: model.version) { showSettings() }
@@ -234,6 +259,7 @@ struct PanelView: View {
         .padding(.trailing, 8)
         .frame(height: 46)
         .animation(.easeOut(duration: 0.15), value: toast)
+        .animation(.easeOut(duration: 0.15), value: model.notice)
     }
 
     // MARK: Actions
@@ -241,11 +267,19 @@ struct PanelView: View {
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
         if s.state == .interrupted {
-            // T1.3 turns this into a one-click restore.
-            return PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "↵",
-                               help: L.t("This session stopped. Paste the command in a terminal to bring it back.",
-                                         "这个会话断了。把命令贴进终端，就能把它找回来。")) {
-                copy(model.restoreCommand(s))
+            if model.restoreIsHopeless(s) {
+                // Nothing to bring back: offer to stop reminding instead.
+                return PanelAction(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, shortcut: "↵",
+                                   help: L.t("Never offer this one for restore again. `cc-moss ls --all` still lists it.",
+                                             "以后不再提示找回它；`cc-moss ls --all` 里仍然看得到。")) {
+                    model.close([s])
+                }
+            }
+            return PanelAction(title: model.restoreFlow.isRunning(s.id) ? L.t("Bringing Back…", "正在找回…") : L.t("Bring Back", "找回"),
+                               icon: Icons.restore, shortcut: "↵",
+                               help: L.t("Restart it in tmux, right where the conversation left off.",
+                                         "在 tmux 里把它重新开起来，接着上次的对话。")) {
+                model.restore(s)
             }
         }
         if !s.inTmux {
@@ -271,7 +305,12 @@ struct PanelView: View {
             list.append(primary)
         }
         if let s = model.selected, model.phase == .ready {
-            if s.inTmux || s.state == .interrupted {
+            if s.state == .interrupted {
+                // The way back that needs no app: paste it in a terminal.
+                list.append(PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                    copy(model.restoreCommand(s))
+                })
+            } else if s.inTmux {
                 list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
                     copy(model.attachCommand(s))
                 })
@@ -346,7 +385,7 @@ struct PanelView: View {
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):
-            if let s = model.selected { copy(model.attachCommand(s)) }
+            if let s = model.selected { copy(s.state == .interrupted ? model.restoreCommand(s) : model.attachCommand(s)) }
         default: return .ignored
         }
         return .handled

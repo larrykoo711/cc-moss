@@ -69,6 +69,7 @@ struct LogoButton: View {
                 }
                 Text("cc-moss \(version)")
                     .font(.system(size: 12))
+                    .lineLimit(1)
                     .foregroundStyle(hovering ? .primary : .secondary)
             }
             .padding(.horizontal, 6)
