@@ -124,6 +124,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("alias rm", "name", "要删除的别名"),
     ("update", "", "看看 cc-moss 有没有新版本，有就装上"),
     ("update", "check", "只看看，不做任何改动"),
+    (
+        "update",
+        "json",
+        "配合 --check：把结果按 JSON 输出（给菜单栏 App 用）",
+    ),
     ("update", "yes", "不问直接升级"),
     ("pick", "", "选择会话、中断的会话或目录（就是 `t`）"),
     ("pick", "query", "打开时先搜这个，比如 `cc-moss pick api`"),

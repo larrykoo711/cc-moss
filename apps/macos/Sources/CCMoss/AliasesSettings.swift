@@ -184,7 +184,7 @@ struct AliasesSettings: View {
                         SoftButton(title: L.t("Use It Anyway", "坚持用这个名字"), icon: "exclamationmark.arrow.triangle.2.circlepath") {
                             save(id, force: true)
                         }
-                        .help(L.t("Your alias will run instead of that command whenever ~/.local/bin comes first on PATH.",
+                        .tip(L.t("Your alias will run instead of that command whenever ~/.local/bin comes first on PATH.",
                                   "只要 ~/.local/bin 在 PATH 里排得更靠前，敲这个名字就会运行你的别名而不是那个命令。"))
                     }
                 }
@@ -313,7 +313,7 @@ struct AliasRow: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
-                .help(L.t("Click to edit", "点一下就能改"))
+                .tip(L.t("Click to edit", "点一下就能改"))
                 StatusLabel(alias: alias)
                     .frame(width: AliasesSettings.statusWidth, alignment: .leading)
                 IconButton(symbol: "trash", help: L.t("Remove \(alias.name)", "删除 \(alias.name)"), action: onDelete)
@@ -352,7 +352,7 @@ struct StatusLabel: View {
             Text(word).foregroundStyle(alias.status.isFine ? .secondary : .primary)
         }
         .font(.system(size: 12))
-        .help(help)
+        .tip(help)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(help)
     }
@@ -412,7 +412,7 @@ struct IconButton: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
-        .help(help)
+        .tip(help)
         .accessibilityLabel(help)
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }

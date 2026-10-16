@@ -124,7 +124,7 @@ struct StateFilterBar: View {
         .buttonStyle(.plain)
         .handCursor()
         .focusable(false)
-        .help(seg.title)
+        .tip(seg.title)
         .accessibilityLabel(seg.count.map { "\(seg.title) \($0)" } ?? seg.title)
         .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
     }
@@ -153,7 +153,7 @@ struct SectionHeader: View {
                 Image(systemName: Icons.worktree)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .help(L.t("A git worktree of \((project.worktree!.repo as NSString).lastPathComponent)",
+                    .tip(L.t("A git worktree of \((project.worktree!.repo as NSString).lastPathComponent)",
                               "\((project.worktree!.repo as NSString).lastPathComponent) 的 git worktree"))
                     .accessibilityLabel("git worktree")
             }
@@ -161,7 +161,7 @@ struct SectionHeader: View {
         .padding(.horizontal, 10)
         .padding(.top, 12)
         .padding(.bottom, 4)
-        .help(project.path)
+        .tip(project.path)
     }
 }
 
@@ -186,7 +186,7 @@ struct SessionRow: View {
                         Image(systemName: Icons.outsideTmux)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.tertiary)
-                            .help(L.t("Not in tmux: started outside tmux, so it can't be opened from here.",
+                            .tip(L.t("Not in tmux: started outside tmux, so it can't be opened from here.",
                                       "不在 tmux 里：它不是在 tmux 里开的，没法从这里打开。"))
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
@@ -244,7 +244,7 @@ struct SessionRow: View {
             }
         }
         .frame(width: 24, height: 24)
-        .help(label)
+        .tip(label)
         .accessibilityLabel(label)
     }
 }
@@ -298,7 +298,7 @@ struct GuideCard: View {
             .buttonStyle(.plain)
         .handCursor()
         .focusable(false)
-            .help(L.t("Copy", "复制"))
+            .tip(L.t("Copy", "复制"))
         }
         .padding(28)
     }
@@ -414,7 +414,7 @@ struct RowActionButton: View {
         .buttonStyle(PressStyle())
         .focusable(false)
         .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
-        .help(action.help ?? action.title)
+        .tip(action.help ?? action.title)
         .accessibilityLabel(action.title)
     }
 }

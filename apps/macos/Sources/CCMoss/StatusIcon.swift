@@ -82,7 +82,7 @@ struct LogoButton: View {
             if inside { start = Date() }
             withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
         }
-        .help(L.t("Settings", "设置"))
+        .tip(L.t("Settings", "设置"))
         .accessibilityLabel(L.t("cc-moss settings", "cc-moss 设置"))
     }
 }

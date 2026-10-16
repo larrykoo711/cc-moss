@@ -212,7 +212,7 @@ struct PanelView: View {
                             KeyCap(text: "↵", lit: litKey == "↵")
                         }
                     }
-                    .help(primary.help ?? primary.title)
+                    .tip(primary.help ?? primary.title)
                     Rectangle().fill(Theme.hairline(scheme)).frame(width: 1, height: 16)
                 }
                 PillButton(action: { showActions.toggle() }) {
@@ -250,7 +250,7 @@ struct PanelView: View {
         }
         if !s.inTmux {
             // An attach command is no use for it; its folder is (user 2026-10-16).
-            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: "↵",
+            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copy, shortcut: "↵",
                                help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
                                          "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。")) {
                 copy(s.cwd)

@@ -87,7 +87,7 @@ struct OpenProblemCard: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(PressStyle())
-                .help(L.t("Dismiss (Esc)", "关闭（Esc）"))
+                .tip(L.t("Dismiss (Esc)", "关闭（Esc）"))
                 .accessibilityLabel(L.t("Dismiss", "关闭"))
             }
             HStack(spacing: 8) {

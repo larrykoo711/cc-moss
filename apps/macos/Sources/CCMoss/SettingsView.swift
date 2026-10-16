@@ -142,7 +142,7 @@ struct SettingsView: View {
                     }
                     .buttonStyle(PressStyle())
                     .focusable(false)
-                    .help(L.t("Clear", "清空"))
+                    .tip(L.t("Clear", "清空"))
                 }
             }
             .padding(.horizontal, 12)
@@ -205,10 +205,10 @@ struct NavCapsule: View {
     var body: some View {
         HStack(spacing: 0) {
             arrow("chevron.left", enabled: canGoBack, action: goBack)
-                .help(L.t("Back", "后退"))
+                .tip(L.t("Back", "后退"))
             Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 16)
             arrow("chevron.right", enabled: canGoForward, action: goForward)
-                .help(L.t("Forward", "前进"))
+                .tip(L.t("Forward", "前进"))
         }
         .frame(height: 32)
         .glassPanel(cornerRadius: 16)
@@ -403,7 +403,7 @@ struct GeneralSettings: View {
                 HStack(spacing: 8) {
                     if UserDefaults.standard.string(forKey: "cliPath") != nil {
                         SoftButton(title: L.t("Automatic", "自动"), icon: "arrow.uturn.backward") { set(nil) }
-                            .help(L.t("Find it in the usual places again", "重新在常见位置自动找"))
+                            .tip(L.t("Find it in the usual places again", "重新在常见位置自动找"))
                     }
                     SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
                 }
@@ -531,7 +531,7 @@ struct AboutSettings: View {
                         Label(L.t("Versions differ", "版本不一致"), systemImage: "exclamationmark.triangle.fill")
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(Theme.amber)
-                            .help(L.t("The app and the cc-moss command should be the same version. Updating fixes it.",
+                            .tip(L.t("The app and the cc-moss command should be the same version. Updating fixes it.",
                                       "App 和 cc-moss 命令应该是同一个版本，升级一下就好。"))
                     }
                 }
@@ -667,7 +667,6 @@ struct LinkRow: View {
         .buttonStyle(PressStyle())
         .focusable(false)
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
-        .help(url)
     }
 }
 
