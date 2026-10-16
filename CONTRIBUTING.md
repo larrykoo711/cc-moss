@@ -49,7 +49,7 @@ The hook latency test is opt-in: `cargo test --release -p cc-moss --test hook_pe
 ## House rules
 
 - **Two languages.** Every user-facing string has an English and a Simplified Chinese version (the `tr!(en, zh)`
-  macro). README changes go into both `README.md` and `README.zh-CN.md`. If you only speak one of them, say so in the
+  macro). README changes go into both `README.md` (Chinese) and `README.en.md` (English), and the same for the guide in `docs/`. If you only speak one of them, say so in the
   PR and we will fill in the other.
 - **Tests come with the change.** Behaviour changes need a test, and bug fixes need a test that failed before the fix.
 - **Never touch the real world in tests.** Use the isolated tmux socket and temporary `HOME` helpers in `tests/common`.

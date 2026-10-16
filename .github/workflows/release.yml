@@ -83,7 +83,7 @@ jobs:
           # A dry run of a branch like feature/x must not put a slash in the name.
           name="cc-moss-${TAG//\//-}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/cc-moss" LICENSE THIRD-PARTY-LICENSES.toml README.md README.zh-CN.md CHANGELOG.md "dist/$name/"
+          cp "target/${{ matrix.target }}/release/cc-moss" LICENSE THIRD-PARTY-LICENSES.toml README.md README.en.md CHANGELOG.md "dist/$name/"
           # Owner 0 in the archive: an extraction under sudo must not hand the
           # binary to whichever local user shares the build machine's uid.
           if tar --version 2>/dev/null | grep -q GNU; then

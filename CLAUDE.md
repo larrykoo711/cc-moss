@@ -22,7 +22,8 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 
 - Everything in this repo is public: no hostnames, private IPs, account names or credentials, including in `.sdd/`.
 - Commits: English Conventional Commits, one subject line plus bullet points.
-- README ships in English (`README.md`) and Simplified Chinese (`README.zh-CN.md`); change both together.
+- The README is Chinese first (`README.md`) with an English twin (`README.en.md`); both are short and friendly for everyday
+  users. Commands, settings and internals go in the guide (`docs/guide.md`, `docs/guide.en.md`). Change both languages together.
 - End-to-end tests run against an isolated tmux socket and a temporary `HOME`, never the user's live tmux server or `~/.claude`.
 - Before committing, run what CI runs: `cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all`.
 - Contributor guide: `CONTRIBUTING.md` (English) and `CONTRIBUTING.zh-CN.md`.
