@@ -16,10 +16,14 @@ read_key() { /usr/libexec/PlistBuddy -c "Print :$1" "$plist" 2>/dev/null || true
 
 cargo="$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)"
 [[ -n "$cargo" ]] || fail "no version in $root/Cargo.toml"
-for key in CFBundleShortVersionString CFBundleVersion; do
-  have="$(read_key "$key")"
-  [[ "$have" == "$cargo" ]] || fail "$key is '$have' but Cargo.toml says $cargo"
-done
+# The short version is the whole version (0.2.0-rc.1); CFBundleVersion must
+# be plain numbers, so it is the part before any pre-release suffix (0.2.0).
+have="$(read_key CFBundleShortVersionString)"
+[[ "$have" == "$cargo" ]] || fail "CFBundleShortVersionString is '$have' but Cargo.toml says $cargo"
+build="${cargo%%-*}"
+have="$(read_key CFBundleVersion)"
+[[ "$have" == "$build" ]] || fail "CFBundleVersion is '$have' but should be $build (Cargo.toml says $cargo)"
+[[ "$have" =~ ^[0-9]+(\.[0-9]+)*$ ]] || fail "CFBundleVersion '$have' is not plain numbers"
 [[ "$(read_key CFBundleIdentifier)" == "io.github.larrykoo711.cc-moss" ]] || fail "unexpected CFBundleIdentifier"
 [[ "$(read_key LSUIElement)" == "true" ]] || fail "LSUIElement is not true: the app would show in the Dock"
 icon="$(read_key CFBundleIconFile)"

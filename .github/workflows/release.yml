@@ -115,7 +115,7 @@ jobs:
 
   publish:
     name: GitHub Release
-    needs: build
+    needs: [build, check]
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
     permissions:
@@ -189,13 +189,13 @@ jobs:
           # A re-run of the same release changes nothing: no empty commit.
           git diff --cached --quiet || { git commit -m "cc-moss ${TAG}" && git push; }
 
-  # A dry run checks what a release would ship, without publishing: the
-  # archives carry the app on macOS only, the app's signature survives the
-  # trip, and the formula renders from the checksums.
+  # What a release would ship, checked before anything is published (on a
+  # tag push, publish waits for it; a dry run stops here): the archives
+  # carry the app on macOS only, the app's signature survives the trip, and
+  # the formula renders from the checksums.
   check:
     name: Check the archives and the formula
     needs: build
-    if: github.event_name == 'workflow_dispatch'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
