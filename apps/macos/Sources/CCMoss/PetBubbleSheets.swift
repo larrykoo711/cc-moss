@@ -20,6 +20,16 @@ enum BubbleSheets {
             let scenes = Scenes(dark: dark)
             PetSheets.snapshot(scenes.puffs, dark: dark, to: out("bubbles-puff-\(tag).png"))
             PetSheets.snapshot(scenes.boxes, dark: dark, to: out("bubbles-box-\(tag).png"))
+            // The right-click bubble: busy and resting, above Mo and (at the top of a screen) below.
+            let busy = PetMenu.content(needs: 2, broken: 0, resting: false, tucked: false) { _ in }
+            let resting = PetMenu.content(needs: 0, broken: 0, resting: true, tucked: true) { _ in }
+            PetSheets.snapshot(HStack(alignment: .top, spacing: 28) {
+                PetMenuBubble(greeting: busy.greeting, groups: busy.groups, animate: false)
+                PetMenuBubble(greeting: resting.greeting, groups: resting.groups,
+                              tail: BubbleTail(x: 170, leansRight: false, onTop: true), animate: false)
+            }
+            .padding(30).background(Theme.surface(dark ? .dark : .light).opacity(1)),
+            dark: dark, to: out("bubbles-menu-\(tag).png"))
             // Where you choose the mode: Settings › General › Desktop Pet.
             PetSheets.snapshot(VStack(alignment: .leading, spacing: 0) { PetSettings() }
                 .padding(24).frame(width: 640).background(Theme.surface(dark ? .dark : .light).opacity(1)),

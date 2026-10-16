@@ -64,6 +64,9 @@ final class PetController {
     private var director = PetDirector(mode: .everyday)
     private var bubbles: PetBubbles?
     private var onBubble = false
+    /// The right-click bubble is open, and what closes it on a click elsewhere.
+    private var menuOpen = false
+    private var menuMonitors: [Any] = []
 
     init(model: AppModel, showPanel: @escaping () -> Void, defaults: UserDefaults = .standard, offScreen: Bool = false) {
         self.model = model
@@ -163,6 +166,7 @@ final class PetController {
         gate?.stop()
         gate = nil
         view?.setLoops([])
+        closeMenu(render: false)
         bubbles?.close()
         bubbles = nil
         onBubble = false
@@ -334,7 +338,7 @@ final class PetController {
 
         let display = bubbleDisplay(at: t)
         let talking: Bool = if case .box = display { true } else { false }
-        presence.update(pose: pose, hovering: hovering || onBubble || talking, at: t)
+        presence.update(pose: pose, hovering: hovering || onBubble || talking || menuOpen, at: t)
         let opacity = presence.opacity(at: t)
         if abs(view.presence - opacity) > 0.01 { view.setPresence(opacity, animated: !reduceMotion) }
         if let back = presence.fadeBackAt, back > t { after("fade", back - t) { $0.show() } }
@@ -388,6 +392,11 @@ final class PetController {
 
     private func render(_ display: PetDisplay, at t: TimeInterval) {
         guard let bubbles, let window, let anchor = bubbleAnchor() else { return }
+        if menuOpen {
+            let menu = menuContent()
+            bubbles.menu(greeting: menu.greeting, groups: menu.groups, anchor: anchor.shoulder, parent: window, reduceMotion: reduceMotion)
+            return
+        }
         switch display {
         case .nothing:
             bubbles.hide(animated: !reduceMotion)
@@ -468,6 +477,10 @@ final class PetController {
     // MARK: - Mouse
 
     private func clicked(_ count: Int) {
+        if menuOpen {
+            closeMenu()
+            return
+        }
         switch count {
         case 1:
             // Holding a message: the click opens it; otherwise the panel, as always.
@@ -491,43 +504,72 @@ final class PetController {
         onHover?(inside)
     }
 
+    /// Right-click: Mo asks what you'd like, in a bubble by its head (the
+    /// pointer is already there), instead of a system menu. Again closes it.
     private func menu(_ event: NSEvent) {
-        guard let view else { return }
-        let menu = NSMenu()
-        menu.autoenablesItems = false
-        menu.addItem(PetMenuItem(L.t("Open Panel", "打开面板"), symbol: "rectangle.on.rectangle") { [weak self] in self?.showPanel() })
-        menu.addItem(.separator())
-        if doNotDisturbUntil != nil {
-            menu.addItem(PetMenuItem(L.t("Wake Mo Up", "叫醒小莫"), symbol: "sun.max") { [weak self] in
-                self?.setDoNotDisturb(until: nil)
-            })
-        } else {
-            menu.addItem(PetMenuItem(L.t("Do Not Disturb for an Hour", "勿扰一小时"), symbol: "moon") { [weak self] in
-                self?.setDoNotDisturb(until: Date().addingTimeInterval(3600))
-            })
-            menu.addItem(PetMenuItem(L.t("Do Not Disturb Today", "今天勿扰"), symbol: "moon.zzz") { [weak self] in
-                let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
-                self?.setDoNotDisturb(until: Calendar.current.startOfDay(for: tomorrow))
-            })
+        menuOpen ? closeMenu() : openMenu()
+    }
+
+    private func openMenu() {
+        guard let window, visible else { return }
+        menuOpen = true
+        let mine = [window, bubbles?.window].compactMap { $0 }
+        // A click anywhere else puts the bubble away: in other apps (global)
+        // or in our own panel or settings (local). Clicks on Mo and the
+        // bubble are theirs to handle.
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated { self?.closeMenu() }
+        }) { menuMonitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] event in
+            MainActor.assumeIsolated {
+                if let w = event.window, mine.contains(where: { $0 === w }) { return }
+                self?.closeMenu()
+            }
+            return event
+        }) { menuMonitors.append(m) }
+        show()
+    }
+
+    private func closeMenu(render: Bool = true) {
+        menuMonitors.forEach(NSEvent.removeMonitor)
+        menuMonitors.removeAll()
+        guard menuOpen else { return }
+        menuOpen = false
+        if render {
+            bubbles?.hide(animated: false)
+            show()
         }
-        menu.addItem(PetMenuItem(tucked ? L.t("Come Out", "探出来") : L.t("Tuck Away", "收到边上"),
-                                 symbol: tucked ? "arrow.left.to.line" : "arrow.right.to.line") { [weak self] in
-            guard let self else { return }
-            self.tucked.toggle()
-            self.savePlacement()
-            self.place(animated: true)
-        })
-        menu.addItem(.separator())
-        menu.addItem(PetMenuItem(L.t("Pet Settings…", "宠物设置…"), symbol: "gearshape") { [weak self] in
-            self?.openSettings?(id: "settings")
+    }
+
+    private func menuContent() -> (greeting: String, groups: [[PetMenuChoice]]) {
+        let s = model.sessions
+        return PetMenu.content(needs: s.filter(\.needsYou).count, broken: s.filter { $0.state == .interrupted }.count,
+                               resting: doNotDisturbUntil != nil, tucked: tucked) { [weak self] id in
+            self?.choose(id)
+        }
+    }
+
+    /// Close the bubble, then do what was picked.
+    private func choose(_ id: PetMenu.ID) {
+        closeMenu()
+        switch id {
+        case .panel: showPanel()
+        case .wake: setDoNotDisturb(until: nil)
+        case .hour: setDoNotDisturb(until: Date().addingTimeInterval(3600))
+        case .today:
+            let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Date()) ?? Date()
+            setDoNotDisturb(until: Calendar.current.startOfDay(for: tomorrow))
+        case .tuck:
+            tucked.toggle()
+            savePlacement()
+            place(animated: true)
+        case .settings:
+            openSettings?(id: "settings")
             SettingsWindow.bringToFront()
-        })
-        menu.addItem(PetMenuItem(L.t("Hide Mo", "隐藏小莫"), symbol: "eye.slash") { [weak self] in
-            guard let self else { return }
-            self.defaults.set(false, forKey: Self.enabledKey)
+        case .hide:
+            defaults.set(false, forKey: Self.enabledKey)
             NotificationCenter.default.post(name: Self.settingsChanged, object: nil)
-        })
-        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        }
     }
 
     // MARK: - System

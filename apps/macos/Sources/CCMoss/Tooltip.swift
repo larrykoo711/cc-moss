@@ -27,6 +27,7 @@ final class TooltipCenter {
     private(set) var anchor: CGRect = .zero
 
     @ObservationIgnored private var owner: UUID?
+    @ObservationIgnored private var latest: CGRect = .zero
     @ObservationIgnored private var pending: DispatchWorkItem?
     @ObservationIgnored private var hiddenAt: Date = .distantPast
 
@@ -44,14 +45,22 @@ final class TooltipCenter {
             show(text, anchor)
             return
         }
+        latest = anchor
         let work = DispatchWorkItem { [weak self] in
             MainActor.assumeIsolated {
                 guard let self, self.owner == id else { return }
-                self.show(text, anchor)
+                self.show(text, self.latest)
             }
         }
         pending = work
         DispatchQueue.main.asyncAfter(deadline: .now() + Self.delay, execute: work)
+    }
+
+    /// The control moved while its tooltip is pending or up.
+    func move(_ id: UUID, anchor: CGRect) {
+        guard owner == id else { return }
+        latest = anchor
+        if text != nil { self.anchor = anchor }
     }
 
     func leave(_ id: UUID) {
@@ -92,11 +101,13 @@ private struct Tip: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .background(GeometryReader { g in
-                Color.clear
-                    .onAppear { frame = g.frame(in: .named(TooltipLayer.space)) }
-                    .onChange(of: g.frame(in: .named(TooltipLayer.space))) { _, f in frame = f }
-            })
+            // Tracks moves as well as resizes: a GeometryReader only reruns on
+            // a size change, so a control that fades in on hover (a row's
+            // trailing buttons) kept the spot it first appeared at.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TooltipLayer.space)) } action: { f in
+                frame = f
+                center?.move(id, anchor: f)
+            }
             .onHover { inside in
                 guard let center else { return }
                 if inside { center.enter(id, text: text, anchor: frame) } else { center.leave(id) }

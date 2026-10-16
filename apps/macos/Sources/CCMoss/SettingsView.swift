@@ -304,7 +304,7 @@ struct CardRow<Control: View>: View {
                     if let detail {
                         Text(detail)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.caption)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }

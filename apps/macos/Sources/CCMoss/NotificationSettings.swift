@@ -49,19 +49,19 @@ struct NotificationSettings: View {
         switch AlertMode(rawValue: mode) ?? .auto {
         case .auto:
             petEnabled
-                ? L.t("Mo tells you while it's on your desktop; when it's tucked away or hidden, Notification Center does. Never both.",
-                      "小莫在桌面上时由它告诉你；它收起来或看不见时改用通知中心。不会两边都响。")
-                : L.t("Mo is off, so Notification Center tells you. Switch Mo on and it takes over while it's on screen.",
-                      "小莫没开，所以由通知中心提醒。打开小莫后，它在桌面上时就由它来。")
+                ? L.t("Mo while it's on screen, otherwise Notification Center.",
+                      "小莫在桌面时由它提醒，否则走通知中心。")
+                : L.t("Mo is off, so Notification Center tells you.",
+                      "小莫没开，由通知中心提醒。")
         case .notificationsOnly:
-            L.t("Always Notification Center. Mo still shows how things are with its face.",
-                "一律走通知中心。小莫照样用表情告诉你现在怎么样。")
+            L.t("Always Notification Center; Mo just shows it on its face.",
+                "一律走通知中心，小莫只用表情示意。")
         case .petOnly:
             petEnabled
-                ? L.t("Only Mo, even when it's tucked away. Nothing goes to Notification Center.",
-                      "只让小莫来说，就算它收在边上。不发系统通知。")
-                : L.t("Mo is off, so Notification Center fills in until you switch Mo on.",
-                      "小莫没开，在你打开它之前由通知中心代班。")
+                ? L.t("Only Mo, even when it's tucked away.",
+                      "只让小莫说，收在边上也一样。")
+                : L.t("Mo is off; Notification Center fills in.",
+                      "小莫没开，先由通知中心代班。")
         }
     }
 }
@@ -126,14 +126,14 @@ private struct AuthRow: View {
     private var explanation: String {
         switch status.auth {
         case .allowed:
-            L.t("Banners appear with an Open or Bring Back button. Clicking the banner does the same.",
-                "横幅上带「打开」或「找回」按钮，点横幅本身也一样。")
+            L.t("Banners can open a session or bring it back.",
+                "横幅上能直接打开或找回。")
         case .denied:
-            L.t("Turn them on under Notifications › cc-moss. The panel and the icon work either way.",
-                "到「通知 › cc-moss」里打开就行。面板和图标照常工作。")
+            L.t("Turn them on in Notifications › cc-moss.",
+                "到「通知 › cc-moss」里打开即可。")
         case .unavailable:
-            L.t("macOS only lets apps in an Applications folder post notifications. Installed with cc-moss, it lives there.",
-                "macOS 只允许放在「应用程序」文件夹里的 App 发通知。用 cc-moss 安装的就在那里。")
+            L.t("Needs the app in an Applications folder.",
+                "App 要放在「应用程序」文件夹里才能发通知。")
         case .notDetermined, .unknown:
             L.t("macOS will ask the first time there's something to tell you. Or let it ask now.",
                 "第一次有事要告诉你时，macOS 会问你一次。也可以现在就问。")

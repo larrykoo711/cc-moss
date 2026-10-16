@@ -23,6 +23,10 @@ enum Theme {
         scheme == .dark ? Color.white.opacity(0.10) : Color.black.opacity(0.075)
     }
 
+    /// Captions under a setting: a step quieter than `.secondary`, so they
+    /// don't compete with the title above them.
+    static let caption = Color.primary.opacity(0.42)
+
     static func hairline(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)
     }

@@ -58,7 +58,8 @@ enum BubbleStyle {
 /// A rounded card with a short curved tail toward Mo, drawn as one outline
 /// so the hairline runs round the tail instead of across its base.
 struct PetBubbleShape: Shape {
-    var radius: CGFloat = 14
+    /// Generous, like Mo's own rounded body.
+    var radius: CGFloat = 18
     var tail = BubbleTail()
     /// Just the rounded body (the puff, whose tail is dots).
     var tailless = false
@@ -78,7 +79,7 @@ struct PetBubbleShape: Shape {
         p.move(to: CGPoint(x: body.minX + r, y: body.minY))
         if !tailless, tail.onTop {
             // Left to right along the top edge, out to the tip and back.
-            Self.tail(&p, edge: body.minY, out: -1, from: base - 9, to: base + 9, tip: tip, h: h)
+            Self.tail(&p, edge: body.minY, out: -1, from: base - 12, to: base + 12, tip: tip, h: h)
         }
         p.addLine(to: CGPoint(x: body.maxX - r, y: body.minY))
         p.addArc(tangent1End: CGPoint(x: body.maxX, y: body.minY), tangent2End: CGPoint(x: body.maxX, y: body.minY + r), radius: r)
@@ -86,7 +87,7 @@ struct PetBubbleShape: Shape {
         p.addArc(tangent1End: CGPoint(x: body.maxX, y: body.maxY), tangent2End: CGPoint(x: body.maxX - r, y: body.maxY), radius: r)
         if !tailless, !tail.onTop {
             // Right to left along the bottom edge.
-            Self.tail(&p, edge: body.maxY, out: 1, from: base + 9, to: base - 9, tip: tip, h: h)
+            Self.tail(&p, edge: body.maxY, out: 1, from: base + 12, to: base - 12, tip: tip, h: h)
         }
         p.addLine(to: CGPoint(x: body.minX + r, y: body.maxY))
         p.addArc(tangent1End: CGPoint(x: body.minX, y: body.maxY), tangent2End: CGPoint(x: body.minX, y: body.maxY - r), radius: r)
@@ -97,17 +98,20 @@ struct PetBubbleShape: Shape {
     }
 
     /// Along the edge to the tail's first base point, out to the tip and
-    /// back: each side leaves the edge tangentially (a soft fillet) and
-    /// meets the tip almost straight, like a speech bubble's.
+    /// back: a soft nub rather than a spike. Each side leaves the edge
+    /// tangentially over a wide base and the tip is a little round cap.
     private static func tail(_ p: inout Path, edge: CGFloat, out: CGFloat, from a: CGFloat, to b: CGFloat, tip: CGFloat, h: CGFloat) {
         let towardB: CGFloat = b > a ? 1 : -1
+        let cap: CGFloat = 3 // half the round tip's width
         p.addLine(to: CGPoint(x: a, y: edge))
-        p.addCurve(to: CGPoint(x: tip, y: edge + out * h),
-                   control1: CGPoint(x: a + towardB * 4, y: edge),
-                   control2: CGPoint(x: tip - towardB * 1.5, y: edge + out * h * 0.55))
+        p.addCurve(to: CGPoint(x: tip - towardB * cap, y: edge + out * (h - 1.5)),
+                   control1: CGPoint(x: a + towardB * 8, y: edge),
+                   control2: CGPoint(x: tip - towardB * (cap + 2), y: edge + out * h * 0.6))
+        p.addQuadCurve(to: CGPoint(x: tip + towardB * cap, y: edge + out * (h - 1.5)),
+                       control: CGPoint(x: tip, y: edge + out * (h + 1.5)))
         p.addCurve(to: CGPoint(x: b, y: edge),
-                   control1: CGPoint(x: tip + towardB * 1.5, y: edge + out * h * 0.55),
-                   control2: CGPoint(x: b - towardB * 4, y: edge))
+                   control1: CGPoint(x: tip + towardB * (cap + 2), y: edge + out * h * 0.6),
+                   control2: CGPoint(x: b - towardB * 8, y: edge))
     }
 }
 
@@ -284,6 +288,132 @@ struct PetMessageBox: View {
     }
 }
 
+// MARK: - The menu
+
+/// What Mo says and offers on a right-click, in its own words.
+enum PetMenu {
+    enum ID: String { case panel, wake, hour, today, tuck, settings, hide }
+
+    /// A greeting that knows how things are, then the offers in three
+    /// small groups: look, quiet or move, and put Mo away.
+    static func content(needs: Int, broken: Int, resting: Bool, tucked: Bool,
+                        pick: @escaping (ID) -> Void) -> (greeting: String, groups: [[PetMenuChoice]]) {
+        let greeting = if resting {
+            L.t("Shh, I'm resting. Need me?", "嘘，我在歇着呢。要叫我吗？")
+        } else if needs > 0 {
+            L.t("\(needs) waiting on you", "有 \(needs) 个会话在等你哦")
+        } else if broken > 0 {
+            L.t("\(broken) got cut off", "有 \(broken) 个会话断了")
+        } else {
+            L.t("All quiet. Need anything?", "一切安好，要我做啥？")
+        }
+        func choice(_ id: ID, _ title: String, _ symbol: String, quiet: Bool = false) -> PetMenuChoice {
+            PetMenuChoice(id: id.rawValue, title: title, symbol: symbol, quiet: quiet) { pick(id) }
+        }
+        var middle = resting
+            ? [choice(.wake, L.t("Wake Up, Back to Work", "醒醒，继续上班"), "sun.max")]
+            : [choice(.hour, L.t("Keep Quiet for an Hour", "让我安静一小时"), "moon"),
+               choice(.today, L.t("Leave You Be Today", "今天先不吵你"), "moon.zzz")]
+        middle.append(tucked
+            ? choice(.tuck, L.t("Come Back Out", "我出来啦"), "arrow.left.to.line")
+            : choice(.tuck, L.t("Hide by the Edge", "我躲到边上去"), "arrow.right.to.line"))
+        return (greeting, [
+            [choice(.panel, L.t("See Who's Busy", "看看大家在忙什么"), "rectangle.on.rectangle")],
+            middle,
+            [choice(.settings, L.t("Tune My Temper…", "调调我的脾气…"), "slider.horizontal.3"),
+             choice(.hide, L.t("Clock Off for Now", "我先下班了"), "figure.walk.departure", quiet: true)],
+        ])
+    }
+}
+
+/// One thing Mo offers to do.
+struct PetMenuChoice: Identifiable {
+    let id: String
+    let title: String
+    let symbol: String
+    /// Said a little softer: putting Mo away.
+    var quiet = false
+    let run: () -> Void
+}
+
+/// The right-click menu as Mo talking: a greeting that knows how things
+/// are, then a few offers in small groups. Same card and tail as the
+/// message box, so it grows out of Mo instead of looking like a system menu.
+struct PetMenuBubble: View {
+    let greeting: String
+    let groups: [[PetMenuChoice]]
+    var tail = BubbleTail()
+    var animate = true
+    @State private var shown: Bool
+    @State private var hovered: String?
+    @Environment(\.colorScheme) private var scheme
+
+    static let width: CGFloat = 212
+
+    init(greeting: String, groups: [[PetMenuChoice]], tail: BubbleTail = BubbleTail(), animate: Bool = true) {
+        self.greeting = greeting
+        self.groups = groups
+        self.tail = tail
+        self.animate = animate
+        _shown = State(initialValue: !animate)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(greeting)
+                .font(.system(size: 13, weight: .semibold))
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 8)
+                .padding(.top, 2)
+                .padding(.bottom, 6)
+            ForEach(Array(groups.enumerated()), id: \.offset) { i, group in
+                if i > 0 { Spacer().frame(height: 6) }
+                ForEach(group) { row($0) }
+            }
+        }
+        .padding(.horizontal, 6)
+        .padding(.top, 10)
+        .padding(.bottom, 7)
+        .frame(width: Self.width, alignment: .leading)
+        .padding(tail.onTop ? .top : .bottom, BubbleTail.height)
+        .background(PetBubbleShape(tail: tail).fill(Theme.raised(scheme)))
+        .overlay(PetBubbleShape(tail: tail).stroke(Theme.hairline(scheme), lineWidth: 1))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.42 : 0.13), radius: 12, y: 4)
+        .scaleEffect(shown || !animate ? 1 : 0.94, anchor: UnitPoint(x: tail.x / Self.width, y: tail.onTop ? 0 : 1))
+        .opacity(shown ? 1 : 0)
+        .onAppear {
+            guard !shown else { return }
+            withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) { shown = true }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L.t("Mo: ", "小莫：") + greeting)
+    }
+
+    private func row(_ c: PetMenuChoice) -> some View {
+        let on = hovered == c.id
+        return Button(action: c.run) {
+            HStack(spacing: 9) {
+                Image(systemName: c.symbol)
+                    .font(.system(size: 12, weight: .medium))
+                    .frame(width: 16)
+                    .foregroundStyle(on ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                Text(c.title)
+                    .font(.system(size: 13))
+                    .foregroundStyle(c.quiet && !on ? AnyShapeStyle(.secondary) : AnyShapeStyle(.primary))
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(on ? Theme.selection(scheme) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovered = inside ? c.id : (hovered == c.id ? nil : hovered) } }
+        .accessibilityLabel(c.title)
+    }
+}
+
 // MARK: - The window
 
 /// What the bubble window shows.
@@ -293,6 +423,7 @@ final class BubbleStage {
         case none
         case puff(serial: Int, text: String)
         case box(serial: Int, message: PetMessage, text: PetMessageText, primary: () -> Void, later: () -> Void)
+        case menu(serial: Int, greeting: String, groups: [[PetMenuChoice]])
     }
 
     var content: Content = .none
@@ -313,6 +444,8 @@ struct PetBubbleRoot: View {
             case let .box(serial, message, text, primary, later):
                 PetMessageBox(message: message, text: text, tail: stage.tail, animate: stage.animate,
                               primary: primary, later: later).id(serial)
+            case let .menu(serial, greeting, groups):
+                PetMenuBubble(greeting: greeting, groups: groups, tail: stage.tail, animate: stage.animate).id(serial)
             }
         }
         .padding(PetBubbles.margin)
@@ -420,6 +553,16 @@ struct BubbleAnchor: Equatable {
     /// Just below Mo, for when the bubble has to go underneath.
     var feet: CGPoint
     var visible: CGRect
+
+    /// For the menu: the shoulder on the screen's inner side, so the bubble
+    /// sits beside Mo's head instead of right on top of it.
+    var shoulder: BubbleAnchor {
+        let side: CGFloat = head.x > visible.midX ? -1 : 1
+        var a = self
+        a.head = CGPoint(x: head.x + side * 30, y: head.y - 14)
+        a.feet = CGPoint(x: feet.x + side * 30, y: feet.y)
+        return a
+    }
 }
 
 /// Shows, moves and hides the bubble window beside Mo's.
@@ -458,8 +601,17 @@ final class PetBubbles {
         }
     }
 
+    func menu(greeting: String, groups: [[PetMenuChoice]], anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool) {
+        present(key: "menu", anchor: anchor, parent: parent, reduceMotion: reduceMotion, clickable: true, inset: 30) {
+            .menu(serial: $0, greeting: greeting, groups: groups)
+        }
+    }
+
+    /// The bubble's window, so a click in it can be told from a click elsewhere.
+    var window: NSWindow { panel }
+
     private func present(key: String, anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool, clickable: Bool,
-                         content: (Int) -> BubbleStage.Content) {
+                         inset: CGFloat? = nil, content: (Int) -> BubbleStage.Content) {
         let fresh = key != self.key
         guard fresh || anchor != self.anchor || !panel.isVisible else { return }
         generation += 1
@@ -470,7 +622,7 @@ final class PetBubbles {
             self.key = key
         }
         host.clickable = clickable
-        layout(anchor, puff: !clickable)
+        layout(anchor, puff: !clickable, inset: inset)
         if panel.parent == nil {
             panel.alphaValue = 0
             parent.addChildWindow(panel, ordered: .above)
@@ -483,11 +635,11 @@ final class PetBubbles {
         }
     }
 
-    private func layout(_ anchor: BubbleAnchor, puff: Bool) {
+    private func layout(_ anchor: BubbleAnchor, puff: Bool, inset: CGFloat? = nil) {
         self.anchor = anchor
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
-        let place = BubblePlacement.place(size: size, margin: Self.margin, inset: puff ? 12 : 34, corner: puff ? 4 : 14,
+        let place = BubblePlacement.place(size: size, margin: Self.margin, inset: inset ?? (puff ? 12 : 34), corner: puff ? 4 : 18,
                                           above: anchor.head, below: anchor.feet, visible: anchor.visible)
         let tail = BubbleTail(x: place.tailX, leansRight: place.leansRight, onTop: place.tailOnTop)
         if stage.tail != tail { stage.tail = tail }
