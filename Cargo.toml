@@ -13,7 +13,7 @@ homepage = "https://github.com/larrykoo711/cc-moss"
 [workspace.dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-crossterm = "0.28"
+crossterm = "0.29"
 nucleo-matcher = "0.3"
 ratatui = { version = "0.29", default-features = false, features = ["crossterm"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
