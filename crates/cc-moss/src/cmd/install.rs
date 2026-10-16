@@ -13,7 +13,7 @@ use moss_core::managed_block;
 use moss_core::platform::{install_commands, on_path, without_sudo, Platform, Tool};
 
 use super::files::{self, read_optional, Change, Removal};
-use super::{confirm, setup};
+use super::{alias, confirm, setup};
 
 pub const TMUX_CONF: &str = include_str!("../../assets/tmux.conf");
 pub const STARSHIP_TOML: &str = include_str!("../../assets/starship.toml");
@@ -182,8 +182,9 @@ fn zshrc_text(original: &str, opts: &Options) -> Result<String> {
     if opts.wants(Part::Starship) && !starts_starship_by_hand(&text) {
         text = managed_block::upsert(&text, TAG_PROMPT, PROMPT_ZSH)?;
     }
+    // `t` used to be a function in this block; it is a native alias now.
     if opts.wants(Part::Hooks) {
-        text = managed_block::upsert(&text, setup::ZSH_TAG, setup::ZSH_BODY)?;
+        text = managed_block::remove(&text, setup::ZSH_TAG)?;
     }
     if opts.wants(Part::Shell) {
         text = managed_block::upsert(&text, TAG_SSH, SSH_TTY_ZSH)?;
@@ -198,10 +199,10 @@ fn zshrc_text(original: &str, opts: &Options) -> Result<String> {
 fn not_zsh_note(shell: &str) -> String {
     tr!(
         format!(
-            "Your login shell is {shell}: the `t` shortcut and the shell blocks are zsh-only for now, so no zsh files were created. Open the picker with `cc-moss pick` (or just `cc-moss`). For the starship prompt, add starship's init line for {shell} yourself (https://starship.rs)."
+            "Your login shell is {shell}: the shell blocks are zsh-only for now, so no zsh files were created. `t` is a plain command in ~/.local/bin and works in {shell} too. For the starship prompt, add starship's init line for {shell} yourself (https://starship.rs)."
         ),
         format!(
-            "你的登录 shell 是 {shell}：`t` 快捷命令和 shell 配置块暂时只支持 zsh，所以没有创建 zsh 的文件。用 `cc-moss pick`（或者直接 `cc-moss`）打开选择器就行。想用 starship 提示符的话，自己把 {shell} 对应的 starship init 那一行加上（https://starship.rs）。"
+            "你的登录 shell 是 {shell}：shell 配置块暂时只支持 zsh，所以没有创建 zsh 的文件。`t` 是 ~/.local/bin 里的普通命令，在 {shell} 里也能用。想用 starship 提示符的话，自己把 {shell} 对应的 starship init 那一行加上（https://starship.rs）。"
         )
     )
 }
@@ -230,6 +231,7 @@ fn change(path: &Path, new_text: String) -> Result<Option<Change>> {
     };
     Ok(Some(Change {
         remove: Removal::No,
+        link: None,
         path: path.to_path_buf(),
         original,
         new_text,
@@ -258,6 +260,9 @@ pub fn run(opts: Options) -> Result<()> {
             zshrc: None,
         };
         changes.extend(setup::settings_change(&setup_opts)?);
+        let (alias_changes, alias_notes) = alias::default_changes(&alias::Place::detect()?)?;
+        changes.extend(alias_changes);
+        notes.extend(alias_notes);
     }
 
     let in_file = |p: &Path| format!("{}", p.display());
@@ -330,8 +335,8 @@ pub fn run(opts: Options) -> Result<()> {
             )
         } else {
             tr!(
-                "All set. Run `cc-moss pick` (or just `cc-moss`) to open the picker. In tmux, prefix + t opens it too.",
-                "搞定。运行 `cc-moss pick`（或者直接 `cc-moss`）打开选择器；在 tmux 里按 prefix + t 也行。"
+                "All set. Type `t` (or `cc-moss pick`) to open the picker. In tmux, prefix + t opens it too.",
+                "搞定。敲 `t`（或者 `cc-moss pick`）打开选择器；在 tmux 里按 prefix + t 也行。"
             )
         };
         println!("\n{done}");
@@ -363,6 +368,9 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         zshrc: None,
     };
     changes.extend(setup::settings_change(&setup_opts)?);
+    let (alias_changes, alias_notes) = alias::uninstall_changes(&alias::Place::detect()?)?;
+    changes.extend(alias_changes);
+    notes.extend(alias_notes);
     let zsh_tags = [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES];
     changes.extend(strip_blocks(&paths.zshrc, &zsh_tags)?);
     changes.extend(strip_blocks(&paths.zshenv, &[TAG_PATH])?);
@@ -458,6 +466,7 @@ fn strip_blocks(path: &Path, tags: &[&str]) -> Result<Option<Change>> {
         original: Some(original),
         new_text: text,
         remove: Removal::No,
+        link: None,
         done: tr!(
             format!("Removed cc-moss's blocks from {}.", path.display()),
             format!("已从 {} 移除 cc-moss 的配置块。", path.display())
@@ -472,6 +481,7 @@ fn removal(path: &Path, original: String, how: Removal) -> Change {
         original: Some(original),
         new_text: String::new(),
         remove: how,
+        link: None,
         done: tr!(
             format!("Deleted {}.", path.display()),
             format!("已删除 {}。", path.display())
