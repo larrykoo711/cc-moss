@@ -16,15 +16,16 @@ pub fn run(since: Option<i64>, limit: usize, as_json: bool) -> Result<()> {
     let (events, last_seq) = if path.exists() {
         let registry = Registry::open(&path)?;
         let events = registry.events(since, limit)?;
-        // Where to continue from: the last event returned, else the newest
-        // one there is (so a caller ahead of a reset registry catches up).
+        // Where to continue from: the last event returned. With none, the
+        // cursor never moves back: not behind the caller, not behind events
+        // that were handed out and pruned since.
         let last = match events.last() {
             Some(e) => e.seq,
-            None => registry.last_event_seq()?,
+            None => since.unwrap_or(0).max(registry.last_event_seq()?),
         };
         (events, last)
     } else {
-        (Vec::new(), 0)
+        (Vec::new(), since.unwrap_or(0).max(0))
     };
 
     if as_json {

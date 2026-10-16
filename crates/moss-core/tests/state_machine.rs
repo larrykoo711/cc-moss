@@ -1149,3 +1149,36 @@ fn attention_for_unknown_session_is_ignored() {
     assert!(reg.slots().unwrap().is_empty());
     assert!(kinds(&reg).is_empty());
 }
+
+#[test]
+fn events_restore_is_not_also_started() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&end("U1", "other"), &ctx(100, 2_000)).unwrap();
+    let id = only_slot(&reg).slot_id;
+    // `cc-moss restore` claims the slot, launches it and records the process...
+    reg.mark_restore_started(&id, 5_000).unwrap();
+    let loc = ctx(200, 0).tmux.unwrap();
+    reg.set_restored_process(&id, 200, Some("start-200"), &loc, 5_000)
+        .unwrap();
+    // ...then the resumed process reports in.
+    reg.apply(&start(StartSource::Resume, "U1", None), &ctx(200, 6_000))
+        .unwrap();
+    assert_eq!(kinds(&reg), ["started", "interrupted", "restored"]);
+
+    // A later resume by hand is a start of its own.
+    reg.apply(&end("U1", "other"), &ctx(200, 7_000)).unwrap();
+    reg.apply(&start(StartSource::Resume, "U1", None), &ctx(300, 8_000))
+        .unwrap();
+    assert_eq!(
+        kinds(&reg),
+        [
+            "started",
+            "interrupted",
+            "restored",
+            "interrupted",
+            "started"
+        ]
+    );
+}

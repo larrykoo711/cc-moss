@@ -276,6 +276,16 @@ fn restore_and_close_emit_events() {
     );
     assert!(k.contains(&"restored".to_string()), "{k:?}");
 
+    // The FIFO is read only after the restored process's SessionStart hook
+    // returned, so once this prompt is recorded that start is in too:
+    // `restored` stands for it, there is no second `started`.
+    w.send(&id, "prompt job-a");
+    let k = wait_for(|| {
+        let k = kinds(&events(&w.state(), &[]));
+        (k.last().map(String::as_str) == Some("working")).then_some(k)
+    });
+    assert_eq!(k.iter().filter(|k| *k == "started").count(), 1, "{k:?}");
+
     // Interrupt it again and close it for good.
     wait_for(|| (ls_json(&w.state(), false)["sessions"][0]["status"] == "running").then_some(()));
     w.tmux(&["kill-server"]);
@@ -287,4 +297,112 @@ fn restore_and_close_emit_events() {
     let k = kinds(&events(&w.state(), &[]));
     assert_eq!(k.last().map(String::as_str), Some("closed"), "{k:?}");
     assert_eq!(k.iter().filter(|k| *k == "interrupted").count(), 2, "{k:?}");
+}
+
+/// Move every recorded event `days` into the past.
+fn age_events(state: &Path, days: i64) {
+    let conn = rusqlite::Connection::open(state.join("registry.db")).unwrap();
+    conn.execute(
+        "UPDATE events SET at = at - ?1",
+        [days * 24 * 60 * 60 * 1000],
+    )
+    .unwrap();
+}
+
+#[test]
+fn crash_not_reported_again_after_prune() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let claude = FakeProcess::spawn();
+    ok(
+        &state,
+        "session-start",
+        &start_json("U1", "startup", Some("job-a")),
+        claude.pid(),
+    );
+    drop(claude);
+    ls_json(&state, true);
+    assert_eq!(kinds(&events(&state, &[])), ["started", "interrupted"]);
+
+    // Never restored: a week later its events are pruned, the crash is not news.
+    age_events(&state, 8);
+    for _ in 0..3 {
+        ls_json(&state, true);
+    }
+    assert!(kinds(&events(&state, &[])).is_empty());
+}
+
+#[test]
+fn non_interactive_hooks_leave_the_log_alone() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    for (event, payload) in [
+        ("post-tool-use", post_tool_use_json("U1")),
+        ("notification", notification_json("U1", "permission_prompt")),
+    ] {
+        let mut cmd = bin();
+        cmd.env("CC_MOSS_STATE_DIR", &state)
+            .env("CLAUDE_PID", "1")
+            .env("CLAUDE_CODE_SESSION_ATTENDED", "0")
+            .args(["hook", event])
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped());
+        let mut child = cmd.spawn().unwrap();
+        use std::io::Write;
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(payload.as_bytes())
+            .unwrap();
+        let out = child.wait_with_output().unwrap();
+        assert!(out.status.success() && out.stdout.is_empty(), "{out:?}");
+    }
+    assert!(
+        !state.join("hook.log").exists(),
+        "one line per tool call would flood it"
+    );
+}
+
+#[test]
+fn limit_must_be_positive() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .args(["events", "--json", "--limit", "0"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{out:?}");
+}
+
+#[test]
+fn last_seq_survives_a_full_prune() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let claude = FakeProcess::spawn();
+    ok(
+        &state,
+        "session-start",
+        &start_json("U1", "startup", Some("job-a")),
+        claude.pid(),
+    );
+    ok(
+        &state,
+        "user-prompt-submit",
+        &prompt_json("U1"),
+        claude.pid(),
+    );
+    ok(&state, "stop", &stop_json("U1"), claude.pid());
+    let last = events(&state, &[])["last_seq"].as_i64().unwrap();
+    assert!(last >= 3);
+
+    age_events(&state, 8);
+    ls_json(&state, true);
+    let v = events(&state, &[]);
+    assert!(kinds(&v).is_empty());
+    assert_eq!(v["last_seq"], last, "the cursor never moves back");
+    let v = events(&state, &["--since", "1"]);
+    assert_eq!(v["last_seq"], last);
+    let v = events(&state, &["--since", &(last + 5).to_string()]);
+    assert_eq!(v["last_seq"], last + 5, "never behind the caller");
 }

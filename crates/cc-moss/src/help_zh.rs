@@ -41,7 +41,7 @@ const TEXT: &[(&str, &str, &str)] = &[
         "since",
         "只要这个序号之后的事件；不给就是最近 50 条",
     ),
-    ("events", "limit", "最多返回这么多条"),
+    ("events", "limit", "最多返回这么多条（至少 1）"),
     (
         "new",
         "",

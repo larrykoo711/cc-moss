@@ -129,3 +129,42 @@ fn message_is_truncated() {
     assert_eq!(message.chars().count(), MESSAGE_MAX);
     assert!(long.starts_with(message));
 }
+
+#[test]
+fn interrupted_is_not_reported_again_after_prune() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start("U1"), &ctx(1_000)).unwrap();
+    let id = reg.slots().unwrap()[0].slot_id.clone();
+    assert!(reg.record_lost(&id, 2_000).unwrap());
+
+    // Eight days on, the event is pruned; the crash is still the same crash.
+    let later = 2_000 + EVENT_RETENTION_MS + 24 * 60 * 60 * 1000;
+    reg.prune_events(later - EVENT_RETENTION_MS).unwrap();
+    assert!(reg.events(Some(0), 500).unwrap().is_empty());
+    assert!(!reg.record_lost(&id, later).unwrap());
+    assert!(reg.events(Some(0), 500).unwrap().is_empty());
+
+    // Brought back and lost again: a new interruption.
+    reg.apply(&start_resume("U1"), &ctx(later + 1)).unwrap();
+    assert!(reg.record_lost(&id, later + 2).unwrap());
+}
+
+#[test]
+fn last_seq_never_moves_back_after_prune() {
+    let reg = busy_registry(3);
+    let before = reg.last_event_seq().unwrap();
+    assert!(before > 0);
+    reg.prune_events(i64::MAX).unwrap();
+    assert!(reg.events(Some(0), 500).unwrap().is_empty());
+    assert_eq!(reg.last_event_seq().unwrap(), before);
+}
+
+fn start_resume(id: &str) -> Event {
+    Event::Start {
+        source: StartSource::Resume,
+        session_id: id.into(),
+        cwd: "/work".into(),
+        title: None,
+        transcript_path: None,
+    }
+}

@@ -223,13 +223,27 @@ impl Registry {
                     }
                 };
                 let created = existing.is_none();
+                // `cc-moss restore` launched this one: its `restored` event
+                // already says the session is back.
+                let restoring = *source == StartSource::Resume && match &existing {
+                    Some(id) => tx
+                        .query_row(
+                            "SELECT restore_started_at IS NOT NULL FROM slots WHERE slot_id = ?1",
+                            [id],
+                            |r| r.get::<_, bool>(0),
+                        )
+                        .optional()?
+                        .unwrap_or(false),
+                    None => false,
+                };
                 let slot_id = match existing {
                     Some(id) => {
                         tx.execute(
                             "UPDATE slots SET session_id=?2, cwd=?3,
                                pid=COALESCE(?4, pid), pid_start=COALESCE(?5, pid_start),
                                status='running', end_reason=NULL, ended_at=NULL, last_active_at=?6,
-                               restore_started_at=NULL, busy=0, attention=NULL
+                               restore_started_at=NULL, busy=0, attention=NULL,
+                               lost_reported_at=NULL
                              WHERE slot_id=?1",
                             params![id, session_id, cwd, ctx.pid, ctx.pid_start, ctx.now_ms],
                         )?;
@@ -249,11 +263,13 @@ impl Registry {
                 if ctx.tmux.is_some() || ctx.pid.is_some() {
                     set_tmux(&tx, &slot_id, ctx.tmux.as_ref())?;
                 }
-                if let Some(source) = match source {
+                let started = match source {
+                    StartSource::Resume if restoring => None,
                     StartSource::Startup => Some("startup"),
                     StartSource::Resume => Some("resume"),
                     StartSource::Clear | StartSource::Compact => None,
-                } {
+                };
+                if let Some(source) = started {
                     let detail = serde_json::json!({ "source": source });
                     record_event(&tx, &slot_id, "started", &detail, ctx.now_ms)?;
                 }
@@ -525,7 +541,7 @@ impl Registry {
         let changed = tx.execute(
             "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL,
                ended_at = NULL, tmux_socket = ?4, tmux_session_id = ?5, tmux_session_name = ?6,
-               tmux_pane = ?7, last_active_at = ?8, attention = NULL
+               tmux_pane = ?7, last_active_at = ?8, attention = NULL, lost_reported_at = NULL
              WHERE slot_id = ?1",
             params![
                 slot_id,
@@ -652,14 +668,34 @@ impl Registry {
         Ok(rows)
     }
 
-    /// The newest event's sequence number, 0 when there is none.
+    /// The highest sequence number ever handed out, 0 when there is none.
+    /// Pruning does not lower it: SQLite keeps AUTOINCREMENT's high-water
+    /// mark in `sqlite_sequence`.
     pub fn last_event_seq(&self) -> Result<i64> {
         if !has_events_table(&self.conn)? {
             return Ok(0);
         }
-        Ok(self
+        let max: i64 =
+            self.conn
+                .query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?;
+        let has_sequence = self
             .conn
-            .query_row("SELECT COALESCE(MAX(seq), 0) FROM events", [], |r| r.get(0))?)
+            .prepare_cached(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sqlite_sequence'",
+            )?
+            .exists([])?;
+        let high: Option<i64> = if has_sequence {
+            self.conn
+                .query_row(
+                    "SELECT seq FROM sqlite_sequence WHERE name = 'events'",
+                    [],
+                    |r| r.get(0),
+                )
+                .optional()?
+        } else {
+            None
+        };
+        Ok(max.max(high.unwrap_or(0)))
     }
 }
 
@@ -716,22 +752,21 @@ fn record_event(
     Ok(())
 }
 
-/// Record `interrupted` unless it is already the slot's latest event: one
-/// interruption is reported once, whoever notices it first.
+/// Record `interrupted` once per interruption, whoever notices it first.
+/// The mark lives on the slot (`lost_reported_at`), not in the events, so
+/// pruning old events does not make an old crash news again; a new process
+/// for the slot (SessionStart, restore, adoption) clears it.
 fn record_interrupted(
     conn: &Connection,
     slot_id: &str,
     detail: &serde_json::Value,
     at_ms: i64,
 ) -> Result<bool> {
-    let last: Option<String> = conn
-        .query_row(
-            "SELECT kind FROM events WHERE slot_id = ?1 ORDER BY seq DESC LIMIT 1",
-            [slot_id],
-            |r| r.get(0),
-        )
-        .optional()?;
-    if last.as_deref() == Some("interrupted") {
+    let fresh = conn.execute(
+        "UPDATE slots SET lost_reported_at = ?2 WHERE slot_id = ?1 AND lost_reported_at IS NULL",
+        params![slot_id, at_ms],
+    )?;
+    if fresh == 0 {
         return Ok(false);
     }
     record_event(conn, slot_id, "interrupted", detail, at_ms)?;
@@ -871,6 +906,8 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         ),
         // After 0.1.1: why the session waits for the user, if it does.
         ("attention", "attention TEXT"),
+        // After 0.1.1: when this slot's current interruption was reported.
+        ("lost_reported_at", "lost_reported_at INTEGER"),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
@@ -1121,7 +1158,8 @@ fn touch_and_repair(
         return Ok(());
     }
     conn.execute(
-        "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL, ended_at = NULL
+        "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL, ended_at = NULL,
+           lost_reported_at = NULL
          WHERE slot_id = ?1",
         params![slot_id, pid, ctx.pid_start],
     )?;

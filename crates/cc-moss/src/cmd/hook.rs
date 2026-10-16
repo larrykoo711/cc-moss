@@ -44,8 +44,11 @@ fn handle(event: &str) -> Result<()> {
     std::io::stdin().read_to_string(&mut payload)?;
     if !is_interactive() {
         // `claude -p` and SDK sessions fire the same hooks (F10) but are not
-        // something a person would want restored.
-        log(kind.cli_name(), "skipped: non-interactive session");
+        // something a person would want restored. PostToolUse runs after
+        // every tool call: logging those would flood the log.
+        if !matches!(kind, HookKind::PostToolUse | HookKind::Notification) {
+            log(kind.cli_name(), "skipped: non-interactive session");
+        }
         return Ok(());
     }
     let Some(event) = ClaudeAgent.parse_hook(kind, &payload)? else {

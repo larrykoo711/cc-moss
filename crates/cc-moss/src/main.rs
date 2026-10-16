@@ -48,9 +48,10 @@ enum Command {
         /// Only events after this sequence number; without it, the latest 50.
         #[arg(long, value_name = "SEQ")]
         since: Option<i64>,
-        /// At most this many events.
-        #[arg(long, default_value_t = 500, value_name = "N")]
-        limit: usize,
+        /// At most this many events (1 or more).
+        #[arg(long, default_value_t = 500, value_name = "N",
+              value_parser = clap::value_parser!(u64).range(1..))]
+        limit: u64,
     },
     /// Start a named Claude Code session in its own tmux session.
     New {
@@ -218,7 +219,11 @@ fn main() -> std::process::ExitCode {
             claude_args,
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),
-        Command::Events { json, since, limit } => report(cmd::events::run(since, limit, json)),
+        Command::Events { json, since, limit } => report(cmd::events::run(
+            since,
+            usize::try_from(limit).unwrap_or(usize::MAX),
+            json,
+        )),
         Command::Pick { query } => report(pick::run(&query.join(" "))),
         Command::Install {
             with,
