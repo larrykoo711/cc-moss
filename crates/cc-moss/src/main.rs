@@ -182,6 +182,14 @@ enum Command {
         #[arg(long, conflicts_with_all = ["goal", "state", "text"])]
         clear: bool,
     },
+    /// Type a message into a running session, as if you typed it in its terminal.
+    Send {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+        /// What to send; several lines arrive whole.
+        #[arg(last = true, required = true)]
+        text: Vec<String>,
+    },
     /// Entry point for Claude Code hooks. Always exits 0.
     #[command(hide = true)]
     Hook {
@@ -371,6 +379,7 @@ fn main() -> std::process::ExitCode {
         })),
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
+        Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
         Command::Note {
             name,
             goal,

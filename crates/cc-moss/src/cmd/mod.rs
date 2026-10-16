@@ -12,6 +12,7 @@ pub mod ls;
 pub mod new;
 pub mod note;
 pub mod restore;
+pub mod send;
 pub mod setup;
 pub mod update;
 

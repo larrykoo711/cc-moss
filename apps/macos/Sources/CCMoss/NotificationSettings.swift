@@ -86,7 +86,7 @@ private struct KindRow: View {
         CardRow(title: title, detail: detail, divider: divider) {
             Toggle("", isOn: $on)
                 .toggleStyle(.switch)
-                .handCursor()
+                .cursor(.pointingHand)
                 .labelsHidden()
                 .controlSize(.small)
                 .accessibilityLabel(title)

@@ -17,6 +17,10 @@ struct PanelView: View {
     @State private var litKey: String?
     /// The row under the pointer, which shows its open button.
     @State private var hoveredID: String?
+    /// The ⌘K list as it was when the menu opened. Rebuilding it while open
+    /// moved items under the pointer: a click meant for "Write a Note"
+    /// could land on "Quit".
+    @State private var menuActions: [PanelAction] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -46,7 +50,7 @@ struct PanelView: View {
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
-                ActionsMenu(actions: actions) { showActions = false }
+                ActionsMenu(actions: menuActions) { showActions = false }
                     .padding(.trailing, 10)
                     .padding(.bottom, 50)
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
@@ -60,6 +64,8 @@ struct PanelView: View {
                         switch model.form {
                         case .newSession: NewSessionForm(model: model) { s in open(s) }
                         case .note(let s): NoteForm(model: model, session: s)
+                        case .message(let s): MessageForm(model: model, session: s)
+                        case .rename(let s): RenameForm(model: model, session: s)
                         case nil:
                             if let list = model.closeGate.pending { CloseConfirmCard(model: model, sessions: list) }
                         }
@@ -221,7 +227,8 @@ struct PanelView: View {
             .id(s.id)
             .contentShape(Rectangle())
             .onHover { inside in
-                if inside {
+                // Rows under the open ⌘K menu stay put.
+                if inside, !showActions {
                     hoveredID = s.id
                     model.selectedID = s.id
                 } else if hoveredID == s.id {
@@ -277,7 +284,7 @@ struct PanelView: View {
                     .tip(primary.help ?? primary.title)
                     Rectangle().fill(Theme.hairline(scheme)).frame(width: 1, height: 16)
                 }
-                PillButton(action: { showActions.toggle() }) {
+                PillButton(action: { toggleActions() }) {
                     HStack(spacing: 6) {
                         Text(L.t("Actions", "更多")).font(.system(size: 12))
                             .lineLimit(1).fixedSize()
@@ -357,6 +364,16 @@ struct PanelView: View {
             })
         }
         if let s = model.selected, model.phase == .ready {
+            if Message.allowed(s) {
+                list.append(PanelAction(title: L.t("Send a Message…", "发消息…"), icon: Icons.message, shortcut: "⌘E",
+                                        help: L.t("Type something into this session, as if in its terminal",
+                                                  "替你在这个会话里输入一段话，就像在它的终端里打字") ) {
+                    model.writeMessage(s)
+                })
+                list.append(PanelAction(title: L.t("Rename…", "重命名…"), icon: Icons.rename, shortcut: "") {
+                    model.startRename(s)
+                })
+            }
             list.append(noteAction(s))
             if Close.allowed(s) {
                 list.append(PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
@@ -378,7 +395,7 @@ struct PanelView: View {
     }
 
     private func noteAction(_ s: Session) -> PanelAction {
-        PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "⌘E",
+        PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "",
                     help: L.t("Write a note on this session", "给这个会话写一句便条")) {
             model.editNote(s)
         }
@@ -387,6 +404,11 @@ struct PanelView: View {
     private func dismissForm() {
         model.form = nil
         model.closeGate.cancel()
+    }
+
+    private func toggleActions() {
+        if !showActions { menuActions = actions }
+        showActions.toggle()
     }
 
     private func perform(_ action: PanelAction?) {
@@ -444,10 +466,14 @@ struct PanelView: View {
     private func shortcut(_ press: KeyPress) -> KeyPress.Result {
         guard press.modifiers.contains(.command) else { return .ignored }
         switch press.characters.lowercased() {
-        case "k": flash("⌘K"); showActions.toggle()
+        case "k": flash("⌘K"); toggleActions()
         case "r": model.refresh()
         case "n" where model.phase == .ready: model.startNewSession()
-        case "e": if let s = model.selected, model.phase == .ready { model.editNote(s) }
+        case "e":
+            // Say something to the session; one that can't take input gets a note instead.
+            if let s = model.selected, model.phase == .ready {
+                Message.allowed(s) ? model.writeMessage(s) : model.editNote(s)
+            }
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):

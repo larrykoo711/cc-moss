@@ -151,13 +151,21 @@ private struct TooltipCard: View {
     let text: String
     @Environment(\.colorScheme) private var scheme
 
+    /// One width for the text and its card: the text's natural width, at
+    /// most 240 pt (measured, so wrapping and background always agree).
+    private var width: CGFloat {
+        let font = NSFont.systemFont(ofSize: 12)
+        let natural = (text as NSString).size(withAttributes: [.font: font]).width
+        return min(ceil(natural) + 1, 240)
+    }
+
     var body: some View {
         Text(text)
             .font(.system(size: 12))
             .foregroundStyle(.primary)
             .lineSpacing(2)
             .multilineTextAlignment(.leading)
-            .frame(maxWidth: 240, alignment: .leading)
+            .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)

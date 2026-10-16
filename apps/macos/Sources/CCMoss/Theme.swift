@@ -56,6 +56,8 @@ enum Icons {
     static let copyPath = "folder"
     static let refresh = "arrow.clockwise"
     static let quit = "power"
+    static let message = "paperplane"
+    static let rename = "character.cursor.ibeam"
     static let settings = "gearshape"
     static let general = "gearshape"
     static let about = "info.circle"

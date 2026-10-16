@@ -161,6 +161,8 @@ struct SettingsView: View {
             )
             .contentShape(Capsule())
             .onTapGesture { searchFocused = true }
+            // The whole capsule is the field: the text cursor all over it.
+            .cursor(.iBeam)
             .animation(.easeOut(duration: 0.15), value: searchFocused)
             .padding(.bottom, 10)
             ForEach(tabs, id: \.self) { t in
@@ -382,7 +384,7 @@ struct SoftButton: View {
 struct GeneralSettings: View {
     @Bindable var model: AppModel
 
-    @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
 
     var body: some View {
@@ -395,7 +397,7 @@ struct GeneralSettings: View {
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
-                    .handCursor()
+                    .cursor(.pointingHand)
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
@@ -424,16 +426,12 @@ struct GeneralSettings: View {
 
     private func setOpenAtLogin(_ on: Bool) {
         do {
-            if on {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
+            try LoginItem.set(on)
             loginError = nil
         } catch {
-            loginError = L.t("macOS said no: \(error.localizedDescription)", "macOS 没同意：\(error.localizedDescription)")
-            openAtLogin = SMAppService.mainApp.status == .enabled
+            loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
         }
+        openAtLogin = LoginItem.isEnabled
     }
 
     private func set(_ path: String?) {

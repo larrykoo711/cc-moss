@@ -122,6 +122,13 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("alias rm", "", "删除别名和它的链接"),
     ("alias rm", "json", "机器可读的输出（schema 1）"),
     ("alias rm", "name", "要删除的别名"),
+    (
+        "send",
+        "",
+        "替你在一个正在运行的会话里输入一段话，就像你在它的终端里打的一样",
+    ),
+    ("send", "name", "会话名（Claude 会话名、tmux 名或 id 前缀）"),
+    ("send", "text", "要发的话；多行会原样整段送达"),
     ("update", "", "看看 cc-moss 有没有新版本，有就装上"),
     ("update", "check", "只看看，不做任何改动"),
     (

@@ -6,6 +6,8 @@ import SwiftUI
 enum PanelForm: Equatable {
     case newSession
     case note(Session)
+    case message(Session)
+    case rename(Session)
 }
 
 /// The new-session form's fields and what it is doing.
@@ -99,6 +101,31 @@ extension AppModel {
     func editNote(_ s: Session) {
         closeGate.cancel()
         form = .note(s)
+    }
+
+    func writeMessage(_ s: Session) {
+        closeGate.cancel()
+        form = .message(s)
+    }
+
+    func startRename(_ s: Session) {
+        closeGate.cancel()
+        form = .rename(s)
+    }
+
+    /// Type `text` into the session, as if in its terminal.
+    func sendMessage(_ s: Session, text: String, done: String) {
+        guard let client else { return }
+        form = nil
+        Task {
+            do {
+                try await client.send(target: s.target, text: text)
+                say(done)
+            } catch {
+                say(Self.describe(error))
+            }
+            refresh()
+        }
     }
 
     func saveNote(_ s: Session, text: String) {
@@ -329,9 +356,10 @@ struct NoteForm: View {
 
     var body: some View {
         FormCard(title: L.t("Note for “\(session.title)”", "给「\(session.title)」写便条"), icon: Icons.note) {
-            FilledField(placeholder: L.t("Where it stopped, what's next…", "停在哪里、下一步做什么…"),
-                        text: $text, autofocus: true) { model.saveNote(session, text: text) }
-            FormHint(text: L.t("Return saves, Esc cancels, empty clears the note.", "回车保存，Esc 取消，留空就是清除。"))
+            MultilineField(placeholder: L.t("Where it stopped, what's next…", "停在哪里、下一步做什么…"),
+                           text: $text) { model.saveNote(session, text: text) }
+            FormHint(text: L.t("⌘↩ saves, Esc cancels, empty clears the note. A note stays with cc-moss; Claude doesn't see it.",
+                               "⌘↩ 保存，Esc 取消，留空就是清除。便条只留在 cc-moss 里，Claude 看不到。"))
             HStack(spacing: 8) {
                 Spacer()
                 SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
@@ -339,9 +367,135 @@ struct NoteForm: View {
                 SoftButton(title: L.t("Save", "保存"), icon: "checkmark", prominent: true) {
                     model.saveNote(session, text: text)
                 }
-                .tip("↵")
+                .tip("⌘↩")
             }
         }
+    }
+}
+
+// MARK: - Message
+
+/// Say something to the session: the text goes into its input, as if typed
+/// in its terminal; several lines arrive whole.
+struct MessageForm: View {
+    @Bindable var model: AppModel
+    let session: Session
+    @State private var text = ""
+
+    private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    var body: some View {
+        FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message) {
+            MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
+            FormHint(text: L.t("⌘↩ sends it to the session, as if you typed it in its terminal. Esc cancels.",
+                               "⌘↩ 发送到这个会话，就像你在它的终端里打的一样。Esc 取消。"))
+            HStack(spacing: 8) {
+                Spacer()
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
+                    .tip("Esc")
+                SoftButton(title: L.t("Send", "发送"), icon: Icons.message, prominent: true) { send() }
+                    .tip("⌘↩")
+                    .disabled(empty)
+            }
+        }
+    }
+
+    private func send() {
+        guard !empty else { return }
+        model.sendMessage(session, text: text, done: L.t("Sent to \(session.title).", "已发给 \(session.title)。"))
+    }
+}
+
+// MARK: - Rename
+
+/// A new name, set the way Claude Code names sessions (`/rename`), so the
+/// hook carries it to tmux and the panel; names stay unique.
+struct RenameForm: View {
+    @Bindable var model: AppModel
+    let session: Session
+    @State private var name: String
+
+    init(model: AppModel, session: Session) {
+        self.model = model
+        self.session = session
+        _name = State(initialValue: session.name ?? "")
+    }
+
+    private var check: Message.RenameCheck { Message.checkRename(name, of: session, among: model.sessions) }
+
+    private var hint: String {
+        switch check {
+        case .ok: return L.t("Return renames it. Claude Code renames the session; the panel and tmux follow.",
+                             "回车改名。名字由 Claude Code 改，面板和 tmux 会跟着变。")
+        case .unchanged: return L.t("That's its name already.", "现在就叫这个。")
+        case .empty: return L.t("Give it a name.", "起个名字吧。")
+        case .badCharacters: return L.t("Just letters, numbers and punctuation, on one line.", "只能是一行普通文字。")
+        case .taken(let other): return L.t("“\(other)” already has this name. Pick another one.", "「\(other)」已经叫这个名字了，换一个吧。")
+        }
+    }
+
+    var body: some View {
+        FormCard(title: L.t("Rename “\(session.title)”", "给「\(session.title)」改名"), icon: Icons.rename) {
+            FilledField(placeholder: L.t("New name", "新名字"), text: $name, autofocus: true) { submit() }
+            FormHint(text: hint)
+            HStack(spacing: 8) {
+                Spacer()
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark") { model.form = nil }
+                    .tip("Esc")
+                SoftButton(title: L.t("Rename", "改名"), icon: Icons.rename, prominent: true) { submit() }
+                    .tip("↵")
+                    .disabled(check != .ok)
+            }
+        }
+    }
+
+    private func submit() {
+        guard check == .ok else { return }
+        let new = name.trimmingCharacters(in: .whitespaces)
+        model.sendMessage(session, text: Message.renameText(new),
+                          done: L.t("Renaming to \(new)…", "正在改名为 \(new)…"))
+    }
+}
+
+/// A few lines of text in the panel's filled style: ⌘↩ submits, Return
+/// makes a new line, Esc is handled by the form.
+struct MultilineField: View {
+    let placeholder: String
+    @Binding var text: String
+    var onSubmit: () -> Void = {}
+    @FocusState private var focused: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            if text.isEmpty {
+                Text(placeholder)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 8)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: $text)
+                .font(.system(size: 13))
+                .scrollContentBackground(.hidden)
+                .focused($focused)
+                .padding(.horizontal, 5)
+                .padding(.vertical, 6)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    onSubmit()
+                    return .handled
+                }
+        }
+        .frame(minHeight: 84, maxHeight: 150)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.selection(scheme).opacity(0.8)))
+        .overlay(
+            RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
+        )
+        .animation(.easeOut(duration: 0.12), value: focused)
+        .onAppear { focused = true }
     }
 }
 

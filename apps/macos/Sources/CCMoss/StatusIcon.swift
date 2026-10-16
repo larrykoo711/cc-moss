@@ -105,6 +105,17 @@ struct PressStyle: ButtonStyle {
 }
 
 extension View {
+    /// A specific pointer while hovering, set through AppKit so controls
+    /// that bring their own cursor rects (switches) don't override it.
+    func cursor(_ cursor: NSCursor) -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active: cursor.set()
+            case .ended: NSCursor.arrow.set()
+            }
+        }
+    }
+
     /// The pointing hand while the pointer is over something you can click.
     @ViewBuilder func handCursor() -> some View {
         if #available(macOS 15.0, *) {
