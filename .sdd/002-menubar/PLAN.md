@@ -207,7 +207,7 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
 | **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ⬜ Backlog | — | 三项操作 `t` 里可见 |
 | **T2.6** 原生别名 | cc-moss | T1.1 | 🟨 In Progress | in-progress/T2.6-native-aliases.spec.md | bash/zsh 下别名可用，改完即生效 |
-| **T3.1** 宠物设计 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T3.1-pet-design.spec.md | 用户批准宠物设计 |
+| **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ⬜ Backlog | — | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ⬜ Backlog | — | 事件气泡、点击打开会话 |
 | **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
@@ -237,6 +237,8 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 - 2026-10-16 用户：「补充完善 kanban 然后继续全力推进 with sdd and agent team」
 - 2026-10-16 T2.1 合入 main（#15，独立评审 2 Important + 2 Minor 均已修复并补红→绿测试，380 测试全绿，钩子 p95 PostToolUse 3.6ms / Notification 7.4ms）；T1.1 变基后全绿，随 #14 合入
 - 2026-10-16 T1.1 合入 main（#14）。第二波 S3：T1.2、T2.2、T2.6、T3.1 spec 过 gate，派 agent team 四路并行（各自 worktree 与 feature 分支，controller 负责看板与合并）
+- 2026-10-16 T3.1 设计批准：用户「B，小莫」——形象方向 B、名字「小莫 / Mo」；DESIGN-pet §13 其余 9 项（默认开启方式、话量正常、语音默认关、勿扰不破例、跟随专注模式、单击开面板、宠物在场不重复发通知、64pt 右下角、两个彩蛋）按推荐值执行，均可在设置中更改
+- 2026-10-16 T2.2 菜单栏图标三轮真机测量：每帧换图 10fps 4.3%、Core Animation 26.5%（WindowServer +13%）、每秒 2 次换图 1.43%（≈ iStat Menus 菜单栏进程 1.3%）。结论：菜单栏每次更新有固定系统开销，只能压更新次数；流畅动画留给 P3 宠物窗口
 
 ## 推进节奏
 

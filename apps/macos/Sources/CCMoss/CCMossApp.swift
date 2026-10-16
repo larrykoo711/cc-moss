@@ -38,6 +38,11 @@ enum Main {
             Render.benchIcon(args: CommandLine.arguments)
             return
         }
+        // `--pet-sheets dir`: the desktop pet design prototypes (T3.1).
+        if let i = CommandLine.arguments.firstIndex(of: "--pet-sheets"), i + 1 < CommandLine.arguments.count {
+            PetSheets.run(outDir: CommandLine.arguments[i + 1])
+            return
+        }
         if CommandLine.arguments.contains("--preview") {
             Render.preview(args: CommandLine.arguments)
             return
