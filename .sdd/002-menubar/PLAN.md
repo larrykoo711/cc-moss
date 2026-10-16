@@ -211,7 +211,7 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ✅ Done | done/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ✅ Done | done/T3.3-pet-bubbles.spec.md | 事件气泡、点击打开会话 |
 | **T3.4** 语音播报 | cc-moss | T3.3 | 🟩 Review | in-progress/T3.4-voice.spec.md | 中英播报、勿扰静音 |
-| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.4 | 🟨 In Progress | — | 干净用户目录 brew 全流程 |
+| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.3 | 🟨 In Progress | in-progress/T4.1-ship-the-app.spec.md | 干净用户目录 brew 全流程 |
 | **T4.2** 首次启动引导 | cc-moss | T4.1 | ⬜ Backlog | — | 干净用户目录首次启动走完引导 |
 | **T4.3** 打磨、文档与 0.2.0 | cc-moss | T4.2 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
 
