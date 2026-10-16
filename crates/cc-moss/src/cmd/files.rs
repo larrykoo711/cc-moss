@@ -20,8 +20,22 @@ pub struct Change {
     pub path: PathBuf,
     pub original: Option<String>,
     pub new_text: String,
+    /// Write `new_text`, or delete the file.
+    pub remove: Removal,
     /// What to say once written.
     pub done: String,
+}
+
+/// Whether a change deletes its file, and whether a backup is kept first.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Removal {
+    /// Write `new_text` (with a backup of the old file).
+    No,
+    /// Delete a file that is byte for byte what cc-moss wrote: nothing to keep.
+    Verbatim,
+    /// Delete a file left empty by taking cc-moss's blocks out; the user may
+    /// have typed inside them, so a backup is kept.
+    WithBackup,
 }
 
 /// Show every diff, ask once, then back up and write each file. `command`
@@ -39,6 +53,17 @@ pub fn apply(
         return Ok(true);
     }
     for c in changes {
+        if c.remove != Removal::No {
+            let lines = c.original.as_deref().unwrap_or_default().lines().count();
+            println!(
+                "{}",
+                tr!(
+                    format!("--- {} (delete, {lines} lines)", c.path.display()),
+                    format!("--- {}（删除，{lines} 行）", c.path.display())
+                )
+            );
+            continue;
+        }
         let lines = c.new_text.lines().count();
         // A whole new file of ours is one line, not a wall of `+`.
         if c.original.is_none() && lines > NEW_FILE_PREVIEW {
@@ -59,7 +84,7 @@ pub fn apply(
         );
         print!(
             "{}",
-            unified_diff(c.original.as_deref().unwrap_or(""), &c.new_text, 3)
+            diff_or_summary(c.original.as_deref().unwrap_or(""), &c.new_text)
         );
     }
     for n in notes {
@@ -95,6 +120,21 @@ pub fn apply(
         return Ok(false);
     }
     for c in changes {
+        if c.remove != Removal::No {
+            if let (Removal::WithBackup, Some(text)) = (c.remove, &c.original) {
+                let backup = write_backup(&c.path, text.as_bytes())?;
+                println!("{} {}", tr!("Backup:", "备份："), backup.display());
+            }
+            match fs::remove_file(&c.path) {
+                Ok(()) => {}
+                Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+                Err(e) => {
+                    return Err(e).with_context(|| format!("cannot delete {}", c.path.display()))
+                }
+            }
+            println!("{}", c.done);
+            continue;
+        }
         if let Some(text) = &c.original {
             let backup = write_backup(&c.path, text.as_bytes())?;
             println!("{} {}", tr!("Backup:", "备份："), backup.display());
@@ -224,6 +264,22 @@ fn line_diff<'a>(a: &[&'a str], b: &[&'a str]) -> Vec<Op<'a>> {
     ops
 }
 
+/// Above this many lines on either side, the LCS table (n*m cells) is too
+/// big to build: show a summary instead.
+const MAX_DIFF_LINES: usize = 5000;
+
+/// The unified diff, or for huge files a one-line summary.
+fn diff_or_summary(old: &str, new: &str) -> String {
+    let (before, after) = (old.lines().count(), new.lines().count());
+    if before.max(after) <= MAX_DIFF_LINES {
+        return unified_diff(old, new, 3);
+    }
+    tr!(
+        format!("(too long to show as a diff: {before} lines now, {after} lines after)\n"),
+        format!("（文件太长，不逐行对比：现在 {before} 行，改完 {after} 行）\n")
+    )
+}
+
 /// Unified-diff hunks (`@@ -a,b +c,d @@`) with `context` lines around changes.
 fn unified_diff(old: &str, new: &str, context: usize) -> String {
     let a: Vec<&str> = old.lines().collect();
@@ -294,6 +350,20 @@ mod tests {
             unified_diff(old, new, 3),
             "@@ -2,6 +2,7 @@\n b\n c\n d\n+X\n e\n f\n g\n"
         );
+    }
+
+    #[test]
+    fn huge_files_get_a_summary_instead_of_a_diff() {
+        let old: String = (0..20_000).map(|i| format!("{i}\n")).collect();
+        let new = format!("{old}one more\n");
+        let shown = diff_or_summary(&old, &new);
+        assert!(!shown.contains("@@"), "{shown}");
+        assert!(
+            shown.contains("20000") && shown.contains("20001"),
+            "{shown}"
+        );
+        // Small files still get the real diff.
+        assert_eq!(diff_or_summary("a\n", "b\n"), unified_diff("a\n", "b\n", 3));
     }
 
     #[test]

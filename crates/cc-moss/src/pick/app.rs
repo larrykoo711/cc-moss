@@ -38,7 +38,7 @@ impl State {
         match self {
             State::Working => tr!("Working", "在忙"),
             State::Waiting => tr!("Waiting for you", "在等你"),
-            State::Interrupted => tr!("Interrupted", "被打断了"),
+            State::Interrupted => tr!("Interrupted", "已中断"),
             State::Plain => tr!("tmux session", "tmux 会话"),
         }
     }
@@ -175,6 +175,12 @@ impl App {
         };
         app.set_items(sessions, interrupted);
         app
+    }
+
+    /// Start with `query` in the search line (`cc-moss pick api`).
+    pub fn set_query(&mut self, query: &str) {
+        self.query = query.to_string();
+        self.refilter();
     }
 
     /// Replace the data, keeping the selection on the same item if it still exists.
@@ -649,6 +655,17 @@ mod tests {
         let mut b = app();
         type_str(&mut b, "billing");
         assert_eq!(b.selected().unwrap().title(), "scratch");
+    }
+
+    #[test]
+    fn an_initial_query_filters_like_typing() {
+        let mut typed = app();
+        type_str(&mut typed, "scr");
+        let mut given = app();
+        given.set_query("scr");
+        assert_eq!(given.query, "scr");
+        assert_eq!(titles(&given), titles(&typed));
+        assert_eq!(given.selected(), typed.selected());
     }
 
     #[test]

@@ -19,10 +19,10 @@ pub fn run(all: bool, as_json: bool) -> Result<()> {
     rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
 
     if as_json {
-        let slots: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
+        let sessions: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
         println!(
             "{}",
-            serde_json::to_string_pretty(&json!({ "schema": JSON_SCHEMA, "slots": slots }))?
+            serde_json::to_string_pretty(&json!({ "schema": JSON_SCHEMA, "sessions": sessions }))?
         );
     } else {
         print_table(&rows);
@@ -40,7 +40,7 @@ fn rank(st: Status) -> u8 {
 
 fn to_json(st: Status, s: &Slot) -> Value {
     json!({
-        "slot_id": s.slot_id,
+        "id": s.slot_id,
         "agent": s.agent,
         "name": s.name,
         "status": st.as_str(),

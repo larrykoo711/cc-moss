@@ -52,7 +52,7 @@ pub fn unique(desired: &str, taken: &[String], current: Option<&str>) -> String 
 
 /// The machine's short name: `$CC_MOSS_HOST_PREFIX` if set, else
 /// `LocalHostName` on macOS (`hostname -s` often returns a generic name
-/// there), else `hostname -s`.
+/// there), else the kernel's host name on Linux, else `hostname -s`.
 pub fn host_prefix() -> Option<String> {
     if let Some(p) = std::env::var("CC_MOSS_HOST_PREFIX")
         .ok()
@@ -69,6 +69,14 @@ pub fn host_prefix() -> Option<String> {
     if cfg!(target_os = "macos") {
         if let Some(name) = run(Command::new("scutil").args(["--get", "LocalHostName"])) {
             return Some(name);
+        }
+    }
+    if cfg!(target_os = "linux") {
+        if let Ok(name) = std::fs::read_to_string("/proc/sys/kernel/hostname") {
+            let short = name.trim().split('.').next().unwrap_or_default();
+            if !short.is_empty() {
+                return Some(short.to_string());
+            }
         }
     }
     run(Command::new("hostname").arg("-s"))
@@ -91,14 +99,15 @@ pub fn cached_host_prefix(state_dir: &std::path::Path) -> Option<String> {
         .is_some_and(|age| age < Duration::from_secs(86_400));
     if fresh {
         if let Ok(cached) = std::fs::read_to_string(&path) {
+            // Empty means "no name found": also cached, so a machine without
+            // `hostname` does not spawn it on every prompt.
             let cached = cached.trim();
-            if !cached.is_empty() {
-                return Some(cached.to_string());
-            }
+            return (!cached.is_empty()).then(|| cached.to_string());
         }
     }
-    let prefix = host_prefix()?;
-    let _ = std::fs::create_dir_all(state_dir);
-    let _ = std::fs::write(&path, &prefix);
-    Some(prefix)
+    let prefix = host_prefix();
+    if crate::store_dir::ensure_private_dir(state_dir).is_ok() {
+        let _ = std::fs::write(&path, prefix.as_deref().unwrap_or(""));
+    }
+    prefix
 }

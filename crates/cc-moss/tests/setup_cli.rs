@@ -242,3 +242,50 @@ fn zsh_block_round_trip() {
     run(&["--yes", "--uninstall"]);
     assert_eq!(std::fs::read_to_string(&zshrc).unwrap(), original);
 }
+
+#[test]
+fn hooks_use_the_path_link_not_the_resolved_binary() {
+    // A package manager's `bin/cc-moss` link survives upgrades; the versioned
+    // file it points at does not.
+    let dir = tempfile::tempdir().unwrap();
+    let bin_dir = dir.path().join("bin");
+    fs::create_dir(&bin_dir).unwrap();
+    let link = bin_dir.join("cc-moss");
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_cc-moss"), &link).unwrap();
+    let settings = dir.path().join("settings.json");
+    let out = bin()
+        .env("HOME", dir.path())
+        .env("PATH", format!("{}:/usr/bin:/bin", bin_dir.display()))
+        .args(["setup", "--yes", "--settings"])
+        .arg(&settings)
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{}", stderr(&out));
+    let text = fs::read_to_string(&settings).unwrap();
+    let doc: serde_json::Value = serde_json::from_str(&text).unwrap();
+    let want = format!("[ -x {0} ] && {0} hook stop || true", link.display());
+    assert_eq!(
+        doc["hooks"]["Stop"][0]["hooks"][0]["command"],
+        want.as_str()
+    );
+}
+
+#[test]
+fn setup_upgrades_unguarded_hooks_without_duplicates() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("settings.json");
+    let legacy = serde_json::json!({ "hooks": { "Stop": [{ "hooks": [{
+        "type": "command",
+        "command": "/old/place/cc-moss hook stop",
+        "timeout": 10,
+    }] }] } });
+    fs::write(&path, legacy.to_string()).unwrap();
+    let out = setup(dir.path(), &["--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let doc: serde_json::Value = serde_json::from_str(&fs::read_to_string(&path).unwrap()).unwrap();
+    let stop = doc["hooks"]["Stop"].as_array().unwrap();
+    assert_eq!(stop.len(), 1, "{stop:?}");
+    let command = stop[0]["hooks"][0]["command"].as_str().unwrap();
+    assert!(command.starts_with("[ -x "), "{command}");
+    assert!(!command.contains("/old/place"), "{command}");
+}

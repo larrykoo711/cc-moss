@@ -12,7 +12,7 @@ fn ctx(pid: u32, now_ms: i64) -> Context {
         tmux: Some(TmuxLoc {
             socket: "/tmp/tmux-501/test".into(),
             session_id: Some("$1".into()),
-            session_name: Some("host_em-a".into()),
+            session_name: Some("host_job-a".into()),
             pane_id: "%0".into(),
         }),
         launch_args: None,
@@ -47,7 +47,7 @@ fn only_slot(reg: &Registry) -> Slot {
 fn startup_creates_running_slot() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-a")),
+        &start(StartSource::Startup, "U1", Some("job-a")),
         &ctx(100, 1_000),
     )
     .unwrap();
@@ -55,7 +55,7 @@ fn startup_creates_running_slot() {
     let s = only_slot(&reg);
     assert_eq!(s.status, Status::Running);
     assert_eq!(s.session_id, "U1");
-    assert_eq!(s.name.as_deref(), Some("em-a"));
+    assert_eq!(s.name.as_deref(), Some("job-a"));
     assert_eq!(s.cwd, "/work");
     assert_eq!(s.pid, Some(100));
     assert_eq!(s.tmux.as_ref().unwrap().pane_id, "%0");
@@ -77,14 +77,14 @@ fn startup_outside_tmux_has_null_tmux() {
 fn clear_rotates_id_in_same_slot() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-b")),
+        &start(StartSource::Startup, "U1", Some("job-b")),
         &ctx(100, 1_000),
     )
     .unwrap();
     // F4: SessionEnd(clear) for the old id, then SessionStart(clear) for the new id, same pid.
     reg.apply(&end("U1", "clear"), &ctx(100, 2_000)).unwrap();
     reg.apply(
-        &start(StartSource::Clear, "U2", Some("em-b")),
+        &start(StartSource::Clear, "U2", Some("job-b")),
         &ctx(100, 2_001),
     )
     .unwrap();
@@ -93,7 +93,7 @@ fn clear_rotates_id_in_same_slot() {
     assert_eq!(s.status, Status::Running);
     assert_eq!(s.session_id, "U2");
     assert_eq!(s.session_ids, vec!["U1".to_string(), "U2".to_string()]);
-    assert_eq!(s.name.as_deref(), Some("em-b"));
+    assert_eq!(s.name.as_deref(), Some("job-b"));
 }
 
 #[test]
@@ -146,19 +146,19 @@ fn end_other_marks_interrupted() {
 fn resume_reuses_slot() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-a")),
+        &start(StartSource::Startup, "U1", Some("job-a")),
         &ctx(100, 1_000),
     )
     .unwrap();
     reg.apply(
-        &start(StartSource::Clear, "U2", Some("em-a")),
+        &start(StartSource::Clear, "U2", Some("job-a")),
         &ctx(100, 1_500),
     )
     .unwrap();
     reg.apply(&end("U2", "other"), &ctx(100, 2_000)).unwrap();
     // After a reboot: resumed with the latest id under a new pid (F9).
     reg.apply(
-        &start(StartSource::Resume, "U2", Some("em-a")),
+        &start(StartSource::Resume, "U2", Some("job-a")),
         &ctx(200, 9_000),
     )
     .unwrap();
@@ -191,7 +191,7 @@ fn resume_of_older_id_still_finds_slot() {
 fn prompt_updates_name_and_activity() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-a")),
+        &start(StartSource::Startup, "U1", Some("job-a")),
         &ctx(100, 1_000),
     )
     .unwrap();
@@ -199,14 +199,14 @@ fn prompt_updates_name_and_activity() {
     reg.apply(
         &Event::Prompt {
             session_id: "U1".into(),
-            title: Some("em-b".into()),
+            title: Some("job-b".into()),
             prompt: None,
         },
         &ctx(100, 4_000),
     )
     .unwrap();
     let s = only_slot(&reg);
-    assert_eq!(s.name.as_deref(), Some("em-b"));
+    assert_eq!(s.name.as_deref(), Some("job-b"));
     assert_eq!(s.last_active_at_ms, 4_000);
 }
 
@@ -214,7 +214,7 @@ fn prompt_updates_name_and_activity() {
 fn prompt_without_title_keeps_name() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-a")),
+        &start(StartSource::Startup, "U1", Some("job-a")),
         &ctx(100, 1_000),
     )
     .unwrap();
@@ -227,14 +227,14 @@ fn prompt_without_title_keeps_name() {
         &ctx(100, 4_000),
     )
     .unwrap();
-    assert_eq!(only_slot(&reg).name.as_deref(), Some("em-a"));
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("job-a"));
 }
 
 #[test]
 fn stop_updates_activity_only() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
-        &start(StartSource::Startup, "U1", Some("em-a")),
+        &start(StartSource::Startup, "U1", Some("job-a")),
         &ctx(100, 1_000),
     )
     .unwrap();
@@ -248,7 +248,7 @@ fn stop_updates_activity_only() {
     let s = only_slot(&reg);
     assert_eq!(s.last_active_at_ms, 7_000);
     assert_eq!(s.status, Status::Running);
-    assert_eq!(s.name.as_deref(), Some("em-a"));
+    assert_eq!(s.name.as_deref(), Some("job-a"));
 }
 
 #[test]
@@ -820,8 +820,8 @@ fn set_name_fills_a_missing_name() {
     reg.apply(&start(StartSource::Resume, "A", None), &ctx(100, 1_000))
         .unwrap();
     let id = only_slot(&reg).slot_id;
-    reg.set_name(&id, "em-final").unwrap();
-    assert_eq!(only_slot(&reg).name.as_deref(), Some("em-final"));
+    reg.set_name(&id, "job-final").unwrap();
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("job-final"));
 }
 
 #[test]
@@ -839,7 +839,7 @@ fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
     };
     reg.apply(&event, &ctx(100, 1_000)).unwrap();
     assert_eq!(reg.backfill_names().unwrap(), 0);
-    writeln!(t, r#"{{"type":"custom-title","customTitle":"em-late"}}"#).unwrap();
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"job-late"}}"#).unwrap();
     assert_eq!(reg.backfill_names().unwrap(), 1);
-    assert_eq!(only_slot(&reg).name.as_deref(), Some("em-late"));
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("job-late"));
 }

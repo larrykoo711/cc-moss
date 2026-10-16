@@ -1,5 +1,8 @@
 //! cc-moss: civilizations carry on, so do conversations.
 
+#[cfg(not(unix))]
+compile_error!("cc-moss supports macOS and Linux only");
+
 #[macro_use]
 mod i18n;
 mod cmd;
@@ -14,6 +17,7 @@ use clap::{CommandFactory, Parser, Subcommand};
 #[command(
     name = "cc-moss",
     about = "Recoverable Claude Code sessions in tmux",
+    after_help = "Run `cc-moss` without a command to open the session picker (the `t` shortcut).",
     disable_version_flag = true
 )]
 struct Cli {
@@ -85,6 +89,9 @@ enum Command {
         /// Replace an existing starship config with cc-moss's.
         #[arg(long)]
         replace_starship: bool,
+        /// Undo install: remove the hooks, blocks and files it added.
+        #[arg(long, conflicts_with_all = ["with", "skip", "replace_starship"])]
+        uninstall: bool,
         /// Show what would change; change nothing.
         #[arg(long)]
         dry_run: bool,
@@ -95,7 +102,11 @@ enum Command {
     /// Check hooks, tmux, starship, shell blocks and tools.
     Doctor,
     /// Pick a session, folder or interrupted session (the `t` shortcut).
-    Pick,
+    Pick {
+        /// Start with this search, e.g. `cc-moss pick api`.
+        #[arg(value_name = "QUERY")]
+        query: Vec<String>,
+    },
     /// Bring interrupted sessions back, each in its own tmux session.
     Restore {
         /// Restore without asking.
@@ -108,14 +119,19 @@ enum Command {
         names: Vec<String>,
     },
     /// Jump to a session's tmux session.
-    Attach { name: String },
+    Attach {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+    },
     /// Stop offering sessions for restore.
     Close {
+        /// Session names (Claude name, tmux name or id prefix).
         #[arg(required = true)]
         names: Vec<String>,
     },
     /// Show or set a session's notes: what it is doing, where it stopped.
     Note {
+        /// Session name (Claude name, tmux name or id prefix).
         name: String,
         /// What the session is for.
         #[arg(long)]
@@ -138,6 +154,18 @@ enum Command {
 }
 
 fn main() -> std::process::ExitCode {
+    // Hooks never go through clap: a usage error exits 2, which Claude Code
+    // treats as a blocking error on UserPromptSubmit. Arguments a newer
+    // cc-moss might add are ignored; the event is the first non-flag word.
+    let mut args = std::env::args_os().skip(1);
+    if args.next().is_some_and(|a| a == "hook") {
+        let event = args
+            .map(|a| a.to_string_lossy().into_owned())
+            .find(|a| !a.starts_with('-'))
+            .unwrap_or_default();
+        cmd::hook::run(&event);
+        return std::process::ExitCode::SUCCESS;
+    }
     let cli = match Cli::try_parse() {
         Ok(cli) => cli,
         Err(e) => explain(e),
@@ -147,9 +175,10 @@ fn main() -> std::process::ExitCode {
         return std::process::ExitCode::SUCCESS;
     }
     let Some(command) = cli.command else {
-        return report(pick::run());
+        return report(pick::run(""));
     };
     match command {
+        // Handled before parsing; kept in `Command` for the help text.
         Command::Hook { event } => {
             cmd::hook::run(&event);
             std::process::ExitCode::SUCCESS
@@ -168,20 +197,28 @@ fn main() -> std::process::ExitCode {
             claude_args,
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),
-        Command::Pick => report(pick::run()),
+        Command::Pick { query } => report(pick::run(&query.join(" "))),
         Command::Install {
             with,
             skip,
             replace_starship,
+            uninstall,
             dry_run,
             yes,
-        } => report(cmd::install::run(cmd::install::Options {
-            dry_run,
-            yes,
-            with,
-            skip,
-            replace_starship,
-        })),
+        } => {
+            let opts = cmd::install::Options {
+                dry_run,
+                yes,
+                with,
+                skip,
+                replace_starship,
+            };
+            report(if uninstall {
+                cmd::install::uninstall(&opts)
+            } else {
+                cmd::install::run(opts)
+            })
+        }
         Command::Doctor => match cmd::doctor::run() {
             Ok(true) => std::process::ExitCode::SUCCESS,
             Ok(false) => std::process::ExitCode::FAILURE,
@@ -242,7 +279,19 @@ fn report(result: anyhow::Result<()>) -> std::process::ExitCode {
     match result {
         Ok(()) => std::process::ExitCode::SUCCESS,
         Err(e) => {
-            eprintln!("cc-moss: {e:#}");
+            let newer = e
+                .chain()
+                .find_map(|c| c.downcast_ref::<moss_core::registry::NewerSchema>());
+            match newer {
+                Some(_) => eprintln!(
+                    "cc-moss: {}",
+                    tr!(
+                        "this registry was written by a newer cc-moss, so this version only reads it; upgrade cc-moss",
+                        "这份会话记录是更新版本的 cc-moss 写的，当前版本只能读不能改，请升级 cc-moss"
+                    )
+                ),
+                None => eprintln!("cc-moss: {e:#}"),
+            }
             std::process::ExitCode::FAILURE
         }
     }

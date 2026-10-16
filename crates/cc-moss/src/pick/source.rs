@@ -144,7 +144,7 @@ pub fn sessions(
                 .find(|s| {
                     s.tmux.as_ref().is_some_and(|loc| {
                         loc.session_id.as_deref() == Some(t.id.as_str())
-                            && socket_path.map_or(true, |p| p == loc.socket)
+                            && socket_path.is_none_or(|p| p == loc.socket)
                     })
                 })
                 .map(SlotRow::from_slot);

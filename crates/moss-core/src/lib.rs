@@ -1,5 +1,8 @@
 //! Core of cc-moss: the session registry plus agent and tmux adapters.
 
+#[cfg(not(unix))]
+compile_error!("cc-moss supports macOS and Linux only");
+
 pub mod agent;
 pub mod command;
 pub mod config;

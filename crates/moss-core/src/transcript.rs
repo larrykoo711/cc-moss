@@ -6,6 +6,12 @@ use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 const CHUNK: u64 = 64 * 1024;
+/// Longer lines are skipped: nothing cc-moss looks for is that long.
+const MAX_LINE: usize = 8 << 20;
+/// Stop looking after this many bytes from the end. A rename or turn record
+/// further back is not found; reading more on every picker refresh costs
+/// more than it is worth.
+const SCAN_BUDGET: u64 = 32 << 20;
 
 /// The session name from the last `/rename` (a `custom-title` record),
 /// searching backwards from the end of the file.
@@ -85,6 +91,12 @@ fn first_text(content: &serde_json::Value) -> Option<&str> {
 
 /// Feed lines to `pick` from the last one back to offset `from`, stopping at
 /// the first answer.
+///
+/// Bounded so a huge transcript cannot stall a hook or the picker: a line
+/// longer than [`MAX_LINE`] (a pasted image, a large tool result) is skipped
+/// without being collected, and the scan gives up after [`SCAN_BUDGET`]
+/// bytes. Pieces of a line cut by chunk boundaries are joined once, when
+/// the line's start is found, so the cost stays linear in the bytes read.
 fn scan_back<T>(
     file: &mut File,
     from: u64,
@@ -92,27 +104,69 @@ fn scan_back<T>(
     mut pick: impl FnMut(&[u8]) -> Option<T>,
 ) -> Option<T> {
     let mut pos = size;
-    // Bytes of a line cut at the start of the previous (later) chunk.
-    let mut carry: Vec<u8> = Vec::new();
+    // The line that continues into later chunks, as pieces, latest first.
+    let mut tail: Vec<Vec<u8>> = Vec::new();
+    let mut tail_len = 0usize;
+    // The current line is over MAX_LINE: drop it once its start is reached.
+    let mut skipping = false;
     while pos > from {
+        if size - pos >= SCAN_BUDGET {
+            return None;
+        }
         let start = pos.saturating_sub(CHUNK).max(from);
         let mut buf = vec![0; (pos - start) as usize];
         file.seek(SeekFrom::Start(start)).ok()?;
         file.read_exact(&mut buf).ok()?;
-        buf.extend_from_slice(&carry);
-        // The first piece may be cut: keep it for the next round, unless
-        // this is where the scan starts (a line boundary).
-        let (head, whole) = match (start == from, buf.iter().position(|b| *b == b'\n')) {
-            (true, _) => (Vec::new(), &buf[..]),
-            (false, Some(nl)) => (buf[..nl].to_vec(), &buf[nl + 1..]),
-            (false, None) => (buf.clone(), &buf[buf.len()..]),
-        };
-        for line in whole.split(|b| *b == b'\n').rev() {
-            if let Some(answer) = pick(line) {
+        // `from` is a line boundary; any other chunk start may cut a line.
+        let at_line_start = start == from;
+        let last_nl = buf.iter().rposition(|b| *b == b'\n');
+        if last_nl.is_none() && !at_line_start {
+            // The whole chunk is the middle of one line.
+            if !skipping {
+                tail_len += buf.len();
+                tail.push(buf);
+                if tail_len > MAX_LINE {
+                    tail.clear();
+                    tail_len = 0;
+                    skipping = true;
+                }
+            }
+            pos = start;
+            continue;
+        }
+        // The line that ends after this chunk starts here.
+        let cut = last_nl.map_or(0, |n| n + 1);
+        if !skipping {
+            let mut line = buf[cut..].to_vec();
+            for piece in tail.drain(..).rev() {
+                line.extend_from_slice(&piece);
+            }
+            if let Some(answer) = pick(&line) {
                 return Some(answer);
             }
         }
-        carry = head;
+        tail.clear();
+        tail_len = 0;
+        skipping = false;
+        if let Some(last) = last_nl {
+            // Whole lines inside the chunk; the piece before the first
+            // newline may be cut, so it waits for the next chunk.
+            let first = if at_line_start {
+                0
+            } else {
+                let nl = buf.iter().position(|b| *b == b'\n').unwrap_or(last);
+                tail_len = nl;
+                tail.push(buf[..nl].to_vec());
+                nl + 1
+            };
+            if first <= last {
+                for line in buf[first..last].split(|b| *b == b'\n').rev() {
+                    if let Some(answer) = pick(line) {
+                        return Some(answer);
+                    }
+                }
+            }
+        }
         pos = start;
     }
     None

@@ -5,9 +5,10 @@ members = ["crates/moss-core", "crates/cc-moss"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/larrykoo711/cc-moss"
+homepage = "https://github.com/larrykoo711/cc-moss"
 
 [workspace.dependencies]
 anyhow = "1"
@@ -26,3 +27,6 @@ tempfile = "3"
 
 [profile.release]
 lto = "thin"
+codegen-units = 1
+strip = true
+# Never set panic = "abort": the hook relies on catch_unwind to always exit 0.

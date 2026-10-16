@@ -7,6 +7,16 @@ const EXE: &str = "/usr/local/bin/cc-moss";
 const EVENTS: [&str; 4] = ["SessionStart", "UserPromptSubmit", "Stop", "SessionEnd"];
 
 fn ours(exe: &str, name: &str) -> Value {
+    json!({ "hooks": [{ "type": "command", "command": guarded(exe, name), "timeout": 10 }] })
+}
+
+/// The command shape cc-moss writes: silent when the binary is gone.
+fn guarded(exe: &str, name: &str) -> String {
+    format!("[ -x {exe} ] && {exe} hook {name} || true")
+}
+
+/// The command shape written before the guard existed.
+fn legacy(exe: &str, name: &str) -> Value {
     json!({ "hooks": [{ "type": "command", "command": format!("{exe} hook {name}"), "timeout": 10 }] })
 }
 
@@ -86,7 +96,7 @@ fn install_is_idempotent_and_upgrades_path() {
         assert_eq!(ours_here.len(), 1, "{event}: replaced, not stacked");
         assert_eq!(
             ours_here[0]["command"],
-            format!("'{new_exe}' hook {name}"),
+            guarded(&format!("'{new_exe}'"), name),
             "path with a space is quoted"
         );
     }
@@ -111,7 +121,7 @@ fn uninstall_only_removes_ours() {
     // A group that mixes a user command with ours keeps the user's command.
     let mixed = json!({ "hooks": { "Stop": [{ "hooks": [
         { "type": "command", "command": "~/bin/notify.sh" },
-        { "type": "command", "command": format!("{EXE} hook stop") },
+        { "type": "command", "command": guarded(EXE, "stop") },
     ] }] } });
     assert_eq!(
         uninstall(&mixed).unwrap(),
@@ -127,6 +137,9 @@ fn is_ours_matches_quoted_and_bare_paths() {
         "/usr/local/bin/cc-moss hook session-start",
         "\"/Users/me/My Tools/cc-moss\" hook user-prompt-submit",
         "'/opt/cc moss/cc-moss' hook session-end",
+        "[ -x /usr/local/bin/cc-moss ] && /usr/local/bin/cc-moss hook stop || true",
+        "[ -x '/opt/cc moss/cc-moss' ] && '/opt/cc moss/cc-moss' hook session-end || true",
+        "[ -x '/tmp/a'\\''b/cc-moss' ] && '/tmp/a'\\''b/cc-moss' hook stop || true",
     ] {
         assert!(is_ours(&cmd(yes)), "{yes}");
     }
@@ -136,6 +149,10 @@ fn is_ours_matches_quoted_and_bare_paths() {
         "cc-moss hook pre-tool-use",
         "~/bin/notify.sh",
         "cc-moss ls",
+        "echo hi; /usr/local/bin/cc-moss hook stop",
+        "[ -x /a/cc-moss ] && /b/cc-moss hook stop || true",
+        "[ -x /a/cc-moss ] && /a/cc-moss hook stop || rm -rf /",
+        "[ -x /a/cc-moss ] && /a/cc-moss hook stop",
     ] {
         assert!(!is_ours(&cmd(no)), "{no}");
     }
@@ -156,24 +173,121 @@ fn hook_commands_quote_any_unsafe_path() {
     use moss_core::settings_json::hook_command;
     assert_eq!(
         hook_command("/usr/local/bin/cc-moss", HookKind::Stop),
-        "/usr/local/bin/cc-moss hook stop"
+        "[ -x /usr/local/bin/cc-moss ] && /usr/local/bin/cc-moss hook stop || true"
     );
     assert_eq!(
         hook_command("/tmp/a'b$(touch x);/cc-moss", HookKind::Stop),
-        "'/tmp/a'\\''b$(touch x);/cc-moss' hook stop"
+        "[ -x '/tmp/a'\\''b$(touch x);/cc-moss' ] && '/tmp/a'\\''b$(touch x);/cc-moss' hook stop || true"
     );
-    let out = std::process::Command::new("sh")
-        .args([
-            "-c",
-            &format!(
-                "set -- {}; printf %s \"$1\"",
-                hook_command("/tmp/a'b$(echo pwned)/cc-moss", HookKind::Stop)
-            ),
-        ])
+}
+
+/// Runs a hook command the way Claude Code does, through `sh -c`.
+fn sh(command: &str) -> std::process::Output {
+    std::process::Command::new("sh")
+        .args(["-c", command])
         .output()
+        .unwrap()
+}
+
+#[test]
+fn hook_command_runs_the_binary_at_an_awkward_path() {
+    use moss_core::agent::HookKind;
+    use moss_core::settings_json::hook_command;
+    let dir = tempfile::tempdir().unwrap();
+    let odd = dir.path().join("a'b $(echo pwned)");
+    std::fs::create_dir(&odd).unwrap();
+    let exe = odd.join("cc-moss");
+    std::fs::write(&exe, "#!/bin/sh\nprintf '%s ' \"$@\"\n").unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&exe)
+        .status()
         .unwrap();
+    let out = sh(&hook_command(exe.to_str().unwrap(), HookKind::Stop));
+    assert!(out.status.success());
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "hook stop ");
+}
+
+#[test]
+fn hook_command_is_silent_when_the_binary_is_gone() {
+    use moss_core::agent::HookKind;
+    use moss_core::settings_json::hook_command;
+    let dir = tempfile::tempdir().unwrap();
+    let gone = dir.path().join("Cellar/cc-moss/0.1.0/bin/cc-moss");
+    for kind in HookKind::ALL {
+        let out = sh(&hook_command(gone.to_str().unwrap(), kind));
+        assert_eq!(out.status.code(), Some(0), "{kind:?}");
+        assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{kind:?}");
+    }
+}
+
+#[test]
+fn setup_upgrades_unguarded_hooks_in_place() {
+    let user = foreign();
+    let old = json!({ "hooks": {
+        "SessionStart": [legacy(EXE, "session-start")],
+        "UserPromptSubmit": [legacy(EXE, "user-prompt-submit")],
+        "Stop": [user.clone(), legacy(EXE, "stop")],
+        "SessionEnd": [legacy(EXE, "session-end")],
+    } });
+    let upgraded = install(&old, EXE).unwrap();
+    let mut want = json!({ "hooks": expected_hooks(EXE) });
+    want["hooks"]["Stop"] = json!([user, ours(EXE, "stop")]);
+    assert_eq!(upgraded, want, "one guarded entry per event, same place");
+    assert_eq!(install(&upgraded, EXE).unwrap(), upgraded, "idempotent");
+
+    // Uninstall removes both shapes, even mixed in one file.
+    let mut mixed = upgraded.clone();
+    mixed["hooks"]["SessionEnd"] = json!([legacy(EXE, "session-end")]);
     assert_eq!(
-        String::from_utf8_lossy(&out.stdout),
-        "/tmp/a'b$(echo pwned)/cc-moss"
+        uninstall(&mixed).unwrap(),
+        json!({ "hooks": { "Stop": [foreign()] } })
+    );
+}
+
+#[test]
+fn hook_binaries_lists_the_path_of_every_entry() {
+    use moss_core::settings_json::hook_binaries;
+    let doc = json!({ "hooks": {
+        "Stop": [foreign(), ours("'/opt/cc moss/cc-moss'", "stop")],
+        "SessionEnd": [legacy("/old/bin/cc-moss", "session-end")],
+    } });
+    assert_eq!(
+        hook_binaries(&doc),
+        ["/opt/cc moss/cc-moss", "/old/bin/cc-moss"]
+    );
+    assert!(hook_binaries(&json!({})).is_empty());
+}
+
+#[test]
+fn stable_exe_prefers_the_path_entry_for_the_same_file() {
+    use moss_core::settings_json::stable_exe;
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let cellar = dir.path().join("Cellar/cc-moss/0.1.0/bin");
+    let bin = dir.path().join("bin");
+    let other = dir.path().join("other");
+    for d in [&cellar, &bin, &other] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let real = cellar.join("cc-moss");
+    std::fs::write(&real, "").unwrap();
+    symlink(&real, bin.join("cc-moss")).unwrap();
+    std::fs::write(other.join("cc-moss"), "").unwrap();
+
+    let path = std::env::join_paths([&other, &bin]).unwrap();
+    assert_eq!(
+        stable_exe(&real, Some(&path)),
+        bin.join("cc-moss"),
+        "the PATH link, unresolved; a different cc-moss earlier on PATH is skipped"
+    );
+    let path = std::env::join_paths([&other]).unwrap();
+    assert_eq!(stable_exe(&real, Some(&path)), real, "not on PATH: as is");
+    assert_eq!(stable_exe(&real, None), real);
+    let relative = std::ffi::OsString::from("bin");
+    assert_eq!(
+        stable_exe(&real, Some(&relative)),
+        real,
+        "relative PATH entries are ignored"
     );
 }

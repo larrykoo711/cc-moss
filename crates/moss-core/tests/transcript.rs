@@ -27,10 +27,10 @@ fn filler(n: usize) -> Vec<String> {
 fn finds_the_last_rename() {
     let mut lines = vec![title("first")];
     lines.extend(filler(10));
-    lines.push(title("em-final"));
+    lines.push(title("job-final"));
     lines.extend(filler(10));
     let f = file_with(&lines);
-    assert_eq!(last_custom_title(f.path()).as_deref(), Some("em-final"));
+    assert_eq!(last_custom_title(f.path()).as_deref(), Some("job-final"));
 }
 
 #[test]
@@ -184,4 +184,63 @@ fn a_request_to_the_model_opens_a_turn() {
         rec(serde_json::json!({"type": "api-request"})),
     ]);
     assert_eq!(turn_open(f.path()), Some(true));
+}
+
+/// One JSON line of about `bytes` bytes, like a pasted image or a large
+/// tool result.
+fn huge_line(bytes: usize) -> String {
+    serde_json::json!({"type": "user", "message": "y".repeat(bytes)}).to_string()
+}
+
+#[test]
+fn a_huge_line_is_read_in_linear_time() {
+    // 12 MB in one line: above the per-line cap, so it is skipped without
+    // being collected, and the title behind it is still found.
+    let mut lines = vec![title("before-the-paste")];
+    lines.extend(filler(3));
+    lines.push(huge_line(12 << 20));
+    lines.extend(filler(3));
+    let f = file_with(&lines);
+    let t = std::time::Instant::now();
+    assert_eq!(
+        last_custom_title(f.path()).as_deref(),
+        Some("before-the-paste")
+    );
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(3),
+        "{:?}",
+        t.elapsed()
+    );
+}
+
+#[test]
+fn a_line_under_the_cap_spanning_many_chunks_is_still_read() {
+    // 3 MB: many read chunks, kept whole and parsed.
+    let big = serde_json::json!({
+        "type": "custom-title",
+        "customTitle": "big",
+        "pad": "z".repeat(3 << 20),
+    })
+    .to_string();
+    let mut lines = filler(3);
+    lines.push(big);
+    lines.extend(filler(3));
+    let f = file_with(&lines);
+    assert_eq!(last_custom_title(f.path()).as_deref(), Some("big"));
+}
+
+#[test]
+fn scanning_stops_after_the_budget() {
+    // A turn record behind 40 MB of records that say nothing is out of reach: give up
+    // rather than read a whole huge file on every picker refresh.
+    let mut lines = vec![assistant("end_turn")];
+    lines.extend(std::iter::repeat_with(|| huge_line(1 << 20)).take(40));
+    let f = file_with(&lines);
+    let t = std::time::Instant::now();
+    assert_eq!(turn_open(f.path()), None);
+    assert!(
+        t.elapsed() < std::time::Duration::from_secs(5),
+        "{:?}",
+        t.elapsed()
+    );
 }

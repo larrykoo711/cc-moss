@@ -13,7 +13,7 @@ fn dead_pid_shows_interrupted() {
         Some(dead_pid()),
     );
     let v = ls_json(dir.path(), false);
-    assert_eq!(v["slots"][0]["status"], "interrupted");
+    assert_eq!(v["sessions"][0]["status"], "interrupted");
 }
 
 #[test]
@@ -26,7 +26,7 @@ fn live_pid_stays_running() {
         Some(std::process::id()),
     );
     let v = ls_json(dir.path(), false);
-    assert_eq!(v["slots"][0]["status"], "running");
+    assert_eq!(v["sessions"][0]["status"], "running");
 }
 
 #[test]
@@ -55,11 +55,12 @@ fn json_schema_v1_and_all_flag() {
 
     let v = ls_json(dir.path(), false);
     assert_eq!(v["schema"], 1);
-    let slots = v["slots"].as_array().unwrap();
+    let slots = v["sessions"].as_array().unwrap();
     assert_eq!(slots.len(), 1, "closed slots hidden without --all");
     let s = &slots[0];
+    assert!(v.get("slots").is_none(), "the internal word stays internal");
     for key in [
-        "slot_id",
+        "id",
         "agent",
         "name",
         "status",
@@ -85,7 +86,7 @@ fn json_schema_v1_and_all_flag() {
     }
 
     let all = ls_json(dir.path(), true);
-    assert_eq!(all["slots"].as_array().unwrap().len(), 2);
+    assert_eq!(all["sessions"].as_array().unwrap().len(), 2);
 }
 
 #[test]
@@ -145,7 +146,7 @@ fn json_has_busy_and_preview() {
     let prompt =
         serde_json::json!({"session_id": "A", "prompt": "deploy the gateway\nplease"}).to_string();
     hook(dir.path(), "user-prompt-submit", &prompt, p.pid());
-    let s = &ls_json(dir.path(), false)["slots"][0];
+    let s = &ls_json(dir.path(), false)["sessions"][0];
     assert_eq!(s["busy"], true);
     assert_eq!(s["last_prompt"], "deploy the gateway");
 }
@@ -158,7 +159,7 @@ fn running_sessions_are_adopted_automatically() {
     let stub = dir.path().join("claude");
     let agents = serde_json::json!([
         {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
-         "sessionId": "OLD-1", "name": "em-old", "status": "busy"}
+         "sessionId": "OLD-1", "name": "job-old", "status": "busy"}
     ]);
     std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
     std::process::Command::new("chmod")
@@ -173,9 +174,9 @@ fn running_sessions_are_adopted_automatically() {
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    let s = &v["slots"][0];
+    let s = &v["sessions"][0];
     assert_eq!(s["session_id"], "OLD-1");
-    assert_eq!(s["name"], "em-old");
+    assert_eq!(s["name"], "job-old");
     assert_eq!(s["status"], "running");
     assert_eq!(s["busy"], true);
     assert_eq!(s["cwd"], "/work/acme");
@@ -191,7 +192,7 @@ fn adopting_leaves_sessions_the_hooks_track_alone() {
         &start_json("A", "startup", Some("a")),
         p.pid(),
     );
-    let before = ls_json(dir.path(), false)["slots"][0]["last_active_at"].clone();
+    let before = ls_json(dir.path(), false)["sessions"][0]["last_active_at"].clone();
     std::thread::sleep(std::time::Duration::from_millis(20));
     let stub = dir.path().join("claude");
     let agents = serde_json::json!([
@@ -211,8 +212,8 @@ fn adopting_leaves_sessions_the_hooks_track_alone() {
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(v["slots"].as_array().unwrap().len(), 1);
-    assert_eq!(v["slots"][0]["last_active_at"], before);
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 1);
+    assert_eq!(v["sessions"][0]["last_active_at"], before);
 }
 
 #[test]
@@ -289,7 +290,7 @@ fn busy_after_reconcile(status: &str, last: &str) -> serde_json::Value {
         .output()
         .unwrap();
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    v["slots"][0]["busy"].clone()
+    v["sessions"][0]["busy"].clone()
 }
 
 const TURN_DONE: &str = r#"{"type":"system","subtype":"turn_duration"}"#;

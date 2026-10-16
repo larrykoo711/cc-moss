@@ -179,7 +179,7 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App, view: &View) {
         let n = app.count(state);
         if n > 0 {
             let words = match state {
-                State::Interrupted => tr!(format!("{n} interrupted"), format!("{n} 个被打断")),
+                State::Interrupted => tr!(format!("{n} interrupted"), format!("{n} 个已中断")),
                 State::Working => tr!(format!("{n} working"), format!("{n} 个在忙")),
                 _ => tr!(format!("{n} waiting for you"), format!("{n} 个在等你")),
             };
@@ -234,7 +234,7 @@ fn draw_search(frame: &mut Frame, area: Rect, app: &App) {
         );
     }
     if app.mode == Mode::Browse {
-        let x = area.x + 3 + app.query.width() as u16;
+        let x = area.x.saturating_add(3).saturating_add(cols(&app.query));
         frame.set_cursor_position((x.min(area.right().saturating_sub(1)), area.y));
     }
 }
@@ -391,7 +391,7 @@ fn dot(state: State, now_ms: i64) -> Span<'static> {
 /// a readable name exists.
 fn display_name(item: &Item, view: &View) -> String {
     match item {
-        Item::Session(s) if s.claude.as_ref().map_or(true, |c| c.name.is_none()) => {
+        Item::Session(s) if s.claude.as_ref().is_none_or(|c| c.name.is_none()) => {
             strip_prefix(&s.tmux_name, view.host_prefix)
         }
         other => other.title(),
@@ -709,10 +709,15 @@ fn draw_overlay(frame: &mut Frame, card: Rect, app: &App, item: &Item, view: &Vi
                     .block(boxed(tr!("Note", "备注").into())),
                 area,
             );
-            let x = inner.x + 1 + text.width() as u16;
+            let x = inner.x.saturating_add(1).saturating_add(cols(text));
             frame.set_cursor_position((x.min(inner.right().saturating_sub(1)), inner.y));
         }
     }
+}
+
+/// Terminal columns of `text`, capped at what a cursor position can hold.
+fn cols(text: &str) -> u16 {
+    u16::try_from(text.width()).unwrap_or(u16::MAX)
 }
 
 fn draw_hint(frame: &mut Frame, area: Rect, app: &App) {
@@ -968,6 +973,17 @@ mod tests {
     }
 
     #[test]
+    fn a_huge_paste_does_not_overflow_the_cursor() {
+        // Wider than u16::MAX would wrap; exactly u16::MAX overflows the sum.
+        let long = "x".repeat(usize::from(u16::MAX));
+        let mut a = sample();
+        a.set_query(&long);
+        render(&a, 110, 26);
+        a.mode = Mode::Note { text: long };
+        render(&a, 110, 26);
+    }
+
+    #[test]
     fn one_line_rows_without_noise() {
         let (text, _) = render(&sample(), 110, 26);
         for want in [
@@ -1111,12 +1127,12 @@ mod tests {
     fn unnamed_claude_session_shows_its_tmux_name() {
         let mut item = claude("x", "/home/u/acme", 0, false, None, None);
         if let Item::Session(s) = &mut item {
-            s.tmux_name = "host-a_em-api-gw".into();
+            s.tmux_name = "host-a_job-api-gw".into();
             s.claude.as_mut().unwrap().name = None;
         }
         let a = App::new(vec![item], vec![]);
         let (text, _) = render(&a, 110, 20);
-        assert!(text.contains("● em-api-gw"), "{text}");
+        assert!(text.contains("● job-api-gw"), "{text}");
         assert!(!text.contains("x-id"), "{text}");
     }
 

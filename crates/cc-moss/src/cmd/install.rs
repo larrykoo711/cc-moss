@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Result};
 use moss_core::managed_block;
 use moss_core::platform::{install_commands, on_path, without_sudo, Platform, Tool};
 
-use super::files::{self, read_optional, Change};
+use super::files::{self, read_optional, Change, Removal};
 use super::{confirm, setup};
 
 pub const TMUX_CONF: &str = include_str!("../../assets/tmux.conf");
@@ -93,6 +93,22 @@ impl Paths {
             starship: real(env("STARSHIP_CONFIG").unwrap_or_else(|| config.join("starship.toml"))),
         })
     }
+}
+
+/// The login shell's name (`$SHELL`'s last part), if set.
+pub fn login_shell() -> Option<String> {
+    let shell = std::env::var_os("SHELL").filter(|s| !s.is_empty())?;
+    Path::new(&shell)
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+}
+
+/// Whether to manage the zsh files: zsh is the login shell (or `$SHELL` says
+/// nothing), or the user already has a `.zshrc` or `.zshenv`.
+pub fn zsh_in_use(paths: &Paths) -> bool {
+    login_shell().as_deref().unwrap_or("zsh") == "zsh"
+        || paths.zshrc.exists()
+        || paths.zshenv.exists()
 }
 
 /// Write through symlinks (dotfile managers) instead of replacing them,
@@ -178,6 +194,18 @@ fn zshrc_text(original: &str, opts: &Options) -> Result<String> {
     Ok(text)
 }
 
+/// What a user whose login shell is not zsh gets instead of the zsh blocks.
+fn not_zsh_note(shell: &str) -> String {
+    tr!(
+        format!(
+            "Your login shell is {shell}: the `t` shortcut and the shell blocks are zsh-only for now, so no zsh files were created. Open the picker with `cc-moss pick` (or just `cc-moss`). For the starship prompt, add starship's init line for {shell} yourself (https://starship.rs)."
+        ),
+        format!(
+            "你的登录 shell 是 {shell}：`t` 快捷命令和 shell 配置块暂时只支持 zsh，所以没有创建 zsh 的文件。用 `cc-moss pick`（或者直接 `cc-moss`）打开选择器就行。想用 starship 提示符的话，自己把 {shell} 对应的 starship init 那一行加上（https://starship.rs）。"
+        )
+    )
+}
+
 /// The managed blocks install writes into `.zshrc`.
 pub fn is_ours(tag: &str) -> bool {
     [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES].contains(&tag)
@@ -201,6 +229,7 @@ fn change(path: &Path, new_text: String) -> Result<Option<Change>> {
         )
     };
     Ok(Some(Change {
+        remove: Removal::No,
         path: path.to_path_buf(),
         original,
         new_text,
@@ -232,11 +261,16 @@ pub fn run(opts: Options) -> Result<()> {
     }
 
     let in_file = |p: &Path| format!("{}", p.display());
-    let zshrc = read_optional(&paths.zshrc)?.unwrap_or_default();
-    let text = zshrc_text(&zshrc, &opts).with_context(|| in_file(&paths.zshrc))?;
-    changes.extend(change(&paths.zshrc, text)?);
+    let zsh = zsh_in_use(&paths);
+    if zsh {
+        let zshrc = read_optional(&paths.zshrc)?.unwrap_or_default();
+        let text = zshrc_text(&zshrc, &opts).with_context(|| in_file(&paths.zshrc))?;
+        changes.extend(change(&paths.zshrc, text)?);
+    } else {
+        notes.push(not_zsh_note(&login_shell().unwrap_or_default()));
+    }
 
-    if opts.wants(Part::Shell) {
+    if zsh && opts.wants(Part::Shell) {
         let zshenv = read_optional(&paths.zshenv)?.unwrap_or_default();
         let text = managed_block::upsert(&zshenv, TAG_PATH, PATH_ZSH)
             .with_context(|| in_file(&paths.zshenv))?;
@@ -289,13 +323,18 @@ pub fn run(opts: Options) -> Result<()> {
         return tools;
     }
     if tools.is_ok() && missing_tools(&opts).iter().all(|t| !t.is_core()) {
-        println!(
-            "\n{}",
+        let done = if zsh {
             tr!(
                 "All set. Open a new terminal (or `source ~/.zshrc`) and type `t`. In tmux, prefix + t opens the picker too.",
                 "搞定。开个新终端（或者 `source ~/.zshrc`），敲 `t` 试试；在 tmux 里按 prefix + t 也能打开选择器。"
             )
-        );
+        } else {
+            tr!(
+                "All set. Run `cc-moss pick` (or just `cc-moss`) to open the picker. In tmux, prefix + t opens it too.",
+                "搞定。运行 `cc-moss pick`（或者直接 `cc-moss`）打开选择器；在 tmux 里按 prefix + t 也行。"
+            )
+        };
+        println!("\n{done}");
     } else {
         println!(
             "\n{}",
@@ -306,6 +345,138 @@ pub fn run(opts: Options) -> Result<()> {
         );
     }
     tools
+}
+
+/// `cc-moss install --uninstall`: take out everything install put in. Blocks
+/// leave the user's files byte for byte as they were; files that held only
+/// cc-moss's text are deleted. The state dir is kept.
+pub fn uninstall(opts: &Options) -> Result<()> {
+    let paths = Paths::detect()?;
+    let mut changes = Vec::new();
+    let mut notes = Vec::new();
+
+    let setup_opts = setup::Options {
+        dry_run: opts.dry_run,
+        yes: opts.yes,
+        uninstall: true,
+        settings: None,
+        zshrc: None,
+    };
+    changes.extend(setup::settings_change(&setup_opts)?);
+    let zsh_tags = [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES];
+    changes.extend(strip_blocks(&paths.zshrc, &zsh_tags)?);
+    changes.extend(strip_blocks(&paths.zshenv, &[TAG_PATH])?);
+    changes.extend(strip_blocks(&paths.tmux_conf, &[TAG_TMUX])?);
+    match read_optional(&paths.moss_tmux_conf)? {
+        Some(text) if text == rendered_tmux_conf(&paths) => {
+            changes.push(removal(&paths.moss_tmux_conf, text, Removal::Verbatim))
+        }
+        Some(_) => notes.push(tr!(
+            format!(
+                "Kept {}: you changed it, so it is yours now.",
+                paths.moss_tmux_conf.display()
+            ),
+            format!(
+                "保留了 {}：你改过它，现在归你了。",
+                paths.moss_tmux_conf.display()
+            )
+        )),
+        None => {}
+    }
+    match read_optional(&paths.starship)? {
+        Some(text) if text == STARSHIP_TOML => {
+            changes.push(removal(&paths.starship, text, Removal::Verbatim))
+        }
+        Some(_) => notes.push(tr!(
+            format!(
+                "Kept your starship config ({}): it is not the one cc-moss installed.",
+                paths.starship.display()
+            ),
+            format!(
+                "保留了 starship 配置（{}）：它不是 cc-moss 装的那份。",
+                paths.starship.display()
+            )
+        )),
+        None => {}
+    }
+
+    if changes.is_empty() {
+        println!(
+            "{}",
+            tr!(
+                "Nothing of cc-moss's is left to remove.",
+                "cc-moss 加的东西都已经清理干净了。"
+            )
+        );
+        for n in &notes {
+            println!("{n}");
+        }
+    } else if !files::apply(&changes, &notes, opts.dry_run, opts.yes, "uninstall")? {
+        return Ok(());
+    }
+    // Our config dir, if that file was all it held. Not on a dry run.
+    if !opts.dry_run {
+        if let Some(dir) = paths.moss_tmux_conf.parent() {
+            let _ = std::fs::remove_dir(dir);
+        }
+    }
+
+    let state = moss_core::store_dir::state_dir();
+    println!(
+        "\n{}",
+        tr!(
+            format!(
+                "Your session records stay in {dir}. To delete them as well: rm -rf {dir}\nLast step: remove the cc-moss binary the way you installed it.",
+                dir = state.display()
+            ),
+            format!(
+                "会话记录还留在 {dir}。想一起删掉：rm -rf {dir}\n最后一步：按你当初安装的方式卸载 cc-moss 程序本身。",
+                dir = state.display()
+            )
+        )
+    );
+    Ok(())
+}
+
+/// `path` without cc-moss's blocks `tags`; deleted when nothing else is left.
+fn strip_blocks(path: &Path, tags: &[&str]) -> Result<Option<Change>> {
+    let Some(original) = read_optional(path)? else {
+        return Ok(None);
+    };
+    let mut text = original.clone();
+    for tag in tags {
+        text = managed_block::remove(&text, tag).with_context(|| format!("{}", path.display()))?;
+    }
+    if text == original {
+        return Ok(None);
+    }
+    if text.is_empty() {
+        return Ok(Some(removal(path, original, Removal::WithBackup)));
+    }
+    Ok(Some(Change {
+        path: path.to_path_buf(),
+        original: Some(original),
+        new_text: text,
+        remove: Removal::No,
+        done: tr!(
+            format!("Removed cc-moss's blocks from {}.", path.display()),
+            format!("已从 {} 移除 cc-moss 的配置块。", path.display())
+        ),
+    }))
+}
+
+/// Delete `path`, which holds only cc-moss's text.
+fn removal(path: &Path, original: String, how: Removal) -> Change {
+    Change {
+        path: path.to_path_buf(),
+        original: Some(original),
+        new_text: String::new(),
+        remove: how,
+        done: tr!(
+            format!("Deleted {}.", path.display()),
+            format!("已删除 {}。", path.display())
+        ),
+    }
 }
 
 /// The tools the chosen parts rely on.
@@ -436,8 +607,16 @@ fn install_tools(opts: &Options) -> Result<()> {
         .collect();
     if !core_missing.is_empty() {
         bail!(tr!(
-            format!("could not install {}: {}", core_missing.join(", "), failed.join("; ")),
-            format!("没能装上 {}：{}", core_missing.join("、"), failed.join("；"))
+            format!(
+                "could not install {}: {}",
+                core_missing.join(", "),
+                failed.join("; ")
+            ),
+            format!(
+                "没能装上 {}：{}",
+                core_missing.join("、"),
+                failed.join("；")
+            )
         ));
     }
     println!(

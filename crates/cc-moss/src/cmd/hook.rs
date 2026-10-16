@@ -5,6 +5,7 @@
 //! appended to `hook.log` and swallowed.
 
 use std::io::{Read, Write};
+use std::os::unix::fs::OpenOptionsExt;
 
 use anyhow::{anyhow, Result};
 use moss_core::agent::claude::ClaudeAgent;
@@ -19,6 +20,11 @@ use moss_core::{launch_args, naming, proc, store_dir, tmux};
 const LOG_MAX_BYTES: u64 = 1 << 20;
 
 pub fn run(event: &str) {
+    // The default panic hook prints to stderr, which Claude Code may show.
+    // The panic itself is logged below.
+    std::panic::set_hook(Box::new(|_| {}));
+    // Do not build with `panic = "abort"`: the hook relies on catch_unwind
+    // to exit 0 whatever happens.
     let outcome = std::panic::catch_unwind(|| handle(event));
     match outcome {
         Ok(Ok(())) => {}
@@ -28,6 +34,11 @@ pub fn run(event: &str) {
 }
 
 fn handle(event: &str) -> Result<()> {
+    // Lets the tests prove that a panic stays silent; debug builds only.
+    #[cfg(debug_assertions)]
+    if env("CC_MOSS_HOOK_PANIC").is_some() {
+        panic!("CC_MOSS_HOOK_PANIC is set");
+    }
     let kind = HookKind::from_cli_name(event).ok_or_else(|| anyhow!("unknown hook event"))?;
     let mut payload = String::new();
     std::io::stdin().read_to_string(&mut payload)?;
@@ -64,6 +75,18 @@ fn handle(event: &str) -> Result<()> {
         now_ms: now_ms(),
     };
     let mut registry = Registry::open(&store_dir::registry_path())?;
+    if let Some(found) = registry.newer_schema() {
+        // After a downgrade: leave the newer registry alone, and say so once
+        // rather than on every prompt.
+        log_once(
+            "newer-schema",
+            kind.cli_name(),
+            &format!(
+                "skipped: the registry was written by a newer cc-moss (schema {found}); upgrade cc-moss"
+            ),
+        );
+        return Ok(());
+    }
     registry.apply_with(&event, &ctx, &proc::is_alive)?;
 
     // Side effects after the registry is committed; failures are only logged.
@@ -211,7 +234,7 @@ fn warn_outside_tmux() {
 fn is_interactive() -> bool {
     match env("CLAUDE_CODE_SESSION_ATTENDED") {
         Some(attended) => attended != "0",
-        None => env("CLAUDE_CODE_ENTRYPOINT").map_or(true, |e| e == "cli"),
+        None => env("CLAUDE_CODE_ENTRYPOINT").is_none_or(|e| e == "cli"),
     }
 }
 
@@ -219,13 +242,26 @@ fn env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }
 
+/// Log `message` only the first time `key` comes up; a marker file in the
+/// state dir remembers it.
+fn log_once(key: &str, event: &str, message: &str) {
+    let marker = store_dir::state_dir().join(format!(".logged-{key}"));
+    if marker.exists() || !marker.is_absolute() {
+        return;
+    }
+    let _ = std::fs::write(&marker, b"");
+    log(event, message);
+}
+
 fn log(event: &str, message: &str) {
     let path = store_dir::hook_log_path();
     // One write per line so concurrent hooks do not interleave.
     let line = format!("{} {event} {message}\n", rfc3339(now_ms()));
     let _ = (|| -> std::io::Result<()> {
+        // Without HOME the path is relative: there is nowhere sensible to
+        // log, and the hook must stay silent.
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)?;
+            store_dir::ensure_private_dir(dir)?;
         }
         if std::fs::metadata(&path)
             .map(|m| m.len() > LOG_MAX_BYTES)
@@ -236,6 +272,7 @@ fn log(event: &str, message: &str) {
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
+            .mode(0o600)
             .open(&path)?
             .write_all(line.as_bytes())
     })();

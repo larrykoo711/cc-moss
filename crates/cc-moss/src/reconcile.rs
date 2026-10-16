@@ -15,6 +15,16 @@ use moss_core::{launch_args, proc, store_dir};
 /// Open the registry and repair what hooks could not record.
 pub fn run() -> Result<Registry> {
     let mut registry = Registry::open(&store_dir::registry_path())?;
+    if registry.newer_schema().is_some() {
+        eprintln!(
+            "{}",
+            tr!(
+                "cc-moss: this registry was written by a newer cc-moss; showing it read-only. Upgrade cc-moss.",
+                "cc-moss：这份会话记录是更新版本的 cc-moss 写的，先只读展示。请升级 cc-moss。"
+            )
+        );
+        return Ok(registry);
+    }
     let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
     let live = claude::live_sessions(&claude_bin);
     if !live.is_empty() {

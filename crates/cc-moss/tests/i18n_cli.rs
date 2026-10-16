@@ -55,7 +55,55 @@ fn help_is_translated() {
     assert!(top.contains("用法：") && top.contains("列出会话"), "{top}");
     let sub = zh(dir.path(), &["restore", "--help"]);
     assert!(
-        sub.contains("把被打断的会话恢复回来") && sub.contains("显示帮助"),
+        sub.contains("把中断的会话恢复回来") && sub.contains("显示帮助"),
         "{sub}"
     );
+    // One word for an interrupted session: 中断.
+    for help in [top, zh(dir.path(), &["ls", "--help"])] {
+        assert!(help.contains("中断") && !help.contains("打断"), "{help}");
+    }
+}
+
+fn en(args: &[&str]) -> String {
+    let out = bin().args(args).output().unwrap();
+    String::from_utf8_lossy(&out.stdout).into_owned() + &String::from_utf8_lossy(&out.stderr)
+}
+
+#[test]
+fn top_level_help_says_what_bare_cc_moss_does() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = en(&["--help"]);
+    assert!(
+        top.contains("Run `cc-moss` without a command to open the session picker"),
+        "{top}"
+    );
+    let top = zh(dir.path(), &["--help"]);
+    assert!(top.contains("不带命令直接运行 `cc-moss`"), "{top}");
+}
+
+#[test]
+fn positional_names_are_described() {
+    for sub in ["attach", "close", "note"] {
+        let help = en(&[sub, "--help"]);
+        assert!(help.contains("Session name"), "{sub}: {help}");
+    }
+}
+
+#[test]
+fn zh_help_uses_full_width_colons_and_plain_words() {
+    let dir = tempfile::tempdir().unwrap();
+    let top = zh(dir.path(), &["--help"]);
+    assert!(top.contains("命令：") && top.contains("选项："), "{top}");
+    assert!(!top.contains("命令:") && !top.contains("选项:"), "{top}");
+    assert!(top.contains("显示版本") && !top.contains("标志"), "{top}");
+    let new = zh(dir.path(), &["new", "--help"]);
+    assert!(new.contains("参数："), "{new}");
+    // Arguments come first, in their own order, like the English help.
+    let (args, name, extra, opts) = (
+        new.find("参数：").unwrap(),
+        new.find("[NAME]  ").unwrap(),
+        new.find("[CLAUDE_ARGS]").unwrap(),
+        new.find("选项：").unwrap(),
+    );
+    assert!(args < name && name < extra && extra < opts, "{new}");
 }

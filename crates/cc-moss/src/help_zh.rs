@@ -3,7 +3,21 @@
 
 use clap::{Arg, ArgAction, Command};
 
-const TEMPLATE: &str = "{about-with-newline}\n用法：{usage}\n\n{all-args}{after-help}";
+/// The help layout, with our own full-width headings: clap's `{all-args}`
+/// would add ASCII colons. Sections a command does not have are left out.
+fn template(cmd: &Command) -> String {
+    let mut t = String::from("{about-with-newline}\n用法：{usage}\n");
+    if cmd.has_subcommands() {
+        t.push_str("\n命令：\n{subcommands}\n");
+    }
+    if cmd.get_positionals().any(|a| !a.is_hide_set()) {
+        t.push_str("\n参数：\n{positionals}\n");
+    }
+    t.push_str("\n选项：\n{options}{after-help}");
+    t
+}
+
+const AFTER_HELP: &str = "不带命令直接运行 `cc-moss` 会打开会话选择器（就是 `t`）。";
 
 /// (subcommand, argument id, help). An empty argument id is the command's own
 /// description; an empty subcommand is `cc-moss` itself.
@@ -13,7 +27,7 @@ const TEXT: &[(&str, &str, &str)] = &[
         "",
         "崩溃也不怕：可恢复的 Claude Code 会话，住在 tmux 里",
     ),
-    ("ls", "", "列出会话：先列被打断的，再列运行中的"),
+    ("ls", "", "列出会话：先列中断的，再列运行中的"),
     ("ls", "all", "也列出主动关闭的会话"),
     ("ls", "json", "机器可读的输出（schema 1）"),
     (
@@ -24,7 +38,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("new", "name", "会话名，默认用目录名"),
     ("new", "dir", "工作目录（默认当前目录）"),
     ("new", "detach", "建好后先不进入"),
-    ("new", "yes", "名字属于一个被打断的会话时，不问直接恢复"),
+    ("new", "yes", "名字属于一个中断的会话时，不问直接恢复"),
     (
         "new",
         "claude_args",
@@ -64,14 +78,20 @@ const TEXT: &[(&str, &str, &str)] = &[
         "replace_starship",
         "用 cc-moss 的 starship 配置替换你现有的",
     ),
+    (
+        "install",
+        "uninstall",
+        "撤销 install：移除它加的钩子、配置块和文件",
+    ),
     ("install", "dry_run", "只看会改什么，不做任何改动"),
     ("install", "yes", "不问直接应用"),
     ("doctor", "", "体检钩子、tmux、starship、shell 区块和工具"),
-    ("pick", "", "选择会话、被打断的会话或目录（就是 `t`）"),
+    ("pick", "", "选择会话、中断的会话或目录（就是 `t`）"),
+    ("pick", "query", "打开时先搜这个，比如 `cc-moss pick api`"),
     (
         "restore",
         "",
-        "把被打断的会话恢复回来，每个独占一个 tmux 会话",
+        "把中断的会话恢复回来，每个独占一个 tmux 会话",
     ),
     ("restore", "yes", "不问直接恢复"),
     ("restore", "dry_run", "只列出会恢复哪些，不做任何改动"),
@@ -97,8 +117,8 @@ const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 c
 
 pub fn localize(cmd: Command) -> Command {
     let mut cmd = translate(cmd, "")
-        .subcommand_help_heading("命令")
-        .mut_arg("version", |a| a.help("显示版本和标志"));
+        .after_help(AFTER_HELP)
+        .mut_arg("version", |a| a.help("显示版本"));
     let names: Vec<String> = cmd
         .get_subcommands()
         .map(|c| c.get_name().to_string())
@@ -114,25 +134,14 @@ pub fn localize(cmd: Command) -> Command {
 
 /// One command's description, argument help, headings and help flag.
 fn translate(cmd: Command, name: &str) -> Command {
-    let mut cmd = cmd
-        .help_template(TEMPLATE)
-        .disable_help_flag(true)
-        .mut_args(|a| {
-            let heading = if a.is_positional() {
-                "参数"
-            } else {
-                "选项"
-            };
-            a.help_heading(heading)
-        })
-        .arg(
-            Arg::new("help")
-                .short('h')
-                .long("help")
-                .action(ArgAction::Help)
-                .help("显示帮助")
-                .help_heading("选项"),
-        );
+    let template = template(&cmd);
+    let mut cmd = cmd.help_template(template).disable_help_flag(true).arg(
+        Arg::new("help")
+            .short('h')
+            .long("help")
+            .action(ArgAction::Help)
+            .help("显示帮助"),
+    );
     for (command, arg, help) in TEXT.iter().filter(|(c, _, _)| *c == name) {
         debug_assert_eq!(*command, name);
         cmd = if arg.is_empty() {

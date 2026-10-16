@@ -34,7 +34,7 @@ while true; do
       hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
     clear)
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"clear\"}"
-      sid=$(uuidgen | tr 'A-Z' 'a-z')
+      sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")
       start clear ;;
     exit)
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"prompt_input_exit\"}"

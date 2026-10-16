@@ -49,7 +49,7 @@ pub fn plan<'a>(
         .iter()
         .filter(|(status, _)| *status == Status::Interrupted)
         .map(|(_, slot)| slot)
-        .filter(|slot| only.map_or(true, |ids| ids.contains(&slot.slot_id)))
+        .filter(|slot| only.is_none_or(|ids| ids.contains(&slot.slot_id)))
         .map(|slot| Candidate {
             slot,
             verdict: if open.contains(slot.session_id.as_str()) {

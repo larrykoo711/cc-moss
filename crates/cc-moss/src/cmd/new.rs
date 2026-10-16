@@ -29,6 +29,7 @@ pub struct NewArgs {
 
 pub fn run(args: NewArgs) -> Result<()> {
     let config = Config::load()?;
+    super::launch::require_tmux()?;
     let cwd = match args.dir {
         Some(d) => d,
         None => std::env::current_dir()?,
@@ -62,10 +63,10 @@ pub fn run(args: NewArgs) -> Result<()> {
 
     // A fixed session id lets the hooks match this session from its first event.
     let session_id = uuid::Uuid::new_v4().to_string();
-    let claude = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+    let claude = super::launch::claude_bin()?;
     // `--name=<n>` keeps a name starting with `-` from reading as a flag.
     let mut argv: Vec<String> = vec![
-        claude,
+        claude.clone(),
         format!("--name={name}"),
         "--session-id".into(),
         session_id,
@@ -75,8 +76,16 @@ pub fn run(args: NewArgs) -> Result<()> {
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
 
     moss_core::tmux::ensure_access(&tmux, &cwd.to_string_lossy())?;
-    tmux.new_session(&tmux_name, &cwd.to_string_lossy(), &argv)
+    let pane = tmux
+        .new_session(&tmux_name, &cwd.to_string_lossy(), &argv)
         .context("start tmux session")?;
+    if super::launch::exited_at_start(&tmux, &pane) {
+        bail!(super::launch::exited_message(
+            &name,
+            &claude,
+            &cwd.to_string_lossy()
+        ));
+    }
     // The registry learns about the session from its SessionStart hook.
     println!(
         "{}",
@@ -170,20 +179,20 @@ fn existing_session(
                 "{}",
                 tr!(
                     format!("{name} was interrupted before its first message; starting fresh."),
-                    format!("{name} 还没说上话就被打断了，直接重新开一个。")
+                    format!("{name} 还没说上话就中断了，直接重新开一个。")
                 )
             );
             return Ok(None);
         }
         Some(other) => bail!(tr!(
             format!("{name} was interrupted and cannot be restored ({other:?}); free the name with `cc-moss close {name}`"),
-            format!("{name} 被打断了，但没法恢复（{other:?}）；用 `cc-moss close {name}` 把名字腾出来")
+            format!("{name} 中断了，但没法恢复（{other:?}）；用 `cc-moss close {name}` 把名字腾出来")
         )),
         None => return Ok(None),
     }
     let question = tr!(
         format!("{name} was interrupted. Bring it back?"),
-        format!("{name} 之前被打断了，要恢复它吗？")
+        format!("{name} 之前中断了，要恢复它吗？")
     );
     let refused = tr!(
         format!("run `cc-moss restore {name}` (or `cc-moss new {name} --yes`)"),

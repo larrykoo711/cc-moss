@@ -115,16 +115,16 @@ fn pending_restore_skipped() {
 
 #[test]
 fn resolve_cases() {
-    let mut x = slot("em-a", Status::Running);
+    let mut x = slot("job-a", Status::Running);
     x.session_id = "abcdef12-3456".into();
     let mut y = slot("other", Status::Running);
-    y.tmux.as_mut().unwrap().session_name = Some("host_em-a-tmux".into());
+    y.tmux.as_mut().unwrap().session_name = Some("host_job-a-tmux".into());
     y.session_id = "abcdef99-0000".into();
     let slots = vec![x, y];
 
-    assert_eq!(resolve(&slots, "em-a").unwrap().slot_id, "slot-em-a");
+    assert_eq!(resolve(&slots, "job-a").unwrap().slot_id, "slot-job-a");
     assert_eq!(
-        resolve(&slots, "host_em-a-tmux").unwrap().slot_id,
+        resolve(&slots, "host_job-a-tmux").unwrap().slot_id,
         "slot-other"
     );
     assert_eq!(resolve(&slots, "abcdef99").unwrap().slot_id, "slot-other");
@@ -132,7 +132,7 @@ fn resolve_cases() {
     assert!(resolve(&slots, "abc").is_err());
     // Ambiguous id prefix lists both.
     let err = resolve(&slots, "abcdef").unwrap_err().to_string();
-    assert!(err.contains("em-a") && err.contains("other"), "{err}");
+    assert!(err.contains("job-a") && err.contains("other"), "{err}");
     assert!(resolve(&slots, "nope").is_err());
 }
 

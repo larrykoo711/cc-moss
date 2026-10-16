@@ -4,6 +4,7 @@
 //! entries that [`is_ours`] recognises. Everything else, including key order,
 //! is carried through unchanged (serde_json is built with `preserve_order`).
 
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -27,35 +28,128 @@ pub fn event_name(kind: HookKind) -> &'static str {
 
 /// The shell command Claude Code runs for `kind`. Claude Code hands the
 /// command to a shell, so any path beyond plain characters is single-quoted.
+///
+/// The `[ -x … ]` guard keeps a deleted binary (an uninstalled or upgraded
+/// package) from turning into a hook error on every prompt: the command then
+/// does nothing and exits 0.
 pub fn hook_command(exe: &str, kind: HookKind) -> String {
-    let plain = exe
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "/._-+@%,:=".contains(c));
+    let exe = shell_quote(exe);
+    format!("[ -x {exe} ] && {exe} hook {} || true", kind.cli_name())
+}
+
+fn shell_quote(s: &str) -> String {
+    let plain = !s.is_empty()
+        && s.chars()
+            .all(|c| c.is_ascii_alphanumeric() || "/._-+@%,:=".contains(c));
     if plain {
-        format!("{exe} hook {}", kind.cli_name())
+        s.to_string()
     } else {
-        format!("'{}' hook {}", exe.replace('\'', "'\\''"), kind.cli_name())
+        format!("'{}'", s.replace('\'', "'\\''"))
     }
 }
 
-/// Whether one hook entry (`{"type": "command", "command": ...}`) was written
-/// by cc-moss. Matches on the command shape rather than the exact path, so a
-/// reinstall from a new location replaces the old entry instead of adding one.
-pub fn is_ours(hook: &Value) -> bool {
-    let Some(command) = hook.get("command").and_then(Value::as_str) else {
-        return false;
-    };
-    let bare: String = command
-        .chars()
-        .filter(|c| !matches!(c, '"' | '\''))
-        .collect();
-    HookKind::ALL.into_iter().any(|kind| {
-        let tail = format!("cc-moss hook {}", kind.cli_name());
-        match bare.strip_suffix(&tail) {
-            Some(prefix) => prefix.is_empty() || prefix.ends_with('/'),
-            None => false,
+/// Undo shell quoting of a single word. `None` when the text is not one
+/// plain word: unquoted blanks or shell operators mean it is a longer command.
+fn shell_unquote(word: &str) -> Option<String> {
+    let mut out = String::new();
+    let mut chars = word.chars();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => loop {
+                match chars.next()? {
+                    '\'' => break,
+                    c => out.push(c),
+                }
+            },
+            '"' => loop {
+                match chars.next()? {
+                    '"' => break,
+                    '\\' => out.push(chars.next()?),
+                    '$' | '`' => return None,
+                    c => out.push(c),
+                }
+            },
+            '\\' => out.push(chars.next()?),
+            c if c.is_whitespace() || ";&|<>()$`*?[]#~{}!".contains(c) => return None,
+            c => out.push(c),
         }
+    }
+    (!out.is_empty()).then_some(out)
+}
+
+/// The cc-moss binary a hook command runs, if the command is one cc-moss
+/// wrote. Two shapes are recognised: the guarded one [`hook_command`] writes
+/// today and the bare `<path> hook <event>` of earlier versions, so `setup`
+/// can upgrade and `setup --uninstall` can remove either. The path must end in
+/// `cc-moss`, not the exact current location, so a reinstall from elsewhere
+/// replaces the old entry instead of adding one.
+fn parse_command(command: &str) -> Option<String> {
+    let guarded = command
+        .strip_prefix("[ -x ")
+        .and_then(|rest| rest.strip_suffix(" || true"));
+    HookKind::ALL.into_iter().find_map(|kind| {
+        let tail = format!(" hook {}", kind.cli_name());
+        let word = match guarded {
+            // `<P> ] && <P>`: the tested path and the run path must agree.
+            Some(rest) => {
+                let both = rest.strip_suffix(&tail)?;
+                let n = both.len().checked_sub(6)? / 2;
+                let (tested, run) = (both.get(..n)?, both.get(n + 6..)?);
+                if both.get(n..n + 6)? != " ] && " || tested != run {
+                    return None;
+                }
+                run
+            }
+            None => command.strip_suffix(&tail)?,
+        };
+        let path = shell_unquote(word)?;
+        (path == "cc-moss" || path.ends_with("/cc-moss")).then_some(path)
     })
+}
+
+/// Whether one hook entry (`{"type": "command", "command": ...}`) was written
+/// by cc-moss, in either the current or the earlier command shape.
+pub fn is_ours(hook: &Value) -> bool {
+    hook_binary(hook).is_some()
+}
+
+fn hook_binary(hook: &Value) -> Option<String> {
+    parse_command(hook.get("command")?.as_str()?)
+}
+
+/// The binary path of every cc-moss hook entry in `doc`, in file order, so
+/// `doctor` can tell when one of them no longer exists.
+pub fn hook_binaries(doc: &Value) -> Vec<String> {
+    let Some(hooks) = doc.get("hooks").and_then(Value::as_object) else {
+        return Vec::new();
+    };
+    hooks
+        .values()
+        .filter_map(Value::as_array)
+        .flatten()
+        .filter_map(|group| group.get("hooks").and_then(Value::as_array))
+        .flatten()
+        .filter_map(hook_binary)
+        .collect()
+}
+
+/// The path to write into the hooks for the running binary `current`.
+///
+/// On Linux `current_exe()` resolves symlinks, which turns a package
+/// manager's stable link (`…/bin/cc-moss`) into a versioned path that the next
+/// upgrade deletes. When an absolute `PATH` entry holds a `cc-moss` that is the
+/// same file as `current`, that entry is used as written.
+pub fn stable_exe(current: &Path, path_var: Option<&OsStr>) -> PathBuf {
+    let Ok(real) = std::fs::canonicalize(current) else {
+        return current.to_path_buf();
+    };
+    path_var
+        .into_iter()
+        .flat_map(std::env::split_paths)
+        .filter(|dir| dir.is_absolute())
+        .map(|dir| dir.join("cc-moss"))
+        .find(|candidate| std::fs::canonicalize(candidate).is_ok_and(|c| c == real))
+        .unwrap_or_else(|| current.to_path_buf())
 }
 
 /// Add the four cc-moss hooks, replacing any earlier cc-moss entries in place.

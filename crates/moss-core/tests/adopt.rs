@@ -8,7 +8,7 @@ fn parses_interactive_sessions_and_drops_auto_names() {
     let json = r#"[
       {"id":"0b47","pid":10,"cwd":"/w/a","kind":"background","sessionId":"bg","name":"x","state":"blocked"},
       {"pid":11,"cwd":"/w/acme","kind":"interactive","sessionId":"S1","name":"acme-d9","status":"busy"},
-      {"pid":12,"cwd":"/w/acme","kind":"interactive","sessionId":"S2","name":"em-api","status":"idle"},
+      {"pid":12,"cwd":"/w/acme","kind":"interactive","sessionId":"S2","name":"job-api","status":"idle"},
       {"cwd":"/w/acme","kind":"interactive","sessionId":"S3","name":"no-pid","status":"idle"}
     ]"#;
     let live = parse_agents(json);
@@ -20,7 +20,7 @@ fn parses_interactive_sessions_and_drops_auto_names() {
     assert_eq!(live[0].session_id, "S1");
     assert_eq!(live[0].name, None, "auto name dropped");
     assert!(live[0].busy);
-    assert_eq!(live[1].name.as_deref(), Some("em-api"));
+    assert_eq!(live[1].name.as_deref(), Some("job-api"));
     assert!(!live[1].busy);
 }
 
@@ -28,7 +28,7 @@ fn parses_interactive_sessions_and_drops_auto_names() {
 fn auto_names_are_folder_plus_two_hex_digits() {
     assert!(is_auto_name("acme-app-d9", "/Users/u/Documents/acme-app"));
     assert!(is_auto_name("billing-b6", "/x/billing"));
-    assert!(!is_auto_name("em-api", "/x/acme-app"));
+    assert!(!is_auto_name("job-api", "/x/acme-app"));
     assert!(!is_auto_name("acme-app-dev", "/x/acme-app"));
     assert!(!is_auto_name("acme-app-abc", "/x/acme-app"));
     assert!(!is_auto_name("97-gateway-app", "/x/acme-app"));
@@ -43,7 +43,7 @@ fn finds_the_pane_a_process_runs_under() {
         (
             100,
             "$3".to_string(),
-            "host_em-api".to_string(),
+            "host_job-api".to_string(),
             "%7".to_string(),
         ),
     ];

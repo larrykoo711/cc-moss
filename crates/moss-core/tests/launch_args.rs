@@ -22,7 +22,7 @@ fn whitelist_cases() {
             &["--add-dir", "/a", "--add-dir", "/b"],
         ),
         (
-            "claude -n em --session-id U1 --resume U0 --fork-session -p hi",
+            "claude -n job --session-id U1 --resume U0 --fork-session -p hi",
             &[],
         ),
         (

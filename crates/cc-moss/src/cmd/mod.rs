@@ -5,6 +5,7 @@ pub mod doctor;
 pub mod files;
 pub mod hook;
 pub mod install;
+pub mod launch;
 pub mod ls;
 pub mod new;
 pub mod note;

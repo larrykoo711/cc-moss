@@ -9,13 +9,13 @@ fn startup_is_recorded() {
     let out = hook(
         dir.path(),
         "session-start",
-        &start_json("U1", "startup", Some("em-a")),
+        &start_json("U1", "startup", Some("job-a")),
         Some(std::process::id()),
     );
     assert!(out.status.success());
     let v = ls_json(dir.path(), true);
-    assert_eq!(v["slots"][0]["name"], "em-a");
-    assert_eq!(v["slots"][0]["status"], "running");
+    assert_eq!(v["sessions"][0]["name"], "job-a");
+    assert_eq!(v["sessions"][0]["status"], "running");
 }
 
 #[test]
@@ -78,7 +78,7 @@ fn concurrent_hooks_no_lost_writes() {
         w.join().unwrap();
     }
     let v = ls_json(&path, true);
-    assert_eq!(v["slots"].as_array().unwrap().len(), 400);
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 400);
     let log = std::fs::read_to_string(path.join("hook.log")).unwrap_or_default();
     assert!(!log.contains("locked"), "lock errors: {log}");
 }
@@ -109,7 +109,7 @@ fn non_interactive_sessions_are_ignored() {
         assert!(child.wait_with_output().unwrap().status.success());
     }
     let v = ls_json(dir.path(), true);
-    assert_eq!(v["slots"].as_array().unwrap().len(), 0, "{v}");
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 0, "{v}");
 }
 
 #[test]
@@ -125,7 +125,10 @@ fn missing_pid_is_logged() {
     let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
     assert!(log.contains("CLAUDE_PID"), "{log}");
     assert_eq!(
-        ls_json(dir.path(), true)["slots"].as_array().unwrap().len(),
+        ls_json(dir.path(), true)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
         1
     );
 }
@@ -153,7 +156,7 @@ fn inherited_entrypoint_does_not_drop_attended_sessions() {
         .unwrap();
     assert!(child.wait_with_output().unwrap().status.success());
     let v = ls_json(dir.path(), true);
-    assert_eq!(v["slots"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 1, "{v}");
 }
 
 #[test]
@@ -203,8 +206,11 @@ fn tmux_failure_does_not_block_registry() {
     assert!(out.status.success(), "{out:?}");
     assert!(out.stdout.is_empty(), "in tmux: no warning");
     let v = ls_json(dir.path(), true);
-    assert_eq!(v["slots"][0]["name"], "x");
-    assert_eq!(v["slots"][0]["tmux"]["socket"], "/nonexistent/tmux-socket");
+    assert_eq!(v["sessions"][0]["name"], "x");
+    assert_eq!(
+        v["sessions"][0]["tmux"]["socket"],
+        "/nonexistent/tmux-socket"
+    );
 }
 
 #[test]
@@ -258,7 +264,7 @@ fn name_comes_from_the_transcript_when_the_payload_lacks_it() {
     let t = dir.path().join("t.jsonl");
     std::fs::write(
         &t,
-        "{\"type\":\"user\"}\n{\"type\":\"custom-title\",\"customTitle\":\"em-final\",\"sessionId\":\"R\"}\n{\"type\":\"user\"}\n",
+        "{\"type\":\"user\"}\n{\"type\":\"custom-title\",\"customTitle\":\"job-final\",\"sessionId\":\"R\"}\n{\"type\":\"user\"}\n",
     )
     .unwrap();
     let p = common::FakeProcess::spawn();
@@ -269,7 +275,10 @@ fn name_comes_from_the_transcript_when_the_payload_lacks_it() {
     assert!(hook(dir.path(), "session-start", &payload, p.pid())
         .status
         .success());
-    assert_eq!(ls_json(dir.path(), true)["slots"][0]["name"], "em-final");
+    assert_eq!(
+        ls_json(dir.path(), true)["sessions"][0]["name"],
+        "job-final"
+    );
 }
 
 #[test]
@@ -283,15 +292,112 @@ fn ls_backfills_names_of_sessions_registered_earlier() {
     })
     .to_string();
     hook(dir.path(), "session-start", &payload, p.pid());
-    assert!(ls_json(dir.path(), true)["slots"][0]["name"].is_null());
+    assert!(ls_json(dir.path(), true)["sessions"][0]["name"].is_null());
     // Renamed later (before cc-moss saw a title in any payload); Claude
     // Code appends to the transcript.
     use std::io::Write;
     let mut f = std::fs::OpenOptions::new().append(true).open(&t).unwrap();
     writeln!(
         f,
-        "{{\"type\":\"custom-title\",\"customTitle\":\"em-late\",\"sessionId\":\"R\"}}"
+        "{{\"type\":\"custom-title\",\"customTitle\":\"job-late\",\"sessionId\":\"R\"}}"
     )
     .unwrap();
-    assert_eq!(ls_json(dir.path(), true)["slots"][0]["name"], "em-late");
+    assert_eq!(ls_json(dir.path(), true)["sessions"][0]["name"], "job-late");
+}
+
+/// Runs `cc-moss <args>` as a hook would, with an empty payload.
+fn hook_args(state: &std::path::Path, args: &[&str]) -> std::process::Output {
+    common::bin()
+        .env("CC_MOSS_STATE_DIR", state)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap()
+}
+
+#[test]
+fn hook_with_unknown_arguments_exits_zero_silently() {
+    // A newer cc-moss may write hook commands with flags this one does not
+    // know; exit 2 would block the prompt in Claude Code.
+    let dir = tempfile::tempdir().unwrap();
+    for args in [
+        &["hook", "stop", "--future-flag"][..],
+        &["hook", "--future-flag", "stop"][..],
+        &["hook"][..],
+        &["hook", "stop", "extra", "words"][..],
+    ] {
+        let out = hook_args(dir.path(), args);
+        assert_eq!(out.status.code(), Some(0), "{args:?}: {out:?}");
+        assert!(
+            out.stdout.is_empty() && out.stderr.is_empty(),
+            "{args:?}: {out:?}"
+        );
+    }
+}
+
+#[test]
+fn hook_panic_is_silent_and_logged() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = common::bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_HOOK_PANIC", "1")
+        .args(["hook", "stop"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{out:?}");
+    let log = std::fs::read_to_string(dir.path().join("hook.log")).unwrap();
+    assert!(log.contains("panic"), "{log}");
+}
+
+#[test]
+fn hook_log_is_private() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let out = hook(&state, "session-start", "{not json", Some(1));
+    assert!(out.status.success());
+    let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&state), 0o700);
+    assert_eq!(mode(&state.join("hook.log")), 0o600);
+}
+
+#[test]
+fn hook_without_home_writes_nothing_relative() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = common::bin()
+        .env_remove("HOME")
+        .env_remove("CC_MOSS_STATE_DIR")
+        .env_remove("XDG_STATE_HOME")
+        .current_dir(dir.path())
+        .args(["hook", "session-start"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(0), "{out:?}");
+    assert!(out.stdout.is_empty() && out.stderr.is_empty(), "{out:?}");
+    assert!(
+        std::fs::read_dir(dir.path()).unwrap().next().is_none(),
+        "nothing created in the working directory"
+    );
+}
+
+#[test]
+fn ls_without_home_says_why() {
+    let dir = tempfile::tempdir().unwrap();
+    let out = common::bin()
+        .env_remove("HOME")
+        .env_remove("CC_MOSS_STATE_DIR")
+        .env_remove("XDG_STATE_HOME")
+        .current_dir(dir.path())
+        .args(["ls"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        err.contains("HOME") && err.contains("CC_MOSS_STATE_DIR"),
+        "{err}"
+    );
+    assert!(std::fs::read_dir(dir.path()).unwrap().next().is_none());
 }

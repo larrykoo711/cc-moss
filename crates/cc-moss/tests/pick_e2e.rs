@@ -7,11 +7,16 @@ use common::{ls_json, wait_for, World};
 
 /// Start `cc-moss pick` in its own session ("driver") and wait for it to draw.
 fn open_picker(w: &World) {
+    open_picker_with(w, &[]);
+}
+
+/// Like [`open_picker`], with arguments for `pick`.
+fn open_picker_with(w: &World, extra: &[&str]) {
     let bin = env!("CARGO_BIN_EXE_cc-moss");
     let state = w.state();
     let config = w.path("config.toml");
     let fifos = w.path("fifos");
-    let args: Vec<String> = vec![
+    let args: Vec<String> = [
         "new-session".into(),
         "-d".into(),
         "-s".into(),
@@ -36,7 +41,10 @@ fn open_picker(w: &World) {
         "CC_MOSS_LANG=en".into(),
         bin.into(),
         "pick".into(),
-    ];
+    ]
+    .into_iter()
+    .chain(extra.iter().map(|s| s.to_string()))
+    .collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
     w.tmux(&args);
     wait_for(|| screen(w).contains("→ more").then_some(()));
@@ -122,6 +130,20 @@ fn end_a_session_from_the_menu() {
     keys(&w, &["Right", "Down", "Down", "Enter", "Left", "Enter"]);
     wait_for(|| (!w.session_names().iter().any(|n| n == "host_doomed")).then_some(()));
     // Ended on purpose: closed, not offered for restore.
-    wait_for(|| (ls_json(&w.state(), true)["slots"][0]["status"] == "closed").then_some(()));
+    wait_for(|| (ls_json(&w.state(), true)["sessions"][0]["status"] == "closed").then_some(()));
     keys(&w, &["Escape"]);
+}
+
+#[test]
+fn pick_takes_an_initial_search() {
+    let w = World::new("pick-query");
+    w.new_session("api");
+    w.new_session("web");
+    w.session_id("api");
+    w.session_id("web");
+    open_picker_with(&w, &["web"]);
+    wait_screen(&w, "the search", |s| {
+        s.contains("⌕ web") && s.contains("1 of")
+    });
+    keys(&w, &["Escape", "Escape"]);
 }

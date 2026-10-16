@@ -172,7 +172,7 @@ fn attach_refuses_a_session_that_is_not_running() {
     }
     wait_for(|| {
         let v = ls_json(&w.state(), true);
-        let ok = v["slots"]
+        let ok = v["sessions"]
             .as_array()
             .unwrap()
             .iter()
@@ -182,7 +182,7 @@ fn attach_refuses_a_session_that_is_not_running() {
     w.tmux(&["kill-server"]);
     wait_for(|| {
         let v = ls_json(&w.state(), true);
-        let n = v["slots"]
+        let n = v["sessions"]
             .as_array()
             .unwrap()
             .iter()
@@ -218,7 +218,7 @@ fn tmux_special_characters_are_escaped() {
         .unwrap();
     assert!(out.status.success(), "{out:?}");
     let id = w.session_id("wip;");
-    let slot = &ls_json(&w.state(), false)["slots"][0];
+    let slot = &ls_json(&w.state(), false)["sessions"][0];
     assert!(slot["cwd"].as_str().unwrap().ends_with("/C#"), "{slot}");
     let _ = id;
 }

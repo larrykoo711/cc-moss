@@ -66,6 +66,8 @@ impl Home {
             .env("CC_MOSS_STATE_DIR", self.path("state"))
             // Never generate package-manager commands, let alone run them.
             .env("CC_MOSS_PLATFORM", "other")
+            // zsh unless a test says otherwise, whatever runs the tests.
+            .env("SHELL", "/bin/zsh")
             .env_remove("STARSHIP_CONFIG")
             .env_remove("STARSHIP_SHELL");
         // The test's own variables last, so they win.
@@ -100,6 +102,8 @@ impl Home {
             )
             .env("CC_MOSS_STATE_DIR", self.path("state"))
             .env("CC_MOSS_PLATFORM", "other")
+            // zsh unless a test says otherwise, whatever runs the tests.
+            .env("SHELL", "/bin/zsh")
             .env_remove("STARSHIP_CONFIG")
             .env_remove("STARSHIP_SHELL");
         for (k, v) in env {
@@ -431,8 +435,10 @@ fn doctor_fails_when_something_is_missing() {
     let out = h.run(&["doctor"]);
     assert!(!out.status.success());
     let report = text(&out);
+    // The hooks are always missing here; whether tmux counts too depends on
+    // the host (it is in /usr/bin on Linux), so match "needs" and "need".
     assert!(
-        report.contains("✗") && report.contains("need fixing"),
+        report.contains("✗ hooks") && report.contains("fixing"),
         "{report}"
     );
 }
@@ -446,9 +452,178 @@ fn doctor_speaks_chinese() {
         .env("PATH", format!("{}:/usr/bin:/bin", h.stubs.display()))
         .env("CC_MOSS_LANG", "zh")
         .env("CC_MOSS_PLATFORM", "other")
+        .env("SHELL", "/bin/zsh")
         .env_remove("STARSHIP_CONFIG")
         .arg("doctor")
         .output()
         .unwrap();
     assert!(text(&out).contains("一切正常"), "{}", text(&out));
+}
+
+/// The snapshot without what install and uninstall may leave on purpose:
+/// backups, the state dir and Claude Code's (now hook-free) settings.json.
+fn user_files(h: &Home) -> Vec<(PathBuf, Vec<u8>)> {
+    h.snapshot()
+        .into_iter()
+        .filter(|(p, _)| {
+            let rel = p.strip_prefix(h.dir.path()).unwrap();
+            !p.to_string_lossy().ends_with(".bak")
+                && !rel.starts_with("state")
+                && rel != Path::new(".claude/settings.json")
+        })
+        .collect()
+}
+
+#[test]
+fn uninstall_puts_the_home_back() {
+    let h = Home::with_all();
+    h.write(".zshrc", "export A=1\n");
+    h.write(".zshenv", "export B=2\n");
+    h.write(".tmux.conf", "set -g mouse off\n");
+    let before = user_files(&h);
+    ok(h.run(&["install", "--yes", "--with", "aliases"]));
+    assert_ne!(user_files(&h), before);
+    let out = ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert_eq!(user_files(&h), before, "{out}");
+    assert!(!h.path(".config/cc-moss").exists());
+    assert!(!h.path(".config/starship.toml").exists());
+    assert!(!h.read(".claude/settings.json").contains("cc-moss"));
+    assert!(out.contains("rm -rf"), "{out}");
+    assert!(out.contains(h.path("state").to_str().unwrap()), "{out}");
+}
+
+#[test]
+fn uninstall_removes_files_it_created() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    ok(h.run(&["install", "--uninstall", "--yes"]));
+    for f in [".zshrc", ".zshenv", ".tmux.conf", ".config/starship.toml"] {
+        assert!(!h.path(f).exists(), "{f} is left");
+    }
+    let again = ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert!(again.contains("Nothing of cc-moss's is left"), "{again}");
+}
+
+#[test]
+fn uninstall_keeps_a_starship_config_that_is_not_ours() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    let mine = h.read(".config/starship.toml") + "# my tweak\n";
+    h.write(".config/starship.toml", &mine);
+    let out = ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert_eq!(h.read(".config/starship.toml"), mine);
+    assert!(out.contains("Kept your starship config"), "{out}");
+}
+
+#[test]
+fn uninstall_dry_run_changes_nothing() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    let before = h.snapshot();
+    let out = ok(h.run(&["install", "--uninstall", "--dry-run"]));
+    assert!(out.contains("Dry run"), "{out}");
+    assert!(out.contains("tmux.conf (delete"), "{out}");
+    assert_eq!(h.snapshot(), before);
+}
+
+#[test]
+fn uninstall_asks_first() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    let before = h.snapshot();
+    let out = h.run(&["install", "--uninstall"]);
+    assert!(!out.status.success());
+    assert!(text(&out).contains("--yes"), "{}", text(&out));
+    assert_eq!(h.snapshot(), before);
+}
+
+const BASH: &[(&str, &str)] = &[("SHELL", "/bin/bash")];
+
+#[test]
+fn bash_users_get_no_zsh_files() {
+    let h = Home::with_all();
+    let out = ok(h.run_with(&["install", "--yes"], BASH));
+    assert!(!h.path(".zshrc").exists());
+    assert!(!h.path(".zshenv").exists());
+    assert!(h.read(".claude/settings.json").contains("cc-moss"));
+    assert!(h.read(".tmux.conf").starts_with("# >>> cc-moss >>>"));
+    assert!(h.read(".config/starship.toml").contains("[custom.device]"));
+    assert!(out.contains("zsh-only"), "{out}");
+    assert!(out.contains("cc-moss pick"), "{out}");
+    assert!(!out.contains("type `t`"), "{out}");
+}
+
+#[test]
+fn bash_users_get_a_green_doctor_with_zsh_parts_skipped() {
+    let h = Home::with_all();
+    ok(h.run_with(&["install", "--yes"], BASH));
+    let report = ok(h.run_with(&["doctor"], BASH));
+    assert!(!report.contains('✗'), "{report}");
+    assert!(report.contains("skipped: zsh only"), "{report}");
+    assert!(report.contains("Everything looks healthy"), "{report}");
+}
+
+#[test]
+fn bash_users_with_a_zshrc_get_the_blocks() {
+    let h = Home::with_all();
+    h.write(".zshrc", "export A=1\n");
+    let out = ok(h.run_with(&["install", "--yes"], BASH));
+    assert!(h.read(".zshrc").contains("# >>> cc-moss >>>"));
+    assert!(h.read(".zshenv").contains("# >>> cc-moss: path >>>"));
+    assert!(!out.contains("zsh-only"), "{out}");
+}
+
+#[test]
+fn bash_users_are_told_in_chinese_too() {
+    let h = Home::with_all();
+    let out = ok(h.run_with(
+        &["install", "--yes"],
+        &[("SHELL", "/bin/bash"), ("CC_MOSS_LANG", "zh")],
+    ));
+    assert!(out.contains("只支持 zsh"), "{out}");
+}
+
+#[test]
+fn uninstall_backs_up_a_shell_file_before_deleting_it() {
+    // install created .zshrc; the user then typed inside one of our blocks.
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    let edited = h.read(".zshrc").replacen(
+        "# <<< cc-moss: prompt <<<",
+        "export MINE=1\n# <<< cc-moss: prompt <<<",
+        1,
+    );
+    h.write(".zshrc", &edited);
+    ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert!(!h.path(".zshrc").exists());
+    let backup = std::fs::read_dir(h.path(""))
+        .unwrap()
+        .filter_map(|e| e.ok())
+        .find(|e| {
+            let n = e.file_name().to_string_lossy().into_owned();
+            n.starts_with(".zshrc.cc-moss-") && n.ends_with(".bak")
+        })
+        .expect("a backup of the deleted .zshrc");
+    assert!(std::fs::read_to_string(backup.path())
+        .unwrap()
+        .contains("export MINE=1"));
+}
+
+#[test]
+fn uninstall_keeps_an_edited_cc_moss_tmux_config() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes"]));
+    let mine = h.read(".config/cc-moss/tmux.conf") + "set -g status off\n";
+    h.write(".config/cc-moss/tmux.conf", &mine);
+    let out = ok(h.run(&["install", "--uninstall", "--yes"]));
+    assert_eq!(h.read(".config/cc-moss/tmux.conf"), mine);
+    assert!(out.contains("Kept"), "{out}");
+}
+
+#[test]
+fn uninstall_dry_run_leaves_an_empty_config_dir() {
+    let h = Home::with_all();
+    std::fs::create_dir_all(h.path(".config/cc-moss")).unwrap();
+    ok(h.run(&["install", "--uninstall", "--dry-run"]));
+    assert!(h.path(".config/cc-moss").is_dir());
 }

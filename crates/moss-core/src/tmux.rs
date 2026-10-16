@@ -125,10 +125,15 @@ pub struct Pane {
     pub start_command: String,
 }
 
-const PANE_FORMAT: &str = "#{pane_pid}\t#{session_id}\t#{pane_id}\t#{pane_start_command}";
+/// Field separator in `-F` formats. Printable on purpose: tmux 3.5 replaces
+/// control characters such as tabs in format output with `_`, and non-ASCII
+/// may be mangled without a UTF-8 locale.
+const SEP: &str = "|:|";
+
+const PANE_FORMAT: &str = "#{pane_pid}|:|#{session_id}|:|#{pane_id}|:|#{pane_start_command}";
 
 fn parse_pane(out: &str) -> Option<Pane> {
-    let mut f = out.lines().next()?.splitn(4, '\t');
+    let mut f = out.lines().next()?.splitn(4, SEP);
     Some(Pane {
         pid: f.next()?.parse().ok()?,
         session_id: f.next()?.to_string(),
@@ -238,10 +243,10 @@ impl<R: Runner> Tmux<R> {
 
     /// `(session id, session name)` for every session; empty when no server runs.
     pub fn sessions(&self) -> Vec<(String, String)> {
-        self.run(&["list-sessions", "-F", "#{session_id}\t#{session_name}"])
+        self.run(&["list-sessions", "-F", "#{session_id}|:|#{session_name}"])
             .map(|out| {
                 out.lines()
-                    .filter_map(|l| l.split_once('\t'))
+                    .filter_map(|l| l.split_once(SEP))
                     .map(|(id, name)| (id.to_string(), name.to_string()))
                     .collect()
             })
@@ -250,13 +255,13 @@ impl<R: Runner> Tmux<R> {
 
     /// `(pane pid, session id, session name, pane id)` for every pane.
     pub fn panes(&self) -> Vec<(u32, String, String, String)> {
-        let fmt = "#{pane_pid}\t#{session_id}\t#{session_name}\t#{pane_id}";
+        let fmt = "#{pane_pid}|:|#{session_id}|:|#{session_name}|:|#{pane_id}";
         let Ok(out) = self.run(&["list-panes", "-a", "-F", fmt]) else {
             return Vec::new();
         };
         out.lines()
             .filter_map(|l| {
-                let mut f = l.splitn(4, '\t');
+                let mut f = l.splitn(4, SEP);
                 Some((
                     f.next()?.parse().ok()?,
                     f.next()?.to_string(),
@@ -269,13 +274,13 @@ impl<R: Runner> Tmux<R> {
 
     /// Every session with its last activity; empty when no server runs.
     pub fn session_infos(&self) -> Vec<SessionInfo> {
-        let fmt = "#{session_id}\t#{session_name}\t#{session_activity}\t#{session_attached}\t#{session_path}";
+        let fmt = "#{session_id}|:|#{session_name}|:|#{session_activity}|:|#{session_attached}|:|#{session_path}";
         let Ok(out) = self.run(&["list-sessions", "-F", fmt]) else {
             return Vec::new();
         };
         out.lines()
             .filter_map(|l| {
-                let mut f = l.splitn(5, '\t');
+                let mut f = l.splitn(5, SEP);
                 Some(SessionInfo {
                     id: f.next()?.to_string(),
                     name: f.next()?.to_string(),
@@ -316,11 +321,11 @@ pub fn locate(tmux_env: Option<&str>, pane_env: Option<&str>) -> Option<TmuxLoc>
             "-p",
             "-t",
             &pane_id,
-            "#{session_id}\t#{session_name}",
+            "#{session_id}|:|#{session_name}",
         ])
         .ok()
         .map(|text| {
-            let mut parts = text.trim_end().splitn(2, '\t');
+            let mut parts = text.trim_end().splitn(2, SEP);
             let id = parts.next().filter(|s| !s.is_empty()).map(String::from);
             let name = parts.next().filter(|s| !s.is_empty()).map(String::from);
             (id, name)

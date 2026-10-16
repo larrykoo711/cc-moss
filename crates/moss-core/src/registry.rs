@@ -16,24 +16,55 @@ use crate::slot::{Notes, Slot, Status};
 
 const SCHEMA_VERSION: i64 = 1;
 /// Writes give up after this long. Hooks have their own timeout (T1.2 sets
-/// 10s), and uncontended writes take a few milliseconds.
-pub const BUSY_TIMEOUT: Duration = Duration::from_secs(1);
+/// 10s), and uncontended writes take a few milliseconds; no process is
+/// spawned while the lock is held, so waiting this long means a real stall.
+pub const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Liveness check for a recorded process: `(pid, recorded start time)`.
 pub type IsAlive<'a> = &'a dyn Fn(u32, Option<&str>) -> bool;
 
 pub struct Registry {
     conn: Connection,
+    /// The schema version on disk when it is newer than this binary's.
+    newer: Option<i64>,
 }
+
+/// A write was refused because the registry was written by a newer cc-moss,
+/// whose rows this version might break.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NewerSchema {
+    pub found: i64,
+    pub supported: i64,
+}
+
+impl std::fmt::Display for NewerSchema {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the registry was written by a newer cc-moss (schema {}, this one knows {}); upgrade cc-moss",
+            self.found, self.supported
+        )
+    }
+}
+
+impl std::error::Error for NewerSchema {}
 
 impl Registry {
     pub fn open(path: &Path) -> Result<Self> {
+        if !path.is_absolute() {
+            anyhow::bail!(crate::store_dir::NOT_ABSOLUTE);
+        }
         if let Some(dir) = path.parent() {
-            std::fs::create_dir_all(dir)
+            crate::store_dir::ensure_private_dir(dir)
                 .with_context(|| format!("create state dir {}", dir.display()))?;
         }
         let conn =
             Connection::open(path).with_context(|| format!("open registry {}", path.display()))?;
+        for suffix in ["", "-wal", "-shm"] {
+            let mut file = path.as_os_str().to_owned();
+            file.push(suffix);
+            crate::store_dir::make_private(Path::new(&file), 0o600);
+        }
         conn.busy_timeout(BUSY_TIMEOUT)?;
         enable_wal(&conn)?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
@@ -45,9 +76,67 @@ impl Registry {
     }
 
     fn init(mut conn: Connection) -> Result<Self> {
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        if version > SCHEMA_VERSION {
+            // Read what we can, write nothing: a newer schema may have
+            // invariants this version does not know. SQLite enforces it too.
+            conn.pragma_update(None, "query_only", true)?;
+            return Ok(Registry {
+                conn,
+                newer: Some(version),
+            });
+        }
         migrate(&mut conn)?;
         ensure_columns(&conn)?;
-        Ok(Registry { conn })
+        Ok(Registry { conn, newer: None })
+    }
+
+    /// The on-disk schema version when a newer cc-moss wrote this registry.
+    /// Such a registry is opened read-only; every write fails with
+    /// [`NewerSchema`].
+    pub fn newer_schema(&self) -> Option<i64> {
+        self.newer
+    }
+
+    /// Liveness of every other process running a slot that has used
+    /// `session_id`: the only owners `apply_with` may need to check.
+    fn prefetch_liveness(
+        &self,
+        session_id: &str,
+        ctx: &Context,
+        is_alive: IsAlive,
+    ) -> Result<Vec<(u32, Option<String>, bool)>> {
+        let mut stmt = self.conn.prepare(&sql(
+            "SELECT DISTINCT pid, pid_start FROM slots
+              WHERE status = 'running' AND pid IS NOT NULL AND NOT COALESCE({SAME}, 0)
+                AND (session_id = :sid
+                     OR slot_id IN (SELECT slot_id FROM slot_sessions WHERE session_id = :sid))",
+        ))?;
+        let owners = stmt
+            .query_map(
+                named_params! {":sid": session_id, ":pid": ctx.pid, ":pid_start": ctx.pid_start},
+                |r| Ok((r.get::<_, u32>(0)?, r.get::<_, Option<String>>(1)?)),
+            )?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(owners
+            .into_iter()
+            .map(|(pid, start)| {
+                let alive = is_alive(pid, start.as_deref());
+                (pid, start, alive)
+            })
+            .collect())
+    }
+
+    /// The connection for a write, refused on a newer schema.
+    fn write(&self) -> Result<&Connection> {
+        match self.newer {
+            Some(found) => Err(NewerSchema {
+                found,
+                supported: SCHEMA_VERSION,
+            }
+            .into()),
+            None => Ok(&self.conn),
+        }
     }
 
     /// Apply one event, treating every other recorded process as dead.
@@ -58,6 +147,21 @@ impl Registry {
 
     /// Apply one event. Events for sessions we never saw are ignored.
     pub fn apply_with(&mut self, event: &Event, ctx: &Context, is_alive: IsAlive) -> Result<()> {
+        self.write()?;
+        // A liveness check spawns `ps`; doing it under the write lock would
+        // make concurrent hooks wait on it and possibly drop their events.
+        // So check every process the event could be compared with first,
+        // and answer from that inside the lock. Only a row that changed in
+        // between is checked under the lock.
+        let known = self.prefetch_liveness(event_session_id(event), ctx, is_alive)?;
+        let cached = |pid: u32, start: Option<&str>| match known
+            .iter()
+            .find(|(p, s, _)| *p == pid && s.as_deref() == start)
+        {
+            Some((_, _, alive)) => *alive,
+            None => is_alive(pid, start),
+        };
+        let is_alive: IsAlive = &cached;
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
@@ -234,7 +338,7 @@ impl Registry {
 
     /// Set a slot's name (found outside the hook payload, e.g. in its transcript).
     pub fn set_name(&self, slot_id: &str, name: &str) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET name = ?2 WHERE slot_id = ?1",
             params![slot_id, name],
         )?;
@@ -245,6 +349,7 @@ impl Registry {
     /// `/rename`. Claude Code leaves the name out of hook payloads after
     /// `--resume`, so a resumed session can stay nameless otherwise.
     pub fn backfill_names(&self) -> Result<usize> {
+        self.write()?;
         let mut named = 0;
         for slot in self.slots()? {
             if slot.name.is_some() || slot.status == Status::Closed {
@@ -262,7 +367,7 @@ impl Registry {
             )?;
             let (title, scanned) =
                 crate::transcript::custom_title_since(Path::new(path), from.max(0) as u64);
-            self.conn.execute(
+            self.write()?.execute(
                 "UPDATE slots SET name_scanned_to = ?2 WHERE slot_id = ?1",
                 params![slot.slot_id, scanned as i64],
             )?;
@@ -276,7 +381,7 @@ impl Registry {
 
     /// Whether Claude is working on a prompt (from outside the hooks).
     pub fn set_busy(&self, slot_id: &str, busy: bool) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET busy = ?2 WHERE slot_id = ?1",
             params![slot_id, busy],
         )?;
@@ -285,7 +390,7 @@ impl Registry {
 
     /// Replace a slot's notes.
     pub fn set_notes(&self, slot_id: &str, notes: &Notes) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET note_goal = ?2, note_state = ?3, note_text = ?4 WHERE slot_id = ?1",
             params![slot_id, notes.goal, notes.state, notes.note],
         )?;
@@ -294,7 +399,7 @@ impl Registry {
 
     /// The user does not want this session back: drop it from restore candidates.
     pub fn close_by_user(&self, slot_id: &str, now_ms: i64) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET status = 'closed', end_reason = 'closed-by-user', ended_at = ?2
              WHERE slot_id = ?1",
             params![slot_id, now_ms],
@@ -304,7 +409,7 @@ impl Registry {
 
     /// `cc-moss restore` launched this slot; SessionStart clears the mark.
     pub fn mark_restore_started(&self, slot_id: &str, now_ms: i64) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET restore_started_at = ?2 WHERE slot_id = ?1",
             params![slot_id, now_ms],
         )?;
@@ -316,7 +421,7 @@ impl Registry {
     /// prompt) or a claim within the pending window makes the claim fail, so
     /// a conversation that came back on its own is never launched twice.
     pub fn claim_restore(&self, planned: &Slot, now_ms: i64) -> Result<bool> {
-        let changed = self.conn.execute(
+        let changed = self.write()?.execute(
             "UPDATE slots SET restore_started_at = :now
              WHERE slot_id = :slot AND session_id = :sid
                AND pid IS :pid AND pid_start IS :pid_start AND last_active_at = :active
@@ -345,7 +450,7 @@ impl Registry {
         now_ms: i64,
     ) -> Result<()> {
         // last_active_at moves too: a pid recorded after boot must look it.
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL,
                ended_at = NULL, tmux_socket = ?4, tmux_session_id = ?5, tmux_session_name = ?6,
                tmux_pane = ?7, last_active_at = ?8
@@ -367,7 +472,7 @@ impl Registry {
     /// After a restore, older interrupted copies of the same conversation are
     /// superseded: close them so they stop being listed.
     pub fn close_superseded(&self, keep: &str, session_id: &str, now_ms: i64) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET status = 'closed', end_reason = 'switched', ended_at = ?3
              WHERE slot_id <> ?1 AND session_id = ?2 AND status <> 'closed'
                AND restore_started_at IS NULL",
@@ -378,7 +483,7 @@ impl Registry {
 
     /// Undo [`Registry::mark_restore_started`] when the launch failed.
     pub fn clear_restore_started(&self, slot_id: &str) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET restore_started_at = NULL WHERE slot_id = ?1",
             [slot_id],
         )?;
@@ -387,7 +492,7 @@ impl Registry {
 
     /// Record the tmux session name after cc-moss renamed it.
     pub fn set_tmux_session_name(&self, slot_id: &str, name: &str) -> Result<()> {
-        self.conn.execute(
+        self.write()?.execute(
             "UPDATE slots SET tmux_session_name = ?2 WHERE slot_id = ?1",
             params![slot_id, name],
         )?;
@@ -568,6 +673,15 @@ fn migrate(conn: &mut Connection) -> Result<()> {
 /// SQL predicate "this row belongs to the calling process". A process is its
 /// pid *and* its start time: if either side's start time is unknown we cannot
 /// tell a reused pid from the same process, so the answer is no.
+fn event_session_id(event: &Event) -> &str {
+    match event {
+        Event::Start { session_id, .. }
+        | Event::Prompt { session_id, .. }
+        | Event::Stop { session_id }
+        | Event::End { session_id, .. } => session_id,
+    }
+}
+
 const SAME_PROCESS: &str =
     "(pid = :pid AND pid_start IS NOT NULL AND :pid_start IS NOT NULL AND pid_start = :pid_start)";
 

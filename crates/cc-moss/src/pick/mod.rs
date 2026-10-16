@@ -32,7 +32,8 @@ const TICK: Duration = Duration::from_millis(120);
 /// Pick up new, ended and busy sessions without asking.
 const REFRESH: Duration = Duration::from_secs(2);
 
-pub fn run() -> Result<()> {
+/// Open the picker, with `query` already in the search line.
+pub fn run(query: &str) -> Result<()> {
     let config = Config::load()?;
     let socket = Socket::from_config(config.tmux_socket().as_deref());
     let tmux = Tmux::with_socket(socket.clone());
@@ -41,6 +42,7 @@ pub fn run() -> Result<()> {
     let reconcile = std::thread::spawn(|| crate::reconcile::run().map(drop));
     let (sessions, interrupted) = load(&tmux)?;
     let mut app = App::new(sessions, interrupted);
+    app.set_query(query);
     let host_prefix = if config.naming.host_prefix {
         moss_core::naming::cached_host_prefix(&store_dir::state_dir())
     } else {

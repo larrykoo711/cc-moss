@@ -108,6 +108,19 @@ fn checks() -> Result<Vec<Check>> {
     let has = managed_block::contains;
     let fix_install = Some("cc-moss install".to_string());
     let fix_setup = Some("cc-moss setup".to_string());
+    let zsh = install::zsh_in_use(&paths);
+    let shell = install::login_shell().unwrap_or_default();
+    let skipped = |what: &str| {
+        check(
+            Mark::Note,
+            what,
+            tr!(
+                format!("skipped: zsh only (your shell is {shell})"),
+                format!("跳过：只支持 zsh（你用的是 {shell}）")
+            ),
+            None,
+        )
+    };
     let mut out = Vec::new();
 
     // Claude Code and the hooks that register its sessions.
@@ -118,17 +131,17 @@ fn checks() -> Result<Vec<Check>> {
             Mark::Fail,
             "Claude Code",
             tr!("not found", "没找到"),
-            Some("https://docs.anthropic.com/en/docs/claude-code".into()),
+            Some("https://code.claude.com/docs".into()),
         )
     });
-    out.push(match setup::hooks_current() {
-        Ok(true) => check(
+    out.push(match setup::hook_status() {
+        Ok(setup::HookStatus::Current) => check(
             Mark::Ok,
             tr!("hooks", "钩子"),
             tr!("installed", "已安装"),
             None,
         ),
-        Ok(false) => check(
+        Ok(setup::HookStatus::Outdated) => check(
             Mark::Fail,
             tr!("hooks", "钩子"),
             tr!(
@@ -137,9 +150,49 @@ fn checks() -> Result<Vec<Check>> {
             ),
             fix_setup.clone(),
         ),
+        Ok(setup::HookStatus::Broken { path, missing }) => check(
+            Mark::Fail,
+            tr!("hooks", "钩子"),
+            if missing {
+                tr!(
+                    format!("run {path}, which is missing: new sessions are not recorded"),
+                    format!("指向的 {path} 不见了：新会话不会被登记")
+                )
+            } else {
+                tr!(
+                    format!("run {path}, which is not executable: new sessions are not recorded"),
+                    format!("指向的 {path} 不能执行：新会话不会被登记")
+                )
+            },
+            fix_setup.clone(),
+        ),
         Err(e) => check(Mark::Fail, tr!("hooks", "钩子"), format!("{e:#}"), None),
     });
-    out.push(if has(&zshrc, setup::ZSH_TAG) {
+    if let Some(n) = sessions_without_pid().filter(|n| *n > 0) {
+        out.push(check(
+            Mark::Warn,
+            tr!("process ids", "进程号"),
+            tr!(
+                if n == 1 {
+                    "1 recent session was recorded without a process id; crash recovery cannot see it"
+                        .to_string()
+                } else {
+                    format!("{n} recent sessions were recorded without a process id; crash recovery cannot see them")
+                },
+                format!("{n} 个最近的会话没有记下进程号，中断后没法找回它们")
+            ),
+            Some(
+                tr!(
+                    "update Claude Code: cc-moss reads the CLAUDE_PID it sets for hooks",
+                    "升级 Claude Code：cc-moss 靠它给钩子的 CLAUDE_PID 认进程"
+                )
+                .into(),
+            ),
+        ));
+    }
+    out.push(if !zsh {
+        skipped("t")
+    } else if has(&zshrc, setup::ZSH_TAG) {
         check(Mark::Ok, "t", tr!("ready", "可用"), None)
     } else {
         check(
@@ -158,8 +211,11 @@ fn checks() -> Result<Vec<Check>> {
                 Mark::Warn,
                 "tmux",
                 tr!(
-                    format!("{}.{}: prefix + t needs 3.2 or newer", v.0, v.1),
-                    format!("{}.{}：prefix + t 需要 3.2 及以上", v.0, v.1)
+                    format!(
+                        "{}.{}: prefix + t needs 3.2 or newer; everything else works",
+                        v.0, v.1
+                    ),
+                    format!("{}.{}：prefix + t 需要 3.2 及以上，其他都能用", v.0, v.1)
                 ),
                 install_hint(&[Tool::Tmux]),
             ),
@@ -259,7 +315,9 @@ fn checks() -> Result<Vec<Check>> {
         ),
     });
     let late = blocks_after_starship(&zshrc);
-    out.push(if late.is_empty() {
+    out.push(if !zsh {
+        skipped(tr!("prompt order", "提示符顺序"))
+    } else if late.is_empty() {
         check(
             Mark::Ok,
             tr!("prompt order", "提示符顺序"),
@@ -279,6 +337,10 @@ fn checks() -> Result<Vec<Check>> {
     });
 
     // Shell blocks: ssh reset (pitfall #13), PATH for scripts (pitfall #12).
+    if !zsh {
+        out.push(skipped(tr!("shell blocks", "shell 配置块")));
+        return Ok(out);
+    }
     out.push(if has(&zshrc, install::TAG_SSH) {
         check(
             Mark::Ok,
@@ -368,6 +430,29 @@ fn checks() -> Result<Vec<Check>> {
         ));
     }
     Ok(out)
+}
+
+/// Sessions active in the last week that the hooks recorded without a pid
+/// (Claude Code did not set `CLAUDE_PID`). Without a pid a crashed session
+/// looks like it is still running, so restore never offers it. `None` when
+/// there is no registry or it cannot be read; doctor creates nothing.
+fn sessions_without_pid() -> Option<usize> {
+    const WEEK_MS: i64 = 7 * 24 * 60 * 60 * 1000;
+    let path = moss_core::store_dir::registry_path();
+    if !path.exists() {
+        return None;
+    }
+    let since = moss_core::slot::now_ms() - WEEK_MS;
+    let slots = moss_core::registry::Registry::open(&path)
+        .ok()?
+        .slots()
+        .ok()?;
+    Some(
+        slots
+            .iter()
+            .filter(|s| s.pid.is_none() && s.last_active_at_ms >= since)
+            .count(),
+    )
 }
 
 /// `tmux -V` as (major, minor); `3.5a` reads as (3, 5).

@@ -6,6 +6,12 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+homepage.workspace = true
+readme = "../../README.md"
+keywords = ["claude-code", "tmux", "session", "terminal", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+# Not on crates.io for now: the library's name is taken there. Ship binaries.
+publish = false
 
 [dependencies]
 anyhow.workspace = true

@@ -180,8 +180,9 @@ impl Launcher {
         } else {
             None
         };
+        super::launch::require_tmux()?;
+        let claude = super::launch::claude_bin()?;
         let taken = tmux.session_names()?;
-        let claude = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
         Ok(Launcher {
             socket,
             tmux,
@@ -246,6 +247,16 @@ impl Launcher {
                     None
                 }),
         };
+        let pane = pane.filter(|pane| {
+            let dead = super::launch::exited_at_start(&self.tmux, pane);
+            if dead {
+                eprintln!(
+                    "cc-moss: {}",
+                    super::launch::exited_message(&label, &self.claude, &slot.cwd)
+                );
+            }
+            !dead
+        });
         let Some(pane) = pane else {
             if let Err(e) = registry.clear_restore_started(&slot.slot_id) {
                 eprintln!("cc-moss: {e:#}");

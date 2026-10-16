@@ -178,7 +178,7 @@ impl World {
     /// Session id of the slot named `name`, once its SessionStart arrived.
     pub fn session_id(&self, name: &str) -> String {
         wait_for(|| {
-            ls_json(&self.state(), true)["slots"]
+            ls_json(&self.state(), true)["sessions"]
                 .as_array()
                 .unwrap()
                 .iter()

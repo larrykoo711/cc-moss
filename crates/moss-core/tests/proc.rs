@@ -39,3 +39,14 @@ fn slow_command_times_out() {
     assert!(out.is_none());
     assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
 }
+
+#[test]
+fn unreaped_child_is_not_alive() {
+    // Exited but not waited for: a zombie, as in a container without init.
+    let mut child = Command::new("true").spawn().unwrap();
+    let pid = child.id();
+    std::thread::sleep(Duration::from_millis(300));
+    let alive = is_alive(pid, None);
+    child.wait().unwrap();
+    assert!(!alive, "a zombie counts as dead");
+}

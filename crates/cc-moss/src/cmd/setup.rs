@@ -13,7 +13,7 @@ use moss_core::managed_block;
 use moss_core::settings_json::{self, to_claude_string};
 use serde_json::{json, Value};
 
-use super::files::{self, read_optional, Change};
+use super::files::{self, read_optional, Change, Removal};
 
 pub struct Options {
     pub dry_run: bool,
@@ -63,11 +63,7 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
     let new_doc = if opts.uninstall {
         settings_json::uninstall(&old_doc)?
     } else {
-        let exe = std::env::current_exe().context("cannot locate the cc-moss executable")?;
-        let exe = exe
-            .to_str()
-            .context("the cc-moss executable path is not valid UTF-8")?;
-        settings_json::install(&old_doc, exe)?
+        settings_json::install(&old_doc, &hook_exe()?)?
     };
     // Compare documents, not text: a file the user formatted differently
     // should not be rewritten when nothing changes semantically.
@@ -95,6 +91,7 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
         return Ok(None);
     }
     Ok(Some(Change {
+        remove: Removal::No,
         original,
         new_text: to_claude_string(&new_doc),
         done: if opts.uninstall {
@@ -163,6 +160,7 @@ fn zshrc_change(opts: &Options) -> Result<Option<Change>> {
         return Ok(None);
     }
     Ok(Some(Change {
+        remove: Removal::No,
         original: Some(original),
         new_text,
         done: if opts.uninstall {
@@ -204,18 +202,64 @@ pub(super) fn default_settings_path() -> Result<PathBuf> {
     Ok(PathBuf::from(home).join(".claude").join("settings.json"))
 }
 
-/// Whether Claude Code's settings already carry the current cc-moss hooks.
-pub(super) fn hooks_current() -> Result<bool> {
+/// The cc-moss path the hooks run: the stable `PATH` entry for this binary
+/// when there is one, else the running binary itself.
+fn hook_exe() -> Result<String> {
+    let exe = std::env::current_exe().context("cannot locate the cc-moss executable")?;
+    let exe = settings_json::stable_exe(&exe, std::env::var_os("PATH").as_deref());
+    exe.into_os_string()
+        .into_string()
+        .map_err(|_| anyhow::anyhow!("the cc-moss executable path is not valid UTF-8"))
+}
+
+/// What `doctor` reports about the hooks in Claude Code's settings.
+pub(super) enum HookStatus {
+    Current,
+    /// Missing, or written by another cc-moss install or version.
+    Outdated,
+    /// A hook runs a cc-moss that is gone or cannot be executed.
+    Broken {
+        path: String,
+        missing: bool,
+    },
+}
+
+pub(super) fn hook_status() -> Result<HookStatus> {
     let path = default_settings_path()?;
     let path = fs::canonicalize(&path).unwrap_or(path);
     let Some(text) = read_optional(&path)? else {
-        return Ok(false);
+        return Ok(HookStatus::Outdated);
     };
     let doc: Value = serde_json::from_str(&text)
         .with_context(|| format!("{} is not valid JSON", path.display()))?;
-    let exe = std::env::current_exe().context("cannot locate the cc-moss executable")?;
-    let exe = exe
-        .to_str()
-        .context("the cc-moss executable path is not valid UTF-8")?;
-    Ok(settings_json::install(&doc, exe)? == doc)
+    for bin in settings_json::hook_binaries(&doc) {
+        if let Some(missing) = unusable(&bin) {
+            return Ok(HookStatus::Broken { path: bin, missing });
+        }
+    }
+    Ok(if settings_json::install(&doc, &hook_exe()?)? == doc {
+        HookStatus::Current
+    } else {
+        HookStatus::Outdated
+    })
+}
+
+/// `Some(true)` when `bin` does not exist, `Some(false)` when it exists but
+/// is not an executable file, `None` when it can run. A bare `cc-moss` is
+/// looked up on `PATH`, as the shell would.
+fn unusable(bin: &str) -> Option<bool> {
+    use std::os::unix::fs::PermissionsExt;
+    let found = if bin.contains('/') {
+        Some(PathBuf::from(bin))
+    } else {
+        std::env::var_os("PATH").and_then(|p| {
+            std::env::split_paths(&p)
+                .map(|d| d.join(bin))
+                .find(|c| c.exists())
+        })
+    };
+    let Some(meta) = found.and_then(|p| fs::metadata(p).ok()) else {
+        return Some(true);
+    };
+    (!(meta.is_file() && meta.permissions().mode() & 0o111 != 0)).then_some(false)
 }
