@@ -342,7 +342,10 @@ final class PetController {
         if tucked, peeking != PetPresence.wantsYou(pose) { place(animated: true) }
         view.setAccessibilityLabel(L.t("Mo: ", "小莫：") + pose.title)
         // No summary tooltip over a message Mo is holding for you.
-        view.toolTip = director.message == nil ? summary : nil
+        // No system tooltip (the yellow box clashes with everything else);
+        // the summary still reaches VoiceOver.
+        view.toolTip = nil
+        view.setAccessibilityHelp(summary)
         render(display, at: t)
     }
 
