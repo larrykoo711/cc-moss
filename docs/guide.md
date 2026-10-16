@@ -1,44 +1,6 @@
-<p align="center">
-  <img src="docs/assets/banner.zh-CN.svg" alt="cc-moss：文明会延续，对话也是。" width="100%">
-</p>
+# cc-moss 使用手册
 
-<p align="center">
-  <a href="README.md">English</a> · <b>简体中文</b>
-</p>
-
-<p align="center">
-  <a href="https://github.com/larrykoo711/cc-moss/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/larrykoo711/cc-moss/ci.yml?branch=main&style=flat-square&label=CI"></a>
-  <a href="https://github.com/larrykoo711/cc-moss/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/larrykoo711/cc-moss?style=flat-square&color=FF5A3C"></a>
-  <a href="LICENSE"><img alt="许可证：MIT" src="https://img.shields.io/badge/license-MIT-3b82f6?style=flat-square"></a>
-  <img alt="平台：macOS | Linux" src="https://img.shields.io/badge/platform-macOS%20%7C%20Linux-71717a?style=flat-square">
-  <img alt="状态：alpha" src="https://img.shields.io/badge/status-alpha-a855f7?style=flat-square">
-</p>
-
----
-
-编辑器崩溃、电脑重启、终端标签页被误关，开着的 Claude Code 会话一下子全没了。
-接下来只能一份份翻会话记录，回忆哪个会话在做什么、做到了哪一步。
-
-**cc-moss** 为每个交互式 Claude Code 会话做登记，让每个会话独占一个 tmux 会话；中断之后一条命令就能全部找回：
-目录对、对话接得上，模型和权限模式也和原来一样。
-
-<p align="center">
-  <img src="docs/assets/picker.zh-CN.svg" alt="cc-moss 会话选择器" width="92%">
-</p>
-
-## 亮点
-
-- **不用记任何东西**：通过 Claude Code 钩子，会话的启动、改名、工作、结束都会自动登记。
-  装好之前就在跑的会话，下次打开时也会被自动认领。
-- **崩溃后一键恢复**：`cc-moss restore` 把每个中断的会话用 `claude --resume` 拉回各自的 tmux 会话，
-  回到原来的目录，带上原来那几个关键参数（见[恢复时带回什么](#恢复时带回什么)）。
-- **一个名字只对应一个会话**：`cc-moss new api-gateway` 时，同名会话在运行就直接进入，已中断就提示恢复，
-  都没有才新建。在 Claude Code 里 `/rename` 改名，tmux 会话名也会跟着改。
-- **备注不会丢**：写下会话在做什么、停在哪里，第二天打开还在。
-- **人人都会用的选择器**：打字即搜索（或输入新会话的名字），方向键移动，回车打开，→ 更多操作，Esc 返回，
-  也支持鼠标。没有要背的快捷键。git worktree 会标出它所属的主仓。
-- **中英双语**：界面跟随系统语言。
-- **数据留在本机**：只是本机上的一个 SQLite 文件，没有任何统计上报，详见[隐私](#隐私)。
+[English](guide.en.md) · **简体中文** · [回到首页](../README.md)
 
 ## 安装
 
@@ -130,8 +92,8 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 <table>
   <tr>
-    <td width="50%"><img src="docs/assets/picker-restore.zh-CN.svg" alt="选择器中的中断会话"></td>
-    <td width="50%"><img src="docs/assets/picker-menu.zh-CN.svg" alt="会话菜单"></td>
+    <td width="50%"><img src="assets/picker-restore.zh-CN.svg" alt="选择器中的中断会话"></td>
+    <td width="50%"><img src="assets/picker-menu.zh-CN.svg" alt="会话菜单"></td>
   </tr>
   <tr>
     <td align="center"><sub>中断的会话保留着备注和最后一句话</sub></td>
@@ -259,27 +221,3 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 **有会话没被登记上。** 运行 `cc-moss doctor`：它会检查钩子、tmux、提示符和各个工具，并告诉你每一项怎么修。
 
 **我有好几台机器。** 每台机器各有自己的登记表。`host_prefix` 默认开启，tmux 会话名带着 `<主机名>_` 前缀，ssh 过去也分得清。
-
-## 路线图
-
-- [x] 会话登记、钩子、恢复与备注
-- [x] `t` 选择器
-- [x] `cc-moss install` / `doctor`：一套精选的 tmux 与 starship 配置
-- [x] 预编译二进制与 Homebrew tap
-- [ ] macOS 原生菜单栏 App
-
-变更记录见 [CHANGELOG](CHANGELOG.md)。cc-moss 目前是 alpha（0.x），1.0 之前命令和 `ls --json` 的格式仍可能调整。
-
-## 参与
-
-欢迎报 bug、提想法、发 PR，先看 [CONTRIBUTING.zh-CN.md](CONTRIBUTING.zh-CN.md)；安全问题请走 [SECURITY.md](SECURITY.md)。
-设计说明、计划与 spec 位于 [`.sdd/`](.sdd/)。
-
-## 为什么叫 MOSS？
-
-MOSS 是《流浪地球》里的人工智能，使命是让人类文明延续下去。cc-moss 的使命小一些：
-无论机器发生什么，让你的 Claude Code 工作延续下去。
-
-## 许可证
-
-[MIT](LICENSE)。cc-moss 是独立项目，与 Anthropic 没有关联。

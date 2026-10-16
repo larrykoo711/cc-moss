@@ -10,6 +10,6 @@
 
 - [ ] `cargo fmt --all --check`, `cargo clippy --all-targets -- -D warnings` and `cargo test --all` pass locally
 - [ ] Behaviour changes come with tests
-- [ ] User-facing text exists in English and Chinese (`tr!`), and both READMEs are updated if needed
+- [ ] User-facing text exists in English and Chinese (`tr!`), and both READMEs and the guide in `docs/` are updated if needed
 - [ ] `CHANGELOG.md` has an entry under `Unreleased` (skip for internal changes)
 - [ ] No hostnames, IPs, tokens or absolute home paths in code, tests or docs
