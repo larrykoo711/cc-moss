@@ -328,3 +328,48 @@ struct ActionsMenu: View {
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
     }
 }
+
+/// A small segmented control in the panel's style: one white thumb slides
+/// to the chosen option (used in settings instead of the system picker).
+struct SlidingPicker<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+    @Environment(\.colorScheme) private var scheme
+
+    private var index: Int { options.firstIndex { $0.0 == selection } ?? 0 }
+
+    private var widths: [CGFloat] {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        return options.map { ceil(($0.1 as NSString).size(withAttributes: [.font: font]).width) + 24 }
+    }
+
+    var body: some View {
+        let w = widths
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Theme.raised(scheme))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline(scheme), lineWidth: 0.5))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.10), radius: 1.5, y: 1)
+                .frame(width: w[index], height: 24)
+                .offset(x: w.prefix(index).reduce(0, +))
+                .animation(.spring(response: 0.3, dampingFraction: 0.86), value: index)
+            HStack(spacing: 0) {
+                ForEach(Array(options.enumerated()), id: \.offset) { i, option in
+                    Button { selection = option.0 } label: {
+                        Text(option.1)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(i == index ? .primary : .secondary)
+                            .frame(width: w[i], height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .focusable(false)
+                }
+            }
+            .transaction { $0.animation = nil }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.055)))
+        .fixedSize()
+    }
+}

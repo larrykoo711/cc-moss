@@ -144,6 +144,7 @@ final class AppModel {
     static let showCountKey = "menuBarShowsCount"
 
     func syncIcon() {
+        icon.syncMotion()
         icon.update(sessions, showCount: UserDefaults.standard.bool(forKey: Self.showCountKey))
     }
 

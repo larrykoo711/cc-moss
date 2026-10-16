@@ -196,8 +196,21 @@ final class MenuBarIcon {
             MainActor.assumeIsolated { self?.redraw(frame) }
         }
         redraw(animator.frame)
-        animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        syncMotion()
         watchSystem()
+    }
+
+    /// The "Motion" setting: off keeps the icon still (one picture per state,
+    /// redrawn only when the state changes), which costs nothing.
+    static let motionKey = "menuBarMotion"
+
+    static var motionEnabled: Bool {
+        UserDefaults.standard.object(forKey: motionKey) as? Bool ?? true
+    }
+
+    /// Still when the system asks for less motion or the user turned it off.
+    func syncMotion() {
+        animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || !Self.motionEnabled
     }
 
     /// New sessions from a refresh; `showCount` is the "Icon and number" setting.
@@ -250,9 +263,7 @@ final class MenuBarIcon {
         on(ws, NSWorkspace.screensDidWakeNotification) { $0.screensOff = false; $0.syncSleep() }
         on(dist, Notification.Name("com.apple.screenIsLocked")) { $0.locked = true; $0.syncSleep() }
         on(dist, Notification.Name("com.apple.screenIsUnlocked")) { $0.locked = false; $0.syncSleep() }
-        on(ws, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) {
-            $0.animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        }
+        on(ws, NSWorkspace.accessibilityDisplayOptionsDidChangeNotification) { $0.syncMotion() }
     }
 
     private func syncSleep() {
