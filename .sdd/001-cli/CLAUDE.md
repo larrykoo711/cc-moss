@@ -31,7 +31,7 @@
 | `diagrams/src/` | 两张图的 archify 源 JSON |
 | `PLAN.md` ⭐ | 4 Phase × 12 Task、依赖图、Kanban、日志、开放问题 |
 | `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
-| `LESSONS.md` | 踩坑沉淀（L1–L17） |
+| `LESSONS.md` | 踩坑沉淀（L1–L18） |
 | `reports/T1.1-review-1.md` | T1.1 两轮独立评审与处置 |
 | `reports/T1.4-review-1.md` | T1.4 两轮独立评审与处置 |
 

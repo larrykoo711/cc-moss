@@ -411,8 +411,8 @@ const TASKS = [
   {id:'T2.5', t:'中英文国际化 + 友好文案', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'done/T2.5-i18n-and-copy.spec.md', ac:'按系统语言自动中英；文案友好', steps:[]},
   {id:'T3.1', t:'终端资产 install/doctor', repo:'cc-moss', dep:'T1.2,T2.1', st:'done', sdd:'done/T3.1-install-doctor.spec.md', ac:'临时 HOME 幂等 + doctor 绿', steps:[]},
   {id:'T3.2', t:'私有仓切换', repo:'私有仓', dep:'T2.1,T3.1', st:'done', sdd:'in-progress/T3.2-private-switch.spec.md', ac:'本机日常流程走通', steps:[]},
-  {id:'T4.1', t:'开源发布', repo:'cc-moss', dep:'T3.2', st:'review', sdd:'—', ac:'干净机器 brew 全流程', steps:[]},
-  {id:'T4.2', t:'新版本提醒与 update', repo:'cc-moss', dep:'T4.1', st:'doing', sdd:'—', ac:'旧版本经 update 升到新版本', steps:[]},
+  {id:'T4.1', t:'开源发布', repo:'cc-moss', dep:'T3.2', st:'done', sdd:'—', ac:'干净机器 brew 全流程', steps:[]},
+  {id:'T4.2', t:'新版本提醒与 update', repo:'cc-moss', dep:'T4.1', st:'done', sdd:'—', ac:'旧版本经 update 升到新版本', steps:[]},
 ];
 const PHASES = [
   {k:'P1', name:'MVP：重启后能列出并恢复会话', ids:['T1.1','T1.2','T1.3','T1.4','T1.5']},

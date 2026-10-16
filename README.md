@@ -50,7 +50,7 @@ mode.
 everything else; see the [FAQ](#faq)). The bundled starship prompt looks best with a [Nerd Font](https://www.nerdfonts.com).
 
 ```sh
-brew install larrykoo711/tap/cc-moss     # macOS and Linux
+brew install larrykoo711/tap/cc-moss     # macOS and x86_64 Linux
 cc-moss install                          # shows every change and asks first
 cc-moss doctor                           # checks that everything is in place
 ```
@@ -59,7 +59,8 @@ cc-moss doctor                           # checks that everything is in place
 <summary>Other ways to install</summary>
 
 - **Prebuilt binaries** for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static) are on the
-  [releases page](https://github.com/larrykoo711/cc-moss/releases). Unpack, put `cc-moss` on your `PATH`.
+  [releases page](https://github.com/larrykoo711/cc-moss/releases). Unpack, put `cc-moss` on your `PATH`. This is
+  the way for arm64 Linux, where Homebrew does not run.
 - **From source** (Rust 1.89 or newer, and a C compiler for the bundled SQLite):
   `cargo install --locked --git https://github.com/larrykoo711/cc-moss cc-moss`
 

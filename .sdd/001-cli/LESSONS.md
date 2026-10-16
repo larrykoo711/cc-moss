@@ -106,3 +106,14 @@
 - 根因：clippy 按声明的最低版本给建议；500 ms 的启动宽限对人合理，但高负载下脚本光是启动再退出就可能超过 500 ms
 - 规避：改 `rust-version` 后立刻跑一次 clippy 并修完；依赖时间的检查给测试留一个放宽的环境变量（`CC_MOSS_STARTUP_GRACE_MS`），
   只在相关测试里调大，产品默认值不变
+
+## L18 发版验证里三个「看起来像失败、其实是环境」的坑
+
+- 现象：① `gh workflow run release.yml -f ref=<分支>` 跑的仍是 main 上的旧 workflow，分支里改的打包命令没生效；
+  ② zsh 里 `grep "...${TAG}..."` 把 `${TAG}` 展开成空串、`$var` 不按空格拆词，脚本批量操作悄悄什么都没做；
+  ③ 官方 `homebrew/brew` 镜像不先 `brew update` 就装公式，Homebrew 在倒第一个依赖时报 `undefined method '[]' for nil`
+- 根因：`workflow_dispatch` 用 `--ref` 指定的分支（缺省为默认分支）上的 workflow 文件，`ref` 输入只决定检出哪份代码；
+  zsh 与 bash 的展开规则不同；镜像里的 Homebrew 与远端元数据版本不匹配
+- 规避：验证分支上的 workflow 改动用 `gh workflow run --ref <分支>`；多行/批量的 git 操作写成 `bash` 脚本文件执行，
+  并在结尾做「结果树 == 预期树」之类的自检；Linuxbrew 验收先 `brew update`，并用一个无关公式（hello）做对照。
+  arm64 Linux 上 Homebrew 本身不受支持，README 注明用 Release 二进制

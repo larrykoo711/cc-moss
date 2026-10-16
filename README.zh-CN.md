@@ -47,7 +47,7 @@
 自带的 starship 提示符配合 [Nerd Font](https://www.nerdfonts.com) 显示效果最好。
 
 ```sh
-brew install larrykoo711/tap/cc-moss     # macOS 与 Linux
+brew install larrykoo711/tap/cc-moss     # macOS 与 x86_64 Linux
 cc-moss install                          # 先把每处改动给你看，问过再改
 cc-moss doctor                           # 检查是否都装好了
 ```
@@ -57,6 +57,7 @@ cc-moss doctor                           # 检查是否都装好了
 
 - **预编译二进制**：macOS（Apple 芯片、Intel）与 Linux（x86_64、arm64，静态链接）见
   [Releases 页面](https://github.com/larrykoo711/cc-moss/releases)，解压后把 `cc-moss` 放进 `PATH` 即可。
+  arm64 的 Linux 上 Homebrew 跑不起来，请用这种方式。
 - **从源码构建**（Rust 1.89 及以上，另需 C 编译器来编译内置的 SQLite）：
   `cargo install --locked --git https://github.com/larrykoo711/cc-moss cc-moss`
 
