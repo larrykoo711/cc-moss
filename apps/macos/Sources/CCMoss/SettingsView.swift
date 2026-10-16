@@ -56,7 +56,7 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物")]
+            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop shortcut hotkey keyboard language english chinese", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物 快捷键 热键 唤出 语言 中文 英文 english")]
             case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
                                              "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
@@ -386,14 +386,15 @@ struct GeneralSettings: View {
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var language = LanguageState.shared.choice.rawValue
+    @State private var languageError: String?
 
     var body: some View {
         SettingsCard {
             CardRow(
                 title: L.t("Open at Login", "开机自动打开"),
                 detail: loginError ?? L.t("Keep an eye on your sessions from the moment you log in.",
-                                         "一登录就开始替你看着会话。"),
-                divider: false
+                                         "一登录就开始替你看着会话。")
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
@@ -401,6 +402,25 @@ struct GeneralSettings: View {
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
+            }
+            CardRow(
+                title: L.t("Open the Panel", "唤出面板"),
+                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。")
+            ) {
+                HotKeyRecorder()
+            }
+            CardRow(
+                title: L.t("Language", "界面语言"),
+                detail: languageError ?? L.t("Also used by t and the terminal.",
+                                             "和终端共用；t 下次打开时跟着换。"),
+                divider: false
+            ) {
+                SlidingPicker(selection: $language, options: [
+                    (LangChoice.auto.rawValue, L.t("System", "跟随系统")),
+                    (LangChoice.zh.rawValue, "中文"),
+                    (LangChoice.en.rawValue, "English"),
+                ])
+                .onChange(of: language) { _, new in setLanguage(new) }
             }
         }
         TerminalSettings(prefs: model.terminals)
@@ -420,6 +440,20 @@ struct GeneralSettings: View {
                     }
                     SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
                 }
+            }
+        }
+    }
+
+    private func setLanguage(_ raw: String) {
+        let choice = LangChoice(config: raw)
+        guard choice != LanguageState.shared.choice else { return }
+        Task {
+            do {
+                try await LanguageState.shared.choose(choice, client: model.client)
+                languageError = nil
+            } catch {
+                language = LanguageState.shared.choice.rawValue
+                languageError = L.t("Couldn't save it: \(error)", "没存上：\(error)")
             }
         }
     }

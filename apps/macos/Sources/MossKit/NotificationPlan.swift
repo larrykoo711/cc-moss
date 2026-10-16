@@ -118,6 +118,18 @@ public struct NotificationPlan: Sendable {
         return out
     }
 
+    /// The slot of the startup summary: not a session, the interrupted list.
+    public static let allInterrupted = "cc-moss.interrupted"
+
+    /// "N sessions stopped", after a restart or a crash.
+    public static func missedNote(count: Int, at: Date) -> AlertNote {
+        AlertNote(id: "cc-moss.missed.\(Int(at.timeIntervalSince1970))",
+                  title: L.t("\(count) sessions stopped", "有 \(count) 个会话断了"),
+                  body: L.t("Restarted? The conversations are all still there. Open the panel to bring them back.",
+                            "电脑重启了？对话都还在，点开就能全部找回。"),
+                  action: .restore, slotId: allInterrupted, thread: allInterrupted)
+    }
+
     /// The notification for `alert`; `title` is the session's display name.
     /// The wording never promises "right now": a permission prompt reaches
     /// cc-moss some seconds after it appears.

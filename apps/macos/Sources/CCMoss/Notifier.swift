@@ -158,11 +158,51 @@ final class AlertCenter {
         }
     }
 
+    /// After a restart or a crash (A8): the sessions that stopped while the
+    /// app was away. One is an ordinary alert; several are one summary, so
+    /// a reboot doesn't bury you in banners. Same rules as any alert: the
+    /// "stopped" switch, quiet hours, an open panel, one place only.
+    func remindMissed(_ reminder: StartupCheck.Reminder) {
+        let ids: [String]
+        switch reminder {
+        case .none: return
+        case let .one(id): ids = [id]
+        case let .several(list): ids = list
+        }
+        guard AlertToggles(defaults: defaults).isOn(.interrupted) else { return }
+        let now = Date()
+        // Negative ids never meet a real event's sequence number.
+        let alerts = ids.enumerated().map { i, id in
+            SessionAlert(id: -(Int(now.timeIntervalSince1970) * 100 + i), slotId: id, kind: .interrupted,
+                         name: model.sessions.first { $0.id == id }?.title, at: now)
+        }
+        let ctx = context()
+        switch router.route(alerts[0], in: ctx) {
+        case .pet:
+            alerts.forEach(toPet)
+        case .notification:
+            let note = alerts.count == 1
+                ? NotificationPlan.note(for: alerts[0], title: title(alerts[0]))
+                : NotificationPlan.missedNote(count: alerts.count, at: now)
+            if let gate { Task { await gate.deliver(note) } }
+        case .none:
+            break
+        }
+    }
+
     /// The alert's main action, the same from a notification and from Mo's
     /// bubble: open the session in the terminal; if it can't be opened from
     /// here, or it needs bringing back, show it in the panel, where the
     /// panel's own main action (open, bring back) is one key away.
     static func perform(_ action: AlertAction, slot: String, model: AppModel, showPanel: () -> Void) {
+        // The startup summary: the panel, on the sessions that stopped,
+        // where "Bring All Back" is one click.
+        if slot == NotificationPlan.allInterrupted {
+            model.query = ""
+            model.stateFilter = .interrupted
+            showPanel()
+            return
+        }
         let session = model.sessions.first { $0.id == slot }
         if action == .open, let session, session.inTmux, session.state != .interrupted, model.open(session) { return }
         // Bring it back in one go (T1.3), and show the panel so its progress

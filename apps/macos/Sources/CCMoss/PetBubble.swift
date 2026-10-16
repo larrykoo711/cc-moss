@@ -451,6 +451,7 @@ struct PetBubbleRoot: View {
         .padding(PetBubbles.margin)
         .fixedSize()
         .tooltipLayer()
+        .followsLanguage()
     }
 }
 

@@ -148,7 +148,8 @@ final class PanelController {
         glass.maskImage = Self.roundedMask(radius: Self.cornerRadius)
         glass.autoresizingMask = [.width, .height]
         let host = NSHostingView(rootView: PanelView(model: model)
-            .environment(\.closePanel) { [weak self] in self?.hide() })
+            .environment(\.closePanel) { [weak self] in self?.hide() }
+            .followsLanguage())
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
         host.wantsLayer = true
@@ -237,11 +238,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The one reader of the event stream, and where its alerts go (T2.3).
     private var events: EventFeed?
     private var alerts: AlertCenter?
+    private var startup: StartupReminder?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(model: model)
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
         startAlerts()
+        // The global shortcut does what a click on the icon does.
+        HotKeyCenter.shared.onPress = { [weak self] in self?.panel?.toggle() }
+        HotKeyCenter.shared.start()
+        startLanguage()
+    }
+
+    /// `[ui] language` from the CLI's config; a switch reaches the CLI's own
+    /// answers too (its client runs with the app's language).
+    private func startLanguage() {
+        LanguageState.shared.onChange = { [weak self] in self?.model.relocate() }
+        guard let client = model.client else { return }
+        Task { await LanguageState.shared.load(from: client) }
     }
 
     /// A menu bar app lives on with no window open. SwiftUI otherwise answers
@@ -274,5 +288,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         feed.start()
         self.alerts = alerts
         self.events = feed
+        let startup = StartupReminder(model: model) { alerts.remindMissed($0) }
+        startup.start()
+        self.startup = startup
     }
 }

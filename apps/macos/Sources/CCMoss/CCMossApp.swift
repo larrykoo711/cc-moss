@@ -20,6 +20,7 @@ struct CCMossApp: App {
         // the panel's frosted surface, Raycast-style tabs.
         Window(L.t("cc-moss Settings", "cc-moss 设置"), id: "settings") {
             SettingsView(model: delegate.model)
+                .followsLanguage()
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
