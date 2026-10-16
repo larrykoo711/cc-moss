@@ -241,17 +241,23 @@ pub(super) fn change(path: &Path, new_text: String) -> Result<Option<Change>> {
     }))
 }
 
-pub fn run(opts: Options) -> Result<()> {
-    if let Some(p) = opts.with.iter().find(|p| **p != Part::Aliases) {
-        anyhow::bail!(tr!(
-            format!("--with only adds optional parts (aliases); {p:?} is installed by default"),
-            format!("--with 只用来加可选部分（aliases）；{p:?} 默认就会安装")
-        )
-        .to_lowercase());
-    }
-    let paths = Paths::detect()?;
+/// Every change install would make, each with the part it belongs to,
+/// and what to tell the user. Shared by `install` and `install --dry-run --json`.
+struct Gathered {
+    changes: Vec<(Part, Change)>,
+    notes: Vec<String>,
+    /// The user's own starship config stays (no --replace-starship).
+    kept_starship: bool,
+}
+
+fn tag(part: Part, changes: impl IntoIterator<Item = Change>) -> Vec<(Part, Change)> {
+    changes.into_iter().map(|c| (part, c)).collect()
+}
+
+fn gather(opts: &Options, paths: &Paths, quiet: bool) -> Result<Gathered> {
     let mut notes = Vec::new();
     let mut changes = Vec::new();
+    let mut kept_starship = false;
 
     if opts.wants(Part::Hooks) {
         let setup_opts = setup::Options {
@@ -260,24 +266,25 @@ pub fn run(opts: Options) -> Result<()> {
             uninstall: false,
             settings: None,
             zshrc: None,
+            quiet,
         };
-        changes.extend(setup::settings_change(&setup_opts)?);
+        changes.extend(tag(Part::Hooks, setup::settings_change(&setup_opts)?));
         let place = alias::Place::detect()?;
         let (alias_changes, alias_notes) = alias::default_changes(&place)?;
         // zsh users get ~/.local/bin on PATH from the shell part's .zshenv block.
-        if !alias_changes.is_empty() && !(zsh_in_use(&paths) && opts.wants(Part::Shell)) {
+        if !alias_changes.is_empty() && !(zsh_in_use(paths) && opts.wants(Part::Shell)) {
             notes.extend(alias::path_hint(&place));
         }
-        changes.extend(alias_changes);
+        changes.extend(tag(Part::Hooks, alias_changes));
         notes.extend(alias_notes);
     }
 
     let in_file = |p: &Path| format!("{}", p.display());
-    let zsh = zsh_in_use(&paths);
+    let zsh = zsh_in_use(paths);
     if zsh {
         let zshrc = read_optional(&paths.zshrc)?.unwrap_or_default();
-        let text = zshrc_text(&zshrc, &opts).with_context(|| in_file(&paths.zshrc))?;
-        changes.extend(change(&paths.zshrc, text)?);
+        let text = zshrc_text(&zshrc, opts).with_context(|| in_file(&paths.zshrc))?;
+        changes.extend(tag(Part::Shell, change(&paths.zshrc, text)?));
     } else {
         notes.push(not_zsh_note(&login_shell().unwrap_or_default()));
     }
@@ -286,20 +293,25 @@ pub fn run(opts: Options) -> Result<()> {
         let zshenv = read_optional(&paths.zshenv)?.unwrap_or_default();
         let text = managed_block::upsert(&zshenv, TAG_PATH, PATH_ZSH)
             .with_context(|| in_file(&paths.zshenv))?;
-        changes.extend(change(&paths.zshenv, text)?);
+        changes.extend(tag(Part::Shell, change(&paths.zshenv, text)?));
     }
 
     if opts.wants(Part::Tmux) {
-        changes.extend(change(&paths.moss_tmux_conf, rendered_tmux_conf(&paths))?);
+        changes.extend(tag(
+            Part::Tmux,
+            change(&paths.moss_tmux_conf, rendered_tmux_conf(paths))?,
+        ));
         let own = read_optional(&paths.tmux_conf)?.unwrap_or_default();
-        let text = managed_block::upsert_top(&own, TAG_TMUX, &tmux_block(&paths))
+        let text = managed_block::upsert_top(&own, TAG_TMUX, &tmux_block(paths))
             .with_context(|| in_file(&paths.tmux_conf))?;
-        changes.extend(change(&paths.tmux_conf, text)?);
+        changes.extend(tag(Part::Tmux, change(&paths.tmux_conf, text)?));
     }
 
     if opts.wants(Part::Starship) {
         match read_optional(&paths.starship)? {
-            Some(theirs) if theirs != STARSHIP_TOML && !opts.replace_starship => notes.push(
+            Some(theirs) if theirs != STARSHIP_TOML && !opts.replace_starship => {
+                kept_starship = true;
+                notes.push(
                 tr!(
                     format!(
                         "Kept your starship config ({}). Add --replace-starship to use cc-moss's instead.",
@@ -310,10 +322,152 @@ pub fn run(opts: Options) -> Result<()> {
                         paths.starship.display()
                     )
                 ),
-            ),
-            _ => changes.extend(change(&paths.starship, STARSHIP_TOML.to_string())?),
+            )
+            }
+            _ => changes.extend(tag(
+                Part::Starship,
+                change(&paths.starship, STARSHIP_TOML.to_string())?,
+            )),
         }
     }
+
+    Ok(Gathered {
+        changes,
+        notes,
+        kept_starship,
+    })
+}
+
+/// `install --dry-run --json`: each part ready, or what installing it would
+/// change, for the app's welcome. Changes nothing.
+pub fn plan_json(opts: &Options) -> Result<()> {
+    let paths = Paths::detect()?;
+    let g = gather(opts, &paths, true)?;
+    let missing = missing_tools(opts);
+    let zsh = zsh_in_use(&paths);
+    let home = std::env::var("HOME").unwrap_or_default();
+    let short = |p: &Path| {
+        let s = p.display().to_string();
+        match s.strip_prefix(&home) {
+            Some(rest) if !home.is_empty() => format!("~{rest}"),
+            _ => s,
+        }
+    };
+    let mut parts = Vec::new();
+    for part in [
+        Part::Hooks,
+        Part::Tmux,
+        Part::Starship,
+        Part::Shell,
+        Part::Aliases,
+        Part::App,
+    ] {
+        let files: Vec<String> = g
+            .changes
+            .iter()
+            .filter(|(p, _)| *p == part)
+            .map(|(_, c)| short(&c.path))
+            .collect();
+        let tools: Vec<&str> = missing
+            .iter()
+            .filter(|t| tool_part(**t) == part)
+            .map(|t| t.name())
+            .collect();
+        let (state, summary) = if part == Part::App {
+            app_plan_state(opts)
+        } else if !opts.wants(part) {
+            ("skipped", None)
+        } else if part == Part::Shell && !zsh {
+            (
+                "unsupported",
+                Some(not_zsh_note(&login_shell().unwrap_or_default())),
+            )
+        } else if part == Part::Starship && g.kept_starship && tools.is_empty() {
+            (
+                "skipped",
+                Some(
+                    tr!(
+                        "Your own starship config stays.",
+                        "保留你自己的 starship 配置。"
+                    )
+                    .to_string(),
+                ),
+            )
+        } else if files.is_empty() && tools.is_empty() {
+            ("ready", None)
+        } else {
+            let mut what = files;
+            what.extend(
+                tools
+                    .iter()
+                    .map(|t| tr!(format!("install {t}"), format!("安装 {t}"))),
+            );
+            ("changes", Some(what.join(", ")))
+        };
+        let mut entry = serde_json::json!({ "part": part_name(part), "state": state });
+        if let Some(s) = summary {
+            entry["summary"] = serde_json::Value::String(s);
+        }
+        parts.push(entry);
+    }
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({ "schema": 1, "parts": parts }))?
+    );
+    Ok(())
+}
+
+fn part_name(part: Part) -> &'static str {
+    match part {
+        Part::Hooks => "hooks",
+        Part::Tmux => "tmux",
+        Part::Starship => "starship",
+        Part::Shell => "shell",
+        Part::Aliases => "aliases",
+        Part::App => "app",
+    }
+}
+
+/// Which part a missing tool holds up.
+fn tool_part(tool: Tool) -> Part {
+    match tool {
+        Tool::Tmux => Part::Tmux,
+        Tool::Starship => Part::Starship,
+        _ => Part::Aliases,
+    }
+}
+
+/// The menubar app: in place and current, or what install would do.
+fn app_plan_state(opts: &Options) -> (&'static str, Option<String>) {
+    if !opts.wants(Part::App) {
+        return ("skipped", None);
+    }
+    if !app::applies() {
+        return ("unsupported", None);
+    }
+    let current = env!("CARGO_PKG_VERSION");
+    match app::installed().and_then(|p| app::version(&p)) {
+        Some(have) if !app::is_older(&have, current) => ("ready", None),
+        _ if app::bundled().is_some() => (
+            "changes",
+            Some(app::display(&app::user_app().unwrap_or_default())),
+        ),
+        _ => ("unsupported", None),
+    }
+}
+
+pub fn run(opts: Options) -> Result<()> {
+    if let Some(p) = opts.with.iter().find(|p| **p != Part::Aliases) {
+        anyhow::bail!(tr!(
+            format!("--with only adds optional parts (aliases); {p:?} is installed by default"),
+            format!("--with 只用来加可选部分（aliases）；{p:?} 默认就会安装")
+        )
+        .to_lowercase());
+    }
+    let paths = Paths::detect()?;
+    let Gathered { changes, notes, .. } = gather(&opts, &paths, false)?;
+    let changes: Vec<Change> = changes.into_iter().map(|(_, c)| c).collect();
+    let zsh = zsh_in_use(&paths);
 
     if changes.is_empty() {
         println!(
@@ -380,6 +534,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         uninstall: true,
         settings: None,
         zshrc: None,
+        quiet: false,
     };
     changes.extend(setup::settings_change(&setup_opts)?);
     let (alias_changes, alias_notes) = alias::uninstall_changes(&alias::Place::detect()?, true)?;

@@ -100,6 +100,7 @@ const TEXT: &[(&str, &str, &str)] = &[
         "撤销 install：移除它加的钩子、配置块和文件，以及状态栏 App（macOS）",
     ),
     ("install", "dry_run", "只看会改什么，不做任何改动"),
+    ("install", "json", "配合 --dry-run：以 JSON 列出每一部分的状态（给状态栏 App 用）"),
     ("install", "yes", "不问直接应用"),
     (
         "doctor",

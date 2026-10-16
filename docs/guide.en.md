@@ -127,7 +127,7 @@ In the picker:
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
-| `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need |
+| `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
 | `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting; today only `ui.language` (`auto`, `zh`, `en`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |

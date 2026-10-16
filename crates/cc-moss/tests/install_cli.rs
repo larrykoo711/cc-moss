@@ -1253,3 +1253,80 @@ fn uninstall_off_macos_leaves_applications_alone() {
     ok(h.run(&["install", "--uninstall", "--yes"]));
     assert!(h.user_app().exists());
 }
+
+fn plan(h: &Home) -> serde_json::Value {
+    let out = ok(h.run(&["install", "--dry-run", "--json", "--skip", "app"]));
+    serde_json::from_str(&out).unwrap_or_else(|e| panic!("{e}: {out}"))
+}
+
+fn state(plan: &serde_json::Value, part: &str) -> String {
+    plan["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["part"] == part)
+        .unwrap_or_else(|| panic!("no {part} in {plan}"))["state"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+#[test]
+fn dry_run_json_lists_every_part() {
+    let h = Home::with_all();
+    let p = plan(&h);
+    assert_eq!(p["schema"], 1);
+    let names: Vec<&str> = p["parts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x["part"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        names,
+        ["hooks", "tmux", "starship", "shell", "aliases", "app"]
+    );
+    for part in ["hooks", "tmux", "starship", "shell"] {
+        assert_eq!(state(&p, part), "changes", "{p}");
+    }
+    assert_eq!(state(&p, "aliases"), "skipped", "optional, not asked for");
+    assert_eq!(state(&p, "app"), "skipped", "--skip app");
+    let hooks = p["parts"][0]["summary"].as_str().unwrap();
+    assert!(hooks.contains("~/.claude/settings.json"), "{hooks}");
+}
+
+#[test]
+fn dry_run_json_changes_nothing() {
+    let h = Home::with_all();
+    let before = h.snapshot();
+    plan(&h);
+    assert_eq!(h.snapshot(), before);
+}
+
+#[test]
+fn dry_run_json_marks_ready_after_install() {
+    let h = Home::with_all();
+    ok(h.run(&["install", "--yes", "--skip", "app"]));
+    let p = plan(&h);
+    for part in ["hooks", "tmux", "starship", "shell"] {
+        assert_eq!(state(&p, part), "ready", "{p}");
+    }
+}
+
+#[test]
+fn dry_run_json_names_a_missing_tool() {
+    let h = Home::new(&["claude", "starship"]);
+    ok(h.run(&["install", "--yes", "--skip", "app"]));
+    let p = plan(&h);
+    assert_eq!(state(&p, "tmux"), "changes", "{p}");
+    assert!(
+        p["parts"][1]["summary"].as_str().unwrap().contains("tmux"),
+        "{p}"
+    );
+}
+
+#[test]
+fn json_needs_dry_run() {
+    let h = Home::with_all();
+    assert!(!h.run(&["install", "--json"]).status.success());
+}

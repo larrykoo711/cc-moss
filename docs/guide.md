@@ -105,7 +105,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
-| `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
+| `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
 | `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前只有 `ui.language`（`auto`、`zh`、`en`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |

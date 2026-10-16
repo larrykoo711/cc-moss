@@ -108,6 +108,9 @@ enum Command {
         /// Show what would change; change nothing.
         #[arg(long)]
         dry_run: bool,
+        /// With --dry-run: each part's state as JSON (for the menubar app).
+        #[arg(long, requires = "dry_run", conflicts_with = "uninstall")]
+        json: bool,
         /// Apply without asking.
         #[arg(long)]
         yes: bool,
@@ -371,6 +374,7 @@ fn main() -> std::process::ExitCode {
             replace_starship,
             uninstall,
             dry_run,
+            json,
             yes,
         } => {
             let opts = cmd::install::Options {
@@ -382,6 +386,8 @@ fn main() -> std::process::ExitCode {
             };
             report(if uninstall {
                 cmd::install::uninstall(&opts)
+            } else if json {
+                cmd::install::plan_json(&opts)
             } else {
                 cmd::install::run(opts)
             })
@@ -456,6 +462,7 @@ fn main() -> std::process::ExitCode {
             uninstall,
             settings,
             zshrc,
+            quiet: false,
         })),
     }
 }
