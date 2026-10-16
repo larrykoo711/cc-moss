@@ -350,9 +350,11 @@ fn main() -> std::process::ExitCode {
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
         },
-        Command::Update { check, json, yes } => {
-            report(cmd::update::run(cmd::update::UpdateArgs { check, json, yes }))
-        }
+        Command::Update { check, json, yes } => report(cmd::update::run(cmd::update::UpdateArgs {
+            check,
+            json,
+            yes,
+        })),
         Command::Restore {
             yes,
             dry_run,

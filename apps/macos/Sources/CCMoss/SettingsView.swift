@@ -16,6 +16,7 @@ struct SettingsView: View {
     /// Canned `alias ls --json` for screenshots.
     var aliasDemo: AliasList?
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
     @State private var back: [Tab] = []
     @State private var forward: [Tab] = []
     @Environment(\.colorScheme) private var scheme
@@ -123,17 +124,37 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Spacer().frame(height: 40) // the window buttons sit here
             // Raycast's large rounded search field.
+            // Focused, it deepens like Raycast's: a darker fill and a
+            // darker magnifier, eased in.
             HStack(spacing: 8) {
                 Image(systemName: Icons.search)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(searchFocused ? .primary : .secondary)
                 TextField(L.t("Search settings…", "搜索设置…"), text: $search)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
+                    .focused($searchFocused)
+                if !search.isEmpty {
+                    Button { search = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(PressStyle())
+                    .focusable(false)
+                    .help(L.t("Clear", "清空"))
+                }
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.06)))
+            .background(
+                Capsule().fill(Color.primary.opacity(searchFocused
+                    ? (scheme == .dark ? 0.15 : 0.11)
+                    : (scheme == .dark ? 0.08 : 0.06)))
+            )
+            .contentShape(Capsule())
+            .onTapGesture { searchFocused = true }
+            .animation(.easeOut(duration: 0.15), value: searchFocused)
             .padding(.bottom, 10)
             ForEach(tabs, id: \.self) { t in
                 SidebarItem(tab: t, selected: t == tab) { go(t) }

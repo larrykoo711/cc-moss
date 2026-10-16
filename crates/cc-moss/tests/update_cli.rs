@@ -539,5 +539,8 @@ fn json_needs_check() {
     let env = Env::new();
     let exe = env.installed("opt/bin/cc-moss");
     let out = env.update(&exe, &["--json"]);
-    assert!(!out.status.success(), "--json without --check must be refused");
+    assert!(
+        !out.status.success(),
+        "--json without --check must be refused"
+    );
 }
