@@ -200,12 +200,12 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 |------|----|------|------|-----|----------|
 | **T1.1** 面板与快照 | cc-moss | — | ✅ Done | done/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
 | **T1.2** 在终端里打开 | cc-moss | T1.1 | ✅ Done | done/T1.2-open-in-terminal.spec.md | 默认终端与 Ghostty 真机打开、设置可切换 |
-| **T1.3** 找回 | cc-moss | T1.1,T1.2 | 🟨 In Progress | in-progress/T1.3-bring-back.spec.md | 杀 server 后面板全部找回 |
+| **T1.3** 找回 | cc-moss | T1.1,T1.2 | 🟩 Review | in-progress/T1.3-bring-back.spec.md | 杀 server 后面板全部找回 |
 | **T2.1** 会话事件流（CLI） | cc-moss | — | ✅ Done | done/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
 | **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ✅ Done | done/T2.2-icon-motion.spec.md | 四态录屏，空闲 CPU < 1% |
 | **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | 🟩 Review | in-progress/T2.3-notifications.spec.md | 四类通知真机触发 |
 | **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
-| **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | 🟨 In Progress | in-progress/T2.5-new-and-notes.spec.md | 三项操作 `t` 里可见 |
+| **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | 🟩 Review | in-progress/T2.5-new-and-notes.spec.md | 三项操作 `t` 里可见 |
 | **T2.6** 原生别名 | cc-moss | T1.1 | ✅ Done | done/T2.6-native-aliases.spec.md | bash/zsh 下别名可用，改完即生效 |
 | **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | 🟩 Review | in-progress/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |

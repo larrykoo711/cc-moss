@@ -165,6 +165,11 @@ final class AlertCenter {
     static func perform(_ action: AlertAction, slot: String, model: AppModel, showPanel: () -> Void) {
         let session = model.sessions.first { $0.id == slot }
         if action == .open, let session, session.inTmux, session.state != .interrupted, model.open(session) { return }
+        // Bring it back in one go (T1.3), and show the panel so its progress
+        // and result are visible.
+        if action == .restore, let session, session.state == .interrupted {
+            model.restore(session)
+        }
         model.query = ""
         model.stateFilter = nil
         if session != nil { model.selectedID = slot }
