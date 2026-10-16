@@ -23,38 +23,15 @@ final class StatusItemController {
         button.sendAction(on: [.leftMouseDown, .rightMouseDown])
         panel.anchor = { [weak self] in self?.buttonFrame }
         panel.onVisibilityChange = { [weak button] shown in button?.highlight(shown) }
-        motion.isHidden = true
-        button.addSubview(motion)
-        refresh()
-        icon.onChange = { [weak self] in self?.refresh() }
+        show(icon.image)
+        icon.onImage = { [weak self] image in self?.show(image) }
     }
 
-    /// The animated mark, layered over the button's image.
-    private let motion = IconMotionView(frame: NSRect(x: 0, y: 0, width: StatusIcon.side, height: StatusIcon.side))
-
-    private func refresh() {
+    private func show(_ image: NSImage) {
         guard let button = item.button else { return }
-        if button.image !== icon.image { button.image = icon.image }
-        if motion.playing != icon.moving {
-            if let state = icon.moving { motion.play(state) } else { motion.stop() }
-        }
-        if icon.moving != nil { placeMotion(in: button) }
+        button.image = image
         let label = "cc-moss: " + icon.state.label
         if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
-    }
-
-    /// Over the mark's square: the left end of the image, centred vertically.
-    private func placeMotion(in button: NSStatusBarButton) {
-        button.layoutSubtreeIfNeeded()
-        let bounds = button.bounds
-        let size = icon.image.size
-        let imageRect = button.cell?.imageRect(forBounds: bounds)
-            ?? NSRect(x: (bounds.width - size.width) / 2, y: (bounds.height - size.height) / 2, width: size.width, height: size.height)
-        // The cell may centre a smaller image inside a larger rect.
-        let x = imageRect.midX - size.width / 2
-        let y = imageRect.midY - StatusIcon.side / 2
-        let frame = NSRect(x: x.rounded(), y: y.rounded(), width: StatusIcon.side, height: StatusIcon.side)
-        if motion.frame != frame { motion.frame = frame }
     }
 
     /// The button's rectangle on screen.
