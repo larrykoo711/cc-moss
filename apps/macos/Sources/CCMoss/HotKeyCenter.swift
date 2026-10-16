@@ -1,6 +1,7 @@
 import AppKit
 import Carbon.HIToolbox
 import MossKit
+import OSLog
 import SwiftUI
 
 /// The global shortcut that opens the panel: Carbon's hot keys, which need
@@ -13,6 +14,8 @@ final class HotKeyCenter {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private(set) var current: HotKey?
+
+    private let log = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "hotkey")
 
     /// "MOSS", so the event is recognizably ours.
     private static let signature = OSType(0x4D4F_5353)
@@ -45,7 +48,11 @@ final class HotKeyCenter {
         let status = RegisterEventHotKey(UInt32(key.keyCode), Self.carbon(key.modifiers),
                                          EventHotKeyID(signature: Self.signature, id: 1),
                                          GetApplicationEventTarget(), 0, &newRef)
-        guard status == noErr, let newRef else { return false }
+        guard status == noErr, let newRef else {
+            log.error("could not register \(key.display, privacy: .public): \(status)")
+            return false
+        }
+        log.info("registered \(key.display, privacy: .public)")
         ref = newRef
         current = key
         return true
@@ -61,7 +68,12 @@ final class HotKeyCenter {
         guard handler == nil else { return }
         var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
         InstallEventHandler(GetApplicationEventTarget(), { _, _, _ in
-            DispatchQueue.main.async { MainActor.assumeIsolated { HotKeyCenter.shared.onPress?() } }
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    HotKeyCenter.shared.log.info("pressed")
+                    HotKeyCenter.shared.onPress?()
+                }
+            }
             return noErr
         }, 1, &spec, nil, &handler)
     }
