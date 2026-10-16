@@ -114,9 +114,9 @@ final class FakeClock {
     }
 
     @Test func frameCountsMatchTheirPeriods() {
-        // About 12 frames a second: 1.6 s of flow, 1.2 s of pulse.
-        #expect(IconMotion.frameCount(.working) == 20)
-        #expect(IconMotion.frameCount(.needsYou) == 15)
+        // 10 frames a second: 1.6 s of flow, 1.2 s of pulse.
+        #expect(IconMotion.frameCount(.working) == 16)
+        #expect(IconMotion.frameCount(.needsYou) == 12)
         #expect(IconMotion.frameCount(.idle) == 1)
     }
 }

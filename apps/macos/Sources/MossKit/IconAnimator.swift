@@ -1,7 +1,7 @@
 import Foundation
 
 /// One picture of the menu bar icon: a state and which of its frames.
-public struct IconFrame: Equatable, Sendable {
+public struct IconFrame: Hashable, Sendable {
     public var state: IconState
     public var index: Int
 
@@ -13,8 +13,9 @@ public struct IconFrame: Equatable, Sendable {
 
 /// Timing of the icon's two animations; everything else is a still.
 public enum IconMotion {
-    /// About 12 frames a second: smooth enough at 18 pt, cheap to run.
-    public static let frameInterval: TimeInterval = 0.08
+    /// 10 frames a second: smooth enough at 18 pt, and each frame costs a
+    /// menu bar update on every display, so fewer is cheaper.
+    public static let frameInterval: TimeInterval = 0.1
 
     /// How long one loop takes.
     public static func period(_ state: IconState) -> TimeInterval {

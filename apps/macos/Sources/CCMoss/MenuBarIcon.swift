@@ -47,6 +47,26 @@ enum StatusIcon {
         return image
     }
 
+    /// The same picture as a 2x bitmap, so showing it costs no drawing.
+    static func bitmap(_ source: NSImage) -> NSImage {
+        let size = source.size
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ) else { return source }
+        rep.size = size
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
+        source.draw(in: NSRect(origin: .zero, size: size))
+        NSGraphicsContext.restoreGraphicsState()
+        let out = NSImage(size: size)
+        out.addRepresentation(rep)
+        out.isTemplate = source.isTemplate
+        out.accessibilityDescription = source.accessibilityDescription
+        return out
+    }
+
     /// Draws into a y-down context. `ink` is what template parts are drawn
     /// with: black for the real (tinted) icon, the bar's text colour in previews.
     static func draw(_ frame: IconFrame, badge: Int?, in ctx: CGContext, rect: CGRect, ink: NSColor) {
@@ -152,25 +172,30 @@ final class RunLoopTicks: TickScheduler {
     }
 }
 
-/// The menu bar label's model: what the sessions say, the system's motion
-/// and sleep state, and the picture that results.
-@MainActor @Observable
+/// The status item's picture: what the sessions say, the system's motion
+/// and sleep state, and the frame that results. Deliberately not observable:
+/// each frame goes straight to `onImage` (the status button), with no
+/// SwiftUI update on the per-frame path.
+@MainActor
 final class MenuBarIcon {
     private(set) var image: NSImage
     private(set) var state: IconState = .idle
+    /// Called with every new picture.
+    var onImage: ((NSImage) -> Void)?
 
-    @ObservationIgnored private let animator: IconAnimator
-    @ObservationIgnored private var badge: Int?
-    @ObservationIgnored private var observers: [NSObjectProtocol] = []
-    @ObservationIgnored private var screensOff = false
-    @ObservationIgnored private var locked = false
+    private let animator: IconAnimator
+    private var badge: Int?
+    private var observers: [NSObjectProtocol] = []
+    private var screensOff = false
+    private var locked = false
 
     init(scheduler: TickScheduler = RunLoopTicks()) {
         animator = IconAnimator(clock: { ProcessInfo.processInfo.systemUptime }, scheduler: scheduler)
-        image = StatusIcon.image(IconFrame(state: .idle, index: 0), badge: nil)
+        image = NSImage()
         animator.onFrame = { [weak self] frame in
             MainActor.assumeIsolated { self?.redraw(frame) }
         }
+        redraw(animator.frame)
         animator.reduceMotion = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         watchSystem()
     }
@@ -187,8 +212,30 @@ final class MenuBarIcon {
         if badgeChanged, animator.frame == before { redraw(animator.frame) }
     }
 
+    /// Every picture is drawn once and reused: an animation loops through
+    /// the same few frames, and drawing each anew kept the CPU busy.
+    private var cache: [CacheKey: NSImage] = [:]
+
+    private struct CacheKey: Hashable {
+        let frame: IconFrame
+        let badge: Int?
+    }
+
     private func redraw(_ frame: IconFrame) {
-        image = StatusIcon.image(frame, badge: badge)
+        let key = CacheKey(frame: frame, badge: badge)
+        let picture: NSImage
+        if let hit = cache[key] {
+            picture = hit
+        } else {
+            // Bake to a bitmap now; a drawing-handler image would redraw itself
+            // every time the menu bar displays it.
+            picture = StatusIcon.bitmap(StatusIcon.image(frame, badge: badge))
+            if cache.count > 200 { cache.removeAll() }
+            cache[key] = picture
+        }
+        guard picture !== image else { return }
+        image = picture
+        onImage?(picture)
     }
 
     private func watchSystem() {

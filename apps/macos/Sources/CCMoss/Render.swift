@@ -115,6 +115,55 @@ enum Render {
         exit(0)
     }
 
+    /// `CCMoss --bench-icon working|needsYou|idle [--seconds n]`: run the icon's
+    /// real timer into an off-screen button and print this process's CPU use.
+    /// It covers our side of a frame (timer, cache, setting the image), not
+    /// the menu bar's own redraw.
+    @MainActor static func benchIcon(args: [String]) {
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        let seconds = Double(value("--seconds") ?? "10") ?? 10
+        let state = value("--bench-icon") ?? "working"
+        let session: String = switch state {
+        case "needsYou": #"{"status":"running","busy":true,"attention":"permission"}"#
+        case "idle": #"{"status":"closed","busy":false}"#
+        default: #"{"status":"running","busy":true}"#
+        }
+        let json = #"{"schema":1,"sessions":[{"id":"A","session_id":"s","cwd":"/w","last_active_at":"2026-10-16T12:00:00Z","notes":{}, "#
+            + session.dropFirst() + "]}"
+        guard let snap = try? Snapshot.decode(Data(json.utf8)) else { exit(1) }
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 60, height: 24), styleMask: [.borderless], backing: .buffered, defer: false)
+        let button = NSButton(frame: window.contentLayoutRect)
+        window.contentView = button
+        let icon = MenuBarIcon()
+        var frames = 0
+        icon.onImage = { image in
+            button.image = image
+            button.display()
+            frames += 1
+        }
+        icon.update(snap.sessions, showCount: false)
+        func cpu() -> Double {
+            var usage = rusage()
+            getrusage(RUSAGE_SELF, &usage)
+            return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+                + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+        }
+        // Let the first frames be drawn and cached before measuring.
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        let start = cpu(), began = Date(), startFrames = frames
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        let wall = Date().timeIntervalSince(began)
+        let used = cpu() - start
+        print(String(format: "%@: %.2f%% CPU over %.1f s, %d frames (%.1f fps)",
+                     state, used / wall * 100, wall, frames - startFrames, Double(frames - startFrames) / wall))
+        exit(0)
+    }
+
     @MainActor static func preview(args: [String]) {
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
