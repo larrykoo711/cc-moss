@@ -38,9 +38,12 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     public var notes: Notes
     public var lastActiveAt: Date
     public var worktree: Worktree?
+    /// Why the session is waiting on you right now (`permission`, `question`,
+    /// `input`), or nil. Only running sessions carry one.
+    public var attention: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree
+        case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,6 +59,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         notes = try c.decodeIfPresent(Notes.self, forKey: .notes) ?? Notes()
         lastActiveAt = try c.decode(Date.self, forKey: .lastActiveAt)
         worktree = try c.decodeIfPresent(Worktree.self, forKey: .worktree)
+        attention = try c.decodeIfPresent(String.self, forKey: .attention)
     }
 }
 

@@ -29,6 +29,10 @@ esac
 "$here/scripts/swift.sh" "${build_args[@]}"
 bin_dir="$("$here/scripts/swift.sh" "${build_args[@]}" --show-bin-path)"
 
+# Shown by macOS the first time cc-moss opens a session in a terminal.
+automation_en="cc-moss opens your sessions in the terminal you picked, in a new window."
+automation_zh="cc-moss 要在你选的终端里新开一个窗口，打开你的会话。"
+
 app="$here/build/cc-moss.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
@@ -49,8 +53,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>LSUIElement</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>MIT License</string>
+  <key>CFBundleDevelopmentRegion</key><string>en</string>
+  <key>CFBundleLocalizations</key><array><string>en</string><string>zh-Hans</string></array>
+  <key>NSAppleEventsUsageDescription</key><string>$automation_en</string>
 </dict>
 </plist>
 PLIST
+# The Automation prompt in the user's language.
+mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
+printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_en" > "$app/Contents/Resources/en.lproj/InfoPlist.strings"
+printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_zh" > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
 codesign --force --sign - --timestamp=none "$app"
 echo "$app"

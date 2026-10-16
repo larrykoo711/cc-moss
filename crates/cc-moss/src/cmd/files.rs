@@ -22,6 +22,10 @@ pub struct Change {
     pub new_text: String,
     /// Write `new_text`, or delete the file.
     pub remove: Removal,
+    /// A symlink instead of a file: `path` should point here (or, with
+    /// `remove`, the link to delete). Only links of ours are replaced or
+    /// removed; `new_text` and backups do not apply.
+    pub link: Option<PathBuf>,
     /// What to say once written.
     pub done: String,
 }
@@ -53,6 +57,26 @@ pub fn apply(
         return Ok(true);
     }
     for c in changes {
+        if let Some(target) = &c.link {
+            if c.remove == Removal::No {
+                println!(
+                    "{}",
+                    tr!(
+                        format!("+++ {} → {} (new link)", c.path.display(), target.display()),
+                        format!("+++ {} → {}（新链接）", c.path.display(), target.display())
+                    )
+                );
+            } else {
+                println!(
+                    "{}",
+                    tr!(
+                        format!("--- {} (delete link)", c.path.display()),
+                        format!("--- {}（删除链接）", c.path.display())
+                    )
+                );
+            }
+            continue;
+        }
         if c.remove != Removal::No {
             let lines = c.original.as_deref().unwrap_or_default().lines().count();
             println!(
@@ -120,6 +144,16 @@ pub fn apply(
         return Ok(false);
     }
     for c in changes {
+        if let Some(target) = &c.link {
+            if c.remove == Removal::No {
+                moss_core::aliases::make_link(&c.path, target)?;
+            } else {
+                moss_core::aliases::remove_link(&c.path)
+                    .with_context(|| format!("cannot delete {}", c.path.display()))?;
+            }
+            println!("{}", c.done);
+            continue;
+        }
         if c.remove != Removal::No {
             if let (Removal::WithBackup, Some(text)) = (c.remove, &c.original) {
                 let backup = write_backup(&c.path, text.as_bytes())?;
@@ -196,7 +230,7 @@ fn write_backup(path: &Path, bytes: &[u8]) -> Result<PathBuf> {
 
 /// Write to a temp file in the same directory, then rename over the target,
 /// so nothing (Claude Code, a starting shell) ever reads a half-written file.
-fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
+pub fn write_atomically(path: &Path, bytes: &[u8]) -> Result<()> {
     let dir = path
         .parent()
         .filter(|d| !d.as_os_str().is_empty())

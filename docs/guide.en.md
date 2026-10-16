@@ -5,8 +5,8 @@
 ## Install
 
 **Requirements:** macOS or Linux, [Claude Code](https://code.claude.com/docs), [tmux](https://github.com/tmux/tmux)
-(3.2 or newer for the popup picker), and zsh for the `t` shortcut and shell additions (bash and fish users get
-everything else; see the [FAQ](#faq)). The bundled starship prompt looks best with a [Nerd Font](https://www.nerdfonts.com).
+(3.2 or newer for the popup picker), and zsh for the shell additions (bash and fish users get everything else,
+`t` included; see the [FAQ](#faq)). The bundled starship prompt looks best with a [Nerd Font](https://www.nerdfonts.com).
 
 ```sh
 brew install larrykoo711/tap/cc-moss     # macOS and x86_64 Linux
@@ -29,7 +29,7 @@ cc-moss doctor                           # checks that everything is in place
 
 | Part | What it does |
 |---|---|
-| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` shortcut in `~/.zshrc` |
+| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` alias (`~/.local/bin/t`, see [Aliases](#aliases)) |
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
@@ -79,7 +79,7 @@ rm -rf ~/.local/state/cc-moss    # optional: the registry and its log
 t                                    # open the picker (same as plain `cc-moss`)
 t api                                # open it already searching for "api"
 cc-moss new api-gateway              # start, jump into or restore the session named api-gateway
-cc-moss new -C ~/code/acme -- --model opus   # pick the folder, pass arguments through to claude
+cc-moss new -C ~/code/acme --model opus   # pick the folder; Claude Code's own flags go straight through
 cc-moss note api-gateway --state "Waiting for the staging config"
 cc-moss ls                           # interrupted sessions first, then running ones
 cc-moss restore                      # after a crash: bring everything back
@@ -118,11 +118,37 @@ In the picker:
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need |
-| `cc-moss doctor` | Check every piece and say how to fix what is off |
+| `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
+| `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
-| `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` shortcut |
+| `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` alias |
 
 `NAME` can be the Claude Code session name, the tmux session name or the start of the session id.
+
+### Aliases
+
+An alias is your own name for a cc-moss command. It works in every shell (zsh, bash, fish), in scripts and in new
+terminals, right after you add it: no `source`. `t` is one: `t` is `cc-moss pick`.
+
+```sh
+cc-moss alias add tn new            # tn login-page  →  cc-moss new login-page
+cc-moss alias add mycc "new --dangerously-skip-permissions"   # mycc login-page
+cc-moss alias add tback "restore --yes"
+cc-moss alias ls
+cc-moss alias rm tn
+```
+
+How it works: an alias is a symlink in `~/.local/bin` to `cc-moss` (to the stable entry on your PATH, such as
+`/opt/homebrew/bin/cc-moss`, so Homebrew upgrades do not break it). When cc-moss is started under another name, it looks
+that name up in the `[aliases]` table of `config.toml` and runs that command with your arguments after it. The command
+is split on whitespace, with single and double quotes grouping words, and **never goes through a shell**: `$(…)`, `;`
+and `|` are plain text. It can only run cc-moss's own commands.
+
+- Names use `a-z`, `0-9`, `-` and `_`. A name that is already a command on your PATH (like `ls`) is refused unless you
+  add `--force`; a file in `~/.local/bin` that cc-moss did not create is never replaced.
+- A shell alias or function with the same name runs instead of the alias. `alias add` and `doctor` point it out; your
+  shell files are never edited.
+- The menubar app's Settings › Aliases page adds, edits and removes them, through these same commands.
 
 ## How it works
 
@@ -247,11 +273,13 @@ Chinese locales, including Traditional Chinese ones, use the Simplified Chinese 
 
 ## FAQ
 
-**`t: command not found` after installing.** Open a new terminal (or `exec zsh`) so `~/.zshrc` is read again.
+**`t: command not found` after installing.** `t` lives in `~/.local/bin`, which has to be on your PATH. zsh users just
+open a new terminal (`cc-moss install` added it in `~/.zshenv`); in other shells add
+`export PATH="$HOME/.local/bin:$PATH"` to the startup file. `cc-moss doctor` says what is missing.
 
 **I use bash or fish.** `cc-moss install` still sets up the hooks, tmux and the starship config, and leaves your shell
-files alone: add starship's init line for your shell yourself if you want the prompt. Run `cc-moss pick` (or bind it
-to a key) instead of `t`.
+files alone: add starship's init line for your shell yourself if you want the prompt. `t` and your other aliases are
+plain commands and work in bash and fish too, as long as `~/.local/bin` is on your PATH.
 
 **After upgrading, `doctor` says two hooks are missing.** The new version adds two hooks so it can tell when a session
 is waiting for you. Run `cc-moss setup`: it adds only those two and leaves everything else alone.

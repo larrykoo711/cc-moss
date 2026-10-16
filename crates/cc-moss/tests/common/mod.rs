@@ -27,6 +27,7 @@ pub fn bin() -> Command {
     cmd.env("HOME", "/nonexistent/cc-moss-test-home")
         .env_remove("ZDOTDIR")
         .env_remove("XDG_CONFIG_HOME")
+        .env_remove("CC_MOSS_CONFIG")
         .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
         // Assertions are in English, whatever this machine's language is.
         .env("CC_MOSS_LANG", "en")
@@ -197,6 +198,14 @@ impl World {
         let fifo = self.path("fifos").join(format!("{session_id}.fifo"));
         wait_for(|| fifo.exists().then_some(()));
         std::fs::write(fifo, format!("{line}\n")).unwrap();
+    }
+
+    /// Send the first prompt and wait until the fake claude has written its
+    /// transcript: a session killed before that has nothing to restore.
+    pub fn first_prompt(&self, session_id: &str, name: &str) {
+        self.send(session_id, &format!("prompt {name}"));
+        let transcript = self.path("fifos").join(format!("{session_id}.jsonl"));
+        wait_for(|| transcript.exists().then_some(()));
     }
 
     pub fn session_names(&self) -> Vec<String> {

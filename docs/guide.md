@@ -5,7 +5,7 @@
 ## 安装
 
 **需要：** macOS 或 Linux、[Claude Code](https://code.claude.com/docs)、[tmux](https://github.com/tmux/tmux)
-（弹出式选择器需要 3.2 及以上），`t` 快捷命令和 shell 区块需要 zsh（bash、fish 用户其余功能照常可用，见[常见问题](#常见问题)）。自带的 starship 提示符配合 [Nerd Font](https://www.nerdfonts.com) 显示效果最好。
+（弹出式选择器需要 3.2 及以上），shell 区块需要 zsh（bash、fish 用户其余功能照常可用，`t` 也能用，见[常见问题](#常见问题)）。自带的 starship 提示符配合 [Nerd Font](https://www.nerdfonts.com) 显示效果最好。
 
 ```sh
 brew install larrykoo711/tap/cc-moss     # macOS 与 x86_64 Linux
@@ -25,7 +25,7 @@ cc-moss doctor                           # 检查是否都装好了
 
 | 部分 | 做什么 |
 |---|---|
-| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；在 `~/.zshrc` 加上 `t` 快捷命令 |
+| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；加上 `t` 别名（`~/.local/bin/t`，见[别名](#别名)） |
 | `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
 | `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
 | `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
@@ -64,7 +64,7 @@ rm -rf ~/.local/state/cc-moss    # 可选：登记表和它的日志
 t                                    # 打开选择器（等同于直接运行 `cc-moss`）
 t api                                # 打开时已经在搜「api」
 cc-moss new api-gateway              # 新建、进入或恢复名为 api-gateway 的会话
-cc-moss new -C ~/code/acme -- --model opus   # 指定目录，并把参数透传给 claude
+cc-moss new -C ~/code/acme --model opus   # 指定目录；Claude Code 自己的参数直接写，cc-moss 会转交给它
 cc-moss note api-gateway --state "在等预发环境的配置"
 cc-moss ls                           # 先列中断的会话，再列运行中的
 cc-moss restore                      # 崩溃之后：全部找回来
@@ -103,11 +103,30 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注 |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
-| `cc-moss doctor` | 逐项体检，并告诉你怎么修 |
+| `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
+| `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |
 | `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
-| `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 快捷命令 |
+| `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 别名 |
 
 `名字` 可以是 Claude Code 里的会话名、tmux 会话名，或会话 id 的开头几位。
+
+### 别名
+
+别名就是你给 cc-moss 命令起的名字，在任何 shell（zsh、bash、fish）、脚本和新开的终端里都直接能用，改完立即生效，不用 `source`。`t` 就是一个：`t` 等于 `cc-moss pick`。
+
+```sh
+cc-moss alias add tn new            # tn 登录页  →  cc-moss new 登录页
+cc-moss alias add mycc "new --dangerously-skip-permissions"   # mycc 登录页
+cc-moss alias add tback "restore --yes"
+cc-moss alias ls
+cc-moss alias rm tn
+```
+
+原理：别名是 `~/.local/bin` 里指向 `cc-moss` 的符号链接（指向 PATH 上的稳定入口，比如 `/opt/homebrew/bin/cc-moss`，Homebrew 升级不会让它失效）。cc-moss 发现自己被叫成别的名字时，到 `config.toml` 的 `[aliases]` 表里查这个名字要运行的命令，把你敲的参数接在后面。命令按空白切分，单双引号可以把几个词括成一个，**不经过任何 shell**，所以 `$(…)`、`;`、`|` 都只是普通文字；而且只能运行 cc-moss 自己的命令。
+
+- 名字只能用 `a-z`、`0-9`、`-`、`_`。名字已经是 PATH 上的某个命令（比如 `ls`）时会拒绝，确实要用就加 `--force`；`~/.local/bin` 里同名的文件如果不是 cc-moss 建的，永远不会被替换。
+- 你的 shell 里如果有同名的 alias 或函数，它会先于别名执行。`alias add` 和 `doctor` 会指出来，但不会改你的 shell 配置。
+- 菜单栏 App 的设置 ›「别名」页也能增删改，背后调的就是这几条命令。
 
 ## 工作原理
 
@@ -211,11 +230,11 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 
 **装完后提示 `t: command not found`**
 
-新开一个终端（或执行 `exec zsh`），让 `~/.zshrc` 重新加载。
+`t` 在 `~/.local/bin` 里，这个目录得在 PATH 上。zsh 用户新开一个终端就行（`cc-moss install` 在 `~/.zshenv` 里加好了）；其他 shell 在启动文件里加一行 `export PATH="$HOME/.local/bin:$PATH"`。`cc-moss doctor` 会告诉你缺了什么。
 
 **我用 bash 或 fish**
 
-`cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。用 `cc-moss pick`（或给它绑个键）代替 `t`。
+`cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。`t` 和其他别名是普通命令，在 bash、fish 里一样能用，只要 `~/.local/bin` 在 PATH 上。
 
 **升级后 `doctor` 说少了 2 个钩子**
 

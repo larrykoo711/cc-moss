@@ -122,7 +122,9 @@ struct StateFilterBar: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help(seg.title)
+        .handCursor()
+        .focusable(false)
+        .tip(seg.title)
         .accessibilityLabel(seg.count.map { "\(seg.title) \($0)" } ?? seg.title)
         .onHover { hovered = $0 ? i : (hovered == i ? nil : hovered) }
     }
@@ -151,7 +153,7 @@ struct SectionHeader: View {
                 Image(systemName: Icons.worktree)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
-                    .help(L.t("A git worktree of \((project.worktree!.repo as NSString).lastPathComponent)",
+                    .tip(L.t("A git worktree of \((project.worktree!.repo as NSString).lastPathComponent)",
                               "\((project.worktree!.repo as NSString).lastPathComponent) 的 git worktree"))
                     .accessibilityLabel("git worktree")
             }
@@ -159,7 +161,7 @@ struct SectionHeader: View {
         .padding(.horizontal, 10)
         .padding(.top, 12)
         .padding(.bottom, 4)
-        .help(project.path)
+        .tip(project.path)
     }
 }
 
@@ -167,6 +169,9 @@ struct SectionHeader: View {
 struct SessionRow: View {
     let session: Session
     let selected: Bool
+    /// The row's main action, shown as a button while the row is hovered.
+    var action: PanelAction?
+    var perform: (PanelAction) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -181,7 +186,7 @@ struct SessionRow: View {
                         Image(systemName: Icons.outsideTmux)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.tertiary)
-                            .help(L.t("Not in tmux: started outside tmux, so it can't be opened from here.",
+                            .tip(L.t("Not in tmux: started outside tmux, so it can't be opened from here.",
                                       "不在 tmux 里：它不是在 tmux 里开的，没法从这里打开。"))
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
@@ -198,9 +203,17 @@ struct SessionRow: View {
                 }
             }
             Spacer(minLength: 8)
-            Text(L.ago(session.lastActiveAt))
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
+            ZStack(alignment: .trailing) {
+                Text(L.ago(session.lastActiveAt))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .opacity(action == nil ? 1 : 0)
+                if let action {
+                    RowActionButton(action: action, perform: perform)
+                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .animation(.easeOut(duration: 0.12), value: action == nil)
         }
         .padding(.horizontal, 10)
         .frame(height: 48)
@@ -212,11 +225,17 @@ struct SessionRow: View {
 
     /// Raycast-style icon tile: the state's symbol on a tint of its colour.
     private var stateIcon: some View {
-        let color = Theme.color(session.state)
+        // A session asking you something trumps what it is doing.
+        let color = session.needsYou ? Theme.brand : Theme.color(session.state)
+        let label = session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
         return ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .fill(color.opacity(scheme == .dark ? 0.22 : 0.14))
-            if session.state == .working {
+            if session.needsYou {
+                Image(systemName: Icons.needsYou)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+            } else if session.state == .working {
                 WorkingRing()
             } else {
                 Image(systemName: Icons.state(session.state))
@@ -225,8 +244,8 @@ struct SessionRow: View {
             }
         }
         .frame(width: 24, height: 24)
-        .help(session.state.label)
-        .accessibilityLabel(session.state.label)
+        .tip(label)
+        .accessibilityLabel(label)
     }
 }
 
@@ -277,7 +296,9 @@ struct GuideCard: View {
                 .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.06)))
             }
             .buttonStyle(.plain)
-            .help(L.t("Copy", "复制"))
+        .handCursor()
+        .focusable(false)
+            .tip(L.t("Copy", "复制"))
         }
         .padding(28)
     }
@@ -298,10 +319,7 @@ struct ActionsMenu: View {
                     a.perform()
                 } label: {
                     HStack(spacing: 9) {
-                        Image(systemName: a.icon)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
+                        ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
                         Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
                         Spacer(minLength: 16)
                         if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
@@ -312,6 +330,8 @@ struct ActionsMenu: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+        .handCursor()
+        .focusable(false)
                 .onHover { if $0 { hovered = a.id } }
             }
         }
@@ -320,5 +340,81 @@ struct ActionsMenu: View {
         .background(Theme.raised(scheme), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline(scheme)))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+    }
+}
+
+/// A small segmented control in the panel's style: one white thumb slides
+/// to the chosen option (used in settings instead of the system picker).
+struct SlidingPicker<Value: Hashable>: View {
+    @Binding var selection: Value
+    let options: [(Value, String)]
+    @Environment(\.colorScheme) private var scheme
+
+    private var index: Int { options.firstIndex { $0.0 == selection } ?? 0 }
+
+    private var widths: [CGFloat] {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        return options.map { ceil(($0.1 as NSString).size(withAttributes: [.font: font]).width) + 24 }
+    }
+
+    var body: some View {
+        let w = widths
+        ZStack(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 6)
+                .fill(Theme.raised(scheme))
+                .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Theme.hairline(scheme), lineWidth: 0.5))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.10), radius: 1.5, y: 1)
+                .frame(width: w[index], height: 24)
+                .offset(x: w.prefix(index).reduce(0, +))
+                .animation(.spring(response: 0.3, dampingFraction: 0.86), value: index)
+            HStack(spacing: 0) {
+                ForEach(Array(options.enumerated()), id: \.offset) { i, option in
+                    Button { selection = option.0 } label: {
+                        Text(option.1)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(i == index ? .primary : .secondary)
+                            .frame(width: w[i], height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(PressStyle())
+                    .focusable(false)
+                }
+            }
+            .transaction { $0.animation = nil }
+        }
+        .padding(2)
+        .background(RoundedRectangle(cornerRadius: 8).fill(scheme == .dark ? Color.white.opacity(0.07) : Color.black.opacity(0.055)))
+        .fixedSize()
+    }
+}
+
+/// The small button at the end of a hovered session row: the chosen
+/// terminal's icon to open it, or the action that fits (bring back, copy).
+struct RowActionButton: View {
+    let action: PanelAction
+    let perform: (PanelAction) -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button { perform(action) } label: {
+            Group {
+                if let image = action.image {
+                    Image(nsImage: image).resizable().interpolation(.high).frame(width: 18, height: 18)
+                } else {
+                    Image(systemName: action.icon).font(.system(size: 13, weight: .medium))
+                }
+            }
+            .frame(width: 30, height: 30)
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hovering ? Theme.hairline(scheme) : .clear))
+            .shadow(color: .black.opacity(hovering ? 0.08 : 0), radius: 2, y: 1)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
+        .tip(action.help ?? action.title)
+        .accessibilityLabel(action.title)
     }
 }

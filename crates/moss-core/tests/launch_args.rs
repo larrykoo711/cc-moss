@@ -38,3 +38,61 @@ fn whitelist_cases() {
         assert_eq!(args(line), want, "line={line:?}");
     }
 }
+
+mod new_args {
+    use moss_core::launch_args::normalize_new;
+
+    fn n(args: &[&str]) -> Vec<String> {
+        normalize_new(&args.iter().map(|s| s.to_string()).collect::<Vec<_>>())
+    }
+
+    #[test]
+    fn claude_flags_move_behind_double_dash() {
+        assert_eq!(
+            n(&["--dangerously-skip-permissions", "login-page"]),
+            ["login-page", "--", "--dangerously-skip-permissions"]
+        );
+    }
+
+    #[test]
+    fn claude_flags_with_values_keep_their_value() {
+        assert_eq!(
+            n(&["job-a", "--model", "opus", "--detach", "--effort=high"]),
+            [
+                "job-a",
+                "--detach",
+                "--",
+                "--model",
+                "opus",
+                "--effort=high"
+            ]
+        );
+    }
+
+    #[test]
+    fn own_flags_stay_and_take_their_values() {
+        assert_eq!(
+            n(&["-C", "/work", "--yes", "job-a", "--dir", "/w2"]),
+            ["-C", "/work", "--yes", "job-a", "--dir", "/w2"]
+        );
+    }
+
+    #[test]
+    fn explicit_double_dash_is_kept_after_moved_flags() {
+        assert_eq!(
+            n(&["--model", "opus", "job-a", "--", "--add-dir", "/x"]),
+            ["job-a", "--", "--model", "opus", "--add-dir", "/x"]
+        );
+    }
+
+    #[test]
+    fn help_is_ours() {
+        assert_eq!(n(&["--help"]), ["--help"]);
+        assert_eq!(n(&["-h"]), ["-h"]);
+    }
+
+    #[test]
+    fn nothing_to_move_leaves_args_alone() {
+        assert_eq!(n(&["job-a", "--detach"]), ["job-a", "--detach"]);
+    }
+}

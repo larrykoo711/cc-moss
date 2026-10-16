@@ -66,7 +66,7 @@ enum Command {
         /// If the name belongs to an interrupted session, restore it without asking.
         #[arg(long)]
         yes: bool,
-        /// Extra arguments for claude, after `--`.
+        /// Extra arguments for claude, e.g. `--model opus`; `--` is optional.
         #[arg(last = true)]
         claude_args: Vec<String>,
     },
@@ -81,13 +81,13 @@ enum Command {
         /// Apply without asking (required when stdin is not a terminal).
         #[arg(long)]
         yes: bool,
-        /// Remove the cc-moss hooks, leaving everything else untouched.
+        /// Remove the cc-moss hooks and the `t` alias; everything else stays.
         #[arg(long)]
         uninstall: bool,
         /// Settings file to edit [default: ~/.claude/settings.json].
         #[arg(long, value_name = "PATH")]
         settings: Option<std::path::PathBuf>,
-        /// zsh startup file for the `t` shortcut [default: ~/.zshrc].
+        /// zsh startup file to take the old `t` function out of [default: ~/.zshrc].
         #[arg(long, value_name = "PATH")]
         zshrc: Option<std::path::PathBuf>,
     },
@@ -112,13 +112,25 @@ enum Command {
         #[arg(long)]
         yes: bool,
     },
-    /// Check hooks, tmux, starship, shell blocks and tools.
-    Doctor,
+    /// Check hooks, aliases, tmux, starship, shell blocks and tools.
+    Doctor {
+        /// Recreate alias links that are missing or broken.
+        #[arg(long)]
+        fix: bool,
+    },
+    /// Your own names for cc-moss commands, usable in any shell (`t` is one).
+    Alias {
+        #[command(subcommand)]
+        action: AliasCommand,
+    },
     /// Look for a new version of cc-moss and install it.
     Update {
         /// Only look; change nothing.
         #[arg(long)]
         check: bool,
+        /// With --check: print the answer as JSON (for the menubar app).
+        #[arg(long, requires = "check")]
+        json: bool,
         /// Update without asking.
         #[arg(long)]
         yes: bool,
@@ -175,11 +187,98 @@ enum Command {
     },
 }
 
+#[derive(Subcommand)]
+enum AliasCommand {
+    /// List your aliases and whether each one works.
+    Ls {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Add an alias, or change what it runs.
+    ///
+    /// `cc-moss alias add tn new` makes `tn login-page` run
+    /// `cc-moss new login-page`, in any shell, right away. One quoted
+    /// argument is read as command text: `cc-moss alias add tback "restore --yes"`.
+    /// Put --force and --json before the name.
+    Add {
+        /// Use the name even if it is already a command on your PATH.
+        #[arg(long)]
+        force: bool,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// The alias: a-z, 0-9, - and _.
+        name: String,
+        /// The cc-moss command it runs, with arguments.
+        #[arg(required = true, num_args = 1.., trailing_var_arg = true, allow_hyphen_values = true)]
+        command: Vec<String>,
+    },
+    /// Remove an alias and its link.
+    Rm {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// The alias to remove.
+        name: String,
+    },
+}
+
+/// cc-moss's commands that people may run (and aliases may stand for).
+pub(crate) fn subcommands() -> Vec<String> {
+    Cli::command()
+        .get_subcommands()
+        .filter(|c| !c.is_hide_set())
+        .map(|c| c.get_name().to_string())
+        .collect()
+}
+
+/// The arguments to parse: the real ones, or, when cc-moss was started under
+/// an alias's name (a link in ~/.local/bin), `cc-moss` plus the alias's
+/// words plus the user's arguments. No shell is involved: the words come
+/// from the alias tokenizer and the user's arguments are passed as they are.
+fn arguments() -> Result<Vec<std::ffi::OsString>, anyhow::Error> {
+    let mut args: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let name = args
+        .first()
+        .and_then(|a| std::path::Path::new(a).file_name())
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    if name.is_empty() || moss_core::aliases::is_own_name(&name) {
+        return Ok(args);
+    }
+    let words = cmd::alias::expand_invocation(&name)?;
+    let user = args.split_off(1);
+    Ok(std::iter::once(std::ffi::OsString::from("cc-moss"))
+        .chain(words.into_iter().map(Into::into))
+        .chain(user)
+        .collect())
+}
+
 fn main() -> std::process::ExitCode {
+    let mut argv = match arguments() {
+        Ok(argv) => argv,
+        Err(e) => return report(Err(e)),
+    };
+    // `cc-moss new` takes Claude Code's own flags without a `--`, so an
+    // alias such as `mycc = "new --dangerously-skip-permissions"` works.
+    if argv.get(1).is_some_and(|a| a == "new") {
+        let rest: Vec<String> = argv[2..]
+            .iter()
+            .map(|a| a.to_string_lossy().into_owned())
+            .collect();
+        argv.truncate(2);
+        argv.extend(
+            moss_core::launch_args::normalize_new(&rest)
+                .into_iter()
+                .map(Into::into),
+        );
+    }
     // Hooks never go through clap: a usage error exits 2, which Claude Code
     // treats as a blocking error on UserPromptSubmit. Arguments a newer
     // cc-moss might add are ignored; the event is the first non-flag word.
-    let mut args = std::env::args_os().skip(1);
+    // An alias can never expand to `hook`.
+    let mut args = argv.iter().skip(1);
     if args.next().is_some_and(|a| a == "hook") {
         let event = args
             .map(|a| a.to_string_lossy().into_owned())
@@ -188,9 +287,9 @@ fn main() -> std::process::ExitCode {
         cmd::hook::run(&event);
         return std::process::ExitCode::SUCCESS;
     }
-    let cli = match Cli::try_parse() {
+    let cli = match Cli::try_parse_from(&argv) {
         Ok(cli) => cli,
-        Err(e) => explain(e),
+        Err(e) => explain(e, &argv),
     };
     if cli.version {
         version::print();
@@ -246,14 +345,16 @@ fn main() -> std::process::ExitCode {
                 cmd::install::run(opts)
             })
         }
-        Command::Doctor => match cmd::doctor::run() {
+        Command::Doctor { fix } => match cmd::doctor::run(fix) {
             Ok(true) => std::process::ExitCode::SUCCESS,
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
         },
-        Command::Update { check, yes } => {
-            report(cmd::update::run(cmd::update::UpdateArgs { check, yes }))
-        }
+        Command::Update { check, json, yes } => report(cmd::update::run(cmd::update::UpdateArgs {
+            check,
+            json,
+            yes,
+        })),
         Command::Restore {
             yes,
             dry_run,
@@ -278,6 +379,21 @@ fn main() -> std::process::ExitCode {
             text,
             clear,
         })),
+        Command::Alias { action } => cmd::alias::run(match action {
+            AliasCommand::Ls { json } => cmd::alias::Action::Ls { json },
+            AliasCommand::Add {
+                force,
+                json,
+                name,
+                command,
+            } => cmd::alias::Action::Add {
+                name,
+                command,
+                force,
+                json,
+            },
+            AliasCommand::Rm { json, name } => cmd::alias::Action::Rm { name, json },
+        }),
         Command::Setup {
             dry_run,
             yes,
@@ -296,9 +412,9 @@ fn main() -> std::process::ExitCode {
 
 /// Help, version and usage errors, in the reader's language. Only reached
 /// when something is shown, so the hooks never decide a language.
-fn explain(error: clap::Error) -> ! {
+fn explain(error: clap::Error, argv: &[std::ffi::OsString]) -> ! {
     if i18n::lang() == i18n::Lang::Zh {
-        if let Err(zh) = help_zh::localize(Cli::command()).try_get_matches() {
+        if let Err(zh) = help_zh::localize(Cli::command()).try_get_matches_from(argv) {
             zh.exit();
         }
     }

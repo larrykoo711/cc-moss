@@ -13,7 +13,10 @@ import SwiftUI
 struct SettingsView: View {
     @Bindable var model: AppModel
     @State var tab: Tab = .general
+    /// Canned `alias ls --json` for screenshots.
+    var aliasDemo: AliasList?
     @State private var search = ""
+    @FocusState private var searchFocused: Bool
     @State private var back: [Tab] = []
     @State private var forward: [Tab] = []
     @Environment(\.colorScheme) private var scheme
@@ -21,11 +24,12 @@ struct SettingsView: View {
     static let size = CGSize(width: 820, height: 560)
 
     enum Tab: CaseIterable, Hashable {
-        case general, about
+        case general, aliases, about
 
         var title: String {
             switch self {
             case .general: L.t("General", "通用")
+            case .aliases: L.t("Aliases", "别名")
             case .about: L.t("About", "关于")
             }
         }
@@ -33,6 +37,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: Icons.general
+            case .aliases: Icons.aliases
             case .about: "infinity"
             }
         }
@@ -40,6 +45,7 @@ struct SettingsView: View {
         var tint: [Color] {
             switch self {
             case .general: [Color(white: 0.62), Color(white: 0.45)]
+            case .aliases: AliasRow.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
         }
@@ -47,7 +53,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, "cc-moss", L.t("login startup command path version update", "开机 登录 启动 命令 位置 路径 版本 更新")]
+            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty")]
+            case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
             }
         }
@@ -83,6 +90,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         switch tab {
                         case .general: GeneralSettings(model: model)
+                        case .aliases: AliasesSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
                         }
                     }
@@ -94,11 +102,18 @@ struct SettingsView: View {
             .padding(.leading, 6)
             .padding(.trailing, 20)
         }
-        .frame(width: Self.size.width, height: Self.size.height)
+        // Fill whatever height the window has: the hidden title bar still
+        // counts 28 pt, and a fixed height left a strip at the bottom.
+        .frame(width: Self.size.width)
+        .frame(minHeight: Self.size.height, maxHeight: .infinity)
         .background(Theme.surface(scheme))
         .background(.regularMaterial)
         .ignoresSafeArea()
         .focusEffectDisabled()
+        // Every layout pass puts the window buttons back inside the sidebar
+        // and keeps the window exactly our size; doing it once on open was
+        // undone by the next layout.
+        .background(WindowLayoutHook())
         .onAppear { SettingsWindow.bringToFront() }
         .onChange(of: search) { _, _ in
             if let first = tabs.first, !tabs.contains(tab) { go(first) }
@@ -109,17 +124,37 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 2) {
             Spacer().frame(height: 40) // the window buttons sit here
             // Raycast's large rounded search field.
+            // Focused, it deepens like Raycast's: a darker fill and a
+            // darker magnifier, eased in.
             HStack(spacing: 8) {
                 Image(systemName: Icons.search)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(searchFocused ? .primary : .secondary)
                 TextField(L.t("Search settings…", "搜索设置…"), text: $search)
                     .textFieldStyle(.plain)
                     .font(.system(size: 14))
+                    .focused($searchFocused)
+                if !search.isEmpty {
+                    Button { search = "" } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(PressStyle())
+                    .focusable(false)
+                    .tip(L.t("Clear", "清空"))
+                }
             }
             .padding(.horizontal, 12)
             .frame(height: 36)
-            .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.06)))
+            .background(
+                Capsule().fill(Color.primary.opacity(searchFocused
+                    ? (scheme == .dark ? 0.15 : 0.11)
+                    : (scheme == .dark ? 0.08 : 0.06)))
+            )
+            .contentShape(Capsule())
+            .onTapGesture { searchFocused = true }
+            .animation(.easeOut(duration: 0.15), value: searchFocused)
             .padding(.bottom, 10)
             ForEach(tabs, id: \.self) { t in
                 SidebarItem(tab: t, selected: t == tab) { go(t) }
@@ -170,10 +205,10 @@ struct NavCapsule: View {
     var body: some View {
         HStack(spacing: 0) {
             arrow("chevron.left", enabled: canGoBack, action: goBack)
-                .help(L.t("Back", "后退"))
+                .tip(L.t("Back", "后退"))
             Rectangle().fill(Color.primary.opacity(0.12)).frame(width: 1, height: 16)
             arrow("chevron.right", enabled: canGoForward, action: goForward)
-                .help(L.t("Forward", "前进"))
+                .tip(L.t("Forward", "前进"))
         }
         .frame(height: 32)
         .glassPanel(cornerRadius: 16)
@@ -336,9 +371,6 @@ struct SoftButton: View {
 
 struct GeneralSettings: View {
     @Bindable var model: AppModel
-    @State private var found: String?
-    @State private var checking = false
-    @State private var updateMessage: String?
 
     @State private var openAtLogin = SMAppService.mainApp.status == .enabled
     @State private var loginError: String?
@@ -353,49 +385,30 @@ struct GeneralSettings: View {
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
+                    .handCursor()
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
         }
+        TerminalSettings(prefs: model.terminals)
+        MenuBarSettings(model: model)
         SettingsCard(title: "cc-moss") {
             CardRow(
                 title: L.t("Program", "程序位置"),
                 detail: model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) }
-                    ?? L.t("Not found in the usual places", "常见位置里没找到")
+                    ?? L.t("Not found in the usual places", "常见位置里没找到"),
+                divider: false
             ) {
                 HStack(spacing: 8) {
                     if UserDefaults.standard.string(forKey: "cliPath") != nil {
                         SoftButton(title: L.t("Automatic", "自动"), icon: "arrow.uturn.backward") { set(nil) }
-                            .help(L.t("Find it in the usual places again", "重新在常见位置自动找"))
+                            .tip(L.t("Find it in the usual places again", "重新在常见位置自动找"))
                     }
                     SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
                 }
             }
-            CardRow(
-                title: L.t("Version", "版本"),
-                detail: updateMessage,
-                divider: false
-            ) {
-                HStack(spacing: 10) {
-                    HStack(spacing: 5) {
-                        Circle().fill(found == nil ? Theme.amber : .green).frame(width: 7, height: 7)
-                        Text(found ?? "—")
-                            .font(.system(size: 12, weight: .medium, design: .rounded))
-                            .foregroundStyle(.secondary)
-                    }
-                    if checking {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        SoftButton(title: L.t("Check for Updates", "检查更新"), icon: Icons.update) {
-                            Task { await checkUpdate() }
-                        }
-                        .disabled(model.client == nil)
-                    }
-                }
-            }
         }
-        .task(id: model.cliPath) { found = try? await model.client?.version() }
     }
 
     private func setOpenAtLogin(_ on: Bool) {
@@ -429,19 +442,6 @@ struct GeneralSettings: View {
         panel.message = L.t("Choose the cc-moss program", "选择 cc-moss 程序")
         if panel.runModal() == .OK, let url = panel.url { set(url.path) }
     }
-
-    private func checkUpdate() async {
-        guard let client = model.client else { return }
-        checking = true
-        defer { checking = false }
-        do {
-            updateMessage = try await client.updateCheck()
-        } catch MossClient.Failure.command(let message) {
-            updateMessage = message
-        } catch {
-            updateMessage = L.t("Couldn't check right now.", "暂时查不了，过会儿再试。")
-        }
-    }
 }
 
 /// The app icon, drawn: the Continuum mark on the dark tile of docs/assets/icon.svg.
@@ -471,38 +471,202 @@ struct AppIconTile: View {
     }
 }
 
+/// About: who cc-moss is, whether it is current, and where to learn more.
 struct AboutSettings: View {
     @Bindable var model: AppModel
+    @State private var cliVersion: String?
+    @State private var update: UpdateState = .idle
+    @State private var problem: String?
+
+    enum UpdateState: Equatable {
+        case idle, checking
+        case current(String)
+        case available(UpdateInfo)
+        case failed(String)
+    }
 
     var body: some View {
-        VStack(spacing: 10) {
-            AppIconTile(size: 104)
-                .padding(.top, 20)
-                .padding(.bottom, 10)
-            Text("cc-moss")
-                .font(.system(size: 24, weight: .semibold))
-            Text(L.t("Version \(model.version)", "版本 \(model.version)"))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-            Text(L.t("Civilizations carry on. So do conversations.", "文明会延续，对话也是。"))
-                .font(.system(size: 14))
-                .foregroundStyle(.secondary)
-                .padding(.top, 6)
-            HStack(spacing: 10) {
-                SoftButton(title: "GitHub", icon: Icons.github) {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/larrykoo711/cc-moss")!)
-                }
-                SoftButton(title: L.t("Release Notes", "更新记录"), icon: "doc.text") {
-                    NSWorkspace.shared.open(URL(string: "https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md")!)
+        VStack(spacing: 22) {
+            hero
+            SettingsCard(title: L.t("Software Update", "软件更新")) {
+                CardRow(title: updateTitle, detail: updateDetail, divider: false) {
+                    updateControl
                 }
             }
-            .padding(.top, 14)
-            Text(L.t("MIT License. Not affiliated with Anthropic.", "MIT 开源。与 Anthropic 没有关联。"))
+            SettingsCard(title: L.t("Learn More", "了解更多")) {
+                LinkRow(icon: "book", title: L.t("User Guide", "使用手册"),
+                        url: L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
+                                 "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
+                LinkRow(icon: "doc.text", title: L.t("Release Notes", "更新记录"),
+                        url: "https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md")
+                LinkRow(icon: "exclamationmark.bubble", title: L.t("Report a Problem", "报告问题"),
+                        url: "https://github.com/larrykoo711/cc-moss/issues/new/choose")
+                LinkRow(icon: Icons.github, title: L.t("Source Code", "源代码"),
+                        url: "https://github.com/larrykoo711/cc-moss", divider: false)
+            }
+            Text(L.t("Open source under MIT. Not affiliated with Anthropic.",
+                     "MIT 开源。cc-moss 是个人独立项目，与 Anthropic 没有关联。"))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
-                .padding(.top, 18)
+                .frame(maxWidth: .infinity)
         }
-        .frame(maxWidth: .infinity)
+        .task(id: model.cliPath) { cliVersion = try? await model.client?.version() }
+    }
+
+    // MARK: Hero
+
+    private var hero: some View {
+        HStack(spacing: 18) {
+            AppIconTile(size: 88)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("cc-moss")
+                    .font(.system(size: 26, weight: .semibold))
+                Text(L.t("Civilizations carry on. So do conversations.", "文明会延续，对话也是。"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    VersionChip(label: "App", value: model.version)
+                    VersionChip(label: L.t("CLI", "命令行"), value: cliVersion ?? "—")
+                    if let cli = cliVersion, cli != model.version, model.version != "dev" {
+                        Label(L.t("Versions differ", "版本不一致"), systemImage: "exclamationmark.triangle.fill")
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(Theme.amber)
+                            .tip(L.t("The app and the cc-moss command should be the same version. Updating fixes it.",
+                                      "App 和 cc-moss 命令应该是同一个版本，升级一下就好。"))
+                    }
+                }
+                .padding(.top, 2)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        // Room for the icon's shadow inside the scroll area, which clips.
+        .padding(.top, 16)
+        .padding(.bottom, 4)
+    }
+
+    // MARK: Update
+
+    private var updateTitle: String {
+        switch update {
+        case .idle: L.t("Check for a new version", "看看有没有新版本")
+        case .checking: L.t("Checking…", "正在检查…")
+        case .current: L.t("You're up to date", "已经是最新版本")
+        case .available(let info): L.t("cc-moss \(info.latest) is out", "cc-moss \(info.latest) 发布了")
+        case .failed: L.t("Couldn't check", "这次没查成")
+        }
+    }
+
+    private var updateDetail: String? {
+        if let problem { return problem }
+        switch update {
+        case .idle: return L.t("It also checks once a day on its own.", "它每天也会自己查一次。")
+        case .checking: return nil
+        case .current(let v): return L.t("\(v) is the latest release.", "\(v) 就是最新的。")
+        case .available(let info):
+            return L.t("You have \(info.current). It updates in your terminal, so you can watch it.",
+                       "你现在是 \(info.current)。会在终端里升级，过程看得见。")
+        case .failed(let why): return why
+        }
+    }
+
+    @ViewBuilder private var updateControl: some View {
+        switch update {
+        case .checking:
+            ProgressView().controlSize(.small)
+        case .available(let info):
+            HStack(spacing: 8) {
+                if let notes = info.notes, let url = URL(string: notes) {
+                    SoftButton(title: L.t("What's New", "更新了什么"), icon: "sparkles") { NSWorkspace.shared.open(url) }
+                }
+                SoftButton(title: L.t("Update in Terminal", "在终端里升级"), icon: Icons.update, prominent: true) {
+                    runUpdate()
+                }
+            }
+        default:
+            SoftButton(title: L.t("Check Now", "立即检查"), icon: Icons.refresh) { Task { await check() } }
+                .disabled(model.client == nil)
+        }
+    }
+
+    private func check() async {
+        guard let client = model.client else { return }
+        problem = nil
+        update = .checking
+        do {
+            let info = try await client.updateInfo()
+            update = info.available ? .available(info) : .current(info.current)
+        } catch MossClient.Failure.command(let message) {
+            update = .failed(message)
+        } catch {
+            update = .failed(L.t("Couldn't reach GitHub. Try again in a moment.", "连不上 GitHub，过会儿再试。"))
+        }
+    }
+
+    private func runUpdate() {
+        guard let cli = model.cliPath else { return }
+        let command = LaunchPlan.cliCommand(cli: cli, ["update"])
+        if let failure = Opener.run(command: command, in: model.terminals.current) {
+            model.copy(failure.command)
+            problem = L.t("Couldn't open \(failure.terminalName). The command is on your clipboard: paste it in a terminal.",
+                          "没能打开\(failure.terminalName)。命令已经复制好了，贴到终端里运行就行。")
+        }
+    }
+}
+
+/// `App 0.1.1`: one version in a small capsule.
+struct VersionChip: View {
+    let label: String
+    let value: String
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Text(label).foregroundStyle(.secondary)
+            Text(value).fontWeight(.semibold).monospacedDigit()
+        }
+        .font(.system(size: 11))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+    }
+}
+
+/// A row that opens a web page: icon, title, and an arrow pointing out.
+struct LinkRow: View {
+    let icon: String
+    let title: String
+    let url: String
+    var divider = true
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        } label: {
+            VStack(spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: icon)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 20)
+                    Text(title).font(.system(size: 14))
+                    Spacer()
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(hovering ? .secondary : .tertiary)
+                }
+                .padding(.horizontal, 12)
+                .frame(minHeight: 44)
+                .background(RoundedRectangle(cornerRadius: 10).fill(hovering ? Color.primary.opacity(0.04) : .clear))
+                if divider {
+                    Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
     }
 }
 
@@ -543,6 +707,35 @@ enum SettingsWindow {
             guard let button = window.standardWindowButton(kind), let bar = button.superview else { continue }
             let step: CGFloat = 20
             button.setFrameOrigin(NSPoint(x: 22 + CGFloat(i) * step, y: bar.bounds.height - button.frame.height - 14))
+        }
+    }
+}
+
+/// An invisible view that re-applies the settings window's chrome after
+/// each layout of the window: full-size content, our size, buttons tucked in.
+struct WindowLayoutHook: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSView { HookView() }
+    func updateNSView(_ nsView: NSView, context: Context) {}
+
+    final class HookView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            apply()
+        }
+
+        override func layout() {
+            super.layout()
+            apply()
+        }
+
+        private func apply() {
+            guard let window else { return }
+            MainActor.assumeIsolated {
+                if !window.styleMask.contains(.fullSizeContentView) || window.titleVisibility != .hidden {
+                    SettingsWindow.fitContent(of: window)
+                }
+                SettingsWindow.tuckWindowButtons(in: window)
+            }
         }
     }
 }

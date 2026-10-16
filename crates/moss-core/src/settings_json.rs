@@ -4,7 +4,6 @@
 //! entries that [`is_ours`] recognises. Everything else, including key order,
 //! is carried through unchanged (serde_json is built with `preserve_order`).
 
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
@@ -155,25 +154,6 @@ pub fn hook_binaries(doc: &Value) -> Vec<String> {
         .flatten()
         .filter_map(hook_binary)
         .collect()
-}
-
-/// The path to write into the hooks for the running binary `current`.
-///
-/// On Linux `current_exe()` resolves symlinks, which turns a package
-/// manager's stable link (`…/bin/cc-moss`) into a versioned path that the next
-/// upgrade deletes. When an absolute `PATH` entry holds a `cc-moss` that is the
-/// same file as `current`, that entry is used as written.
-pub fn stable_exe(current: &Path, path_var: Option<&OsStr>) -> PathBuf {
-    let Ok(real) = std::fs::canonicalize(current) else {
-        return current.to_path_buf();
-    };
-    path_var
-        .into_iter()
-        .flat_map(std::env::split_paths)
-        .filter(|dir| dir.is_absolute())
-        .map(|dir| dir.join("cc-moss"))
-        .find(|candidate| std::fs::canonicalize(candidate).is_ok_and(|c| c == real))
-        .unwrap_or_else(|| current.to_path_buf())
 }
 
 /// The matcher cc-moss writes for `kind`, for events that take one. PostToolUse

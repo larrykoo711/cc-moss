@@ -111,6 +111,7 @@ pub fn run(query: &str) -> Result<()> {
         Action::Update => {
             let result = cmd::update::run(cmd::update::UpdateArgs {
                 check: false,
+                json: false,
                 yes: false,
             });
             if let Err(e) = &result {

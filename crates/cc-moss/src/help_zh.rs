@@ -54,7 +54,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "new",
         "claude_args",
-        "传给 claude 的额外参数，写在 `--` 之后",
+        "传给 claude 的额外参数，例如 `--model opus`；`--` 可写可不写",
     ),
     (
         "setup",
@@ -63,7 +63,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("setup", "dry_run", "只看 diff，什么都不写"),
     ("setup", "yes", "不问直接应用（stdin 不是终端时必须加）"),
-    ("setup", "uninstall", "移除 cc-moss 钩子，其余设置原样保留"),
+    (
+        "setup",
+        "uninstall",
+        "移除 cc-moss 钩子和 `t` 别名，其余原样保留",
+    ),
     (
         "setup",
         "settings",
@@ -72,7 +76,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "setup",
         "zshrc",
-        "放 `t` 快捷命令的 zsh 启动文件 [默认：~/.zshrc]",
+        "要移除旧版 `t` 函数的 zsh 启动文件 [默认：~/.zshrc]",
     ),
     (
         "install",
@@ -97,9 +101,34 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("install", "dry_run", "只看会改什么，不做任何改动"),
     ("install", "yes", "不问直接应用"),
-    ("doctor", "", "体检钩子、tmux、starship、shell 区块和工具"),
+    (
+        "doctor",
+        "",
+        "体检钩子、别名、tmux、starship、shell 区块和工具",
+    ),
+    ("doctor", "fix", "把缺失或失效的别名链接重新建好"),
+    (
+        "alias",
+        "",
+        "给 cc-moss 命令起你自己的名字，任何 shell 里都能用（`t` 就是一个）",
+    ),
+    ("alias ls", "", "列出你的别名，以及每个能不能用"),
+    ("alias ls", "json", "机器可读的输出（schema 1）"),
+    ("alias add", "", "添加别名，或者修改它要运行的命令"),
+    ("alias add", "force", "名字已经是 PATH 上的命令时也照样用"),
+    ("alias add", "json", "机器可读的输出（schema 1）"),
+    ("alias add", "name", "别名：只能用 a-z、0-9、- 和 _"),
+    ("alias add", "command", "它要运行的 cc-moss 命令和参数"),
+    ("alias rm", "", "删除别名和它的链接"),
+    ("alias rm", "json", "机器可读的输出（schema 1）"),
+    ("alias rm", "name", "要删除的别名"),
     ("update", "", "看看 cc-moss 有没有新版本，有就装上"),
     ("update", "check", "只看看，不做任何改动"),
+    (
+        "update",
+        "json",
+        "配合 --check：把结果按 JSON 输出（给菜单栏 App 用）",
+    ),
     ("update", "yes", "不问直接升级"),
     ("pick", "", "选择会话、中断的会话或目录（就是 `t`）"),
     ("pick", "query", "打开时先搜这个，比如 `cc-moss pick api`"),
@@ -127,6 +156,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("note", "clear", "清空全部备注"),
 ];
 
+const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令。\n\n\
+`cc-moss alias add tn new` 之后，`tn 登录页` 就等于 `cc-moss new 登录页`，任何 shell 里马上能用。\
+只给一个带引号的参数时，它会被当成整条命令来读：`cc-moss alias add tback \"restore --yes\"`。\
+--force 和 --json 要写在名字前面。";
+
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\
 写入前会用 diff 展示对 settings.json 的改动并征求同意；原文件旁会留一份带时间戳的备份。";
 
@@ -139,12 +173,29 @@ pub fn localize(cmd: Command) -> Command {
         .map(|c| c.get_name().to_string())
         .collect();
     for name in names {
-        cmd = cmd.mut_subcommand(&name, |c| translate(c, &name));
+        cmd = cmd.mut_subcommand(&name, |c| {
+            let nested: Vec<String> = c
+                .get_subcommands()
+                .map(|s| s.get_name().to_string())
+                .collect();
+            let mut c = translate(c, &name);
+            for sub in nested {
+                let key = format!("{name} {sub}");
+                c = c.mut_subcommand(&sub, |s| translate(s, &key));
+            }
+            c
+        });
     }
-    let mut cmd = cmd.mut_subcommand("setup", |c| c.long_about(SETUP_LONG));
+    let mut cmd = cmd
+        .mut_subcommand("setup", |c| c.long_about(SETUP_LONG))
+        .mut_subcommand("alias", |c| {
+            c.mut_subcommand("add", |s| s.long_about(ALIAS_ADD_LONG))
+        });
     // clap adds its `help` command while building; translate it afterwards.
     cmd.build();
-    cmd.mut_subcommand("help", |c| c.about("显示这份帮助，或某个命令的帮助"))
+    const HELP: &str = "显示这份帮助，或某个命令的帮助";
+    cmd.mut_subcommand("help", |c| c.about(HELP))
+        .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 
 /// One command's description, argument help, headings and help flag.
@@ -181,8 +232,14 @@ mod tests {
     #[test]
     fn every_command_and_argument_is_translated() {
         let cmd = crate::Cli::command();
+        let mut commands: Vec<(String, &clap::Command)> = Vec::new();
         for sub in cmd.get_subcommands().filter(|c| !c.is_hide_set()) {
-            let name = sub.get_name();
+            commands.push((sub.get_name().to_string(), sub));
+            for nested in sub.get_subcommands() {
+                commands.push((format!("{} {}", sub.get_name(), nested.get_name()), nested));
+            }
+        }
+        for (name, sub) in commands {
             assert!(
                 super::TEXT
                     .iter()

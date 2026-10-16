@@ -17,7 +17,9 @@ final class AppModel {
     }
 
     var phase: Phase = .loading
-    var sessions: [Session] = []
+    var sessions: [Session] = [] { didSet { syncIcon() } }
+    /// The menu bar icon, following the sessions.
+    @ObservationIgnored let icon = MenuBarIcon()
     var query = "" { didSet { if query != oldValue { selectFirst() } } }
     /// Set from the summary strip: show only sessions in this state.
     var stateFilter: SessionState? { didSet { if stateFilter != oldValue { selectFirst() } } }
@@ -32,8 +34,14 @@ final class AppModel {
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private lazy var flight = SingleFlight { [weak self] in await self?.load() }
 
+    /// Which terminal sessions open in.
+    @ObservationIgnored let terminals: TerminalPrefs
+    /// Set when a session could not be opened; the panel shows what to do.
+    var openProblem: OpenProblem?
+
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
-    init(client: MossClient? = nil) {
+    init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
+        self.terminals = terminals ?? TerminalPrefs()
         if let client {
             self.client = client
             refresh()
@@ -132,6 +140,14 @@ final class AppModel {
 
     func selectFirst() { selectedID = visible.first?.id }
 
+    /// Settings › General › Menu Bar: icon only, or icon and number.
+    static let showCountKey = "menuBarShowsCount"
+
+    func syncIcon() {
+        icon.syncMotion()
+        icon.update(sessions, showCount: UserDefaults.standard.bool(forKey: Self.showCountKey))
+    }
+
     func move(_ delta: Int) {
         let list = visible
         guard !list.isEmpty else { return }
@@ -139,9 +155,25 @@ final class AppModel {
         selectedID = list[min(max(i + delta, 0), list.count - 1)].id
     }
 
+    /// cc-moss by absolute path, so commands work whatever the PATH.
+    private var cli: String { client?.executable ?? "cc-moss" }
+
     /// The command that takes you into a session, for pasting into any terminal.
     func attachCommand(_ s: Session) -> String {
-        "cc-moss attach " + Shell.quote(s.handle)
+        LaunchPlan.attachCommand(cli: cli, handle: s.handle)
+    }
+
+    /// The command that brings an interrupted session back.
+    func restoreCommand(_ s: Session) -> String {
+        LaunchPlan.restoreCommand(cli: cli, handle: s.handle)
+    }
+
+    /// Open `s` in the chosen terminal. True when it opened; otherwise
+    /// `openProblem` says why.
+    func open(_ s: Session) -> Bool {
+        terminals.settle()
+        openProblem = Opener.open(handle: s.handle, cli: cli, in: terminals.current)
+        return openProblem == nil
     }
 
     func copy(_ text: String) {
