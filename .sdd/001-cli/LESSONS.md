@@ -89,3 +89,20 @@
 - 根因：只按「HOME 决定一切」去隔离；两个工具各自假设备份名独一无二
 - 规避：任何读写 dotfiles 的验证都同时设置 `HOME` 和 `ZDOTDIR`（cc-moss 的测试 helper 已清除 ZDOTDIR）；
   每个工具的备份带自己的前缀（`.cc-moss-*`、`.bak-migrate-*`、`.bak-block-*`），并且遇到同名绝不覆盖
+
+## L16 只在 macOS 上跑过的测试，挡不住 Linux 上的硬故障
+
+- 现象：T4.1 开源前第一次在 Linux（Debian，tmux 3.5a）上跑全量测试，7 个测试文件失败：`cc-moss new` 在 Linux 上根本起不来。
+  tmux 3.5 会把 `-F` 格式输出里的控制字符（包括制表符）替换成 `_`，而所有格式都用制表符分隔字段；macOS 的 tmux 3.7 原样输出，所以从没暴露
+- 根因：开发和测试只在一台 macOS 上进行；clean-room 只覆盖 install/doctor，没覆盖会话本身
+- 规避：tmux 格式字段用可打印的分隔符（`|:|`）；CI 在 Ubuntu 与 macOS 上都跑全量测试，发布前在 Linux 容器里先跑一遍；
+  在容器里跑要加 `--init`（否则 1 号进程不回收僵尸，被杀的进程看起来还活着，产品也已把僵尸判为死亡）；
+  测试夹具不依赖精简镜像里没有的工具（`uuidgen` 改为回退到 `/proc/sys/kernel/random/uuid`）
+
+## L17 抬高 rust-version 会改变 clippy 的建议；按时间判断的测试要能在高负载下放宽
+
+- 现象：把 `rust-version` 从 1.80 改成实测的 1.89 后，clippy 立刻多出 4 个错误（`map_or(true, …)` → `is_none_or`）；
+  新加的「启动即退出」测试在并行 agent 跑测试、机器高负载时 20 次失败 4 次
+- 根因：clippy 按声明的最低版本给建议；500 ms 的启动宽限对人合理，但高负载下脚本光是启动再退出就可能超过 500 ms
+- 规避：改 `rust-version` 后立刻跑一次 clippy 并修完；依赖时间的检查给测试留一个放宽的环境变量（`CC_MOSS_STARTUP_GRACE_MS`），
+  只在相关测试里调大，产品默认值不变

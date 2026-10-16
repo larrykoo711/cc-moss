@@ -77,8 +77,8 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
   `cc-moss new [name] [-C dir] [--detach] [-- args]`（备注走 T1.4 的 `note`），读 `config.toml` 的默认参数，用 `--session-id` 固定 id；
   UserPromptSubmit 同步名字并 `rename-session`；启动参数白名单采集；不在 tmux 中时 SessionStart 返回提示
 - TDD：sanitize 与重名；参数白名单（含凭据样式值被丢弃）；用假 `claude` 脚本在独立 socket 上跑 new → 改名
-- 验收：独立 socket 上 `new em-a` 后 tmux 名为 `<prefix>_em-a`；模拟 `session_title=em-b` 的 UserPromptSubmit 后
-  tmux 名变为 `<prefix>_em-b`
+- 验收：独立 socket 上 `new job-a` 后 tmux 名为 `<prefix>_job-a`；模拟 `session_title=job-b` 的 UserPromptSubmit 后
+  tmux 名变为 `<prefix>_job-b`
 - commit：`feat(session): new command and tmux name sync`
 - 依赖：T1.1
 
@@ -165,7 +165,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 
 - 仓：私有终端标准 skill（不在本仓，仅在本仓档案记录结果）
 - 目标：私有仓只保留多主机下发，安装动作改为调用 `cc-moss install`；旧的 `t.zsh` 和模板退役
-- spec：`tasks/in-progress/T3.2-private-switch.spec.md`
+- spec：`tasks/done/T3.2-private-switch.spec.md`
 - 内容：私有 skill 的同步脚本改为远程执行 `cc-moss install --yes`；删除迁走的模板和 tmuxinator 安装步骤；在本机切到 `cc-moss`
   （`t` → `cc-moss pick`，启动别名改为 `cc-moss new`）
 - 验收：本机走一遍完整日常流程；私有 skill 的体检脚本全绿
@@ -198,15 +198,19 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 | **T2.4** 选择器重新设计（列表 + 详情卡片） | cc-moss | T2.3 | ✅ Done | done/T2.4-picker-master-detail.spec.md | 项目分组单行 + 详情卡片 |
 | **T2.5** 中英文国际化 + 友好文案 | cc-moss | T2.4 | ✅ Done | done/T2.5-i18n-and-copy.spec.md | 按系统语言自动中英；文案友好 |
 | **T3.1** 终端资产 install/doctor | cc-moss | T1.2,T2.1 | ✅ Done | done/T3.1-install-doctor.spec.md | 临时 HOME 幂等 + doctor 绿 |
-| **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | 🟩 Review | in-progress/T3.2-private-switch.spec.md | 本机日常流程走通 |
-| **T4.1** 开源发布 | cc-moss | T3.2 | ⬜ Backlog | — | 干净机器 brew 全流程 |
+| **T3.2** 私有仓切换 | 私有仓 | T2.1,T3.1 | ✅ Done | done/T3.2-private-switch.spec.md | 本机日常流程走通 |
+| **T4.1** 开源发布 | cc-moss | T3.2 | 🟩 Review | in-progress/T4.1-open-source.spec.md | 干净机器 brew 全流程 |
 
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- REVIEW 2026-10-16 T4.1 开源前五路评审（用户要求「全方位 review」）：隐私（中 1 低 5，含档案里一句描述个人设备的话与源自真实项目名的测试前缀，均已改）、文档与首次上手（高 3 中 9 低 15）、代码与打包（高 5 中 11 低 10）、仓库卫生与装修（10 项决策建议），以及合并后代码复审（中 2 低 8）。两名实施 agent 分线修复（稳健性：钩子在二进制删除后静默、大输出不卡死、/proc 判活与 busybox、僵尸进程判死、写锁内不起子进程、新版登记表只读、钩子永不非零退出、状态文件 0700/0600；交互：tmux<3.2 兼容、claude 绝对路径与启动即退出检测、install --uninstall、非 zsh 用户、ls --json 字段改为 sessions/id、pick 初始搜索、「中断」统一）。controller 自修：tmux 3.5 把 -F 输出里的制表符换成 `_` 导致 Linux 上 `new` 全挂（分隔符改为 `|:|`）、rust-version 实测改 1.89、卸载删文件前备份。不修：Linux 上预发布版本跨升级的起始时间格式（无已发布版本、无 Linux 安装）；restore 每个会话串行等 500 ms（待优化）。验证：macOS 295 测试全绿；Linux（Debian、tmux 3.5a、`--init`）全量绿；musl 静态二进制在 Ubuntu 20.04（tmux 3.0）/Debian 12/Ubuntu 24.04 clean-room 通过、Alpine busybox 判活正确；Debian 11 因官方安全源下线无法搭环境（非本项目问题）。LESSONS L16–L17
+- CHANGE 2026-10-16 T4.1 仓库装修（用户要求）：简介、20 个 topics、只留 squash 合并且合并后删分支、关 Projects/Wiki、4 个标签；社区文件、CI、release（四目标 + sha256 + 第三方许可证 + 自动更新 tap）、Homebrew 公式模板；homebrew-tap 里的已有公式与其上游模板按 brew audit 修正（本地分支，未推送）
+- AMEND 2026-10-16 T4.1: 范围扩大（非弱化）——四路开源前评审发现代码稳健性问题（高 5 / 中 11），纳入本任务修复；homebrew-tap 已存在，改为往现有 tap 加公式 approved-by=controller（扩大范围，按用户「全方位 review…清理」的要求）
 - REVIEW 2026-10-16 T3.1/T3.2 多 agent 全方位评审（用户要求；正确性 / 用户文件安全 / 安全与隐私 / 测试与文案可维护性四路独立只读）：高危 0、中危约 10、低危若干，全部核实后修复——备份权限、Debian 缺包连坐、starship 安装器改先下载再执行、ZDOTDIR 下 PATH 区块落点、XDG 重载、CRLF 重复区块、悬空软链、tmux 弹窗路径与注入、钩子命令引号、代理段泄露凭据、doctor 误判与漏报、迁移脚本半行删除 / 备份撞名 / 先迁移后确认 / 失败仍继续等；新增 17 个测试（227 全绿）；干净设备 Ubuntu 24.04 + Debian 12 通过；迁移演练 14 项全过。LESSONS L15
 - AMEND 2026-10-16 T3.1: 「已有 starship 配置 → 展示 diff、默认不覆盖」改为「提示已保留、可加 --replace-starship 替换」：整份配置的 diff 有数百行，会淹没其他改动（评审 UX 意见）；不覆盖的行为不变 approved-by=controller（待用户知悉）
 - E2E 2026-10-16 T3.2: 私有 skill 改为下发 cc-moss（私有仓本地提交，未推送）；Docker 迁移演练（借空闲机，用旧模板造出老机器后跑新同步脚本）11 项检查全过、二次运行零改动；本机已切换：doctor 11 项全绿、私有行为验收 17 项全过、shell 启动无输出、隔离 tmux server 加载新配置无报错。待用户走查日常流程（第 3 条验收）；远端各机按设备清单逐台切换，需用户逐台确认
+- E2E 2026-10-16 T3.2 收尾: 用户走查本机日常流程通过（第 3 条验收）；用户批准后两台远端 macOS 切换：同步脚本预览 → 迁移 → 私有区块 → install → doctor 全绿（其一提示用户手写的同名别名，属用户内容未动），隔离 tmux server 加载新配置、`prefix + t` / `prefix + r` 绑定正确，运行中的 tmux 已重载，`cc-moss ls` 识别出全部现有会话。顺带修了私有同步脚本两处（远端尚无 cc-moss 时 dry-run 调用它；dry-run 下非交互 read 读到 EOF 静默退出）和迁移脚本漏识别 `[[ -f … ]] && source` 写法。其余设备按用户决定暂不切换。观察：同一对话被两个 Claude 进程同时打开时，`cc-moss ls` 列出两行完全相同的记录（数据如实，展示上可提示「同一对话开在两处」，待排期）
 - E2E 2026-10-16 T3.1 干净设备（用户建议用 Docker、借空闲机跑）：全新 Ubuntu 24.04 + 免密 sudo 普通用户，`install --yes --with aliases` 用真实 apt 与 starship 脚本装齐，doctor 11 项全 ✓，二次 install 零改动；途中修复两个只有干净设备才暴露的问题（先 `apt-get update`；先建 `~/.local/bin`），并在 root 下去掉 sudo。LESSONS L14
 - DONE 2026-10-16 T3.1: `cc-moss install`（hooks/tmux/starship/shell 默认、aliases 可选；tmux 走顶部 source-file 区块、已有 starship 配置保留、`.zshrc` 区块恒在 starship init 前；缺依赖按 brew/apt 列命令、确认后执行）与 `cc-moss doctor`（✓/·/!/✗，坑 #8 #10 #12 #13 均为检查项，✗ 时退出码 1）；setup 的写文件逻辑抽为 `cmd/files.rs` 共用；资产脱敏后内嵌（私有词零命中）；`psg` 改为 `ps aux`（macOS 的 ps 不支持 `f`）。210 测试全绿；e2e 10 个全在临时 HOME + 桩工具；变异 3/3；本机 doctor 只读核对。LESSONS L13（测试差点执行真实 brew）
 - PLAN-CHANGE 2026-10-16 T3.1: 用户拍板三项（已有配置叠加不覆盖；核心默认、别名可选；依赖列出命令、问过再装）；资产目录从仓根 `assets/` 改到 `crates/cc-moss/assets/`（打包需要）；迁移私有仓旧区块划给 T3.2

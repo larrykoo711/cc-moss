@@ -80,7 +80,7 @@
    "from": "user",
    "to": "cli",
    "y": 200,
-   "label": "new em-a",
+   "label": "new job-a",
    "variant": "emphasis"
   },
   {
@@ -112,7 +112,7 @@
    "from": "user",
    "to": "claude",
    "y": 410,
-   "label": "/rename em-b (no hook)",
+   "label": "/rename job-b (no hook)",
    "variant": "dashed"
   },
   {
@@ -125,7 +125,7 @@
    "from": "claude",
    "to": "hook",
    "y": 480,
-   "label": "Prompt title=em-b",
+   "label": "Prompt title=job-b",
    "variant": "emphasis"
   },
   {
@@ -196,7 +196,7 @@
    "from": "reg",
    "to": "cli",
    "y": 965,
-   "label": "em-b / U2",
+   "label": "job-b / U2",
    "variant": "return"
   },
   {

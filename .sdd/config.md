@@ -17,7 +17,7 @@
 | cc-moss（Cargo workspace） | Rust | `cargo fmt --all --check && cargo clippy --all-targets -- -D warnings && cargo test --all` |
 | shell 资产（zsh / tmux / starship） | zsh、toml | `zsh -n` 语法检查 + 资产安装的集成测试（`cargo test` 内用临时 HOME 跑） |
 
-- 分支流：仓库尚未公开、无协作者前，脚手架与档案直接提交 `main`；进入 S4 实施后一律走
+- 分支流：仓库公开后一律走 PR（squash 合并）；公开前的早期阶段脚手架与档案曾直接提交 `main`；进入 S4 实施后一律走
   `feature/<ID>-<slug>` 分支，S6 集成 squash 回 `main`
 - commit message：英文 Conventional Commits（`feat:` `fix:` `docs:` `chore:` `refactor:` `test:`），
   一行主题 + 要点列表，不带生成信息
@@ -46,7 +46,7 @@
 - 无（见 `{EDITION}`）
 
 ## {REGISTER}
-- `.sdd/constitution.md`
+- 暂无独立的 constitution；跨迭代约定写在仓库根 `CLAUDE.md` 与 `CONTRIBUTING.md`
 
 ## {RELEASE}
 - 用 release-protocol 兜底；分发渠道：GitHub Releases + `larrykoo711/homebrew-tap`

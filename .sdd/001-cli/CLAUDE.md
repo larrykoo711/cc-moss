@@ -17,7 +17,7 @@
 - 新仓 `cc-moss`（Rust）
 - 从私有终端标准 skill 迁入 tmux.conf、starship.toml、`t` 会话工具，迁入后本仓是正本；
   原 skill 只保留私有的多机下发部分，改为调用本仓的安装命令
-- 锚点：`notes/code-anchors-verified.md`（S1 产出）
+- 锚点：核实结论写在 `DESIGN-cli.md` 与各任务 spec 的「现状」节
 
 ## 目录索引
 | 文件 | 用途 |
@@ -31,7 +31,7 @@
 | `diagrams/src/` | 两张图的 archify 源 JSON |
 | `PLAN.md` ⭐ | 4 Phase × 12 Task、依赖图、Kanban、日志、开放问题 |
 | `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
-| `LESSONS.md` | 踩坑沉淀（L1–L9） |
+| `LESSONS.md` | 踩坑沉淀（L1–L17） |
 | `reports/T1.1-review-1.md` | T1.1 两轮独立评审与处置 |
 | `reports/T1.4-review-1.md` | T1.4 两轮独立评审与处置 |
 
@@ -41,7 +41,9 @@
 - P1 MVP ✅（2026-10-15）：T1.1–T1.4 全部 Done
 - T1.5 会话名唯一 ✅（2026-10-16）
 - T2.1 选择器 ✅（2026-10-16）：`t` → `cc-moss pick`
-- 下一步：用户真机走查 `t`；之后 T3.1（终端资产 install/doctor）
+- T2.2–T2.5 选择器重新设计与中英国际化 ✅（2026-10-16）
+- T3.1 install/doctor、T3.2 私有仓切换 ✅（2026-10-16）
+- 当前：T4.1 开源发布（开源前评审、修复、社区文件、CI 与发布）
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名
