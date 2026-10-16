@@ -1,0 +1,245 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "cc-moss Menubar Architecture",
+    "subtitle": "Stage 2: a Swift app that reads and writes only through the CLI",
+    "output": "architecture-menubar.html"
+  },
+  "components": [
+    {
+      "id": "ui",
+      "type": "frontend",
+      "label": "Menubar UI",
+      "sublabel": "icon + panel",
+      "pos": [
+        40,
+        150
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "watcher",
+      "type": "backend",
+      "label": "Watcher",
+      "sublabel": "FS events + 60s",
+      "pos": [
+        250,
+        150
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "kit",
+      "type": "backend",
+      "label": "MossKit",
+      "sublabel": "run, decode, group",
+      "pos": [
+        480,
+        150
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "injectable"
+    },
+    {
+      "id": "cli",
+      "type": "frontend",
+      "label": "cc-moss CLI",
+      "sublabel": "ls --json, restore",
+      "pos": [
+        720,
+        150
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "actions",
+      "type": "backend",
+      "label": "Actions",
+      "sublabel": "restore new note",
+      "pos": [
+        250,
+        330
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "term",
+      "type": "backend",
+      "label": "Terminal open",
+      "sublabel": "Ghostty iTerm2 Terminal",
+      "pos": [
+        480,
+        330
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "database",
+      "label": "registry.db",
+      "sublabel": "SQLite WAL",
+      "pos": [
+        720,
+        330
+      ],
+      "size": [
+        140,
+        60
+      ],
+      "tag": "CLI only"
+    },
+    {
+      "id": "life",
+      "type": "backend",
+      "label": "Lifecycle",
+      "sublabel": "login item, notify",
+      "pos": [
+        40,
+        330
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "terminal",
+      "type": "external",
+      "label": "Your terminal",
+      "sublabel": "cc-moss attach",
+      "pos": [
+        480,
+        510
+      ],
+      "size": [
+        140,
+        60
+      ]
+    },
+    {
+      "id": "tmux",
+      "type": "cloud",
+      "label": "tmux server",
+      "sublabel": "one claude each",
+      "pos": [
+        720,
+        510
+      ],
+      "size": [
+        140,
+        60
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "cc-moss.app (Swift)",
+      "wraps": [
+        "ui",
+        "watcher",
+        "kit",
+        "actions",
+        "term",
+        "life"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "from": "ui",
+      "to": "watcher",
+      "variant": "emphasis"
+    },
+    {
+      "from": "watcher",
+      "to": "kit",
+      "variant": "emphasis"
+    },
+    {
+      "from": "kit",
+      "to": "cli",
+      "label": "spawn",
+      "variant": "emphasis"
+    },
+    {
+      "from": "cli",
+      "to": "registry",
+      "label": "read/write",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        825,
+        268
+      ]
+    },
+    {
+      "from": "actions",
+      "to": "term"
+    },
+    {
+      "from": "term",
+      "to": "terminal",
+      "label": "AppleScript",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [
+        585,
+        450
+      ]
+    },
+    {
+      "from": "terminal",
+      "to": "tmux",
+      "label": "attach"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "One writer",
+      "items": [
+        "App never opens registry.db",
+        "Every read and write is a cc-moss command",
+        "ls --json schema 1, add-only"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Refresh",
+      "items": [
+        "Hook writes wake the watcher",
+        "60s sweep finds dead processes",
+        "Opening the panel refreshes now"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Ships together",
+      "items": [
+        "Same version and release as the CLI",
+        "Homebrew formula carries the app",
+        "cc-moss update upgrades both"
+      ]
+    }
+  ]
+}
