@@ -208,7 +208,7 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ⬜ Backlog | — | 三项操作 `t` 里可见 |
 | **T2.6** 原生别名 | cc-moss | T1.1 | 🟨 In Progress | in-progress/T2.6-native-aliases.spec.md | bash/zsh 下别名可用，改完即生效 |
 | **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
-| **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ⬜ Backlog | — | 透明置顶、按状态播放动作 |
+| **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | 🟨 In Progress | in-progress/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ⬜ Backlog | — | 事件气泡、点击打开会话 |
 | **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
 | **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.4 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
