@@ -104,6 +104,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前只有 `ui.language`（`auto`、`zh`、`en`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |
 | `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 别名 |
@@ -207,6 +208,8 @@ language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
 [update]
 check = true              # 每天检查一次新版本（选择器和 doctor）；false 关闭
 ```
+
+界面语言也可以用命令改，不用打开文件：`cc-moss config set ui.language zh`（设回 `auto` 就重新跟随系统），`cc-moss config get ui.language` 查看当前值。加上 `--json` 输出 `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`，出错时是 `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}`（`code` 还可能是 `bad_value`、`config`）。
 
 <details>
 <summary>环境变量</summary>

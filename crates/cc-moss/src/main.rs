@@ -123,6 +123,11 @@ enum Command {
         #[command(subcommand)]
         action: AliasCommand,
     },
+    /// Read or change a setting in config.toml (today: ui.language).
+    Config {
+        #[command(subcommand)]
+        action: ConfigCommand,
+    },
     /// Look for a new version of cc-moss and install it.
     Update {
         /// Only look; change nothing.
@@ -232,6 +237,31 @@ enum AliasCommand {
         json: bool,
         /// The alias to remove.
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConfigCommand {
+    /// Print a setting's value (the default when it is not set).
+    Get {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// The setting: ui.language.
+        key: String,
+    },
+    /// Change a setting; comments and everything else in the file stay.
+    ///
+    /// `cc-moss config set ui.language zh` switches cc-moss to Chinese;
+    /// `auto` follows the system again. Known keys: ui.language (auto, zh, en).
+    Set {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// The setting: ui.language.
+        key: String,
+        /// The new value; for ui.language: auto, zh or en.
+        value: String,
     },
 }
 
@@ -407,6 +437,12 @@ fn main() -> std::process::ExitCode {
                 json,
             },
             AliasCommand::Rm { json, name } => cmd::alias::Action::Rm { name, json },
+        }),
+        Command::Config { action } => cmd::config::run(match action {
+            ConfigCommand::Get { json, key } => cmd::config::Action::Get { key, json },
+            ConfigCommand::Set { json, key, value } => {
+                cmd::config::Action::Set { key, value, json }
+            }
         }),
         Command::Setup {
             dry_run,
