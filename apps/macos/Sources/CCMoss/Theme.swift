@@ -63,6 +63,10 @@ enum Icons {
     static let update = "arrow.down.circle"
     static let github = "chevron.left.forwardslash.chevron.right"
     static let copied = "checkmark.circle.fill"
+    static let open = "arrow.up.forward.app"
+    static let download = "arrow.down.circle"
+    static let locked = "lock.shield"
+    static let warning = "exclamationmark.triangle"
 
     static func state(_ state: SessionState) -> String {
         switch state {
