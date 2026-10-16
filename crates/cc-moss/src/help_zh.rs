@@ -122,6 +122,33 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("alias rm", "", "删除别名和它的链接"),
     ("alias rm", "json", "机器可读的输出（schema 1）"),
     ("alias rm", "name", "要删除的别名"),
+    (
+        "config",
+        "",
+        "查看或修改 config.toml 里的设置（目前只有 ui.language）",
+    ),
+    ("config get", "", "显示一项设置的值（没设置过就显示默认值）"),
+    ("config get", "json", "机器可读的输出（schema 1）"),
+    ("config get", "key", "设置项：ui.language"),
+    (
+        "config set",
+        "",
+        "修改一项设置；文件里的注释和其他内容原样保留",
+    ),
+    ("config set", "json", "机器可读的输出（schema 1）"),
+    ("config set", "key", "设置项：ui.language"),
+    (
+        "config set",
+        "value",
+        "新的值；ui.language 可以是 auto、zh 或 en",
+    ),
+    (
+        "send",
+        "",
+        "替你在一个正在运行的会话里输入一段话，就像你在它的终端里打的一样",
+    ),
+    ("send", "name", "会话名（Claude 会话名、tmux 名或 id 前缀）"),
+    ("send", "text", "要发的话；多行会原样整段送达"),
     ("update", "", "看看 cc-moss 有没有新版本，有就装上"),
     ("update", "check", "只看看，不做任何改动"),
     (
@@ -139,6 +166,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("restore", "yes", "不问直接恢复"),
     ("restore", "dry_run", "只列出会恢复哪些，不做任何改动"),
+    (
+        "restore",
+        "json",
+        "配合 --yes：把每个会话的结果按 JSON 输出（给菜单栏 App 用）",
+    ),
     (
         "restore",
         "names",
@@ -160,6 +192,10 @@ const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令�
 `cc-moss alias add tn new` 之后，`tn 登录页` 就等于 `cc-moss new 登录页`，任何 shell 里马上能用。\
 只给一个带引号的参数时，它会被当成整条命令来读：`cc-moss alias add tback \"restore --yes\"`。\
 --force 和 --json 要写在名字前面。";
+
+const CONFIG_SET_LONG: &str = "修改一项设置；文件里的注释和其他内容原样保留。\n\n\
+`cc-moss config set ui.language zh` 把 cc-moss 换成中文；设回 `auto` 就重新跟随系统。\
+目前能用的键：ui.language（auto、zh、en）。";
 
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\
 写入前会用 diff 展示对 settings.json 的改动并征求同意；原文件旁会留一份带时间戳的备份。";
@@ -190,12 +226,16 @@ pub fn localize(cmd: Command) -> Command {
         .mut_subcommand("setup", |c| c.long_about(SETUP_LONG))
         .mut_subcommand("alias", |c| {
             c.mut_subcommand("add", |s| s.long_about(ALIAS_ADD_LONG))
+        })
+        .mut_subcommand("config", |c| {
+            c.mut_subcommand("set", |s| s.long_about(CONFIG_SET_LONG))
         });
     // clap adds its `help` command while building; translate it afterwards.
     cmd.build();
     const HELP: &str = "显示这份帮助，或某个命令的帮助";
     cmd.mut_subcommand("help", |c| c.about(HELP))
         .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("config", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 
 /// One command's description, argument help, headings and help flag.

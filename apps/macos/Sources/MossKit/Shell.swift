@@ -11,9 +11,7 @@ public enum Shell {
 
 extension Session {
     /// What to hand cc-moss commands: the name (open sessions have unique
-    /// names), or the slot id when there is none.
-    public var handle: String {
-        if let name, !name.isEmpty { return name }
-        return id
-    }
+    /// names), or the conversation id when there is none. (The slot id is
+    /// internal; cc-moss does not resolve it.)
+    public var handle: String { target }
 }

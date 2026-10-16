@@ -128,6 +128,71 @@ where
         .collect())
 }
 
+/// The keys `cc-moss config get|set` may touch. Everything else in the file
+/// is the user's to edit by hand.
+pub const KEYS: &[&str] = &["ui.language"];
+
+/// What `ui.language` may be set to.
+pub const LANGUAGES: &[&str] = &["auto", "zh", "en"];
+
+/// Why a key or value is refused.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SettingError {
+    /// Not one of [`KEYS`].
+    UnknownKey,
+    /// Not one of these values.
+    BadValue(&'static [&'static str]),
+}
+
+/// The value as it is stored (trimmed, lowercase), if `key` may hold it.
+pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
+    let allowed = match key {
+        "ui.language" => LANGUAGES,
+        _ => return Err(SettingError::UnknownKey),
+    };
+    let value = value.trim().to_ascii_lowercase();
+    if allowed.contains(&value.as_str()) {
+        Ok(value)
+    } else {
+        Err(SettingError::BadValue(allowed))
+    }
+}
+
+/// A key's value in `config`, with its default when unset.
+pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
+    match key {
+        "ui.language" => Ok(config
+            .ui
+            .language
+            .as_deref()
+            .map(|v| v.trim().to_ascii_lowercase())
+            .filter(|v| !v.is_empty())
+            .unwrap_or_else(|| "auto".into())),
+        _ => Err(SettingError::UnknownKey),
+    }
+}
+
+/// `text` with `key` (`table.name`) set to the string `value`. Comments,
+/// order and every other table and key stay as they are; a missing table is
+/// added at the end. Check the key and value with [`check_setting`] first.
+pub fn set_in_text(text: &str, key: &str, value: &str) -> Result<String> {
+    let (table_name, name) = key
+        .split_once('.')
+        .with_context(|| format!("`{key}` is not `table.key`"))?;
+    let mut doc: toml_edit::DocumentMut = text.parse().context("config.toml is not valid TOML")?;
+    let table = doc
+        .entry(table_name)
+        .or_insert_with(toml_edit::table)
+        .as_table_like_mut()
+        .with_context(|| format!("`{table_name}` in config.toml is not a table"))?;
+    let mut new = toml_edit::Value::from(value);
+    if let Some(old) = table.get(name).and_then(toml_edit::Item::as_value) {
+        *new.decor_mut() = old.decor().clone();
+    }
+    table.insert(name, toml_edit::Item::Value(new));
+    Ok(doc.to_string())
+}
+
 /// `$CC_MOSS_CONFIG`, else `$XDG_CONFIG_HOME/cc-moss/config.toml`, else `~/.config/cc-moss/config.toml`.
 pub fn config_path() -> PathBuf {
     let env = |k: &str| std::env::var(k).ok().filter(|v| !v.is_empty());

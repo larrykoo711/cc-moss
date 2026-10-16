@@ -53,6 +53,8 @@ struct Continuum: Shape {
 /// The footer mark: flows while the pointer is on it, opens Settings on click.
 struct LogoButton: View {
     let version: String
+    /// Just the mark, when the action bar is short of room.
+    var compact = false
     let action: () -> Void
     @State private var hovering = false
     @State private var start = Date()
@@ -67,9 +69,13 @@ struct LogoButton: View {
                         .foregroundStyle(hovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
                         .frame(width: 20, height: 20)
                 }
-                Text("cc-moss \(version)")
-                    .font(.system(size: 12))
-                    .foregroundStyle(hovering ? .primary : .secondary)
+                if !compact {
+                    Text("cc-moss \(version)")
+                        .font(.system(size: 12))
+                        .lineLimit(1)
+                        .fixedSize()
+                        .foregroundStyle(hovering ? .primary : .secondary)
+                }
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
@@ -99,6 +105,17 @@ struct PressStyle: ButtonStyle {
 }
 
 extension View {
+    /// A specific pointer while hovering, set through AppKit so controls
+    /// that bring their own cursor rects (switches) don't override it.
+    func cursor(_ cursor: NSCursor) -> some View {
+        onContinuousHover { phase in
+            switch phase {
+            case .active: cursor.set()
+            case .ended: NSCursor.arrow.set()
+            }
+        }
+    }
+
     /// The pointing hand while the pointer is over something you can click.
     @ViewBuilder func handCursor() -> some View {
         if #available(macOS 15.0, *) {

@@ -130,7 +130,7 @@ struct AliasesSettings: View {
             }
         }
         .font(.system(size: 12))
-        .foregroundStyle(.secondary)
+        .foregroundStyle(Theme.caption)
         .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 12)
     }

@@ -9,22 +9,89 @@ use moss_core::config::Config;
 use moss_core::event::TmuxLoc;
 use moss_core::registry::Registry;
 use moss_core::restore::{plan, Verdict};
-use moss_core::slot::{now_ms, Slot};
+use moss_core::slot::{now_ms, Slot, Status};
 use moss_core::tmux::{ProcessRunner, Socket, Tmux};
 use moss_core::{naming, proc, store_dir};
 
 use super::confirm;
+use super::ls::JSON_SCHEMA;
 
 pub struct RestoreArgs {
     pub yes: bool,
     pub dry_run: bool,
+    /// Print one result per session as JSON instead of text (for the app).
+    pub json: bool,
     pub names: Vec<String>,
+}
+
+/// Why a session did not come back, as a stable code for `--json`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reason {
+    /// Killed before the first message: nothing to resume.
+    Empty,
+    /// Its folder is gone.
+    MissingDir,
+    /// Claude Code exited right after it started.
+    ExitedAtOnce,
+    /// tmux could not start (or reach) the session.
+    TmuxFailed,
+    /// It is running, on its way back, or comes back through another copy.
+    AlreadyRunning,
+}
+
+impl Reason {
+    pub fn code(self) -> &'static str {
+        match self {
+            Reason::Empty => "empty",
+            Reason::MissingDir => "missing_dir",
+            Reason::ExitedAtOnce => "exited_at_once",
+            Reason::TmuxFailed => "tmux_failed",
+            Reason::AlreadyRunning => "already_running",
+        }
+    }
+}
+
+/// One line of `restore --json`.
+struct Outcome {
+    id: String,
+    name: String,
+    failure: Option<(Reason, String)>,
+}
+
+impl Outcome {
+    fn to_json(&self) -> serde_json::Value {
+        let mut v = serde_json::json!({
+            "id": self.id,
+            "name": self.name,
+            "ok": self.failure.is_none(),
+        });
+        if let Some((reason, message)) = &self.failure {
+            v["reason"] = reason.code().into();
+            v["message"] = message.as_str().into();
+        }
+        v
+    }
+}
+
+fn print_json(outcomes: &[Outcome]) -> Result<()> {
+    let results: Vec<_> = outcomes.iter().map(Outcome::to_json).collect();
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&serde_json::json!({
+            "schema": JSON_SCHEMA,
+            "results": results,
+        }))?
+    );
+    Ok(())
 }
 
 pub fn run(args: RestoreArgs) -> Result<()> {
     let config = Config::load()?;
     let path = store_dir::registry_path();
     if !path.exists() {
+        if args.json {
+            return print_json(&[]);
+        }
         println!("{}", nothing_to_restore());
         return Ok(());
     }
@@ -46,28 +113,16 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .map(|s| (s.effective_status(proc::is_alive), s))
         .collect();
     let candidates = plan(&rows, only.as_ref(), now_ms(), |p: &Path| p.exists());
+    if args.json {
+        return run_json(&config, &registry, &rows, only.as_ref(), &candidates);
+    }
     if candidates.is_empty() {
         println!("{}", nothing_to_restore());
         return Ok(());
     }
 
     for c in &candidates {
-        let why = match c.verdict {
-            Verdict::Restore => tr!("restore", "恢复"),
-            Verdict::EmptySession => {
-                tr!("skip: no messages were ever sent", "跳过：一句话都没发过")
-            }
-            Verdict::MissingCwd => tr!("skip: its folder is gone", "跳过：目录已经不在了"),
-            Verdict::RestorePending => tr!("skip: already on its way back", "跳过：已经在恢复中"),
-            Verdict::OpenElsewhere => tr!(
-                "skip: this conversation is open in another session",
-                "跳过：这段对话正在别处打开着"
-            ),
-            Verdict::Duplicate => tr!(
-                "skip: a newer copy of this conversation is restored instead",
-                "跳过：会恢复这段对话更新的那份"
-            ),
-        };
+        let why = verdict_text(c.verdict);
         let note = c
             .slot
             .notes
@@ -135,7 +190,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
                     )
                 )
             ),
-            Launched::Failed => failed += 1,
+            Launched::Failed(..) => failed += 1,
         }
     }
     println!(
@@ -154,12 +209,98 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     Ok(())
 }
 
+fn verdict_text(verdict: Verdict) -> &'static str {
+    match verdict {
+        Verdict::Restore => tr!("restore", "恢复"),
+        Verdict::EmptySession => {
+            tr!("skip: no messages were ever sent", "跳过：一句话都没发过")
+        }
+        Verdict::MissingCwd => tr!("skip: its folder is gone", "跳过：目录已经不在了"),
+        Verdict::RestorePending => tr!("skip: already on its way back", "跳过：已经在恢复中"),
+        Verdict::OpenElsewhere => tr!(
+            "skip: this conversation is open in another session",
+            "跳过：这段对话正在别处打开着"
+        ),
+        Verdict::Duplicate => tr!(
+            "skip: a newer copy of this conversation is restored instead",
+            "跳过：会恢复这段对话更新的那份"
+        ),
+    }
+}
+
+/// `restore --yes --json`: restore every restorable candidate without asking
+/// and report each session, including the ones named but already running.
+/// Failures are results, not an error: the JSON is always printed.
+fn run_json(
+    config: &Config,
+    registry: &Registry,
+    rows: &[(Status, Slot)],
+    only: Option<&HashSet<String>>,
+    candidates: &[moss_core::restore::Candidate<'_>],
+) -> Result<()> {
+    let mut outcomes = Vec::new();
+    if let Some(ids) = only {
+        for (_, slot) in rows
+            .iter()
+            .filter(|(st, s)| *st == Status::Running && ids.contains(&s.slot_id))
+        {
+            outcomes.push(Outcome {
+                id: slot.slot_id.clone(),
+                name: display_name(slot),
+                failure: Some((
+                    Reason::AlreadyRunning,
+                    tr!("it is already running", "它已经在运行了").to_string(),
+                )),
+            });
+        }
+    }
+    let mut launcher: Option<Launcher> = None;
+    for c in candidates {
+        let reason = match c.verdict {
+            Verdict::Restore => None,
+            Verdict::EmptySession => Some(Reason::Empty),
+            Verdict::MissingCwd => Some(Reason::MissingDir),
+            Verdict::RestorePending | Verdict::OpenElsewhere | Verdict::Duplicate => {
+                Some(Reason::AlreadyRunning)
+            }
+        };
+        let failure = match reason {
+            Some(r) => Some((r, verdict_text(c.verdict).to_string())),
+            None => {
+                if launcher.is_none() {
+                    launcher = Some(Launcher::new(config)?.quiet());
+                }
+                let l = launcher.as_mut().expect("just created");
+                match l.launch(registry, c.slot)? {
+                    Launched::Started(_) => None,
+                    Launched::Changed => Some((
+                        Reason::AlreadyRunning,
+                        tr!(
+                            "it changed meanwhile (resumed elsewhere?)",
+                            "它刚刚有了变化（可能已在别处恢复？）"
+                        )
+                        .to_string(),
+                    )),
+                    Launched::Failed(r, message) => Some((r, message)),
+                }
+            }
+        };
+        outcomes.push(Outcome {
+            id: c.slot.slot_id.clone(),
+            name: display_name(c.slot),
+            failure,
+        });
+    }
+    print_json(&outcomes)
+}
+
 pub enum Launched {
     /// Running in this tmux session.
     Started(String),
     /// Some hook touched the slot after planning; left alone.
     Changed,
-    Failed,
+    /// Did not come back: why, and the words already printed to stderr.
+    Failed(Reason, String),
 }
 
 /// Relaunches interrupted slots in tmux: claim, start, record the process.
@@ -169,6 +310,8 @@ pub struct Launcher {
     prefix: Option<String>,
     taken: Vec<String>,
     claude: String,
+    /// Keep stdout clean (for `--json`): no "Started …" lines.
+    quiet: bool,
 }
 
 impl Launcher {
@@ -189,7 +332,14 @@ impl Launcher {
             prefix,
             taken,
             claude,
+            quiet: false,
         })
+    }
+
+    /// Print nothing on stdout; errors still go to stderr.
+    pub fn quiet(mut self) -> Self {
+        self.quiet = true;
+        self
     }
 
     pub fn socket(&self) -> &Socket {
@@ -213,16 +363,15 @@ impl Launcher {
         argv.extend(name_arg.as_deref());
         argv.extend(slot.launch_args.iter().map(String::as_str));
         if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
-            eprintln!(
-                "cc-moss: {}",
-                tr!(
-                    format!("could not restore {label}: {e:#}"),
-                    format!("没能恢复 {label}：{e:#}")
-                )
+            let message = tr!(
+                format!("could not restore {label}: {e:#}"),
+                format!("没能恢复 {label}：{e:#}")
             );
+            eprintln!("cc-moss: {message}");
             registry.clear_restore_started(&slot.slot_id)?;
-            return Ok(Launched::Failed);
+            return Ok(Launched::Failed(Reason::TmuxFailed, message));
         }
+        let mut failure: Option<(Reason, String)> = None;
         // A timeout or error does not prove the session was not created:
         // look for it before deciding.
         let pane = match self.tmux.new_session(&tmux_name, &slot.cwd, &argv) {
@@ -237,23 +386,21 @@ impl Launcher {
                         .contains(&format!("--resume {}", slot.session_id))
                 })
                 .or_else(|| {
-                    eprintln!(
-                        "cc-moss: {}",
-                        tr!(
-                            format!("could not restore {label}: {e:#}"),
-                            format!("没能恢复 {label}：{e:#}")
-                        )
+                    let message = tr!(
+                        format!("could not restore {label}: {e:#}"),
+                        format!("没能恢复 {label}：{e:#}")
                     );
+                    eprintln!("cc-moss: {message}");
+                    failure = Some((Reason::TmuxFailed, message));
                     None
                 }),
         };
         let pane = pane.filter(|pane| {
             let dead = super::launch::exited_at_start(&self.tmux, pane);
             if dead {
-                eprintln!(
-                    "cc-moss: {}",
-                    super::launch::exited_message(&label, &self.claude, &slot.cwd)
-                );
+                let message = super::launch::exited_message(&label, &self.claude, &slot.cwd);
+                eprintln!("cc-moss: {message}");
+                failure = Some((Reason::ExitedAtOnce, message));
             }
             !dead
         });
@@ -261,7 +408,16 @@ impl Launcher {
             if let Err(e) = registry.clear_restore_started(&slot.slot_id) {
                 eprintln!("cc-moss: {e:#}");
             }
-            return Ok(Launched::Failed);
+            let (reason, message) = failure.unwrap_or_else(|| {
+                (
+                    Reason::TmuxFailed,
+                    tr!(
+                        format!("could not restore {label}"),
+                        format!("没能恢复 {label}")
+                    ),
+                )
+            });
+            return Ok(Launched::Failed(reason, message));
         };
         let loc = TmuxLoc {
             socket: socket_path(&self.tmux),
@@ -277,13 +433,15 @@ impl Launcher {
             now_ms(),
         )?;
         registry.close_superseded(&slot.slot_id, &slot.session_id, now_ms())?;
-        println!(
-            "{}",
-            tr!(
-                format!("Started {label} in tmux session {tmux_name}."),
-                format!("已启动 {label}（tmux 会话 {tmux_name}）。")
-            )
-        );
+        if !self.quiet {
+            println!(
+                "{}",
+                tr!(
+                    format!("Started {label} in tmux session {tmux_name}."),
+                    format!("已启动 {label}（tmux 会话 {tmux_name}）。")
+                )
+            );
+        }
         self.taken.push(tmux_name.clone());
         Ok(Launched::Started(tmux_name))
     }
