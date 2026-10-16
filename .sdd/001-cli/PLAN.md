@@ -216,6 +216,7 @@ T1.1 登记与列出 ─┬─> T1.2 钩子安装 ──────────
 ## 日志
 
 <!-- SKIP-GATE / AMEND / DISTILL / E2E / REPORT / RETRO 行追加在这里；空是健康态 -->
+- E2E 2026-10-16 v0.1.1 发布（补齐 T4.2 延后的验收）：PR #11 合入后 tag v0.1.1 → release.yml 全部成功，Homebrew 公式首次由 deploy key 自动提交（github-actions[bot]，4 个校验和与 SHA256SUMS 一致）。真实升级：3 台 macOS 上 `cc-moss update --check` 发现 0.1.1、`update --yes` 走 brew upgrade 并核对版本、doctor 显示最新；干净 Debian 12 容器里 0.1.0 的 Release 二进制 `update --yes` 下载、校验、替换为 0.1.1，权限 755、属主不变、无临时文件残留
 - CHANGE 2026-10-16 发版自动更新公式改用 deploy key（用户授权「你来搞定」）：homebrew-tap 加一把只对该仓可写的 deploy key，私钥存为 cc-moss 机密 `TAP_DEPLOY_KEY`（本地私钥已删）；比 PAT 范围小、不过期、不挂个人账号。用该私钥实推临时分支再删除，验证可写。release.yml 用 `ssh-key` 检出 tap；同版本重跑不再产生空提交
 - E2E 2026-10-16 v0.1.0 发布：main c3276d3 CI 双平台绿 → tag v0.1.0 → release.yml 四目标构建、校验和、第三方许可证、GitHub Release（说明取自 CHANGELOG）全部成功；无 TAP_TOKEN 时按设计跳过公式更新，公式由 controller 用 SHA256SUMS 渲染推到 tap（brew audit --strict --online 通过）。验收：3 台 macOS 经私有同步脚本改为 brew 安装（先改钩子再停用旧副本），doctor 全绿、`update --check` 真实联网判定最新、运行中 tmux 已重载；干净 Linuxbrew x86_64（brew update 后）`brew install` → `--version` → `update --check` → `brew test` 全过；arm64 Linux 的 Homebrew 不受支持（Homebrew 自身报错），README 注明用 Release 二进制
 - AMEND 2026-10-16 T4.2: 「发版后从旧版本真实升级」改为 deliberately_skipped——0.1.0 是首个带升级功能的版本，无更旧版本可升；以真实网络 `update --check` 替代，完整升级在 0.1.1 补做 approved-by=controller（用户要求赶在首发带上升级功能，此项客观上发版前不可验）
