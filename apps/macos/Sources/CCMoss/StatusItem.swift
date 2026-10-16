@@ -148,7 +148,8 @@ final class PanelController {
         glass.maskImage = Self.roundedMask(radius: Self.cornerRadius)
         glass.autoresizingMask = [.width, .height]
         let host = NSHostingView(rootView: PanelView(model: model)
-            .environment(\.closePanel) { [weak self] in self?.hide() })
+            .environment(\.closePanel) { [weak self] in self?.hide() }
+            .followsLanguage())
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
         host.wantsLayer = true
@@ -228,11 +229,67 @@ extension EnvironmentValues {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private(set) var statusItem: StatusItemController?
+    /// Mo, the desktop pet; present (and invisible) even while switched off.
+    private(set) var pet: PetController?
 
     /// The panel, for code that wants to open it (hotkey, notifications).
     var panel: PanelController? { statusItem?.panel }
 
+    /// The one reader of the event stream, and where its alerts go (T2.3).
+    private var events: EventFeed?
+    private var alerts: AlertCenter?
+    private var startup: StartupReminder?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(model: model)
+        pet = PetController(model: model) { [weak self] in self?.panel?.show() }
+        startAlerts()
+        // The global shortcut does what a click on the icon does.
+        HotKeyCenter.shared.onPress = { [weak self] in self?.panel?.toggle() }
+        HotKeyCenter.shared.start()
+        startLanguage()
+    }
+
+    /// `[ui] language` from the CLI's config; a switch reaches the CLI's own
+    /// answers too (its client runs with the app's language).
+    private func startLanguage() {
+        LanguageState.shared.onChange = { [weak self] in self?.model.relocate() }
+        guard let client = model.client else { return }
+        Task { await LanguageState.shared.load(from: client) }
+    }
+
+    /// A menu bar app lives on with no window open. SwiftUI otherwise answers
+    /// yes here (Settings is its only window scene), so Mo hiding for a moment
+    /// after a click, with Settings closed, quit the whole app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
+    private func startAlerts() {
+        let notifier = SystemNotifier.available ? SystemNotifier() : nil
+        notifier?.onAction = { [weak self] action, slot in
+            guard let self else { return }
+            AlertCenter.perform(action, slot: slot, model: self.model) { self.panel?.show() }
+        }
+        let alerts = AlertCenter(model: model, notifier: notifier, context: { [weak self] in
+            AlertContext(
+                mode: AlertMode(defaults: .standard),
+                petEnabled: PetController.enabled(),
+                petVisible: self?.pet?.isVisibleToYou ?? false,
+                panelOpen: self?.panel?.isShown ?? false,
+                doNotDisturb: PetController.doNotDisturb()
+            )
+        }, toPet: { [weak self] alert in self?.pet?.take(alert) })
+        let feed = EventFeed(model: model)
+        feed.listen { [weak self] events in
+            self?.pet?.received(events)
+            alerts.handle(events)
+        }
+        feed.start()
+        self.alerts = alerts
+        self.events = feed
+        let startup = StartupReminder(model: model) { alerts.remindMissed($0) }
+        startup.start()
+        self.startup = startup
     }
 }

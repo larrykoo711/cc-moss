@@ -17,6 +17,10 @@ struct PanelView: View {
     @State private var litKey: String?
     /// The row under the pointer, which shows its open button.
     @State private var hoveredID: String?
+    /// The ⌘K list as it was when the menu opened. Rebuilding it while open
+    /// moved items under the pointer: a click meant for "Write a Note"
+    /// could land on "Quit".
+    @State private var menuActions: [PanelAction] = []
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,6 +31,12 @@ struct PanelView: View {
                     .padding(.horizontal, 10)
                     .padding(.top, 10)
                     .padding(.bottom, 2)
+                if RestoreBanner.shows(model) {
+                    RestoreBanner(model: model)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 8)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
             }
             content
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -36,13 +46,34 @@ struct PanelView: View {
         // Keyboard focus lives in the search field; buttons never take it,
         // so no focus ring lands on the filter or the action pill.
         .focusEffectDisabled()
+        .tooltipLayer()
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
-                ActionsMenu(actions: actions) { showActions = false }
+                ActionsMenu(actions: menuActions) { showActions = false }
                     .padding(.trailing, 10)
                     .padding(.bottom, 50)
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+            }
+        }
+        .overlay {
+            if model.form != nil || model.closeGate.asking {
+                ZStack(alignment: .bottom) {
+                    FormScrim { dismissForm() }
+                    Group {
+                        switch model.form {
+                        case .newSession: NewSessionForm(model: model) { s in open(s) }
+                        case .note(let s): NoteForm(model: model, session: s)
+                        case .message(let s): MessageForm(model: model, session: s)
+                        case .rename(let s): RenameForm(model: model, session: s)
+                        case nil:
+                            if let list = model.closeGate.pending { CloseConfirmCard(model: model, sessions: list) }
+                        }
+                    }
+                    .padding(.bottom, 54)
+                    .onKeyPress(.escape) { dismissForm(); return .handled }
+                }
+                .transition(.opacity)
             }
         }
         .overlay(alignment: .bottom) {
@@ -54,7 +85,11 @@ struct PanelView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: showActions)
+        .animation(.easeOut(duration: 0.15), value: model.form)
+        .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
+        .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
+        .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true
@@ -78,7 +113,11 @@ struct PanelView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 17))
                 .focused($searchFocused)
-                .onSubmit { flash("↵"); perform(primaryAction) }
+                .onSubmit {
+                    flash("↵")
+                    // Return answers the "stop reminding?" card when it is up.
+                    if model.closeGate.asking { model.confirmClose() } else { perform(primaryAction) }
+                }
                 .onKeyPress(.downArrow) { model.move(1); return .handled }
                 .onKeyPress(.upArrow) { model.move(-1); return .handled }
                 .onKeyPress(.escape) { escape(); return .handled }
@@ -136,7 +175,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty:
+        case .ready where model.projects.isEmpty && model.olderShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -155,25 +194,12 @@ struct PanelView: View {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
-                        ForEach(project.sessions) { s in
-                            // A click only selects; opening is deliberate: the
-                            // button that appears at the end of the hovered row,
-                            // the action pill below, or Return (user 2026-10-16).
-                            SessionRow(session: s, selected: s.id == model.selected?.id,
-                                       action: s.id == hoveredID ? primaryAction : nil,
-                                       perform: { perform($0) })
-                                .id(s.id)
-                                .contentShape(Rectangle())
-                                .onHover { inside in
-                                    if inside {
-                                        hoveredID = s.id
-                                        model.selectedID = s.id
-                                    } else if hoveredID == s.id {
-                                        hoveredID = nil
-                                    }
-                                }
-                                .onTapGesture { model.selectedID = s.id }
-                                .handCursor()
+                        ForEach(project.sessions) { s in row(s) }
+                    }
+                    if !model.olderShown.isEmpty {
+                        OlderGroupHeader(model: model)
+                        if model.olderExpanded {
+                            ForEach(model.olderShown) { s in row(s) }
                         }
                     }
                 }
@@ -188,6 +214,31 @@ struct PanelView: View {
         }
     }
 
+    private func row(_ s: Session) -> some View {
+        // A click only selects; opening is deliberate: the button that
+        // appears at the end of the hovered row, the action pill below, or
+        // Return (user 2026-10-16).
+        SessionRow(session: s, selected: s.id == model.selected?.id,
+                   action: s.id == hoveredID ? primaryAction : nil,
+                   secondary: s.id == hoveredID ? noteAction(s) : nil,
+                   perform: { perform($0) },
+                   problem: model.restoreProblem(s),
+                   restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
+            .id(s.id)
+            .contentShape(Rectangle())
+            .onHover { inside in
+                // Rows under the open ⌘K menu stay put.
+                if inside, !showActions {
+                    hoveredID = s.id
+                    model.selectedID = s.id
+                } else if hoveredID == s.id {
+                    hoveredID = nil
+                }
+            }
+            .onTapGesture { model.selectedID = s.id }
+            .handCursor()
+    }
+
     // MARK: Action bar
 
     private var actionBar: some View {
@@ -197,8 +248,26 @@ struct PanelView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.green)
                     .transition(.opacity)
+            } else if let notice = model.notice {
+                Text(notice)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .tip(notice)
+                    .transition(.opacity)
             } else {
-                LogoButton(version: model.version) { showSettings() }
+                // The version gives way first when the main action is long.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        LogoButton(version: model.version) { showSettings() }
+                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
+                    }
+                    HStack(spacing: 4) {
+                        LogoButton(version: model.version, compact: true) { showSettings() }
+                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
+                    }
+                }
             }
             Spacer()
             // Raycast's floating pill: the main action, then everything else.
@@ -215,7 +284,7 @@ struct PanelView: View {
                     .tip(primary.help ?? primary.title)
                     Rectangle().fill(Theme.hairline(scheme)).frame(width: 1, height: 16)
                 }
-                PillButton(action: { showActions.toggle() }) {
+                PillButton(action: { toggleActions() }) {
                     HStack(spacing: 6) {
                         Text(L.t("Actions", "更多")).font(.system(size: 12))
                             .lineLimit(1).fixedSize()
@@ -234,6 +303,7 @@ struct PanelView: View {
         .padding(.trailing, 8)
         .frame(height: 46)
         .animation(.easeOut(duration: 0.15), value: toast)
+        .animation(.easeOut(duration: 0.15), value: model.notice)
     }
 
     // MARK: Actions
@@ -241,18 +311,26 @@ struct PanelView: View {
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
         if s.state == .interrupted {
-            // T1.3 turns this into a one-click restore.
-            return PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "↵",
-                               help: L.t("This session stopped. Paste the command in a terminal to bring it back.",
-                                         "这个会话断了。把命令贴进终端，就能把它找回来。")) {
-                copy(model.restoreCommand(s))
+            if model.restoreIsHopeless(s) {
+                // Nothing to bring back: offer to stop reminding instead.
+                return PanelAction(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, shortcut: "↵",
+                                   help: L.t("Never offer this one for restore again. `cc-moss ls --all` still lists it.",
+                                             "以后不再提示找回它；`cc-moss ls --all` 里仍然看得到。")) {
+                    model.close([s])
+                }
+            }
+            return PanelAction(title: model.restoreFlow.isRunning(s.id) ? L.t("Bringing Back…", "正在找回…") : L.t("Bring Back", "找回"),
+                               icon: Icons.restore, shortcut: "↵",
+                               help: L.t("Restart it in tmux, right where the conversation left off.",
+                                         "在 tmux 里把它重新开起来，接着上次的对话。")) {
+                model.restore(s)
             }
         }
         if !s.inTmux {
             // An attach command is no use for it; its folder is (user 2026-10-16).
-            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copy, shortcut: "↵",
+            return PanelAction(title: L.t("Copy", "复制"), icon: Icons.copy, shortcut: "↵",
                                help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
-                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。")) {
+                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。复制的是它的目录路径。")) {
                 copy(s.cwd)
             }
         }
@@ -271,7 +349,12 @@ struct PanelView: View {
             list.append(primary)
         }
         if let s = model.selected, model.phase == .ready {
-            if s.inTmux || s.state == .interrupted {
+            if s.state == .interrupted {
+                // The way back that needs no app: paste it in a terminal.
+                list.append(PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                    copy(model.restoreCommand(s))
+                })
+            } else if s.inTmux {
                 list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
                     copy(model.attachCommand(s))
                 })
@@ -280,12 +363,52 @@ struct PanelView: View {
                 copy(s.cwd)
             })
         }
+        if let s = model.selected, model.phase == .ready {
+            if Message.allowed(s) {
+                list.append(PanelAction(title: L.t("Send a Message…", "发消息…"), icon: Icons.message, shortcut: "⌘E",
+                                        help: L.t("Type something into this session, as if in its terminal",
+                                                  "替你在这个会话里输入一段话，就像在它的终端里打字") ) {
+                    model.writeMessage(s)
+                })
+                list.append(PanelAction(title: L.t("Rename…", "重命名…"), icon: Icons.rename, shortcut: "") {
+                    model.startRename(s)
+                })
+            }
+            list.append(noteAction(s))
+            if Close.allowed(s) {
+                list.append(PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
+                    model.askToClose([s])
+                })
+            }
+        }
+        if model.phase == .ready {
+            list.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
+                model.startNewSession()
+            })
+        }
         list.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
         list.append(PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() })
         list.append(PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
             NSApplication.shared.terminate(nil)
         })
         return list
+    }
+
+    private func noteAction(_ s: Session) -> PanelAction {
+        PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "",
+                    help: L.t("Write a note on this session", "给这个会话写一句便条")) {
+            model.editNote(s)
+        }
+    }
+
+    private func dismissForm() {
+        model.form = nil
+        model.closeGate.cancel()
+    }
+
+    private func toggleActions() {
+        if !showActions { menuActions = actions }
+        showActions.toggle()
     }
 
     private func perform(_ action: PanelAction?) {
@@ -325,7 +448,9 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if showActions {
+        if model.form != nil || model.closeGate.asking {
+            dismissForm()
+        } else if showActions {
             showActions = false
         } else if model.openProblem != nil {
             model.openProblem = nil
@@ -341,12 +466,18 @@ struct PanelView: View {
     private func shortcut(_ press: KeyPress) -> KeyPress.Result {
         guard press.modifiers.contains(.command) else { return .ignored }
         switch press.characters.lowercased() {
-        case "k": flash("⌘K"); showActions.toggle()
+        case "k": flash("⌘K"); toggleActions()
         case "r": model.refresh()
+        case "n" where model.phase == .ready: model.startNewSession()
+        case "e":
+            // Say something to the session; one that can't take input gets a note instead.
+            if let s = model.selected, model.phase == .ready {
+                Message.allowed(s) ? model.writeMessage(s) : model.editNote(s)
+            }
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):
-            if let s = model.selected { copy(model.attachCommand(s)) }
+            if let s = model.selected { copy(s.state == .interrupted ? model.restoreCommand(s) : model.attachCommand(s)) }
         default: return .ignored
         }
         return .handled

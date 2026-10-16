@@ -24,11 +24,12 @@ struct SettingsView: View {
     static let size = CGSize(width: 820, height: 560)
 
     enum Tab: CaseIterable, Hashable {
-        case general, aliases, about
+        case general, notifications, aliases, about
 
         var title: String {
             switch self {
             case .general: L.t("General", "通用")
+            case .notifications: L.t("Notifications", "通知")
             case .aliases: L.t("Aliases", "别名")
             case .about: L.t("About", "关于")
             }
@@ -37,6 +38,7 @@ struct SettingsView: View {
         var icon: String {
             switch self {
             case .general: Icons.general
+            case .notifications: Icons.notifications
             case .aliases: Icons.aliases
             case .about: "infinity"
             }
@@ -45,6 +47,7 @@ struct SettingsView: View {
         var tint: [Color] {
             switch self {
             case .general: [Color(white: 0.62), Color(white: 0.45)]
+            case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
             case .aliases: AliasRow.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
@@ -53,7 +56,9 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop shortcut hotkey keyboard language english chinese", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物 快捷键 热键 唤出 语言 中文 英文 english")]
+            case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
+                                             "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
             }
@@ -90,6 +95,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         switch tab {
                         case .general: GeneralSettings(model: model)
+                        case .notifications: NotificationSettings()
                         case .aliases: AliasesSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
                         }
@@ -114,6 +120,7 @@ struct SettingsView: View {
         // and keeps the window exactly our size; doing it once on open was
         // undone by the next layout.
         .background(WindowLayoutHook())
+        .tooltipLayer()
         .onAppear { SettingsWindow.bringToFront() }
         .onChange(of: search) { _, _ in
             if let first = tabs.first, !tabs.contains(tab) { go(first) }
@@ -154,6 +161,8 @@ struct SettingsView: View {
             )
             .contentShape(Capsule())
             .onTapGesture { searchFocused = true }
+            // The whole capsule is the field: the text cursor all over it.
+            .cursor(.iBeam)
             .animation(.easeOut(duration: 0.15), value: searchFocused)
             .padding(.bottom, 10)
             ForEach(tabs, id: \.self) { t in
@@ -295,7 +304,7 @@ struct CardRow<Control: View>: View {
                     if let detail {
                         Text(detail)
                             .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.caption)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -316,6 +325,8 @@ struct FilledField: View {
     let placeholder: String
     @Binding var text: String
     var monospaced = false
+    /// Take the keyboard as soon as it appears (the panel's forms).
+    var autofocus = false
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -334,6 +345,7 @@ struct FilledField: View {
                     .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
             )
             .animation(.easeOut(duration: 0.12), value: focused)
+            .onAppear { if autofocus { focused = true } }
     }
 }
 
@@ -372,27 +384,48 @@ struct SoftButton: View {
 struct GeneralSettings: View {
     @Bindable var model: AppModel
 
-    @State private var openAtLogin = SMAppService.mainApp.status == .enabled
+    @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var language = LanguageState.shared.choice.rawValue
+    @State private var languageError: String?
 
     var body: some View {
         SettingsCard {
             CardRow(
                 title: L.t("Open at Login", "开机自动打开"),
                 detail: loginError ?? L.t("Keep an eye on your sessions from the moment you log in.",
-                                         "一登录就开始替你看着会话。"),
-                divider: false
+                                         "一登录就开始替你看着会话。")
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
-                    .handCursor()
+                    .cursor(.pointingHand)
                     .labelsHidden()
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
+            CardRow(
+                title: L.t("Open the Panel", "唤出面板"),
+                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。")
+            ) {
+                HotKeyRecorder()
+            }
+            CardRow(
+                title: L.t("Language", "界面语言"),
+                detail: languageError ?? L.t("Also used by t and the terminal.",
+                                             "和终端共用；t 下次打开时跟着换。"),
+                divider: false
+            ) {
+                SlidingPicker(selection: $language, options: [
+                    (LangChoice.auto.rawValue, L.t("System", "跟随系统")),
+                    (LangChoice.zh.rawValue, "中文"),
+                    (LangChoice.en.rawValue, "English"),
+                ])
+                .onChange(of: language) { _, new in setLanguage(new) }
+            }
         }
         TerminalSettings(prefs: model.terminals)
         MenuBarSettings(model: model)
+        PetSettings()
         SettingsCard(title: "cc-moss") {
             CardRow(
                 title: L.t("Program", "程序位置"),
@@ -411,18 +444,28 @@ struct GeneralSettings: View {
         }
     }
 
+    private func setLanguage(_ raw: String) {
+        let choice = LangChoice(config: raw)
+        guard choice != LanguageState.shared.choice else { return }
+        Task {
+            do {
+                try await LanguageState.shared.choose(choice, client: model.client)
+                languageError = nil
+            } catch {
+                language = LanguageState.shared.choice.rawValue
+                languageError = L.t("Couldn't save it: \(error)", "没存上：\(error)")
+            }
+        }
+    }
+
     private func setOpenAtLogin(_ on: Bool) {
         do {
-            if on {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
+            try LoginItem.set(on)
             loginError = nil
         } catch {
-            loginError = L.t("macOS said no: \(error.localizedDescription)", "macOS 没同意：\(error.localizedDescription)")
-            openAtLogin = SMAppService.mainApp.status == .enabled
+            loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
         }
+        openAtLogin = LoginItem.isEnabled
     }
 
     private func set(_ path: String?) {

@@ -24,17 +24,21 @@ public enum Filter {
 }
 
 /// How many open sessions are in each state, for the summary strip.
+/// `interrupted` counts only the recent ones; those that stopped long ago
+/// are counted apart, in `olderInterrupted` (they fold into their own group).
 public struct StateCounts: Equatable, Sendable {
     public var working = 0
     public var waiting = 0
     public var interrupted = 0
+    public var olderInterrupted = 0
 
-    public init(_ sessions: [Session]) {
+    public init(_ sessions: [Session], now: Date = L.clock()) {
         for s in sessions {
             switch s.state {
             case .working: working += 1
             case .waiting: waiting += 1
-            case .interrupted: interrupted += 1
+            case .interrupted:
+                if RestoreGroups.isOld(s, now: now) { olderInterrupted += 1 } else { interrupted += 1 }
             case .closed: break
             }
         }

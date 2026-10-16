@@ -17,6 +17,6 @@ import Testing
 
     @Test func handlePrefersName() {
         #expect(sessions([sessionJSON(id: "01A", name: "job-a")])[0].handle == "job-a")
-        #expect(sessions([sessionJSON(id: "01B", name: nil)])[0].handle == "01B")
+        #expect(sessions([sessionJSON(id: "01B", name: nil)])[0].handle == "01B-sid-0000")
     }
 }

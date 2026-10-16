@@ -4,125 +4,185 @@ import SwiftUI
 
 extension View {
     /// Our tooltip instead of the system's yellow box: a small rounded card
-    /// in the panel's colours, after a short pause, never clipped by the
-    /// view it belongs to (it floats in its own window). VoiceOver reads the
-    /// same words as a hint.
+    /// in the panel's colours, drawn in the window's own top layer (see
+    /// `tooltipLayer()`), so no scroll area clips it and no extra window
+    /// shows its frame. VoiceOver reads the same words as a hint.
     func tip(_ text: String) -> some View {
         modifier(Tip(text: text))
+    }
+
+    /// Where a window's tooltips are drawn; put it on the window's root view.
+    func tooltipLayer() -> some View {
+        modifier(TooltipLayer())
+    }
+}
+
+/// The one tooltip of a window. Timing follows macOS: it appears after the
+/// pointer has rested for the system's initial tool tip delay (1 s unless
+/// the user set `NSInitialToolTipDelay`), so sweeping across controls shows
+/// nothing; once one is up, the next one within 0.5 s shows at once.
+@MainActor @Observable
+final class TooltipCenter {
+    private(set) var text: String?
+    private(set) var anchor: CGRect = .zero
+
+    @ObservationIgnored private var owner: UUID?
+    @ObservationIgnored private var latest: CGRect = .zero
+    @ObservationIgnored private var pending: DispatchWorkItem?
+    @ObservationIgnored private var hiddenAt: Date = .distantPast
+
+    static var delay: TimeInterval {
+        let ms = UserDefaults.standard.integer(forKey: "NSInitialToolTipDelay")
+        return ms > 0 ? Double(ms) / 1000 : 1.0
+    }
+    static let warmWindow: TimeInterval = 0.5
+
+    func enter(_ id: UUID, text: String, anchor: CGRect) {
+        pending?.cancel()
+        owner = id
+        let warm = self.text != nil || Date().timeIntervalSince(hiddenAt) < Self.warmWindow
+        if warm {
+            show(text, anchor)
+            return
+        }
+        latest = anchor
+        let work = DispatchWorkItem { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.owner == id else { return }
+                self.show(text, self.latest)
+            }
+        }
+        pending = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.delay, execute: work)
+    }
+
+    /// The control moved while its tooltip is pending or up.
+    func move(_ id: UUID, anchor: CGRect) {
+        guard owner == id else { return }
+        latest = anchor
+        if text != nil { self.anchor = anchor }
+    }
+
+    func leave(_ id: UUID) {
+        guard owner == id else { return }
+        hide()
+    }
+
+    func hide() {
+        pending?.cancel()
+        pending = nil
+        owner = nil
+        if text != nil { hiddenAt = Date() }
+        withAnimation(.easeOut(duration: 0.08)) { text = nil }
+    }
+
+    private func show(_ text: String, _ anchor: CGRect) {
+        self.anchor = anchor
+        withAnimation(.easeOut(duration: 0.12)) { self.text = text }
+    }
+}
+
+private struct TooltipCenterKey: EnvironmentKey {
+    static let defaultValue: TooltipCenter? = nil
+}
+
+extension EnvironmentValues {
+    var tooltips: TooltipCenter? {
+        get { self[TooltipCenterKey.self] }
+        set { self[TooltipCenterKey.self] = newValue }
     }
 }
 
 private struct Tip: ViewModifier {
     let text: String
-    @State private var anchor = AnchorBox()
+    @State private var id = UUID()
+    @State private var frame: CGRect = .zero
+    @Environment(\.tooltips) private var center
 
     func body(content: Content) -> some View {
         content
-            .background(AnchorView(box: anchor))
-            .onHover { inside in
-                if inside {
-                    TooltipWindow.schedule(text, anchor: anchor)
-                } else {
-                    TooltipWindow.cancel(anchor)
-                }
+            // Tracks moves as well as resizes: a GeometryReader only reruns on
+            // a size change, so a control that fades in on hover (a row's
+            // trailing buttons) kept the spot it first appeared at.
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TooltipLayer.space)) } action: { f in
+                frame = f
+                center?.move(id, anchor: f)
             }
-            .onDisappear { TooltipWindow.cancel(anchor) }
+            .onHover { inside in
+                guard let center else { return }
+                if inside { center.enter(id, text: text, anchor: frame) } else { center.leave(id) }
+            }
+            .simultaneousGesture(TapGesture().onEnded { center?.hide() })
+            .onDisappear { center?.leave(id) }
             .accessibilityHint(text)
     }
 }
 
-/// The one tooltip on screen. Shows after 0.6 s of hovering, hides at once
-/// on leaving, on a click, or when the pointer settles somewhere else.
-@MainActor
-enum TooltipWindow {
-    private static var panel: NSPanel?
-    private static var pending: DispatchWorkItem?
-    private static weak var owner: AnchorBox?
-    private static var clickMonitor: Any?
+private struct TooltipLayer: ViewModifier {
+    static let space = "cc-moss.tooltips"
+    @State private var center = TooltipCenter()
+    @State private var cardSize: CGSize = .zero
 
-    static let delay: TimeInterval = 0.6
-
-    static func schedule(_ text: String, anchor: AnchorBox) {
-        cancel(nil)
-        owner = anchor
-        let work = DispatchWorkItem { [weak anchor] in
-            MainActor.assumeIsolated {
-                guard let anchor, owner === anchor else { return }
-                show(text, anchor: anchor)
+    func body(content: Content) -> some View {
+        content
+            .coordinateSpace(name: Self.space)
+            .environment(\.tooltips, center)
+            .overlay(alignment: .topLeading) {
+                GeometryReader { g in
+                    if let text = center.text {
+                        TooltipCard(text: text)
+                            .background(GeometryReader { c in
+                                Color.clear.onAppear { cardSize = c.size }
+                                    .onChange(of: c.size) { _, s in cardSize = s }
+                            })
+                            .offset(position(in: g.size))
+                            .transition(.opacity)
+                    }
+                }
+                .allowsHitTesting(false)
             }
-        }
-        pending = work
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: work)
     }
 
-    /// Hide the tooltip; with an anchor, only if it is that anchor's.
-    static func cancel(_ anchor: AnchorBox?) {
-        if let anchor, owner !== anchor { return }
-        pending?.cancel()
-        pending = nil
-        owner = nil
-        panel?.orderOut(nil)
-        if let m = clickMonitor {
-            NSEvent.removeMonitor(m)
-            clickMonitor = nil
-        }
-    }
-
-    private static func show(_ text: String, anchor: AnchorBox) {
-        guard let view = anchor.view, let window = view.window, window.isVisible else { return }
-        let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
-        let host = NSHostingView(rootView: TooltipCard(text: text)
-            .environment(\.colorScheme, window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? .dark : .light))
-        let size = host.fittingSize
-        let p = panel ?? makePanel()
-        p.contentView = host
-        p.setContentSize(size)
-        // Centred under the control, or above it near the bottom of the screen.
-        let screen = window.screen ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? rect
-        var origin = NSPoint(x: rect.midX - size.width / 2, y: rect.minY - size.height - 6)
-        if origin.y < visible.minY { origin.y = rect.maxY + 6 }
-        origin.x = min(max(origin.x, visible.minX + 4), visible.maxX - size.width - 4)
-        p.setFrameOrigin(origin)
-        p.orderFront(nil)
-        panel = p
-        clickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .keyDown]) { e in
-            cancel(nil)
-            return e
-        }
-    }
-
-    private static func makePanel() -> NSPanel {
-        let p = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
-        p.isOpaque = false
-        p.backgroundColor = .clear
-        p.hasShadow = false
-        p.level = .popUpMenu
-        p.ignoresMouseEvents = true
-        p.collectionBehavior = [.canJoinAllSpaces, .transient, .ignoresCycle]
-        return p
+    /// Centred under the control; above it when there is no room below;
+    /// always inside the window with a small margin.
+    private func position(in bounds: CGSize) -> CGSize {
+        let a = center.anchor
+        let margin: CGFloat = 8
+        var x = a.midX - cardSize.width / 2
+        var y = a.maxY + 6
+        if y + cardSize.height > bounds.height - margin { y = a.minY - cardSize.height - 6 }
+        x = min(max(x, margin), bounds.width - cardSize.width - margin)
+        return CGSize(width: x, height: y)
     }
 }
 
-/// The card itself: small type, the panel's raised surface, a hairline and
-/// a soft shadow that fits inside its window.
+/// The card: small type, the panel's raised surface, a hairline and a soft
+/// shadow; long text wraps at 240 pt.
 private struct TooltipCard: View {
     let text: String
     @Environment(\.colorScheme) private var scheme
+
+    /// One width for the text and its card: the text's natural width, at
+    /// most 240 pt (measured, so wrapping and background always agree).
+    private var width: CGFloat {
+        let font = NSFont.systemFont(ofSize: 12)
+        let natural = (text as NSString).size(withAttributes: [.font: font]).width
+        return min(ceil(natural) + 1, 240)
+    }
 
     var body: some View {
         Text(text)
             .font(.system(size: 12))
             .foregroundStyle(.primary)
+            .lineSpacing(2)
             .multilineTextAlignment(.leading)
+            .frame(width: width, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .frame(maxWidth: 260, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 7)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.raised(scheme)))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.hairline(scheme)))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.12), radius: 6, y: 2)
-            .padding(14)
+            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.10), radius: 5, y: 2)
             .fixedSize()
     }
 }

@@ -64,6 +64,16 @@ extension MossClient {
         try await plain(["update", "--check"], timeout: 20)
     }
 
+    /// A setting the CLI owns (`cc-moss config get <key> --json`), e.g. `ui.language`.
+    public func config(_ key: String) async throws -> String {
+        try ConfigValue.decode(Data(try await plain(["config", "get", key, "--json"]).utf8))
+    }
+
+    /// Change it through the CLI, which keeps the file's comments and layout.
+    public func setConfig(_ key: String, _ value: String) async throws {
+        _ = try ConfigValue.decode(Data(try await plain(["config", "set", key, value, "--json"]).utf8))
+    }
+
     /// Run a command and return its output, or its error line as a failure.
     func plain(_ args: [String], timeout: Double? = nil) async throws -> String {
         let r: CommandResult
@@ -99,5 +109,21 @@ public struct UpdateInfo: Decodable, Equatable, Sendable {
         let head = try JSONDecoder().decode(Head.self, from: data)
         guard head.schema <= 1 else { throw SnapshotError.newerSchema(head.schema) }
         return try JSONDecoder().decode(UpdateInfo.self, from: data)
+    }
+}
+
+/// The answer of `cc-moss config get|set --json` (schema 1).
+enum ConfigValue {
+    private struct Body: Decodable {
+        var schema: Int
+        var value: String
+    }
+
+    static func decode(_ data: Data) throws -> String {
+        do {
+            return try JSONDecoder().decode(Body.self, from: data).value
+        } catch {
+            throw MossClient.Failure.unreadable("\(error)")
+        }
     }
 }

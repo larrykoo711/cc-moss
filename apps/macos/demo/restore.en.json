@@ -1,0 +1,262 @@
+{
+  "schema": 1,
+  "state_dir": "/Users/demo/.local/state/cc-moss",
+  "sessions": [
+    {
+      "id": "01A",
+      "agent": "claude",
+      "name": "login-page",
+      "status": "running",
+      "session_id": "01a0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/acme-web",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_login-page",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": true,
+      "last_prompt": "Make the login form remember the last email",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-16T11:59:30Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01B",
+      "agent": "claude",
+      "name": "api-review",
+      "status": "running",
+      "session_id": "01b0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/acme-web",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_api-review",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": "Double-check the error codes on this endpoint",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-16T11:52:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01C",
+      "agent": "claude",
+      "name": "fix-invoice",
+      "status": "interrupted",
+      "session_id": "01c0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/billing-fix",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_fix-invoice",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": null,
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": "Stopped at the reconciliation script"
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-15T22:10:00Z",
+      "ended_at": null,
+      "worktree": {
+        "root": "/Users/demo/projects/billing-fix",
+        "repo": "/Users/demo/projects/billing"
+      }
+    },
+    {
+      "id": "01D",
+      "agent": "claude",
+      "name": "release-notes",
+      "status": "running",
+      "session_id": "01d0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/docs",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_release-notes",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": "Tighten the wording of the 0.2 notes",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-16T10:05:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01E",
+      "agent": "claude",
+      "name": "flaky-test",
+      "status": "interrupted",
+      "session_id": "01e0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/billing",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_flaky-test",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": "Why does the retry test fail only on CI?",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-15T21:40:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01F",
+      "agent": "claude",
+      "name": "scratch",
+      "status": "running",
+      "session_id": "01f0c1d2e-0000-4000-8000-000000000000",
+      "session_ids": [],
+      "cwd": "/Users/demo/projects/sandbox",
+      "tmux": null,
+      "pid": 4242,
+      "end_reason": null,
+      "busy": true,
+      "last_prompt": "Sketch a CLI for the importer",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-16T11:58:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01G",
+      "agent": "claude",
+      "name": "old-refactor",
+      "status": "interrupted",
+      "session_id": "01c0c1d2e-0000-4000-8000-00000000001G",
+      "session_ids": [
+        "01c0c1d2e-0000-4000-8000-00000000001G"
+      ],
+      "cwd": "/Users/demo/projects/acme-web",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_old-refactor",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": "pull out the old routing layer",
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-10-03T09:00:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01H",
+      "agent": "claude",
+      "name": "imported-chat",
+      "status": "interrupted",
+      "session_id": "01c0c1d2e-0000-4000-8000-00000000001H",
+      "session_ids": [
+        "01c0c1d2e-0000-4000-8000-00000000001H"
+      ],
+      "cwd": "/Users/demo/projects/docs",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_imported-chat",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": null,
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-09-20T15:30:00Z",
+      "ended_at": null,
+      "worktree": null
+    },
+    {
+      "id": "01I",
+      "agent": "claude",
+      "name": "weekly-report",
+      "status": "interrupted",
+      "session_id": "01c0c1d2e-0000-4000-8000-00000000001I",
+      "session_ids": [
+        "01c0c1d2e-0000-4000-8000-00000000001I"
+      ],
+      "cwd": "/Users/demo/projects/billing",
+      "tmux": {
+        "socket": "/tmp/tmux-501/default",
+        "session_id": "$3",
+        "session_name": "host-a_weekly-report",
+        "pane_id": "%3"
+      },
+      "pid": 4242,
+      "end_reason": null,
+      "busy": false,
+      "last_prompt": null,
+      "notes": {
+        "goal": null,
+        "state": null,
+        "note": null
+      },
+      "created_at": "2026-10-16T08:00:00Z",
+      "last_active_at": "2026-09-02T08:10:00Z",
+      "ended_at": null,
+      "worktree": null
+    }
+  ]
+}

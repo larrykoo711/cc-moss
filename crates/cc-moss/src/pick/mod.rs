@@ -105,6 +105,7 @@ pub fn run(query: &str) -> Result<()> {
             None => cmd::restore::run(cmd::restore::RestoreArgs {
                 yes: true,
                 dry_run: false,
+                json: false,
                 names: vec![r.session_id.clone()],
             }),
         },

@@ -12,12 +12,35 @@ public enum Lang: Equatable, Sendable {
         return tag.hasPrefix("zh") ? .zh : .en
     }
 
-    /// `CC_MOSS_LANG` first, then the user's first preferred language.
+    /// The order the CLI uses: `CC_MOSS_LANG`, then `[ui] language` in the
+    /// config file, then the user's first preferred language.
     public static func detect(
         env: [String: String] = ProcessInfo.processInfo.environment,
+        config: String? = nil,
         preferred: [String] = Locale.preferredLanguages
     ) -> Lang {
-        parse(env["CC_MOSS_LANG"]) ?? parse(preferred.first) ?? .en
+        parse(env["CC_MOSS_LANG"]) ?? LangChoice(config: config).lang ?? parse(preferred.first) ?? .en
+    }
+}
+
+/// The choice in Settings › General, stored as the CLI's `[ui] language`.
+public enum LangChoice: String, CaseIterable, Sendable {
+    case auto, zh, en
+
+    /// Anything but `zh` or `en` follows the system, as in the CLI.
+    public init(config: String?) {
+        self = config.flatMap { LangChoice(rawValue: $0.trimmingCharacters(in: .whitespaces).lowercased()) } ?? .auto
+    }
+
+    public var configValue: String { rawValue }
+
+    /// Nil: follow the system.
+    public var lang: Lang? {
+        switch self {
+        case .auto: nil
+        case .zh: .zh
+        case .en: .en
+        }
     }
 }
 
