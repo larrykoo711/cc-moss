@@ -38,9 +38,20 @@ enum Main {
             Render.benchIcon(args: CommandLine.arguments)
             return
         }
-        // `--pet-sheets dir`: the desktop pet design prototypes (T3.1).
+        // `--bench-pet state`: Mo's own CPU and memory, off screen (T3.2).
+        if CommandLine.arguments.contains("--bench-pet") {
+            PetBench.run(args: CommandLine.arguments)
+            return
+        }
+        // `--pet-probe`: does a click round Mo reach the window below? For a person at the machine.
+        if CommandLine.arguments.contains("--pet-probe") {
+            PetBench.probe(args: CommandLine.arguments)
+            return
+        }
+        // `--pet-sheets dir [--layers]`: the desktop pet prototypes (T3.1), or
+        // with `--layers` the real Core Animation layers beside them (T3.2).
         if let i = CommandLine.arguments.firstIndex(of: "--pet-sheets"), i + 1 < CommandLine.arguments.count {
-            PetSheets.run(outDir: CommandLine.arguments[i + 1])
+            PetSheets.run(outDir: CommandLine.arguments[i + 1], layers: CommandLine.arguments.contains("--layers"))
             return
         }
         if CommandLine.arguments.contains("--preview") {

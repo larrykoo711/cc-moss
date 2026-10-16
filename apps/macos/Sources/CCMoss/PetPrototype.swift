@@ -79,20 +79,7 @@ struct LoopFace: Shape {
 
 // MARK: - Poses
 
-enum PetPose: String, CaseIterable {
-    case idle, working, needsYou, interrupted, happy, sleeping
-
-    var title: String {
-        switch self {
-        case .idle: L.t("Idle", "待机")
-        case .working: L.t("Working", "在忙")
-        case .needsYou: L.t("Needs you", "需要你")
-        case .interrupted: L.t("Interrupted", "断了")
-        case .happy: L.t("Back / done", "找回 / 完成")
-        case .sleeping: L.t("Do not disturb", "勿扰")
-        }
-    }
-
+extension PetPose {
     var caption: String {
         switch self {
         case .idle: L.t("breathes 4 s, blinks every 6–12 s", "呼吸 4 秒一次，6–12 秒随机眨眼")
@@ -600,16 +587,20 @@ struct DirectionsSheet: View {
 
 struct PosesSheet: View {
     let dark: Bool
+    /// Draw the real Core Animation layers (`PetLayer.swift`) instead of the prototype.
+    var layers = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SheetTitle(
-                title: L.t("Mo · six poses", "小莫 · 六个动作"),
+                title: layers ? L.t("Mo · six poses (layers)", "小莫 · 六个动作（真实图层）") : L.t("Mo · six poses", "小莫 · 六个动作"),
                 subtitle: L.t("The antenna light is the status lamp; the loop is the face.", "天线上的灯是状态灯；无限环是脸。")
             )
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(200), spacing: 12), count: 3), spacing: 12) {
                 ForEach(PetPose.allCases, id: \.self) { pose in
                     VStack(spacing: 8) {
-                        Tile(dark: dark) { PebblePet(pose: pose, size: 104) }
+                        Tile(dark: dark) {
+                            if layers { LayerPet(pose: pose, size: 104, dark: dark) } else { PebblePet(pose: pose, size: 104) }
+                        }
                             .frame(width: 200, height: 170)
                         Text(pose.title).font(.system(size: 13, weight: .semibold))
                         Text(pose.caption).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -626,6 +617,7 @@ struct PosesSheet: View {
 
 struct FramesSheet: View {
     let dark: Bool
+    var layers = false
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             SheetTitle(
@@ -669,10 +661,20 @@ struct FramesSheet: View {
         .offset(y: hop * size)
     }
 
-    private func workingFrame(_ phase: Double) -> some View { face(LoopFace(phase: phase)) }
-    private func blinkFrame(_ s: Double) -> some View { face(LoopFace(left: s, right: s)) }
-    private func hopFrame(_ h: CGFloat) -> some View {
-        face(LoopFace(amp: 15.5, left: 1.1, right: 1.1, gapStart: 0.72, gapEnd: 0.78), hop: h)
+    @ViewBuilder private func workingFrame(_ phase: Double) -> some View {
+        if layers { LayerPet(pose: .working, size: 64, dark: dark, phase: phase) } else { face(LoopFace(phase: phase)) }
+    }
+
+    @ViewBuilder private func blinkFrame(_ s: Double) -> some View {
+        if layers { LayerPet(pose: .idle, size: 64, dark: dark, blink: s) } else { face(LoopFace(left: s, right: s)) }
+    }
+
+    @ViewBuilder private func hopFrame(_ h: CGFloat) -> some View {
+        if layers {
+            LayerPet(pose: .needsYou, size: 64, dark: dark, hop: h)
+        } else {
+            face(LoopFace(amp: 15.5, left: 1.1, right: 1.1, gapStart: 0.72, gapEnd: 0.78), hop: h)
+        }
     }
 }
 
@@ -742,8 +744,73 @@ struct BubblesSheet: View {
 
 // MARK: - Rendering
 
+/// The real pet's layers as a still picture, posed at one moment.
+struct LayerPet: View {
+    let pose: PetPose
+    /// The prototype's size (Mo's body is 78% of it).
+    var size: CGFloat = 96
+    var dark = false
+    var phase = 0.32
+    var blink = 1.0
+    /// Nil: the moment the prototype shows (mid-hop, mid-wave).
+    var hop: CGFloat?
+    var presence = 1.0
+
+    var body: some View {
+        Image(nsImage: picture()).frame(width: size * 1.3, height: size * 1.3)
+    }
+
+    @MainActor private func picture() -> NSImage {
+        let view = PetView(body: (size * 0.78).rounded())
+        view.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        view.viewDidChangeEffectiveAppearance()
+        let moment: (hop: CGFloat, wave: Double) = switch pose {
+        case .needsYou: (-0.10, 28)
+        case .happy: (-0.07, 0)
+        default: (0, 0)
+        }
+        view.apply(PetLook.of(pose), animated: false, phase: phase, blink: blink, hop: hop ?? moment.hop, wave: moment.wave)
+        view.setPresence(presence, animated: false)
+        return view.snapshot()
+    }
+}
+
+/// Prototype and real layers side by side, and the layers at rest (55%).
+struct CompareSheet: View {
+    let dark: Bool
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SheetTitle(
+                title: L.t("Mo · prototype vs layers", "小莫 · 原型与真实图层"),
+                subtitle: L.t("Top: the T3.1 prototype. Middle: Core Animation layers. Bottom: the layers at rest, 55% opaque.",
+                              "上：T3.1 原型。中：Core Animation 图层。下：图层平时的半透明（55%）。")
+            )
+            ForEach(0..<3) { row in
+                HStack(spacing: 8) {
+                    ForEach(PetPose.allCases, id: \.self) { pose in
+                        VStack(spacing: 4) {
+                            Tile(dark: dark) {
+                                switch row {
+                                case 0: PebblePet(pose: pose, size: 84)
+                                case 1: LayerPet(pose: pose, size: 84, dark: dark)
+                                default: LayerPet(pose: pose, size: 84, dark: dark, presence: PetPresence.rest)
+                                }
+                            }
+                            .frame(width: 132, height: 132)
+                            if row == 2 { Text(pose.title).font(.system(size: 11)).foregroundStyle(.secondary) }
+                        }
+                    }
+                }
+            }
+        }
+        .padding(24)
+        .background(Theme.surface(dark ? .dark : .light).opacity(1))
+    }
+}
+
 enum PetSheets {
-    @MainActor static func run(outDir: String) {
+    /// `layers`: only the sheets of the real layers (and the comparison).
+    @MainActor static func run(outDir: String, layers: Bool = false) {
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
         try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
@@ -754,6 +821,12 @@ enum PetSheets {
         for (lang, dark) in [(Lang.zh, false), (Lang.en, true), (Lang.zh, true), (Lang.en, false)] {
             L.lang = lang
             let tag = "\(lang == .zh ? "zh" : "en")-\(dark ? "dark" : "light")"
+            if layers {
+                snapshot(PosesSheet(dark: dark, layers: true), dark: dark, to: out("poses-\(tag)-layers.png"))
+                snapshot(FramesSheet(dark: dark, layers: true), dark: dark, to: out("frames-\(tag)-layers.png"))
+                snapshot(CompareSheet(dark: dark), dark: dark, to: out("compare-\(tag).png"))
+                continue
+            }
             snapshot(BubblesSheet(dark: dark), dark: dark, to: out("bubbles-\(tag).png"))
             guard (lang == .zh) != dark else { continue }
             snapshot(DirectionsSheet(dark: dark), dark: dark, to: out("directions-\(tag).png"))

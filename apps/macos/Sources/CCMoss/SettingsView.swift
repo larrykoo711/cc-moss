@@ -53,7 +53,7 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, "cc-moss", L.t("login startup command path version update terminal ghostty iterm wezterm kitty alacritty pet mo desktop", "开机 登录 启动 命令 位置 路径 版本 更新 终端 ghostty iterm wezterm kitty alacritty 桌面宠物 小莫 宠物")]
             case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version license", "版本 许可")]
             }
@@ -393,6 +393,7 @@ struct GeneralSettings: View {
         }
         TerminalSettings(prefs: model.terminals)
         MenuBarSettings(model: model)
+        PetSettings()
         SettingsCard(title: "cc-moss") {
             CardRow(
                 title: L.t("Program", "程序位置"),

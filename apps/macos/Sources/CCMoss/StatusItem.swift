@@ -228,11 +228,14 @@ extension EnvironmentValues {
 final class AppDelegate: NSObject, NSApplicationDelegate {
     let model = AppModel()
     private(set) var statusItem: StatusItemController?
+    /// Mo, the desktop pet; present (and invisible) even while switched off.
+    private(set) var pet: PetController?
 
     /// The panel, for code that wants to open it (hotkey, notifications).
     var panel: PanelController? { statusItem?.panel }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         statusItem = StatusItemController(model: model)
+        pet = PetController(model: model) { [weak self] in self?.panel?.show() }
     }
 }
