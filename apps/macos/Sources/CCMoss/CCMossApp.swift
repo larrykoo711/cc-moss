@@ -49,8 +49,13 @@ enum Main {
             return
         }
         // `--pet-sheets dir [--layers]`: the desktop pet prototypes (T3.1), or
-        // with `--layers` the real Core Animation layers beside them (T3.2).
+        // with `--layers` the real Core Animation layers beside them (T3.2),
+        // or with `--bubbles` Mo's real puff and message box (T3.3).
         if let i = CommandLine.arguments.firstIndex(of: "--pet-sheets"), i + 1 < CommandLine.arguments.count {
+            if CommandLine.arguments.contains("--bubbles") {
+                BubbleSheets.run(outDir: CommandLine.arguments[i + 1])
+                return
+            }
             PetSheets.run(outDir: CommandLine.arguments[i + 1], layers: CommandLine.arguments.contains("--layers"))
             return
         }
