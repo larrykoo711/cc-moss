@@ -1,4 +1,4 @@
-# PLAN — 002-menubar：cc-moss Stage 2 macOS 状态栏 App（3 Phase × 10 Task）
+# PLAN — 002-menubar：cc-moss Stage 2 macOS 状态栏 App（4 Phase × 16 Task）
 
 ## 配套文档
 
@@ -24,20 +24,24 @@
 | Phase | 主题 | Task | 价值 |
 |-------|------|------|------|
 | P1 | MVP：一眼看清，点一下进去，断了能找回 | T1.1–T1.3 | 解决 D1–D3：不开终端就知道状态，点一下进会话，重启后一键找回 |
-| P2 | 动态与通知 | T2.1–T2.5 | 事件流地基；图标动画、通知中心、开机提醒、面板里的日常操作 |
-| P3 | 发布 | T3.1–T3.2 | 随 cc-moss 一起装、一起升；0.2.0 发版并装上 3 台 Mac |
+| P2 | 动态、通知与设置 | T2.1–T2.6 | 事件流地基；图标动画、通知中心、开机提醒、面板里的日常操作 |
+| P3 | 桌面宠物（这一版的亮点） | T3.1–T3.4 | 透明置顶的小伙伴把会话事件演出来：动画、气泡、语音播报 |
+| P4 | 发布 | T4.1–T4.3 | 随 cc-moss 一起装、一起升；首次启动引导；0.2.0 发版并装上 3 台 Mac |
 
 ## 依赖图
 
 ```text
-T1.1 面板与快照 ─┬─> T1.2 在终端里打开 ─┬─> T1.3 找回 ──────────────┐
-                 │                      └─> T2.5 新会话/便条 ──────┤
-T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────────────────────────┤
-                   └─> T2.3 通知中心 ─> T2.4 开机自启与设置 ───────┴─> T3.1 打包与分发 ─> T3.2 打磨、文档与 0.2.0
+T1.1 面板与快照 ─┬─> T1.2 在终端里打开 ─┬─> T1.3 找回
+                 │                      ├─> T2.5 新会话/便条
+                 │                      └─> T2.3 通知中心 ─> T2.4 开机提醒与设置补齐
+T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ──────────┐
+                   ├─> T3.1 宠物设计 ─> T3.2 宠物窗口与动画 ─> T3.3 气泡 ─> T3.4 语音
+T2.6 原生别名（CLI 可独立先行）                └──────────────┘
+P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 打磨、文档与 0.2.0
 ```
 
-- 关键路径：T1.1 → T1.2 → T2.3 → T2.4 → T3.1 → T3.2
-- 并行窗口：T1.1（Swift）与 T2.1（Rust）互不相干，可同时开；T1.1 合入后 T1.2、T2.2 并行
+- 关键路径：T2.1 → T3.1（设计待批）→ T3.2 → T3.3 → T3.4 → T4.1 → T4.2 → T4.3
+- 并行窗口：第二波 T1.2、T2.2、T2.6（CLI）与 T3.1（宠物设计）四路并行；T3.1 设计需用户批准后才进 T3.2
 - P1 完成后本机先装开发版真实用一段时间（MVP 验收点），再进 P2 的视觉动画
 
 ## 任务
@@ -58,9 +62,9 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 
 ### T1.2 在终端里打开
 
-- 目标：点会话即在用户的终端里新开窗口进入它
+- 目标：点会话即在用户选的终端里新开窗口进入它；设置里可选终端（默认系统终端，推荐 Ghostty）
 - 文件：`apps/macos/Sources/MossKit/Terminal*.swift`、`apps/macos/Sources/CCMoss/*`
-- 内容：Ghostty（≥1.3）/ iTerm2 / Terminal 三个适配，自动探测与手动选择，「复制命令」兜底；
+- 内容：Terminal（默认）/ Ghostty（推荐，≥1.3）/ iTerm2 / WezTerm / Kitty / Alacritty 适配；设置里「终端」一项列出已安装的，Ghostty 未装时给推荐与下载入口；「复制命令」兜底；
   名字单引号转义；自动化授权被拒的引导；不在 tmux 的会话不给打开
 - TDD：各终端生成的脚本（表驱动，含引号、空格、中文名）；探测优先级；版本判断
 - 验收：三种终端真机各打开一次；名字含单引号也能正确进入
@@ -93,7 +97,7 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 
 - 目标：菜单栏图标用动画表达动态（A7）
 - 文件：`apps/macos/Sources/CCMoss/StatusIcon*.swift`、`apps/macos/Resources/*`
-- 内容：Continuum 模板图；四态与优先级；在忙 = 光点流动、需要你确认 = 轻跳 + 强调色；减少动态效果、屏幕休眠时停帧
+- 内容：Continuum 模板图；四态与优先级；图标旁紧凑数字与显示方式（A18）；在忙 = 光点流动、需要你确认 = 轻跳 + 强调色；减少动态效果、屏幕休眠时停帧
 - TDD：状态 → 图标态的优先级映射；帧调度在休眠/减少动态时暂停
 - 验收：四态真机录屏；空闲时 App CPU < 1%
 - commit：`feat(app): an icon that shows what is going on`
@@ -111,7 +115,7 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 
 ### T2.4 开机自启与设置
 
-- 目标：开机自启（首次问一次）；开机发现有断了的会话就提醒；设置窗口（终端、通知开关、开机自启、cc-moss 路径）
+- 目标：开机自启（首次问一次）；开机发现有断了的会话就提醒；设置窗口按 DESIGN A20 参照 Raycast（通用 / 通知 / 别名 / 关于四个标签页，含唤出面板的全局快捷键）
 - 文件：`apps/macos/Sources/CCMoss/{Settings,Lifecycle}*.swift`
 - 内容：`SMAppService` 登录项；启动时对账并提醒；设置持久化
 - TDD：首次启动流程状态机；设置读写
@@ -129,7 +133,39 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 - commit：`feat(app): new sessions and notes from the menubar`
 - 依赖：T1.2
 
-### T3.1 打包与分发
+### T2.6 原生别名
+
+- 目标：别名是 `~/.local/bin` 里指向 `cc-moss` 的符号链接，按 `argv[0]` 查 `config.toml` 的 `[aliases]` 执行；`cc-moss alias ls|add|rm`；`t` 迁到这套机制；设置页可增删改（A19）
+- 文件：`crates/moss-core/src/{config,aliases}.rs`、`crates/cc-moss/src/{main,cmd/alias,cmd/setup,cmd/install,cmd/doctor}.rs`、`apps/macos/Sources/*/Aliases*.swift`
+- 内容：argv[0] 分派；别名命令解析（只允许调用 cc-moss 子命令，不经 shell）；链接指向稳定入口；重名与遮挡检查（Q8–Q10）；`function t` 退役（setup 升级时移除旧函数、建 `t` 链接）；doctor 检查；App 设置页的别名列表（经 CLI 读写）
+- TDD：argv[0] 分派；参数拼接与引号；名字校验；PATH 重名拒绝；遮挡检测；旧 `function t` 迁移；链接失效修复
+- 验收：bash 与 zsh 下 `t`、自定义别名都能用；改别名后新命令立即生效；`install --uninstall` 删掉全部链接
+- commit：`feat(alias): native aliases, editable from the menubar`
+- 依赖：T1.1（设置窗口骨架已在 T1.1 建好）；CLI 部分无依赖，可并行
+
+### T3.1 宠物设计
+
+- 目标：桌面宠物的设计档（DESIGN 附录）经用户批准：形象与风格、动作表（待机 / 在忙 / 需要你 / 断了 / 开心）、与事件的对应、气泡与语音的规则、交互（拖动、点击、右键菜单、勿扰）、性能与隐私预算；产出形象的原型帧与一张交互原型图
+- 内容：调研同类（桌面宠物、Mac 上的常驻小助手）；形象自绘（矢量 / 帧动画），不使用任何第三方受版权保护的形象
+- 验收：用户批准设计（G1）
+- 依赖：T2.1
+
+### T3.2 宠物窗口与动画
+
+- 目标：透明、无边框、置顶、可拖动、记住位置的宠物小窗，按会话状态播放对应动作；设置里可开关、可调大小
+- 依赖：T3.1、T2.2
+
+### T3.3 气泡消息
+
+- 目标：会话事件以气泡出现在宠物旁（需要你确认、做完了、断了、找回了），点击气泡在终端打开会话；同类合并、勿扰时段
+- 依赖：T3.2、T2.3、T1.2
+
+### T3.4 语音播报
+
+- 目标：本机语音合成播报关键事件（中英随界面语言），可开关、可调音量与音色，勿扰时静音
+- 依赖：T3.3
+
+### T4.1 打包与分发
 
 - 目标：`brew install`/`brew upgrade` 带上 App，`cc-moss install` 放进「应用程序」，`cc-moss update` 一起升
 - 文件：`apps/macos/scripts/bundle.sh`、`.github/workflows/release.yml`、`packaging/homebrew/*`、`crates/cc-moss/src/cmd/{install,update,doctor}.rs`
@@ -138,30 +174,46 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 - TDD：版本号一致性；install/update 对 App 的处理（临时 HOME）
 - 验收：干净的 macOS 用户目录下 `brew install` → `cc-moss install` → App 能启动并显示会话
 - commit：`feat(release): ship the menubar app with cc-moss`
-- 依赖：P1、P2 全部
+- 依赖：P1、P2、P3 全部
 
-### T3.2 打磨、文档与 0.2.0
+### T4.2 首次启动引导
+
+- 目标：首次打开 App 的欢迎窗口（DESIGN A22）：介绍、检测并引导安装 CLI 与钩子、开机自动打开与通知授权、默认终端
+- 文件：`apps/macos/Sources/CCMoss/Onboarding*.swift`
+- 内容：多步欢迎窗口（进度点、上一步 / 下一步、可跳过）；每步做实事（调 `cc-moss doctor`/`install`、`SMAppService`、`UNUserNotificationCenter`、终端探测）；只在首次或手动从设置里重新打开
+- TDD：步骤状态机（完成、跳过、回退、已满足的步骤自动打勾）
+- 验收：干净用户目录下首次启动，走完引导后面板可用、通知可达；中英各走一遍
+- commit：`feat(app): a first-run welcome`
+- 依赖：T4.1
+
+### T4.3 打磨、文档与 0.2.0
 
 - 目标：中英文案与视觉走查（human-feel），README/指南加上 App，发 0.2.0，装上 3 台 Mac
 - 文件：`apps/macos/Sources/CCMoss/Localizable*`、`README*.md`、`docs/guide*.md`、`docs/assets/*`、`CHANGELOG.md`
-- 验收：E2E human-feel 走查记录；3 台 Mac 经 `cc-moss update` 升到 0.2.0 并启动 App
+- 验收：E2E human-feel 走查记录（每个界面中英各过一遍，没有单语言文字）；3 台 Mac 经 `cc-moss update` 升到 0.2.0 并启动 App
 - commit：`docs: the menubar app` + `chore: release 0.2.0`
-- 依赖：T3.1
+- 依赖：T4.2
 
 ## Kanban
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
-| **T1.1** 面板与快照 | cc-moss | — | 🟦 Ready | todo/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
-| **T1.2** 在终端里打开 | cc-moss | T1.1 | ⬜ Backlog | — | 三种终端真机打开 |
+| **T1.1** 面板与快照 | cc-moss | — | ✅ Done | done/T1.1-panel-and-snapshot.spec.md | 面板与 `t` 一致，2 秒内刷新 |
+| **T1.2** 在终端里打开 | cc-moss | T1.1 | ⬜ Backlog | — | 默认终端与 Ghostty 真机打开、设置可切换 |
 | **T1.3** 找回 | cc-moss | T1.1,T1.2 | ⬜ Backlog | — | 杀 server 后面板全部找回 |
-| **T2.1** 会话事件流（CLI） | cc-moss | — | 🟦 Ready | todo/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
+| **T2.1** 会话事件流（CLI） | cc-moss | — | ✅ Done | done/T2.1-event-stream.spec.md | 事件序列 + 钩子 p95 |
 | **T2.2** 图标动画 | cc-moss | T1.1,T2.1 | ⬜ Backlog | — | 四态录屏，空闲 CPU < 1% |
 | **T2.3** 通知中心 | cc-moss | T1.2,T2.1 | ⬜ Backlog | — | 四类通知真机触发 |
 | **T2.4** 开机自启与设置 | cc-moss | T2.3 | ⬜ Backlog | — | 重启后收到提醒并找回 |
 | **T2.5** 新会话、便条与不再提醒 | cc-moss | T1.2 | ⬜ Backlog | — | 三项操作 `t` 里可见 |
-| **T3.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
-| **T3.2** 打磨、文档与 0.2.0 | cc-moss | T3.1 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
+| **T2.6** 原生别名 | cc-moss | T1.1 | ⬜ Backlog | — | bash/zsh 下别名可用，改完即生效 |
+| **T3.1** 宠物设计 | cc-moss | T2.1 | ⬜ Backlog | — | 用户批准宠物设计 |
+| **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ⬜ Backlog | — | 透明置顶、按状态播放动作 |
+| **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ⬜ Backlog | — | 事件气泡、点击打开会话 |
+| **T3.4** 语音播报 | cc-moss | T3.3 | ⬜ Backlog | — | 中英播报、勿扰静音 |
+| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.4 | ⬜ Backlog | — | 干净用户目录 brew 全流程 |
+| **T4.2** 首次启动引导 | cc-moss | T4.1 | ⬜ Backlog | — | 干净用户目录首次启动走完引导 |
+| **T4.3** 打磨、文档与 0.2.0 | cc-moss | T4.2 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
 
 ## 日志
 
@@ -173,12 +225,25 @@ T2.1 事件流(CLI) ┴─┬─> T2.2 图标动画 ─────────�
 - 2026-10-16 G2：用户「开工吧」。探针 Q5（用 Swift Testing，不用 XCTest）、Q6（ad-hoc 签名可用通知，但 App 须在应用程序目录）结论见 `notes/probes.md`；O1、O2 关闭
 - 2026-10-16 S3：T1.1、T2.1 spec 过 gate → todo/；设计里的 `project` 字段取消（分组键直接用 `cwd`），改为 `ls --json` 加 `state_dir`
 
+- 2026-10-16 AMEND T1.1：用户指定面板视觉与交互参照 Raycast（DESIGN A17），加强项，记入 spec 澄清日志
+- 2026-10-16 用户指定状态栏条目参照 iStat Menus（DESIGN A18）：T1.1 加摘要条；T2.2 增加图标旁紧凑数字与显示方式（仅图标 / 图标 + 数字）
+- 2026-10-16 用户提议：别名在客户端设置里自定义，并做成原生命令而非写入 shell 的函数 → DESIGN A19（BusyBox 式符号链接 + argv[0] 分派）、新增 T2.6；`t` 一并迁移
+- 2026-10-16 用户指定设置窗口参照 Raycast 设置（DESIGN A20）：T2.4 的设置窗口与 T2.6 的别名表格都按此实现；新增「唤出面板的全局快捷键」
+- 2026-10-16 用户要求动作栏有悬停/点击反馈、logo 悬停动起来并点击进入设置 → 在 T1.1 里提前搭好设置窗口骨架（通用：cc-moss 路径；关于：版本、检查更新）；通知、别名等标签页随 T2.3、T2.6 加入，T2.4 补齐其余通用项
+- 2026-10-16 设置窗口二改：用户对照本机 Raycast 截图指出差距 → 读取本机 Raycast 设置页样式表取度量（只取数值，不复制资源），改为系统侧边栏 + 分组行（DESIGN A20 已更新）；顺带提前做了「开机自动打开」
+- 2026-10-16 用户要求做 Raycast 式首次启动引导，正式版发布前做 → DESIGN A22、新增 T4.2，原 T4.2 顺延为 T4.3
+- 2026-10-16 用户：P2 做完还不到打包发布的程度，P3 要有桌面宠物这个亮点 → 原 003-pet 并入本档案为 P3（T3.1–T3.4），原 P3 发布顺延为 P4（T4.1–T4.3）；代办确认（004）与语音对话（005）仍是后续 epic
+- 2026-10-16 用户：T1.2 的终端在设置里可配置多种，默认系统终端，推荐 Ghostty → DESIGN A5 更新
+- 2026-10-16 用户：「补充完善 kanban 然后继续全力推进 with sdd and agent team」
+- 2026-10-16 T2.1 合入 main（#15，独立评审 2 Important + 2 Minor 均已修复并补红→绿测试，380 测试全绿，钩子 p95 PostToolUse 3.6ms / Notification 7.4ms）；T1.1 变基后全绿，随 #14 合入
+
 ## 推进节奏
 
-1. 第一波：T1.1 与 T2.1 并行
-2. 第二波：T1.2、T2.2；随后 T1.3、T2.3、T2.5
-3. P1 收尾：本机装开发版真实使用（MVP 验收点）
-4. 第三波：T2.4 → T3.1 → T3.2
+1. 第一波 ✅ 已完成：T1.1 与 T2.1 并行
+2. 第二波（agent team，四路并行，各自独立 worktree）：T1.2 在终端里打开、T2.2 图标动画、T2.6 原生别名、T3.1 宠物设计（设计稿交用户批准）
+3. 第三波：T1.3 找回、T2.3 通知中心、T2.5 新会话/便条；T3.2 宠物窗口（T3.1 批准后）
+4. 第四波：T2.4 补齐、T3.3 气泡、T3.4 语音
+5. 发布：T4.1 → T4.2 → T4.3
 
 ## 开放问题
 
