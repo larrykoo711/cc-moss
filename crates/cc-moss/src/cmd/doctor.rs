@@ -680,12 +680,14 @@ fn app_check() -> Option<Check> {
             None,
         ));
     }
-    // A bundled app of the right version is one `install` away; otherwise
-    // the CLI itself is behind or ahead, and `update` sorts both out.
+    // An older app with a bundled one of the right version is one `install`
+    // away (install never downgrades); otherwise the CLI itself is behind or
+    // ahead, and `update` sorts both out.
     let bundled_current = bundled
         .as_deref()
         .and_then(app::version)
-        .is_some_and(|v| v == current);
+        .is_some_and(|v| v == current)
+        && app::is_older(&have, &current);
     Some(check(
         Mark::Warn,
         what,

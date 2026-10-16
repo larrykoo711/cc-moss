@@ -685,4 +685,81 @@ mod app_update {
         assert!(out.status.success(), "{}", text(&out));
         assert_eq!(app::version(&mac.user_app()).as_deref(), Some("9.9.9"));
     }
+
+    #[test]
+    fn app_left_alone_under_sudo() {
+        let mac = Mac::new(Some("0.0.1"), true);
+        app::mark(&mac.user_app());
+        mac.env.serve_latest("9.9.9");
+        mac.env
+            .publish_with_app("9.9.9", "cc-moss 9.9.9", Some("9.9.9"));
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let out = mac.update(&exe, &[("SUDO_USER", PathBuf::from("demo"))]);
+        let t = text(&out);
+        assert!(out.status.success(), "{t}");
+        assert!(app::is_marked(&mac.user_app()), "{t}");
+        assert_eq!(app::version(&mac.user_app()).as_deref(), Some("0.0.1"));
+        assert!(t.contains("without sudo"), "{t}");
+        for tool in ["osascript", "kill", "open", "pgrep"] {
+            assert!(mac.log(tool).is_empty(), "{tool} was run");
+        }
+    }
+
+    #[test]
+    fn app_newer_installed_is_not_downgraded() {
+        let mac = Mac::new(Some("99.0.0"), false);
+        app::mark(&mac.user_app());
+        mac.env.serve_latest("9.9.9");
+        mac.env
+            .publish_with_app("9.9.9", "cc-moss 9.9.9", Some("9.9.9"));
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let out = mac.update(&exe, &[]);
+        let t = text(&out);
+        assert!(out.status.success(), "{t}");
+        assert!(app::is_marked(&mac.user_app()), "{t}");
+        assert!(t.contains("99.0.0") && t.contains("newer"), "{t}");
+    }
+
+    #[test]
+    fn app_dev_build_is_left_alone() {
+        let mac = Mac::new(Some("dev"), false);
+        app::mark(&mac.user_app());
+        mac.env.serve_latest("9.9.9");
+        mac.env
+            .publish_with_app("9.9.9", "cc-moss 9.9.9", Some("9.9.9"));
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let out = mac.update(&exe, &[]);
+        let t = text(&out);
+        assert!(out.status.success(), "{t}");
+        assert!(app::is_marked(&mac.user_app()), "{t}");
+        assert!(t.contains("unknown"), "{t}");
+    }
+
+    #[test]
+    fn app_by_hand_steps_mention_the_app() {
+        if Command::new("id")
+            .arg("-u")
+            .output()
+            .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        {
+            return; // root can write anywhere
+        }
+        let mac = Mac::new(Some("0.0.1"), false);
+        mac.env.serve_latest("9.9.9");
+        let name = mac
+            .env
+            .publish_with_app("9.9.9", "cc-moss 9.9.9", Some("9.9.9"));
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let dir = mac.env.path("opt/bin");
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
+        let out = mac.update(&exe, &[]);
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let t = text(&out);
+        assert!(!out.status.success(), "{t}");
+        assert!(
+            t.contains(&format!("{name}/cc-moss.app"))
+                && t.contains(&format!("./{name}/cc-moss install")),
+            "{t}"
+        );
+    }
 }

@@ -453,13 +453,22 @@ fn by_hand(dir: &Path, exe: &Path, url: &str, tarball: &str, name: &str) -> Stri
         "  curl -fsSLO {url}\n  tar -xzf {tarball}\n  sudo install -m 755 {name}/cc-moss {}",
         exe.display()
     );
+    // The app goes in without sudo: it belongs to the user.
+    let app_step = if app::applies() {
+        tr!(
+            format!("\nThe download also carries the menubar app, {name}/cc-moss.app: run `./{name}/cc-moss install` (without sudo) to update it, or drag it into Applications."),
+            format!("\n下载包里还有状态栏 App（{name}/cc-moss.app）：运行 `./{name}/cc-moss install`（不加 sudo）来更新它，或者把它拖进「应用程序」。")
+        )
+    } else {
+        String::new()
+    };
     tr!(
         format!(
-            "cannot write to {}, so cc-moss cannot replace itself; nothing was changed. To update by hand:\n{steps}",
+            "cannot write to {}, so cc-moss cannot replace itself; nothing was changed. To update by hand:\n{steps}{app_step}",
             dir.display()
         ),
         format!(
-            "没有 {} 的写权限，cc-moss 没法替换自己；什么都没改。可以手动升级：\n{steps}",
+            "没有 {} 的写权限，cc-moss 没法替换自己；什么都没改。可以手动升级：\n{steps}{app_step}",
             dir.display()
         )
     )

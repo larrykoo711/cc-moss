@@ -330,6 +330,9 @@ pub fn run(opts: Options) -> Result<()> {
         return Ok(());
     }
 
+    // The app never stops the rest: a copy that cannot go in (or an app that
+    // will not quit) is told as a warning, and the tools still get installed.
+    // Only a refusal to ask (no terminal, no --yes) ends install, as above.
     if opts.wants(Part::App) {
         app::offer(opts.dry_run, opts.yes)?;
     }
@@ -439,6 +442,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
             let _ = std::fs::remove_dir(dir);
         }
     }
+    app::remove(opts.dry_run, opts.yes)?;
 
     let state = moss_core::store_dir::state_dir();
     println!(
@@ -665,7 +669,7 @@ pub fn manual_install_hint() -> &'static str {
     }
 }
 
-fn is_root() -> bool {
+pub(super) fn is_root() -> bool {
     std::process::Command::new("id")
         .arg("-u")
         .output()
