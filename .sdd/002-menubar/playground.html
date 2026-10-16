@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  larry-sdd playground 模板（通用骨架，自包含单文件）
+  sdd playground 模板（通用骨架，自包含单文件）
 
   ═══ 占位符清单（cp 后必须全部替换；一个都不许留到读者面前）═══
     002 · cc-moss Stage 2 状态栏 App     页面标题，同时用于 <title> 与侧栏 h1。写「卡 <n> · <一句话主题>」
@@ -576,7 +576,7 @@ function initNav(){
 }
 function initTheme(){
   const root=document.documentElement, knob=document.getElementById('knob');
-  const KEY='larrysdd-theme';
+  const KEY='sdd-theme';
   const saved=localStorage.getItem(KEY)||'light';
   root.setAttribute('data-theme',saved); knob.textContent=saved==='dark'?'☾':'☀';
   document.getElementById('themeBtn').onclick=()=>{
