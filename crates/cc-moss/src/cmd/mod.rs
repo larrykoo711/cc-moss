@@ -11,6 +11,7 @@ pub mod new;
 pub mod note;
 pub mod restore;
 pub mod setup;
+pub mod update;
 
 /// `text` padded with spaces to `width` terminal columns (Chinese takes two).
 pub fn pad(text: &str, width: usize) -> String {

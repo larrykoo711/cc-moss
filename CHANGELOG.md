@@ -30,6 +30,11 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
   asking. `doctor` checks every piece and says how to fix it. `install --uninstall` takes it all out again. On a
   login shell other than zsh, the zsh parts are skipped and your shell files are left alone.
 - **`cc-moss setup` / `setup --uninstall`.** Hooks and the `t` shortcut only.
+- **`cc-moss update`.** Checks for a new version and, after asking, updates the way cc-moss was installed:
+  `brew upgrade`, `cargo install`, or for a release download, a SHA-256-verified, test-run, atomic swap of the binary
+  that leaves the old one untouched if anything fails. Once a day the picker (top line, "Update to X.Y.Z") and
+  `doctor` mention a new version; one HTTPS request to the GitHub releases page, never from the hooks. Turn it off
+  with `[update] check = false` or `CC_MOSS_NO_UPDATE_CHECK=1`.
 - **`cc-moss ls`** (with `--json` for scripts), **`attach`** and **`close`**.
 - **English and Simplified Chinese**, picked from the system language (`CC_MOSS_LANG` or `[ui] language` overrides it).
 - **Built to stay out of the way.** The hook never blocks a prompt, never exits non-zero and does nothing if the

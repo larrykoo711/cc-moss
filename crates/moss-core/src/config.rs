@@ -12,6 +12,7 @@ pub struct Config {
     pub naming: NamingConfig,
     pub tmux: TmuxConfig,
     pub ui: UiConfig,
+    pub update: UpdateConfig,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -47,6 +48,19 @@ pub struct UiConfig {
     pub icons: Icons,
     /// "auto" (or unset), "en" or "zh".
     pub language: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct UpdateConfig {
+    /// Look for a new cc-moss once a day (picker and `doctor` only).
+    pub check: bool,
+}
+
+impl Default for UpdateConfig {
+    fn default() -> Self {
+        UpdateConfig { check: true }
+    }
 }
 
 /// Whether to draw Nerd Font icons.

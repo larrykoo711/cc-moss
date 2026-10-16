@@ -3,7 +3,8 @@
 //! Made for people, not for muscle memory: type to search, ↑↓ to move,
 //! Enter to open, → for everything else (a small menu), Esc to go back.
 //! Sessions are grouped by project (their folder): the folder is written
-//! once, and each session takes one line.
+//! once, and each session takes one line. When a newer cc-moss is out, the
+//! first line offers it: Enter there updates, nothing new to learn.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use nucleo_matcher::pattern::{CaseMatching, Normalization, Pattern};
@@ -69,6 +70,8 @@ pub enum Row {
     /// Project index, item index within it.
     Item(usize, usize),
     New,
+    /// "Update to X.Y.Z", above everything else.
+    Update,
 }
 
 impl Row {
@@ -144,6 +147,8 @@ pub enum Action {
         slot_id: String,
         text: String,
     },
+    /// Leave the picker and run `cc-moss update`.
+    Update,
 }
 
 pub struct App {
@@ -157,6 +162,8 @@ pub struct App {
     /// Matching items / all items, for the search line.
     pub matched: usize,
     pub total: usize,
+    /// A newer cc-moss that is out, e.g. `0.2.0`.
+    pub update: Option<String>,
     matcher: Matcher,
 }
 
@@ -171,6 +178,7 @@ impl App {
             message: None,
             matched: 0,
             total: 0,
+            update: None,
             matcher: Matcher::new(Config::DEFAULT),
         };
         app.set_items(sessions, interrupted);
@@ -185,7 +193,45 @@ impl App {
 
     /// Replace the data, keeping the selection on the same item if it still exists.
     pub fn set_items(&mut self, sessions: Vec<Item>, interrupted: Vec<Item>) {
+        self.keeping_selection(|app| app.group(sessions, interrupted));
+    }
+
+    /// A newer version is known (or no longer); the selection stays put.
+    pub fn set_update(&mut self, version: Option<String>) {
+        if self.update != version {
+            self.keeping_selection(|app| {
+                app.update = version;
+                app.refilter();
+            });
+        }
+    }
+
+    /// Run `change`, then put the cursor back on what was selected, if it is
+    /// still there.
+    fn keeping_selection(&mut self, change: impl FnOnce(&mut Self)) {
+        let on_update = self.on_update();
         let keep = self.selected();
+        change(self);
+        if on_update {
+            if let Some(i) = self.rows.iter().position(|r| *r == Row::Update) {
+                self.cursor = i;
+                return;
+            }
+        }
+        if let Some(keep) = keep {
+            if let Some(i) = (0..self.rows.len()).find(|&i| self.item_at(i).as_ref() == Some(&keep))
+            {
+                self.cursor = i;
+            }
+        }
+    }
+
+    /// The "Update to X.Y.Z" line is selected.
+    pub fn on_update(&self) -> bool {
+        self.rows.get(self.cursor) == Some(&Row::Update)
+    }
+
+    fn group(&mut self, sessions: Vec<Item>, interrupted: Vec<Item>) {
         let mut projects: Vec<Project> = Vec::new();
         for item in sessions
             .into_iter()
@@ -209,12 +255,6 @@ impl App {
         projects.sort_by_key(|p| std::cmp::Reverse(p.items.first().map_or(i64::MIN, activity)));
         self.projects = projects;
         self.refilter();
-        if let Some(keep) = keep {
-            if let Some(i) = (0..self.rows.len()).find(|&i| self.item_at(i).as_ref() == Some(&keep))
-            {
-                self.cursor = i;
-            }
-        }
     }
 
     pub fn projects(&self) -> &[Project] {
@@ -257,6 +297,10 @@ impl App {
     fn refilter(&mut self) {
         let query = self.query.trim().to_string();
         let mut rows = Vec::new();
+        // A new version tops the list, but not while searching for a session.
+        if query.is_empty() && self.update.is_some() {
+            rows.push(Row::Update);
+        }
         // "New" comes first, one step up from the first session. An exact
         // name means the session exists: names are unique (T1.5).
         if query.is_empty() || !self.names_exactly(&query) {
@@ -307,6 +351,7 @@ impl App {
             .rows
             .iter()
             .position(|r| matches!(r, Row::Item(..)))
+            .or_else(|| self.rows.iter().position(|r| *r == Row::New))
             .or_else(|| self.rows.iter().position(|r| r.selectable()))
             .unwrap_or(0);
     }
@@ -382,6 +427,9 @@ impl App {
 
     /// Enter (or a second click): open what is selected.
     pub fn open(&mut self) -> Action {
+        if self.on_update() {
+            return Action::Update;
+        }
         match self.selected() {
             None => Action::None,
             Some(Item::New) => Action::New {
@@ -608,6 +656,7 @@ mod tests {
             .map(|r| match r {
                 Row::Header(p) => format!("# {}", a.projects()[*p].path),
                 Row::New => "+".into(),
+                Row::Update => "^".into(),
                 row => a.item(*row).unwrap().title(),
             })
             .collect()
@@ -830,6 +879,62 @@ mod tests {
         assert_eq!(a.selected().unwrap().title(), "web", "opens on a session");
         a.handle(key(KeyCode::Up));
         assert_eq!(a.selected(), Some(Item::New));
+    }
+
+    #[test]
+    fn update_sits_on_top_and_enter_starts_it() {
+        let mut a = app();
+        a.set_update(Some("9.9.9".into()));
+        assert_eq!(titles(&a)[..3], ["^", "+", "# /p/acme"]);
+        assert_eq!(
+            a.selected().unwrap().title(),
+            "web",
+            "still opens on a session"
+        );
+        a.handle(key(KeyCode::Up));
+        a.handle(key(KeyCode::Up));
+        assert!(a.on_update());
+        assert_eq!(a.handle(key(KeyCode::Right)), Action::None, "no menu");
+        assert_eq!(a.mode, Mode::Browse);
+        assert_eq!(a.handle(key(KeyCode::Enter)), Action::Update);
+        // A click on it works the same.
+        let mut b = app();
+        b.set_update(Some("9.9.9".into()));
+        assert!(!b.click(0));
+        assert!(b.click(0));
+        assert_eq!(b.open(), Action::Update);
+    }
+
+    #[test]
+    fn update_steps_aside_while_searching() {
+        let mut a = app();
+        a.set_update(Some("9.9.9".into()));
+        type_str(&mut a, "scr");
+        assert_eq!(titles(&a), ["+", "# /p/billing", "scratch"]);
+        a.handle(key(KeyCode::Esc));
+        assert_eq!(titles(&a)[0], "^");
+    }
+
+    #[test]
+    fn update_arriving_later_keeps_the_selection() {
+        let mut a = app();
+        a.handle(key(KeyCode::Down)); // api
+        a.set_update(Some("9.9.9".into()));
+        assert_eq!(a.selected().unwrap().title(), "api");
+        a.handle(key(KeyCode::Up));
+        a.handle(key(KeyCode::Up));
+        a.handle(key(KeyCode::Up));
+        assert!(a.on_update());
+        a.set_items(vec![claude("api", "/p/acme", 5, false)], vec![]);
+        assert!(a.on_update(), "a refresh keeps it selected");
+    }
+
+    #[test]
+    fn update_without_sessions_still_lands_on_new() {
+        let mut a = App::new(vec![], vec![]);
+        a.set_update(Some("9.9.9".into()));
+        assert_eq!(a.selected(), Some(Item::New));
+        assert_eq!(titles(&a), ["^", "+"]);
     }
 
     #[test]

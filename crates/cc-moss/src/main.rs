@@ -101,6 +101,15 @@ enum Command {
     },
     /// Check hooks, tmux, starship, shell blocks and tools.
     Doctor,
+    /// Look for a new version of cc-moss and install it.
+    Update {
+        /// Only look; change nothing.
+        #[arg(long)]
+        check: bool,
+        /// Update without asking.
+        #[arg(long)]
+        yes: bool,
+    },
     /// Pick a session, folder or interrupted session (the `t` shortcut).
     Pick {
         /// Start with this search, e.g. `cc-moss pick api`.
@@ -224,6 +233,9 @@ fn main() -> std::process::ExitCode {
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
         },
+        Command::Update { check, yes } => {
+            report(cmd::update::run(cmd::update::UpdateArgs { check, yes }))
+        }
         Command::Restore {
             yes,
             dry_run,

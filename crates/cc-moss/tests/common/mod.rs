@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+pub mod releases;
+
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
@@ -27,7 +29,10 @@ pub fn bin() -> Command {
         .env_remove("XDG_CONFIG_HOME")
         .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
         // Assertions are in English, whatever this machine's language is.
-        .env("CC_MOSS_LANG", "en");
+        .env("CC_MOSS_LANG", "en")
+        // No test reaches the network; update tests turn checking back on
+        // with a stub curl on PATH.
+        .env("CC_MOSS_NO_UPDATE_CHECK", "1");
     cmd
 }
 

@@ -94,6 +94,17 @@ cc-moss block in `~/.tmux.conf` to take any of them back.
 
 Only want session tracking? `cc-moss setup` installs just the hooks and `t`.
 
+### Updating
+
+```sh
+cc-moss update                   # checks for a new version, shows what is new, and asks before updating
+```
+
+It updates the way you installed: `brew upgrade` for Homebrew, `cargo install` for a source build, and for a release
+download it fetches the new binary, checks it against the published SHA-256 and swaps it in. Homebrew users can just as
+well run `brew upgrade cc-moss`. Once a day the picker and `doctor` also look for a new version and mention it; see
+[Privacy](#privacy) for what that sends and how to turn it off.
+
 ### Uninstall
 
 ```sh
@@ -147,6 +158,7 @@ In the picker:
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need |
 | `cc-moss doctor` | Check every piece and say how to fix what is off |
+| `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` shortcut |
 
 `NAME` can be the Claude Code session name, the tmux session name or the start of the session id.
@@ -188,15 +200,22 @@ They also combine: cc-moss runs inside tmux, so resurrect can keep your other pa
 
 ## Privacy
 
-cc-moss runs locally and sends nothing anywhere. It keeps:
+cc-moss runs locally and sends nothing about you anywhere. It keeps:
 
 - `~/.local/state/cc-moss/registry.db`: for each session, its id, name, folder, launch flags, process id, tmux session,
   your notes, and the first 200 characters of your latest prompt (shown in the picker).
 - `~/.local/state/cc-moss/hook.log`: hook errors, capped at 1 MB.
+- `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
 
 The state folder is readable only by you. It reads Claude Code's own session files and runs `claude agents`, `ps` and
-`tmux` on your machine. The only network access is the tool installation in `cc-moss install`, and only after you say
-yes.
+`tmux` on your machine. It goes online in two places:
+
+- **The version check.** At most once a day, when you open the picker or run `doctor`, cc-moss asks
+  `https://github.com/larrykoo711/cc-moss/releases/latest` where it points: one plain HTTPS request with `curl`, which
+  carries nothing about you, your sessions or your machine. It runs in the background and gives up after 3 seconds.
+  The hooks and `ls --json` never go online. Turn it off with `[update] check = false` in the config file or
+  `CC_MOSS_NO_UPDATE_CHECK=1`; `cc-moss update` still works when you run it yourself.
+- **Installing things you agreed to:** the tools in `cc-moss install`, and a new version in `cc-moss update`.
 
 ## Configuration
 
@@ -215,6 +234,9 @@ socket = "work"           # a tmux -L name or a socket path; the default server 
 [ui]
 icons = "auto"            # Nerd Font icons: "auto" (when starship is loaded), "nerd" or "text"
 language = "auto"         # "auto" (your system language), "en" or "zh"
+
+[update]
+check = true              # look for a new cc-moss once a day (picker and doctor); false turns it off
 ```
 
 <details>
@@ -226,6 +248,7 @@ language = "auto"         # "auto" (your system language), "en" or "zh"
 | `CC_MOSS_CONFIG` | Path to the config file |
 | `CC_MOSS_STATE_DIR` | Where the registry lives (default `$XDG_STATE_HOME/cc-moss` or `~/.local/state/cc-moss`) |
 | `CC_MOSS_TMUX_SOCKET` | Same as `[tmux] socket` |
+| `CC_MOSS_NO_UPDATE_CHECK` | `1` turns off the daily version check, like `[update] check = false` |
 | `CLAUDE_CONFIG_DIR` | Where Claude Code's `settings.json` is (default `~/.claude`) |
 | `ZDOTDIR`, `STARSHIP_CONFIG`, `XDG_CONFIG_HOME` | Respected when finding `.zshrc`, the starship config and `~/.config` |
 | `NO_COLOR` | Plain output |

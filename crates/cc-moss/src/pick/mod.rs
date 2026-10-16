@@ -19,7 +19,7 @@ use moss_core::config::Config;
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, Notes, Slot, Status};
 use moss_core::tmux::{ProcessRunner, Socket, Tmux};
-use moss_core::{proc, store_dir};
+use moss_core::{proc, store_dir, update};
 use ratatui::backend::CrosstermBackend;
 use ratatui::Terminal;
 
@@ -40,9 +40,17 @@ pub fn run(query: &str) -> Result<()> {
     // Adopt sessions the hooks missed in the background: `claude agents` can
     // take a second to start, and the first frame must not wait for it.
     let reconcile = std::thread::spawn(|| crate::reconcile::run().map(drop));
+    // Look for a new cc-moss at most once a day, also in the background; a
+    // version already known is shown straight away.
+    let checks_updates = update::enabled_here(&config);
+    let update_check = (checks_updates && update::cache_is_stale())
+        .then(|| std::thread::spawn(|| drop(update::check_and_cache(update::QUICK_TIMEOUT))));
     let (sessions, interrupted) = load(&tmux)?;
     let mut app = App::new(sessions, interrupted);
     app.set_query(query);
+    if checks_updates {
+        app.set_update(newer_version());
+    }
     let host_prefix = if config.naming.host_prefix {
         moss_core::naming::cached_host_prefix(&store_dir::state_dir())
     } else {
@@ -68,7 +76,11 @@ pub fn run(query: &str) -> Result<()> {
     let action = {
         let _screen = Screen::enter()?;
         let mut terminal = Terminal::new(CrosstermBackend::new(io::stdout()))?;
-        event_loop(&mut terminal, &mut app, &tmux, &mut view, Some(reconcile))?
+        let background = Background {
+            reconcile: Some(reconcile),
+            update_check,
+        };
+        event_loop(&mut terminal, &mut app, &tmux, &mut view, background)?
     };
 
     // The screen is restored: hand the terminal to whatever comes next.
@@ -96,8 +108,45 @@ pub fn run(query: &str) -> Result<()> {
                 names: vec![r.session_id.clone()],
             }),
         },
+        Action::Update => {
+            let result = cmd::update::run(cmd::update::UpdateArgs {
+                check: false,
+                yes: false,
+            });
+            if let Err(e) = &result {
+                eprintln!("cc-moss: {e:#}");
+            }
+            // The picker may live in a tmux popup that closes when we exit:
+            // keep the result on screen until it has been read.
+            hold_until_enter();
+            // Already shown above; a second copy after the pause would be lost.
+            Ok(())
+        }
         _ => Ok(()),
     }
+}
+
+/// Wait for Enter when someone is there to press it.
+fn hold_until_enter() {
+    use std::io::{BufRead, IsTerminal, Write};
+    if !io::stdin().is_terminal() {
+        return;
+    }
+    print!("\n{}", tr!("Press Enter to close.", "按回车关闭。"));
+    let _ = io::stdout().flush();
+    let mut line = String::new();
+    let _ = io::stdin().lock().read_line(&mut line);
+}
+
+/// A newer cc-moss, as far as the cache knows.
+fn newer_version() -> Option<String> {
+    update::newer(update::cached_latest()).map(|v| v.to_string())
+}
+
+/// Work the picker started without waiting for it.
+struct Background {
+    reconcile: Option<std::thread::JoinHandle<Result<()>>>,
+    update_check: Option<std::thread::JoinHandle<()>>,
 }
 
 fn event_loop(
@@ -105,14 +154,22 @@ fn event_loop(
     app: &mut App,
     tmux: &Tmux<ProcessRunner>,
     view: &mut ui::View,
-    mut reconcile: Option<std::thread::JoinHandle<Result<()>>>,
+    background: Background,
 ) -> Result<Action> {
+    let Background {
+        mut reconcile,
+        mut update_check,
+    } = background;
     let mut last_refresh = Instant::now();
     let mut hits = ui::HitMap::default();
     loop {
         view.now_ms = now_ms();
         view.checking = reconcile.is_some();
         terminal.draw(|f| hits = ui::draw(f, app, view))?;
+        if let Some(handle) = update_check.take_if(|h| h.is_finished()) {
+            let _ = handle.join();
+            app.set_update(newer_version());
+        }
         let reconciled = match reconcile.take_if(|h| h.is_finished()) {
             Some(handle) => {
                 match handle.join() {

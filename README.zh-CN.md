@@ -88,6 +88,16 @@ starship 则用官方安装脚本（先经 HTTPS 下载，再执行）装到 `~/
 
 只想要会话登记？`cc-moss setup` 只装钩子和 `t`。
 
+### 升级
+
+```sh
+cc-moss update                   # 检查新版本，告诉你更新了什么，问过再升级
+```
+
+它会按你当初的安装方式升级：Homebrew 装的用 `brew upgrade`，源码装的用 `cargo install`；从 Releases 下载的，
+则下载新的二进制，对照发布的 SHA-256 校验无误后替换。Homebrew 用户直接 `brew upgrade cc-moss` 也一样。
+选择器和 `doctor` 每天最多检查一次新版本，有就提醒你；它发送了什么、怎么关掉，见[隐私](#隐私)。
+
 ### 卸载
 
 ```sh
@@ -141,6 +151,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
 | `cc-moss doctor` | 逐项体检，并告诉你怎么修 |
+| `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 快捷命令 |
 
 `名字` 可以是 Claude Code 里的会话名、tmux 会话名，或会话 id 的开头几位。
@@ -180,14 +191,22 @@ flowchart LR
 
 ## 隐私
 
-cc-moss 只在本机运行，不往任何地方发送数据。它保存：
+cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保存：
 
 - `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，
   以及最近一次提问的前 200 个字符（在选择器里显示）。
 - `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
+- `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
 
 状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。
-唯一的联网发生在 `cc-moss install` 安装工具时，而且要你同意才会执行。
+只有两处会联网：
+
+- **检查新版本**：打开选择器或运行 `doctor` 时，每天最多一次，用 `curl` 向
+  `https://github.com/larrykoo711/cc-moss/releases/latest` 问一下它指向哪个版本。就是一个普通的 HTTPS 请求，
+  不带任何关于你、你的会话或你这台机器的信息；在后台进行，3 秒没回应就放弃。钩子和 `ls --json` 从不联网。
+  在配置文件里写 `[update] check = false` 或设置 `CC_MOSS_NO_UPDATE_CHECK=1` 即可关闭；关闭后你自己运行
+  `cc-moss update` 照样能用。
+- **安装你同意的东西**：`cc-moss install` 里的工具，以及 `cc-moss update` 下载的新版本。
 
 ## 配置
 
@@ -206,6 +225,9 @@ socket = "work"           # tmux -L 的名字或 socket 路径；不设置则用
 [ui]
 icons = "auto"            # Nerd Font 图标："auto"（检测到 starship 时启用）、"nerd" 或 "text"
 language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
+
+[update]
+check = true              # 每天检查一次新版本（选择器和 doctor）；false 关闭
 ```
 
 <details>
@@ -217,6 +239,7 @@ language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
 | `CC_MOSS_CONFIG` | 配置文件路径 |
 | `CC_MOSS_STATE_DIR` | 登记表所在目录（默认 `$XDG_STATE_HOME/cc-moss` 或 `~/.local/state/cc-moss`） |
 | `CC_MOSS_TMUX_SOCKET` | 同 `[tmux] socket` |
+| `CC_MOSS_NO_UPDATE_CHECK` | 设为 `1` 关闭每天的新版本检查，同 `[update] check = false` |
 | `CLAUDE_CONFIG_DIR` | Claude Code 的 `settings.json` 所在目录（默认 `~/.claude`） |
 | `ZDOTDIR`、`STARSHIP_CONFIG`、`XDG_CONFIG_HOME` | 查找 `.zshrc`、starship 配置和 `~/.config` 时会遵循 |
 | `NO_COLOR` | 输出不带颜色 |

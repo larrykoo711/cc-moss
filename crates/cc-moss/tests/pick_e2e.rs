@@ -12,6 +12,13 @@ fn open_picker(w: &World) {
 
 /// Like [`open_picker`], with arguments for `pick`.
 fn open_picker_with(w: &World, extra: &[&str]) {
+    let quiet = [("CC_MOSS_NO_UPDATE_CHECK".to_string(), "1".to_string())];
+    open_picker_env(w, extra, &quiet);
+}
+
+/// Like [`open_picker_with`], with `vars` set; the update check stays on
+/// unless `vars` turns it off.
+fn open_picker_env(w: &World, extra: &[&str], vars: &[(String, String)]) {
     let bin = env!("CARGO_BIN_EXE_cc-moss");
     let state = w.state();
     let config = w.path("config.toml");
@@ -39,10 +46,10 @@ fn open_picker_with(w: &World, extra: &[&str]) {
         format!("CC_MOSS_FAKE_DIR={}", fifos.display()),
         "HOME=/nonexistent/cc-moss-test-home".into(),
         "CC_MOSS_LANG=en".into(),
-        bin.into(),
-        "pick".into(),
     ]
     .into_iter()
+    .chain(vars.iter().map(|(k, v)| format!("{k}={v}")))
+    .chain([bin.to_string(), "pick".to_string()])
     .chain(extra.iter().map(|s| s.to_string()))
     .collect();
     let args: Vec<&str> = args.iter().map(String::as_str).collect();
@@ -146,4 +153,63 @@ fn pick_takes_an_initial_search() {
         s.contains("⌕ web") && s.contains("1 of")
     });
     keys(&w, &["Escape", "Escape"]);
+}
+
+#[test]
+fn update_from_the_picker() {
+    let w = World::new("pick-update");
+    let releases = common::releases::Env::new();
+    releases.serve_latest("9.9.9");
+    releases.publish("9.9.9", "cc-moss 9.9.9");
+    // Checked an hour ago: the picker knows without asking again.
+    common::releases::seed_cache(&w.state(), 3600, Some("9.9.9"));
+    let exe = releases.installed("opt/bin/cc-moss");
+    let mut vars = releases.vars();
+    vars.push(("CC_MOSS_UPDATE_EXE".into(), exe.display().to_string()));
+    open_picker_env(&w, &[], &vars);
+
+    wait_screen(&w, "the notice and the update line", |s| {
+        s.contains("cc-moss 9.9.9 is out") && s.contains("↑ Update to 9.9.9")
+    });
+    assert!(releases.log("curl").is_empty(), "the cache was fresh");
+    // The cursor starts on the picker's own tmux session; the update is two
+    // steps up, above "new".
+    keys(&w, &["Up", "Up"]);
+    wait_screen(&w, "the update card", |s| s.contains("↵ Update"));
+    keys(&w, &["Enter"]);
+    wait_screen(&w, "the question", |s| s.contains("Update to 9.9.9 now?"));
+    keys(&w, &["y", "Enter"]);
+    wait_for(|| {
+        std::fs::read_to_string(&exe)
+            .unwrap()
+            .contains("cc-moss 9.9.9")
+            .then_some(())
+    });
+}
+
+#[test]
+fn update_notice_arrives_from_a_background_check() {
+    let w = World::new("pick-update-bg");
+    let releases = common::releases::Env::new();
+    releases.serve_latest("9.9.9");
+    // No cache yet: the picker draws first and asks in the background.
+    open_picker_env(&w, &[], &releases.vars());
+    wait_screen(&w, "the notice", |s| s.contains("cc-moss 9.9.9 is out"));
+    assert_eq!(releases.log("curl").len(), 1, "{:?}", releases.log("curl"));
+    keys(&w, &["Escape"]);
+}
+
+#[test]
+fn update_check_off_means_no_notice_and_no_network() {
+    let w = World::new("pick-update-off");
+    let releases = common::releases::Env::new();
+    releases.serve_latest("9.9.9");
+    common::releases::seed_cache(&w.state(), 3600, Some("9.9.9"));
+    let mut vars = releases.vars();
+    vars.push(("CC_MOSS_NO_UPDATE_CHECK".into(), "1".into()));
+    open_picker_env(&w, &[], &vars);
+    let s = screen(&w);
+    assert!(!s.contains("Update to"), "{s}");
+    assert!(releases.log("curl").is_empty());
+    keys(&w, &["Escape"]);
 }

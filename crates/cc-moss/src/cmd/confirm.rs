@@ -53,10 +53,16 @@ fn prompt(yes: bool, question: &str, refused: &str, default_yes: bool) -> Result
             print!("{question} {hint} ");
             io::stdout().flush()?;
             let mut answer = String::new();
-            io::stdin().lock().read_line(&mut answer)?;
-            Ok(is_yes(&answer) || (default_yes && answer.trim().is_empty()))
+            let read = io::stdin().lock().read_line(&mut answer)?;
+            Ok(agrees(read, &answer, default_yes))
         }
     }
+}
+
+/// End of input (Ctrl-D, a closed pipe) is never a yes, whatever the default:
+/// only a line the user actually entered can be.
+fn agrees(bytes_read: usize, answer: &str, default_yes: bool) -> bool {
+    bytes_read > 0 && (is_yes(answer) || (default_yes && answer.trim().is_empty()))
 }
 
 #[cfg(test)]
@@ -79,5 +85,14 @@ mod tests {
         for n in ["", "\n", "n", "no", "yep", "sure"] {
             assert!(!is_yes(n), "{n:?}");
         }
+    }
+
+    #[test]
+    fn end_of_input_is_never_a_yes() {
+        assert!(!agrees(0, "", true));
+        assert!(!agrees(0, "", false));
+        assert!(agrees(1, "\n", true));
+        assert!(!agrees(1, "\n", false));
+        assert!(agrees(2, "y\n", false));
     }
 }

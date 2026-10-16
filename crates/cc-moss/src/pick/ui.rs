@@ -195,9 +195,22 @@ fn draw_header(frame: &mut Frame, area: Rect, app: &App, view: &View) {
         ),
         grey(),
     ));
-    let [line, _] = Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(area);
+    let [line, notice] =
+        Layout::vertical([Constraint::Length(1), Constraint::Length(1)]).areas(area);
     frame.render_widget(left, line);
     frame.render_widget(Line::from(parts).right_aligned(), line);
+    if let Some(v) = &app.update {
+        frame.render_widget(
+            Line::styled(
+                tr!(
+                    format!(" MOSS has grown a little: cc-moss {v} is out. Pick the first line to update."),
+                    format!(" MOSS 又长大了一点：cc-moss {v} 发布了，选第一行就能升级。")
+                ),
+                Style::new().fg(AMBER),
+            ),
+            notice,
+        );
+    }
 }
 
 fn draw_search(frame: &mut Frame, area: Rect, app: &App) {
@@ -285,6 +298,19 @@ fn draw_list(frame: &mut Frame, area: Rect, app: &App, view: &View) -> HitMap {
                     line: Line::from(vec![
                         Span::styled("  + ", Style::new().fg(ORANGE).add_modifier(Modifier::BOLD)),
                         Span::styled(what, grey()),
+                    ]),
+                    row: Some(i),
+                });
+            }
+            Row::Update => {
+                let v = app.update.as_deref().unwrap_or_default();
+                lines.push(ListLine {
+                    line: Line::from(vec![
+                        Span::styled("  ↑ ", Style::new().fg(ORANGE).add_modifier(Modifier::BOLD)),
+                        Span::styled(
+                            tr!(format!("Update to {v}"), format!("升级到 {v}")),
+                            Style::new().fg(ORANGE),
+                        ),
                     ]),
                     row: Some(i),
                 });
@@ -473,6 +499,10 @@ fn band(line: Line<'static>, width: usize) -> Line<'static> {
 
 /// The detail card for the selected item.
 fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
+    if app.on_update() {
+        draw_update_card(frame, area, app, view);
+        return;
+    }
     let Some(item) = app.selected() else {
         return;
     };
@@ -614,6 +644,51 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
     draw_overlay(frame, inner, app, &item, view);
 }
 
+/// The card for "Update to X.Y.Z".
+fn draw_update_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
+    let v = app.update.as_deref().unwrap_or_default();
+    let notes = moss_core::update::DEFAULT_RELEASES_URL.trim_start_matches("https://");
+    let lines = vec![
+        Line::styled(
+            tr!(format!("Update to {v}"), format!("升级到 {v}")),
+            Style::new().add_modifier(Modifier::BOLD),
+        ),
+        Line::styled(
+            tr!(
+                format!("You have {}. Enter leaves the picker and asks once more before anything changes.", view.version),
+                format!("你现在用的是 {}。回车会先退出选择器，动手前还会再问你一次。", view.version)
+            ),
+            grey(),
+        ),
+        Line::raw(""),
+        Line::styled(
+            tr!("What's new", "更新了什么").to_uppercase(),
+            Style::new().fg(FAINT).add_modifier(Modifier::BOLD),
+        ),
+        Line::raw(format!("{notes}/tag/v{v}")),
+        Line::raw(""),
+        Line::from(vec![
+            Span::styled("↵", Style::new().add_modifier(Modifier::BOLD)),
+            Span::styled(tr!(" Update", " 升级"), grey()),
+        ]),
+        Line::raw(""),
+        Line::styled(
+            tr!(
+                "Rather not hear about new versions? Put `[update] check = false` in config.toml.",
+                "不想收到新版本提醒？在 config.toml 里写上 `[update] check = false`。"
+            ),
+            Style::new().fg(FAINT),
+        ),
+    ];
+    let inner = Rect::new(
+        area.x + 1,
+        area.y,
+        area.width.saturating_sub(2),
+        area.height,
+    );
+    frame.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
+}
+
 /// Menu, confirmation and note boxes, at the bottom of the card.
 fn draw_overlay(frame: &mut Frame, card: Rect, app: &App, item: &Item, view: &View) {
     let title = display_name(item, view);
@@ -730,6 +805,7 @@ fn draw_hint(frame: &mut Frame, area: Rect, app: &App) {
         match &app.mode {
             Mode::Browse => {
                 let open = match app.selected() {
+                    _ if app.on_update() => tr!(" update", " 升级"),
                     Some(Item::New) => tr!(" start", " 新建"),
                     Some(Item::Interrupted(_)) => tr!(" restore", " 恢复"),
                     _ => tr!(" open", " 打开"),
@@ -1211,6 +1287,43 @@ mod tests {
             menu.contains("写备注") && menu.contains("结束会话"),
             "{menu}"
         );
+    }
+
+    #[test]
+    fn update_notice_in_the_header_and_on_top_of_the_list() {
+        let mut a = sample();
+        a.set_update(Some("9.9.9".into()));
+        let (text, _) = render(&a, 110, 26);
+        let lines: Vec<&str> = text.lines().collect();
+        assert!(lines[1].contains("cc-moss 9.9.9 is out"), "{text}");
+        let up = lines
+            .iter()
+            .position(|l| l.contains("↑ Update to 9.9.9"))
+            .unwrap();
+        let new = lines
+            .iter()
+            .position(|l| l.contains("New session here"))
+            .unwrap();
+        assert!(up < new, "update first:\n{text}");
+        key(&mut a, KeyCode::Up);
+        key(&mut a, KeyCode::Up);
+        let (text, _) = render(&a, 110, 26);
+        assert!(
+            text.contains("You have 0.1.0")
+                && text.contains("↵ Update")
+                && text.contains("↵ update"),
+            "{text}"
+        );
+        crate::i18n::set_for_test(crate::i18n::Lang::Zh);
+        let (zh, _) = render(&a, 110, 26);
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        assert!(
+            zh.contains("升级到 9.9.9") && zh.contains("选第一行就能升级"),
+            "{zh}"
+        );
+        // Nothing to say without a newer version.
+        let (plain, _) = render(&sample(), 110, 26);
+        assert!(!plain.contains("Update to"), "{plain}");
     }
 
     #[test]

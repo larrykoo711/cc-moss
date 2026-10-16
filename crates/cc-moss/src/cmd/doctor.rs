@@ -121,7 +121,7 @@ fn checks() -> Result<Vec<Check>> {
             None,
         )
     };
-    let mut out = Vec::new();
+    let mut out = vec![version_check()];
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {
@@ -430,6 +430,55 @@ fn checks() -> Result<Vec<Check>> {
         ));
     }
     Ok(out)
+}
+
+/// This version, and whether a newer one is out. Doctor is interactive, so
+/// it may ask GitHub (briefly, once a day) unless checking is turned off.
+fn version_check() -> Check {
+    use moss_core::update::{self, Version};
+    let what = tr!("version", "版本");
+    let current = Version::current();
+    let config = moss_core::config::Config::load().unwrap_or_default();
+    if !update::enabled_here(&config) {
+        return check(
+            Mark::Note,
+            what,
+            tr!(
+                format!("{current} (new-version check skipped: turned off)"),
+                format!("{current}（新版本检查已关闭，跳过）")
+            ),
+            None,
+        );
+    }
+    match update::latest_checking_if_stale(update::QUICK_TIMEOUT) {
+        Some(latest) if latest.is_newer_than(&current) => check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("{current}; {latest} is out"),
+                format!("{current}；{latest} 已经发布")
+            ),
+            Some("cc-moss update".into()),
+        ),
+        Some(_) => check(
+            Mark::Ok,
+            what,
+            tr!(
+                format!("{current}, the latest"),
+                format!("{current}，已是最新")
+            ),
+            None,
+        ),
+        None => check(
+            Mark::Note,
+            what,
+            tr!(
+                format!("{current} (could not check for a newer one)"),
+                format!("{current}（没能检查有没有新版本）")
+            ),
+            None,
+        ),
+    }
 }
 
 /// Sessions active in the last week that the hooks recorded without a pid

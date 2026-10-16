@@ -86,6 +86,9 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("install", "dry_run", "只看会改什么，不做任何改动"),
     ("install", "yes", "不问直接应用"),
     ("doctor", "", "体检钩子、tmux、starship、shell 区块和工具"),
+    ("update", "", "看看 cc-moss 有没有新版本，有就装上"),
+    ("update", "check", "只看看，不做任何改动"),
+    ("update", "yes", "不问直接升级"),
     ("pick", "", "选择会话、中断的会话或目录（就是 `t`）"),
     ("pick", "query", "打开时先搜这个，比如 `cc-moss pick api`"),
     (
