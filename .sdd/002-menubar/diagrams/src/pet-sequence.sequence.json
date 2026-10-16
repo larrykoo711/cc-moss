@@ -1,0 +1,259 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Desktop Pet: Event to Performance",
+    "subtitle": "one event stream, the pet is one more way to show it",
+    "output": "sequence-event-performance.html",
+    "viewBox": [
+      920,
+      990
+    ]
+  },
+  "participants": [
+    {
+      "id": "claude",
+      "type": "external",
+      "label": "Claude Code",
+      "sublabel": "session"
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "cc-moss",
+      "sublabel": "hooks + CLI"
+    },
+    {
+      "id": "db",
+      "type": "database",
+      "label": "registry",
+      "sublabel": "events table"
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "Watcher",
+      "sublabel": "cc-moss.app"
+    },
+    {
+      "id": "dir",
+      "type": "security",
+      "label": "Director",
+      "sublabel": "merge, DND"
+    },
+    {
+      "id": "pet",
+      "type": "frontend",
+      "label": "Mo",
+      "sublabel": "NSPanel"
+    },
+    {
+      "id": "voice",
+      "type": "cloud",
+      "label": "Speech",
+      "sublabel": "on device"
+    },
+    {
+      "id": "user",
+      "type": "external",
+      "label": "You",
+      "sublabel": "glance, click"
+    }
+  ],
+  "segments": [
+    {
+      "from": 150,
+      "to": 435,
+      "label": "01 / NEEDS YOU"
+    },
+    {
+      "from": 445,
+      "to": 635,
+      "label": "02 / MERGE"
+    },
+    {
+      "from": 645,
+      "to": 900,
+      "label": "03 / BREAK, BACK"
+    }
+  ],
+  "messages": [
+    {
+      "from": "claude",
+      "to": "cli",
+      "y": 200,
+      "label": "Notification",
+      "variant": "emphasis"
+    },
+    {
+      "from": "cli",
+      "to": "db",
+      "y": 230,
+      "label": "needs_you"
+    },
+    {
+      "from": "db",
+      "to": "app",
+      "y": 260,
+      "label": "file change",
+      "variant": "dashed"
+    },
+    {
+      "from": "app",
+      "to": "dir",
+      "y": 290,
+      "label": "new events"
+    },
+    {
+      "from": "dir",
+      "to": "pet",
+      "y": 320,
+      "label": "wave + bubble",
+      "variant": "emphasis"
+    },
+    {
+      "from": "dir",
+      "to": "voice",
+      "y": 350,
+      "label": "say title",
+      "variant": "dashed"
+    },
+    {
+      "from": "pet",
+      "to": "user",
+      "y": 380,
+      "label": "Open / Later",
+      "variant": "emphasis"
+    },
+    {
+      "from": "user",
+      "to": "pet",
+      "y": 415,
+      "label": "Open",
+      "variant": "return"
+    },
+    {
+      "from": "claude",
+      "to": "cli",
+      "y": 495,
+      "label": "Stop x2"
+    },
+    {
+      "from": "cli",
+      "to": "db",
+      "y": 525,
+      "label": "finished x2"
+    },
+    {
+      "from": "db",
+      "to": "app",
+      "y": 555,
+      "label": "file change",
+      "variant": "dashed"
+    },
+    {
+      "from": "app",
+      "to": "dir",
+      "y": 585,
+      "label": "2 events"
+    },
+    {
+      "from": "dir",
+      "to": "pet",
+      "y": 615,
+      "label": "one quiet bubble"
+    },
+    {
+      "from": "app",
+      "to": "dir",
+      "y": 690,
+      "label": "interrupted"
+    },
+    {
+      "from": "dir",
+      "to": "pet",
+      "y": 720,
+      "label": "worry + Bring back",
+      "variant": "emphasis"
+    },
+    {
+      "from": "user",
+      "to": "pet",
+      "y": 755,
+      "label": "Bring back",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pet",
+      "to": "cli",
+      "y": 790,
+      "label": "restore",
+      "variant": "security"
+    },
+    {
+      "from": "cli",
+      "to": "db",
+      "y": 820,
+      "label": "restored"
+    },
+    {
+      "from": "app",
+      "to": "dir",
+      "y": 850,
+      "label": "restored"
+    },
+    {
+      "from": "dir",
+      "to": "pet",
+      "y": 880,
+      "label": "happy hop",
+      "variant": "return"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "dir",
+      "from": 280,
+      "to": 360,
+      "type": "security"
+    },
+    {
+      "participant": "dir",
+      "from": 545,
+      "to": 625,
+      "type": "security"
+    },
+    {
+      "participant": "cli",
+      "from": 780,
+      "to": 830,
+      "type": "backend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Director",
+      "items": [
+        "Merges same-kind events within 1.5 s",
+        "Holds bubbles in DND, fullscreen, sharing"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Voice",
+      "items": [
+        "Only the bubble title, on device",
+        "Off by default; never in DND"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Later (004 / 005)",
+      "items": [
+        "Allow / Deny in the bubble",
+        "Chime, then listen"
+      ]
+    }
+  ]
+}
