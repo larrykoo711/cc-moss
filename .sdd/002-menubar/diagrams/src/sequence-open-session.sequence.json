@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": { "title": "Menubar: Reboot, Restore, Open", "subtitle": "login notice, one-click restore, open in your terminal", "output": "sequence-open-session.html", "viewBox": [760, 820] },
+  "participants": [
+    { "id": "user", "type": "external", "label": "User", "sublabel": "click" },
+    { "id": "app", "type": "frontend", "label": "cc-moss.app", "sublabel": "menubar" },
+    { "id": "cli", "type": "backend", "label": "cc-moss", "sublabel": "CLI" },
+    { "id": "term", "type": "external", "label": "Terminal", "sublabel": "Ghostty etc." },
+    { "id": "tmux", "type": "cloud", "label": "tmux", "sublabel": "server" }
+  ],
+  "segments": [
+    { "from": 160, "to": 330, "label": "01 / LOGIN" },
+    { "from": 340, "to": 520, "label": "02 / RESTORE" },
+    { "from": 530, "to": 730, "label": "03 / OPEN" }
+  ],
+  "messages": [
+    { "from": "app", "to": "cli", "y": 200, "label": "ls --json", "variant": "emphasis" },
+    { "from": "cli", "to": "app", "y": 240, "label": "2 interrupted", "variant": "return" },
+    { "from": "app", "to": "user", "y": 290, "label": "notification", "variant": "emphasis" },
+    { "from": "user", "to": "app", "y": 380, "label": "restore all", "variant": "emphasis" },
+    { "from": "app", "to": "cli", "y": 420, "label": "restore --yes" },
+    { "from": "cli", "to": "tmux", "y": 450, "label": "new-session -d" },
+    { "from": "cli", "to": "app", "y": 490, "label": "done", "variant": "return" },
+    { "from": "user", "to": "app", "y": 570, "label": "click session", "variant": "emphasis" },
+    { "from": "app", "to": "term", "y": 610, "label": "AppleScript" },
+    { "from": "term", "to": "cli", "y": 650, "label": "attach <name>", "variant": "return" },
+    { "from": "cli", "to": "tmux", "y": 690, "label": "attach-session", "variant": "emphasis" }
+  ],
+  "activations": [
+    { "participant": "cli", "from": 410, "to": 500, "type": "backend" }
+  ],
+  "cards": [
+    { "dot": "amber", "title": "Still user-driven", "items": ["The app only tells you; you click to restore (R8)"] },
+    { "dot": "cyan", "title": "Your terminal", "items": ["Ghostty, iTerm2 or Terminal; copy the command for others"] }
+  ]
+}
