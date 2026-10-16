@@ -32,6 +32,11 @@ enum Main {
         // screenshots for the README and for visual review, no menu bar needed.
         // `--preview --demo file.json`: the panel in an ordinary window, for
         // watching animations and recording them.
+        // `--pet-sheets dir`: the desktop pet design prototypes (T3.1).
+        if let i = CommandLine.arguments.firstIndex(of: "--pet-sheets"), i + 1 < CommandLine.arguments.count {
+            PetSheets.run(outDir: CommandLine.arguments[i + 1])
+            return
+        }
         if CommandLine.arguments.contains("--preview") {
             Render.preview(args: CommandLine.arguments)
             return
