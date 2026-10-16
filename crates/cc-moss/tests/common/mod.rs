@@ -200,6 +200,14 @@ impl World {
         std::fs::write(fifo, format!("{line}\n")).unwrap();
     }
 
+    /// Send the first prompt and wait until the fake claude has written its
+    /// transcript: a session killed before that has nothing to restore.
+    pub fn first_prompt(&self, session_id: &str, name: &str) {
+        self.send(session_id, &format!("prompt {name}"));
+        let transcript = self.path("fifos").join(format!("{session_id}.jsonl"));
+        wait_for(|| transcript.exists().then_some(()));
+    }
+
     pub fn session_names(&self) -> Vec<String> {
         self.tmux(&["list-sessions", "-F", "#{session_name}"])
             .lines()
