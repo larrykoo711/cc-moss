@@ -48,20 +48,30 @@ fn handle(event: &str) -> Result<()> {
         log(kind.cli_name(), "skipped: non-interactive session");
         return Ok(());
     }
-    let event = ClaudeAgent.parse_hook(kind, &payload)?;
+    let Some(event) = ClaudeAgent.parse_hook(kind, &payload)? else {
+        // A notification cc-moss does not act on (idle reminder, completion).
+        return Ok(());
+    };
 
     let pid = env("CLAUDE_PID").and_then(|p| p.parse::<u32>().ok());
-    if pid.is_none() {
+    if pid.is_none() && kind != HookKind::PostToolUse {
         log(
             kind.cli_name(),
             "warning: CLAUDE_PID missing; liveness checks are disabled for this session",
         );
     }
     let is_start = kind == HookKind::SessionStart;
+    // PostToolUse runs after every tool call and only clears a mark by
+    // session id: it skips the process lookup (a `ps` on macOS).
+    let fast = kind == HookKind::PostToolUse;
     let ctx = Context {
         pid,
-        // Every event carries the start time so a lost SessionStart can be repaired.
-        pid_start: pid.and_then(proc::start_time),
+        // Every other event carries the start time so a lost SessionStart can be repaired.
+        pid_start: if fast {
+            None
+        } else {
+            pid.and_then(proc::start_time)
+        },
         tmux: if is_start {
             tmux::locate(env("TMUX").as_deref(), env("TMUX_PANE").as_deref())
         } else {

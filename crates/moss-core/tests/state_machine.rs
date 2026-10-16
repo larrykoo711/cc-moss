@@ -1,9 +1,12 @@
 //! Slot state machine, driven by the event sequences recorded in
 //! `.sdd/001-cli/notes/hook-probe.md` (Claude Code 2.1.300).
 
-use moss_core::event::{Context, EndReason, Event, StartSource, TmuxLoc};
+use moss_core::agent::claude::ClaudeAgent;
+use moss_core::agent::{Agent, HookKind};
+use moss_core::event::{AttentionReason, Context, EndReason, Event, StartSource, TmuxLoc};
 use moss_core::registry::Registry;
 use moss_core::slot::{Slot, Status};
+use serde_json::json;
 
 fn ctx(pid: u32, now_ms: i64) -> Context {
     Context {
@@ -842,4 +845,307 @@ fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
     writeln!(t, r#"{{"type":"custom-title","customTitle":"job-late"}}"#).unwrap();
     assert_eq!(reg.backfill_names().unwrap(), 1);
     assert_eq!(only_slot(&reg).name.as_deref(), Some("job-late"));
+}
+
+// ---- Event stream and attention (T2.1) ----
+
+fn prompt(id: &str, title: Option<&str>) -> Event {
+    Event::Prompt {
+        session_id: id.into(),
+        title: title.map(Into::into),
+        prompt: Some("do the thing".into()),
+    }
+}
+
+fn stop(id: &str) -> Event {
+    Event::Stop {
+        session_id: id.into(),
+    }
+}
+
+fn attention(id: &str, reason: AttentionReason) -> Event {
+    Event::Attention {
+        session_id: id.into(),
+        reason,
+        message: Some("Claude needs your permission".into()),
+    }
+}
+
+fn tool_done(id: &str) -> Event {
+    Event::ToolDone {
+        session_id: id.into(),
+    }
+}
+
+/// `(kind, detail)` of every recorded event, in order.
+fn events(reg: &Registry) -> Vec<(String, serde_json::Value)> {
+    reg.events(Some(0), 10_000)
+        .unwrap()
+        .into_iter()
+        .map(|e| (e.kind, e.detail))
+        .collect()
+}
+
+fn kinds(reg: &Registry) -> Vec<String> {
+    events(reg).into_iter().map(|(k, _)| k).collect()
+}
+
+#[test]
+fn events_started_working_finished() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "U1", Some("job-a")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    reg.apply(&prompt("U1", Some("job-a")), &ctx(100, 2_000))
+        .unwrap();
+    // Still busy: a second prompt is not a second `working`.
+    reg.apply(&prompt("U1", None), &ctx(100, 2_500)).unwrap();
+    reg.apply(&stop("U1"), &ctx(100, 3_000)).unwrap();
+    // Already idle: a second Stop is not a second `finished`.
+    reg.apply(&stop("U1"), &ctx(100, 3_500)).unwrap();
+
+    assert_eq!(kinds(&reg), ["started", "working", "finished"]);
+    assert_eq!(events(&reg)[0].1, json!({ "source": "startup" }));
+    assert_eq!(events(&reg)[1].1, json!({}), "no prompt text in events");
+    let e = &reg.events(None, 500).unwrap()[0];
+    assert_eq!(e.name.as_deref(), Some("job-a"));
+    assert_eq!(e.at_ms, 1_000);
+}
+
+#[test]
+fn events_started_on_resume_but_not_on_clear() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&end("U1", "clear"), &ctx(100, 1_500)).unwrap();
+    reg.apply(&start(StartSource::Clear, "U2", None), &ctx(100, 1_501))
+        .unwrap();
+    reg.apply(&start(StartSource::Compact, "U3", None), &ctx(100, 1_600))
+        .unwrap();
+    reg.apply(&end("U3", "other"), &ctx(100, 2_000)).unwrap();
+    reg.apply(&start(StartSource::Resume, "U3", None), &ctx(200, 3_000))
+        .unwrap();
+    assert_eq!(kinds(&reg), ["started", "interrupted", "started"]);
+    assert_eq!(events(&reg)[2].1, json!({ "source": "resume" }));
+}
+
+#[test]
+fn events_rename() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "U1", Some("job-a")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    reg.apply(&prompt("U1", Some("job-a")), &ctx(100, 2_000))
+        .unwrap();
+    reg.apply(&prompt("U1", Some("job-b")), &ctx(100, 3_000))
+        .unwrap();
+    let slot = only_slot(&reg);
+    reg.set_name(&slot.slot_id, "job-c").unwrap();
+    reg.set_name(&slot.slot_id, "job-c").unwrap();
+
+    let renames: Vec<_> = events(&reg)
+        .into_iter()
+        .filter(|(k, _)| k == "renamed")
+        .map(|(_, d)| d)
+        .collect();
+    assert_eq!(
+        renames,
+        [
+            json!({ "from": "job-a", "to": "job-b" }),
+            json!({ "from": "job-b", "to": "job-c" }),
+        ]
+    );
+}
+
+#[test]
+fn events_end_closed_vs_interrupted() {
+    for (reason, want) in [
+        ("prompt_input_exit", Some("ended")),
+        ("logout", Some("ended")),
+        ("other", Some("interrupted")),
+        ("clear", None),
+    ] {
+        let mut reg = Registry::open_in_memory().unwrap();
+        reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+            .unwrap();
+        reg.apply(&end("U1", reason), &ctx(100, 2_000)).unwrap();
+        let got = events(&reg);
+        match want {
+            Some(kind) => {
+                assert_eq!(got.len(), 2, "{reason}: {got:?}");
+                assert_eq!(got[1], (kind.to_string(), json!({ "reason": reason })));
+            }
+            None => assert_eq!(got.len(), 1, "{reason}: {got:?}"),
+        }
+    }
+
+    // Closed by the user, then the killed process reports SessionEnd(other):
+    // one `closed`, no `interrupted`.
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    let id = only_slot(&reg).slot_id;
+    reg.close_by_user(&id, 1_500).unwrap();
+    reg.apply(&end("U1", "other"), &ctx(100, 2_000)).unwrap();
+    assert_eq!(kinds(&reg), ["started", "closed"]);
+}
+
+#[test]
+fn events_interrupted_once_per_interruption() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&end("U1", "other"), &ctx(100, 2_000)).unwrap();
+    let id = only_slot(&reg).slot_id;
+    // Reconcile later sees the process gone too: already reported.
+    assert!(!reg.record_lost(&id, 3_000).unwrap());
+    reg.apply(&start(StartSource::Resume, "U1", None), &ctx(200, 4_000))
+        .unwrap();
+    // A second crash is a second interruption.
+    assert!(reg.record_lost(&id, 5_000).unwrap());
+    assert!(!reg.record_lost(&id, 6_000).unwrap());
+    assert_eq!(
+        kinds(&reg),
+        ["started", "interrupted", "started", "interrupted"]
+    );
+}
+
+#[test]
+fn attention_set_by_permission_prompt() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&prompt("U1", None), &ctx(100, 2_000)).unwrap();
+    let parsed = ClaudeAgent
+        .parse_hook(
+            HookKind::Notification,
+            r#"{"session_id":"U1","hook_event_name":"Notification",
+                "message":"Claude needs your permission","notification_type":"permission_prompt"}"#,
+        )
+        .unwrap()
+        .expect("a permission prompt is acted on");
+    reg.apply(&parsed, &ctx(100, 3_000)).unwrap();
+
+    assert_eq!(only_slot(&reg).attention.as_deref(), Some("permission"));
+    assert_eq!(
+        events(&reg).last().unwrap(),
+        &(
+            "needs_you".to_string(),
+            json!({ "reason": "permission", "message": "Claude needs your permission" })
+        )
+    );
+}
+
+#[test]
+fn attention_reasons_from_notification_types() {
+    for (kind, want) in [
+        ("permission_prompt", "permission"),
+        ("elicitation_dialog", "question"),
+        ("elicitation_url_dialog", "question"),
+        ("agent_needs_input", "input"),
+    ] {
+        let payload = json!({ "session_id": "U1", "notification_type": kind, "message": "m" });
+        let event = ClaudeAgent
+            .parse_hook(HookKind::Notification, &payload.to_string())
+            .unwrap()
+            .unwrap();
+        let mut reg = Registry::open_in_memory().unwrap();
+        reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+            .unwrap();
+        reg.apply(&event, &ctx(100, 2_000)).unwrap();
+        assert_eq!(only_slot(&reg).attention.as_deref(), Some(want), "{kind}");
+    }
+}
+
+#[test]
+fn attention_ignores_idle_prompt() {
+    for kind in ["idle_prompt", "agent_completed"] {
+        let payload = json!({ "session_id": "U1", "notification_type": kind, "message": "m" });
+        let parsed = ClaudeAgent
+            .parse_hook(HookKind::Notification, &payload.to_string())
+            .unwrap();
+        assert_eq!(parsed, None, "{kind}");
+    }
+    // A type nobody knows yet is not guessed at; the hook logs it.
+    let payload = json!({ "session_id": "U1", "notification_type": "brand_new" });
+    let err = ClaudeAgent
+        .parse_hook(HookKind::Notification, &payload.to_string())
+        .unwrap_err();
+    assert!(err.to_string().contains("brand_new"), "{err}");
+}
+
+#[test]
+fn post_tool_use_clears_attention() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(
+        &attention("U1", AttentionReason::Permission),
+        &ctx(100, 2_000),
+    )
+    .unwrap();
+    let before = kinds(&reg);
+    let parsed = ClaudeAgent
+        .parse_hook(
+            HookKind::PostToolUse,
+            r#"{"session_id":"U1","tool_name":"Bash","tool_input":{"command":"ls"}}"#,
+        )
+        .unwrap()
+        .unwrap();
+    assert_eq!(parsed, tool_done("U1"));
+    reg.apply(&parsed, &ctx(100, 3_000)).unwrap();
+    assert_eq!(only_slot(&reg).attention, None);
+    assert_eq!(kinds(&reg), before, "clearing is not an event");
+}
+
+#[test]
+fn attention_cleared_by_stop() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&prompt("U1", None), &ctx(100, 1_500)).unwrap();
+    reg.apply(
+        &attention("U1", AttentionReason::Question),
+        &ctx(100, 2_000),
+    )
+    .unwrap();
+    assert_eq!(only_slot(&reg).attention.as_deref(), Some("question"));
+    // Denied: no tool ran, the turn just ended.
+    reg.apply(&stop("U1"), &ctx(100, 3_000)).unwrap();
+    assert_eq!(only_slot(&reg).attention, None);
+}
+
+#[test]
+fn attention_cleared_by_prompt_end_and_start() {
+    let cases: [(&str, Event); 3] = [
+        ("prompt", prompt("U1", None)),
+        ("end", end("U1", "prompt_input_exit")),
+        ("start", start(StartSource::Resume, "U1", None)),
+    ];
+    for (what, event) in cases {
+        let mut reg = Registry::open_in_memory().unwrap();
+        reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+            .unwrap();
+        reg.apply(&attention("U1", AttentionReason::Input), &ctx(100, 2_000))
+            .unwrap();
+        reg.apply(&event, &ctx(100, 3_000)).unwrap();
+        assert_eq!(only_slot(&reg).attention, None, "{what}");
+    }
+}
+
+#[test]
+fn attention_for_unknown_session_is_ignored() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &attention("nobody", AttentionReason::Permission),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    reg.apply(&tool_done("nobody"), &ctx(100, 1_000)).unwrap();
+    assert!(reg.slots().unwrap().is_empty());
+    assert!(kinds(&reg).is_empty());
 }

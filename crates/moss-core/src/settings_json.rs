@@ -23,6 +23,8 @@ pub fn event_name(kind: HookKind) -> &'static str {
         HookKind::UserPromptSubmit => "UserPromptSubmit",
         HookKind::Stop => "Stop",
         HookKind::SessionEnd => "SessionEnd",
+        HookKind::Notification => "Notification",
+        HookKind::PostToolUse => "PostToolUse",
     }
 }
 
@@ -83,7 +85,7 @@ fn shell_unquote(word: &str) -> Option<String> {
 /// can upgrade and `setup --uninstall` can remove either. The path must end in
 /// `cc-moss`, not the exact current location, so a reinstall from elsewhere
 /// replaces the old entry instead of adding one.
-fn parse_command(command: &str) -> Option<String> {
+fn parse_command(command: &str) -> Option<(String, HookKind)> {
     let guarded = command
         .strip_prefix("[ -x ")
         .and_then(|rest| rest.strip_suffix(" || true"));
@@ -103,7 +105,7 @@ fn parse_command(command: &str) -> Option<String> {
             None => command.strip_suffix(&tail)?,
         };
         let path = shell_unquote(word)?;
-        (path == "cc-moss" || path.ends_with("/cc-moss")).then_some(path)
+        (path == "cc-moss" || path.ends_with("/cc-moss")).then_some((path, kind))
     })
 }
 
@@ -114,7 +116,29 @@ pub fn is_ours(hook: &Value) -> bool {
 }
 
 fn hook_binary(hook: &Value) -> Option<String> {
-    parse_command(hook.get("command")?.as_str()?)
+    parse_command(hook.get("command")?.as_str()?).map(|(path, _)| path)
+}
+
+/// The hooks cc-moss registers that `doc` has no cc-moss entry for, in
+/// [`HookKind::ALL`] order. An install from an older version lacks the
+/// newer ones (Notification and PostToolUse came with 0.2).
+pub fn missing_hooks(doc: &Value) -> Vec<HookKind> {
+    HookKind::ALL
+        .into_iter()
+        .filter(|&kind| {
+            let present = doc
+                .get("hooks")
+                .and_then(|h| h.get(event_name(kind)))
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+                .filter_map(|group| group.get("hooks").and_then(Value::as_array))
+                .flatten()
+                .filter_map(|h| parse_command(h.get("command")?.as_str()?))
+                .any(|(_, k)| k == kind);
+            !present
+        })
+        .collect()
 }
 
 /// The binary path of every cc-moss hook entry in `doc`, in file order, so
@@ -152,7 +176,14 @@ pub fn stable_exe(current: &Path, path_var: Option<&OsStr>) -> PathBuf {
         .unwrap_or_else(|| current.to_path_buf())
 }
 
-/// Add the four cc-moss hooks, replacing any earlier cc-moss entries in place.
+/// The matcher cc-moss writes for `kind`, for events that take one. PostToolUse
+/// runs after every tool; the other events are matched in code (Notification)
+/// or have no matcher at all.
+fn matcher(kind: HookKind) -> Option<&'static str> {
+    (kind == HookKind::PostToolUse).then_some("*")
+}
+
+/// Add the cc-moss hooks, replacing any earlier cc-moss entries in place.
 pub fn install(doc: &Value, exe: &str) -> Result<Value> {
     let mut doc = doc.clone();
     let root = root_object(&mut doc)?;
@@ -164,11 +195,15 @@ pub fn install(doc: &Value, exe: &str) -> Result<Value> {
         .context("settings.json: `hooks` is not an object")?;
     for kind in HookKind::ALL {
         let event = event_name(kind);
-        let ours = json!({ "hooks": [{
+        let entry = json!([{
             "type": "command",
             "command": hook_command(exe, kind),
             "timeout": HOOK_TIMEOUT_SECS,
-        }] });
+        }]);
+        let ours = match matcher(kind) {
+            Some(m) => json!({ "matcher": m, "hooks": entry }),
+            None => json!({ "hooks": entry }),
+        };
         let groups = match hooks.get(event) {
             Some(v) => event_groups(event, v)?,
             None => Vec::new(),

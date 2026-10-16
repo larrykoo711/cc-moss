@@ -54,6 +54,36 @@ pub enum Event {
         session_id: String,
         reason: EndReason,
     },
+    /// The session waits for the user: a permission prompt, a question, input.
+    Attention {
+        session_id: String,
+        reason: AttentionReason,
+        /// The agent's own words for it, if any.
+        message: Option<String>,
+    },
+    /// A tool finished: whatever the session waited on was answered.
+    ToolDone {
+        session_id: String,
+    },
+}
+
+/// Why a session waits for the user. Stored as `slots.attention` and shown
+/// as `ls --json`'s `attention`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AttentionReason {
+    Permission,
+    Question,
+    Input,
+}
+
+impl AttentionReason {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            AttentionReason::Permission => "permission",
+            AttentionReason::Question => "question",
+            AttentionReason::Input => "input",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

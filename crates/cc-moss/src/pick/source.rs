@@ -213,6 +213,7 @@ mod tests {
             restore_started_at_ms: None,
             busy: false,
             last_prompt: None,
+            attention: None,
             created_at_ms: 0,
             last_active_at_ms: 5_000,
             ended_at_ms: None,
