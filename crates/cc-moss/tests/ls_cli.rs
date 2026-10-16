@@ -313,3 +313,51 @@ fn background_tasks_alone_do_not_mean_working() {
 fn a_turn_in_progress_stays_working() {
     assert_eq!(busy_after_reconcile("busy", TOOL_CALL), true);
 }
+
+#[test]
+fn json_has_state_dir_and_worktree() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    // A linked worktree: `.git` is a file pointing into the main repository.
+    let wt = dir.path().join("billing-fix");
+    std::fs::create_dir_all(wt.join("src")).unwrap();
+    std::fs::write(
+        wt.join(".git"),
+        "gitdir: /projects/billing/.git/worktrees/billing-fix\n",
+    )
+    .unwrap();
+    let (pa, pb) = (FakeProcess::spawn(), FakeProcess::spawn());
+    let in_worktree = serde_json::json!({
+        "session_id": "W",
+        "cwd": wt.join("src").to_str().unwrap(),
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "session_title": "fix",
+    })
+    .to_string();
+    hook(&state, "session-start", &in_worktree, pa.pid());
+    hook(
+        &state,
+        "session-start",
+        &start_json("P", "startup", Some("plain")),
+        pb.pid(),
+    );
+
+    let v = ls_json(&state, false);
+    assert_eq!(v["schema"], 1);
+    assert_eq!(v["state_dir"], state.to_str().unwrap());
+    let by_name = |n: &str| {
+        v["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|s| s["name"] == n)
+            .unwrap()
+            .clone()
+    };
+    assert_eq!(
+        by_name("fix")["worktree"],
+        serde_json::json!({ "root": wt.to_str().unwrap(), "repo": "/projects/billing" })
+    );
+    assert!(by_name("plain")["worktree"].is_null());
+}

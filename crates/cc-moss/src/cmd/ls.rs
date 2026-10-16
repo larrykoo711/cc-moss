@@ -1,8 +1,8 @@
 //! `cc-moss ls`: what is running, and what needs to be restored.
 
 use anyhow::Result;
-use moss_core::proc;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
+use moss_core::{proc, store_dir, worktree};
 use serde_json::{json, Value};
 use unicode_width::UnicodeWidthStr;
 
@@ -22,7 +22,11 @@ pub fn run(all: bool, as_json: bool) -> Result<()> {
         let sessions: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
         println!(
             "{}",
-            serde_json::to_string_pretty(&json!({ "schema": JSON_SCHEMA, "sessions": sessions }))?
+            serde_json::to_string_pretty(&json!({
+                "schema": JSON_SCHEMA,
+                "state_dir": store_dir::state_dir(),
+                "sessions": sessions,
+            }))?
         );
     } else {
         print_table(&rows);
@@ -63,6 +67,7 @@ fn to_json(st: Status, s: &Slot) -> Value {
         "created_at": rfc3339(s.created_at_ms),
         "last_active_at": rfc3339(s.last_active_at_ms),
         "ended_at": s.ended_at_ms.map(rfc3339),
+        "worktree": worktree::of(&s.cwd).map(|w| json!({ "root": w.root, "repo": w.repo })),
     })
 }
 

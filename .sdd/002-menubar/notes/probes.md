@@ -9,7 +9,12 @@
 - `swift test`：
   - **XCTest ❌**：`unable to resolve module dependency: 'XCTest'`（命令行工具不带 XCTest）
   - **Swift Testing ✅**：`import Testing` + `@Test` / `#expect` 正常运行
-- 结论：测试一律用 Swift Testing，不用 XCTest；不要求开发者切到 Xcode。CI 的 macOS 镜像自带 Xcode，两者都可用
+- 结论：测试一律用 Swift Testing，不用 XCTest。CI 的 macOS 镜像自带 Xcode，两者都可用
+- **订正（2026-10-16，T1.1 实施中）**：探针的 SwiftUI 代码没用到 `@State`，所以漏掉了一件事——macOS 27 SDK 里
+  `@State` 等是宏，宏的实现（`SwiftUIMacros` 插件）只随 Xcode 提供，命令行工具里没有：
+  `external macro implementation type 'SwiftUIMacros.StateMacro' could not be found`。
+  **构建 App 需要装 Xcode**（不必切换 `xcode-select`）：`apps/macos/scripts/swift.sh` 在活动目录是命令行工具时，
+  只对本次命令设 `DEVELOPER_DIR` 指向 Xcode。用 Xcode 工具链后 XCTest 也可用，但测试仍统一用 Swift Testing
 
 ## Q6：ad-hoc 签名的 App 能否申请通知权限
 

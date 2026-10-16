@@ -330,7 +330,7 @@
    └─ 打开会话：Ghostty / iTerm2 / Terminal 新窗口执行 cc-moss attach
     </pre>
     <p>已拍板：Swift + SwiftUI、macOS 14+；App 不碰数据库；事件是一等公民；随 cc-moss 一起发（ad-hoc 签名，不走 cask）；本迭代不拦截确认。</p>
-    <p>后续路线：003 桌面宠物 → 004 宠物代办确认 → 005 语音对话。</p>
+    <p>本版范围：P1 面板 → P2 动态与通知 → P3 桌面宠物（亮点）→ P4 发布。后续：004 宠物代办确认、005 语音对话。</p>
   </section>
 
   <section id="anchors">
@@ -381,21 +381,28 @@
    st ∈ backlog | ready | doing | review | done
    手填，或跑 skill 的 scripts/gen_kanban.py 从 PLAN 生成 TASKS 粘进来。 */
 const TASKS = [
-  {id:'T1.1', t:'面板与快照', repo:'cc-moss', dep:'—', st:'ready', sdd:'—', ac:'面板与 `t` 一致，2 秒内刷新', steps:[]},
-  {id:'T1.2', t:'在终端里打开', repo:'cc-moss', dep:'T1.1', st:'backlog', sdd:'—', ac:'三种终端真机打开', steps:[]},
+  {id:'T1.1', t:'面板与快照', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'面板与 `t` 一致，2 秒内刷新', steps:[]},
+  {id:'T1.2', t:'在终端里打开', repo:'cc-moss', dep:'T1.1', st:'backlog', sdd:'—', ac:'默认终端与 Ghostty 真机打开、设置可切换', steps:[]},
   {id:'T1.3', t:'找回', repo:'cc-moss', dep:'T1.1,T1.2', st:'backlog', sdd:'—', ac:'杀 server 后面板全部找回', steps:[]},
-  {id:'T2.1', t:'会话事件流（CLI）', repo:'cc-moss', dep:'—', st:'ready', sdd:'—', ac:'事件序列 + 钩子 p95', steps:[]},
+  {id:'T2.1', t:'会话事件流（CLI）', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'事件序列 + 钩子 p95', steps:[]},
   {id:'T2.2', t:'图标动画', repo:'cc-moss', dep:'T1.1,T2.1', st:'backlog', sdd:'—', ac:'四态录屏，空闲 CPU < 1%', steps:[]},
   {id:'T2.3', t:'通知中心', repo:'cc-moss', dep:'T1.2,T2.1', st:'backlog', sdd:'—', ac:'四类通知真机触发', steps:[]},
   {id:'T2.4', t:'开机自启与设置', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'重启后收到提醒并找回', steps:[]},
   {id:'T2.5', t:'新会话、便条与不再提醒', repo:'cc-moss', dep:'T1.2', st:'backlog', sdd:'—', ac:'三项操作 `t` 里可见', steps:[]},
-  {id:'T3.1', t:'打包与分发', repo:'cc-moss', dep:'T1.3,T2.2,T2.4,T2.5', st:'backlog', sdd:'—', ac:'干净用户目录 brew 全流程', steps:[]},
-  {id:'T3.2', t:'打磨、文档与 0.2.0', repo:'cc-moss', dep:'T3.1', st:'backlog', sdd:'—', ac:'3 台 Mac 升到 0.2.0', steps:[]},
+  {id:'T2.6', t:'原生别名', repo:'cc-moss', dep:'T1.1', st:'backlog', sdd:'—', ac:'bash/zsh 下别名可用，改完即生效', steps:[]},
+  {id:'T3.1', t:'宠物设计', repo:'cc-moss', dep:'T2.1', st:'backlog', sdd:'—', ac:'用户批准宠物设计', steps:[]},
+  {id:'T3.2', t:'宠物窗口与动画', repo:'cc-moss', dep:'T3.1,T2.2', st:'backlog', sdd:'—', ac:'透明置顶、按状态播放动作', steps:[]},
+  {id:'T3.3', t:'气泡消息', repo:'cc-moss', dep:'T3.2,T2.3,T1.2', st:'backlog', sdd:'—', ac:'事件气泡、点击打开会话', steps:[]},
+  {id:'T3.4', t:'语音播报', repo:'cc-moss', dep:'T3.3', st:'backlog', sdd:'—', ac:'中英播报、勿扰静音', steps:[]},
+  {id:'T4.1', t:'打包与分发', repo:'cc-moss', dep:'T1.3,T2.2,T2.4,T2.5,T2.6,T3.4', st:'backlog', sdd:'—', ac:'干净用户目录 brew 全流程', steps:[]},
+  {id:'T4.2', t:'首次启动引导', repo:'cc-moss', dep:'T4.1', st:'backlog', sdd:'—', ac:'干净用户目录首次启动走完引导', steps:[]},
+  {id:'T4.3', t:'打磨、文档与 0.2.0', repo:'cc-moss', dep:'T4.2', st:'backlog', sdd:'—', ac:'3 台 Mac 升到 0.2.0', steps:[]},
 ];
 const PHASES = [
   {k:'P1', name:'MVP：看清、打开、找回', ids:['T1.1','T1.2','T1.3']},
-  {k:'P2', name:'动态与通知', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
-  {k:'P3', name:'发布', ids:['T3.1','T3.2']},
+  {k:'P2', name:'动态、通知与设置', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6']},
+  {k:'P3', name:'桌面宠物（亮点）', ids:['T3.1','T3.2','T3.3','T3.4']},
+  {k:'P4', name:'发布', ids:['T4.1','T4.2','T4.3']},
 ];
 
 /* ═══ 以下为通用渲染 + 空态/主题/导航逻辑，无需改 ═══ */

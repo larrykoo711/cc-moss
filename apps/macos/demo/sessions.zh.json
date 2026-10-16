@@ -1,0 +1,172 @@
+{
+ "schema": 1,
+ "state_dir": "/Users/demo/.local/state/cc-moss",
+ "sessions": [
+  {
+   "id": "01A",
+   "agent": "claude",
+   "name": "登录页",
+   "status": "running",
+   "session_id": "01a0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/acme-web",
+   "tmux": {
+    "socket": "/tmp/tmux-501/default",
+    "session_id": "$3",
+    "session_name": "host-a_登录页",
+    "pane_id": "%3"
+   },
+   "pid": 4242,
+   "end_reason": null,
+   "busy": true,
+   "last_prompt": "登录表单记住上次输入的邮箱",
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": null
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-16T11:59:30Z",
+   "ended_at": null,
+   "worktree": null
+  },
+  {
+   "id": "01B",
+   "agent": "claude",
+   "name": "接口评审",
+   "status": "running",
+   "session_id": "01b0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/acme-web",
+   "tmux": {
+    "socket": "/tmp/tmux-501/default",
+    "session_id": "$3",
+    "session_name": "host-a_接口评审",
+    "pane_id": "%3"
+   },
+   "pid": 4242,
+   "end_reason": null,
+   "busy": false,
+   "last_prompt": "这个接口的错误码再对一下",
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": null
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-16T11:52:00Z",
+   "ended_at": null,
+   "worktree": null
+  },
+  {
+   "id": "01C",
+   "agent": "claude",
+   "name": "修发票",
+   "status": "interrupted",
+   "session_id": "01c0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/billing-fix",
+   "tmux": {
+    "socket": "/tmp/tmux-501/default",
+    "session_id": "$3",
+    "session_name": "host-a_修发票",
+    "pane_id": "%3"
+   },
+   "pid": 4242,
+   "end_reason": null,
+   "busy": false,
+   "last_prompt": null,
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": "停在对账脚本"
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-15T22:10:00Z",
+   "ended_at": null,
+   "worktree": {
+    "root": "/Users/demo/projects/billing-fix",
+    "repo": "/Users/demo/projects/billing"
+   }
+  },
+  {
+   "id": "01D",
+   "agent": "claude",
+   "name": "发版说明",
+   "status": "running",
+   "session_id": "01d0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/docs",
+   "tmux": {
+    "socket": "/tmp/tmux-501/default",
+    "session_id": "$3",
+    "session_name": "host-a_发版说明",
+    "pane_id": "%3"
+   },
+   "pid": 4242,
+   "end_reason": null,
+   "busy": false,
+   "last_prompt": "0.2 的更新说明再精简一点",
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": null
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-16T10:05:00Z",
+   "ended_at": null,
+   "worktree": null
+  },
+  {
+   "id": "01E",
+   "agent": "claude",
+   "name": "偶发测试",
+   "status": "interrupted",
+   "session_id": "01e0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/billing",
+   "tmux": {
+    "socket": "/tmp/tmux-501/default",
+    "session_id": "$3",
+    "session_name": "host-a_偶发测试",
+    "pane_id": "%3"
+   },
+   "pid": 4242,
+   "end_reason": null,
+   "busy": false,
+   "last_prompt": "重试那个测试为什么只在 CI 上挂？",
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": null
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-15T21:40:00Z",
+   "ended_at": null,
+   "worktree": null
+  },
+  {
+   "id": "01F",
+   "agent": "claude",
+   "name": "草稿",
+   "status": "running",
+   "session_id": "01f0c1d2e-0000-4000-8000-000000000000",
+   "session_ids": [],
+   "cwd": "/Users/demo/projects/sandbox",
+   "tmux": null,
+   "pid": 4242,
+   "end_reason": null,
+   "busy": true,
+   "last_prompt": "给导入工具画个命令行草图",
+   "notes": {
+    "goal": null,
+    "state": null,
+    "note": null
+   },
+   "created_at": "2026-10-16T08:00:00Z",
+   "last_active_at": "2026-10-16T11:58:00Z",
+   "ended_at": null,
+   "worktree": null
+  }
+ ]
+}

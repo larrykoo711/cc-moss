@@ -66,6 +66,23 @@ jobs:
       # hook_perf.rs is #[ignore]d: a 30 ms p95 budget is a laptop number, not a
       # shared-runner number. Run it by hand or via the perf job below.
 
+  macos-app:
+    name: menubar app (macOS)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/macos
+    steps:
+      - uses: actions/checkout@v7
+      - run: swift --version
+      - run: scripts/swift.sh build
+      - run: scripts/swift.sh test
+      - name: Bundle and sign
+        run: |
+          scripts/bundle.sh
+          codesign -dv build/cc-moss.app 2>&1 | grep -q 'Signature=adhoc'
+
   msrv:
     name: MSRV
     runs-on: ubuntu-latest
