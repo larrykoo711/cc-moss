@@ -12,7 +12,8 @@ func sessionJSON(
     tmux: Bool = true,
     note: String? = nil,
     lastPrompt: String? = nil,
-    worktree: [String: String]? = nil
+    worktree: [String: String]? = nil,
+    attention: String? = nil
 ) -> [String: Any] {
     var s: [String: Any] = [
         "id": id, "agent": "claude", "status": status, "session_id": "\(id)-sid-0000",
@@ -25,6 +26,7 @@ func sessionJSON(
     let loc: [String: Any] = ["socket": "/tmp/tmux-1/default", "session_id": "$1", "session_name": "host-a_\(name ?? "x")", "pane_id": "%1"]
     s["tmux"] = tmux ? loc : NSNull()
     s["worktree"] = (worktree as Any?) ?? NSNull()
+    s["attention"] = (attention as Any?) ?? NSNull()
     return s
 }
 

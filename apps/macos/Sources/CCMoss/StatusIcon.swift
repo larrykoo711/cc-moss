@@ -18,8 +18,13 @@ struct Continuum: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        // x = 32 + 27 cos t, y = 32 + 12.9 sin 2t in the icon's 64-unit box.
-        let full = Path { p in
+        // The drawn part runs from the gap's end round to its start.
+        Self.arc(in: rect, from: gapEnd + phase, to: gapStart + phase)
+    }
+
+    /// The whole loop: x = 32 + 27 cos t, y = 32 + 12.9 sin 2t in the icon's 64-unit box.
+    static func loop(in rect: CGRect) -> Path {
+        Path { p in
             let steps = 160
             for i in 0...steps {
                 let t = Double(i) / Double(steps) * 2 * .pi
@@ -29,33 +34,20 @@ struct Continuum: Shape {
                 i == 0 ? p.move(to: point) : p.addLine(to: point)
             }
         }
-        // The drawn part runs from the gap's end round to its start.
-        let from = (gapEnd + phase).truncatingRemainder(dividingBy: 1)
-        let to = (gapStart + phase).truncatingRemainder(dividingBy: 1)
-        if from < to {
-            return full.trimmedPath(from: from, to: to)
+    }
+
+    /// The stretch of the loop between two fractions, wrapping past the end.
+    static func arc(in rect: CGRect, from: Double, to: Double) -> Path {
+        let full = loop(in: rect)
+        let a = from - from.rounded(.down)
+        let b = to - to.rounded(.down)
+        if a < b {
+            return full.trimmedPath(from: a, to: b)
         }
-        var out = full.trimmedPath(from: from, to: 1)
-        out.addPath(full.trimmedPath(from: 0, to: to))
+        var out = full.trimmedPath(from: a, to: 1)
+        out.addPath(full.trimmedPath(from: 0, to: b))
         return out
     }
-}
-
-enum StatusIcon {
-    /// A template image, so the menu bar tints it for light and dark.
-    @MainActor static let image: NSImage = {
-        let size: CGFloat = 18
-        let view = Continuum()
-            .stroke(style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
-            .foregroundStyle(.black)
-            .frame(width: size, height: size)
-        let renderer = ImageRenderer(content: view)
-        renderer.scale = 2
-        let image = renderer.nsImage ?? NSImage(systemSymbolName: "infinity", accessibilityDescription: nil)!
-        image.size = NSSize(width: size, height: size)
-        image.isTemplate = true
-        return image
-    }()
 }
 
 /// The footer mark: flows while the pointer is on it, opens Settings on click.

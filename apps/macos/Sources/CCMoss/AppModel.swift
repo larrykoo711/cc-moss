@@ -17,7 +17,9 @@ final class AppModel {
     }
 
     var phase: Phase = .loading
-    var sessions: [Session] = []
+    var sessions: [Session] = [] { didSet { syncIcon() } }
+    /// The menu bar icon, following the sessions.
+    @ObservationIgnored let icon = MenuBarIcon()
     var query = "" { didSet { if query != oldValue { selectFirst() } } }
     /// Set from the summary strip: show only sessions in this state.
     var stateFilter: SessionState? { didSet { if stateFilter != oldValue { selectFirst() } } }
@@ -137,6 +139,13 @@ final class AppModel {
     }
 
     func selectFirst() { selectedID = visible.first?.id }
+
+    /// Settings › General › Menu Bar: icon only, or icon and number.
+    static let showCountKey = "menuBarShowsCount"
+
+    func syncIcon() {
+        icon.update(sessions, showCount: UserDefaults.standard.bool(forKey: Self.showCountKey))
+    }
 
     func move(_ delta: Int) {
         let list = visible

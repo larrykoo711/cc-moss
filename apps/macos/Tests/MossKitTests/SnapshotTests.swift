@@ -29,6 +29,24 @@ import Testing
         #expect(snap.sessions.first?.busy == false)
     }
 
+    @Test func decodesAttention() throws {
+        let snap = try Snapshot.decode(snapshotData([
+            sessionJSON(id: "A", attention: "permission"),
+            sessionJSON(id: "B"),
+        ]))
+        #expect(snap.sessions[0].attention == "permission")
+        #expect(snap.sessions[0].needsYou)
+        #expect(snap.sessions[1].attention == nil)
+        #expect(!snap.sessions[1].needsYou)
+    }
+
+    @Test func attentionMissingFromOlderCLI() throws {
+        var s = sessionJSON()
+        s.removeValue(forKey: "attention")
+        let snap = try Snapshot.decode(snapshotData([s]))
+        #expect(snap.sessions.first?.attention == nil)
+    }
+
     @Test func rejectsNewerSchema() {
         #expect(throws: SnapshotError.newerSchema(2)) {
             try Snapshot.decode(snapshotData([["whatever": 1]], schema: 2))

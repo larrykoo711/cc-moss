@@ -359,6 +359,7 @@ struct GeneralSettings: View {
             }
         }
         TerminalSettings(prefs: model.terminals)
+        MenuBarSettings(model: model)
         SettingsCard(title: "cc-moss") {
             CardRow(
                 title: L.t("Program", "程序位置"),

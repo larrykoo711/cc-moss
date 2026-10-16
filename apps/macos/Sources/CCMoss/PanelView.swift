@@ -12,6 +12,7 @@ struct PanelView: View {
     @State private var toast: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.closePanel) private var closePanel
     /// Which shortcut's key caps are lit right now ("↵" or "⌘K").
     @State private var litKey: String?
 
@@ -300,7 +301,7 @@ struct PanelView: View {
     }
 
     private func showSettings() {
-        NSApplication.shared.keyWindow?.close()
+        closePanel()
         openWindow(id: "settings")
         SettingsWindow.bringToFront()
     }
@@ -315,7 +316,7 @@ struct PanelView: View {
         } else if !model.query.isEmpty {
             model.query = ""
         } else {
-            NSApplication.shared.keyWindow?.close()
+            closePanel()
         }
     }
 

@@ -212,11 +212,17 @@ struct SessionRow: View {
 
     /// Raycast-style icon tile: the state's symbol on a tint of its colour.
     private var stateIcon: some View {
-        let color = Theme.color(session.state)
+        // A session asking you something trumps what it is doing.
+        let color = session.needsYou ? Theme.brand : Theme.color(session.state)
+        let label = session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
         return ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .fill(color.opacity(scheme == .dark ? 0.22 : 0.14))
-            if session.state == .working {
+            if session.needsYou {
+                Image(systemName: Icons.needsYou)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+            } else if session.state == .working {
                 WorkingRing()
             } else {
                 Image(systemName: Icons.state(session.state))
@@ -225,8 +231,8 @@ struct SessionRow: View {
             }
         }
         .frame(width: 24, height: 24)
-        .help(session.state.label)
-        .accessibilityLabel(session.state.label)
+        .help(label)
+        .accessibilityLabel(label)
     }
 }
 

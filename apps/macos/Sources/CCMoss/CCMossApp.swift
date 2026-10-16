@@ -3,21 +3,23 @@ import MossKit
 import SwiftUI
 
 struct CCMossApp: App {
-    @State private var model = AppModel()
+    /// Owns the model and the status item (`StatusItem.swift`): the menu bar
+    /// icon animates by setting the button's image, outside SwiftUI.
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        MenuBarExtra {
-            PanelView(model: model)
+        // Never inserted: the status item is ours. It stays as the first
+        // scene so that, as before, launching opens no window.
+        MenuBarExtra(isInserted: .constant(false)) {
+            EmptyView()
         } label: {
-            Image(nsImage: StatusIcon.image)
-                .accessibilityLabel("cc-moss")
+            EmptyView()
         }
-        .menuBarExtraStyle(.window)
 
         // Our own window rather than the stock Settings scene: no title bar,
         // the panel's frosted surface, Raycast-style tabs.
         Window(L.t("cc-moss Settings", "cc-moss 设置"), id: "settings") {
-            SettingsView(model: model)
+            SettingsView(model: delegate.model)
         }
         .windowStyle(.hiddenTitleBar)
         .windowResizability(.contentSize)
@@ -32,6 +34,10 @@ enum Main {
         // screenshots for the README and for visual review, no menu bar needed.
         // `--preview --demo file.json`: the panel in an ordinary window, for
         // watching animations and recording them.
+        if CommandLine.arguments.contains("--bench-icon") {
+            Render.benchIcon(args: CommandLine.arguments)
+            return
+        }
         if CommandLine.arguments.contains("--preview") {
             Render.preview(args: CommandLine.arguments)
             return

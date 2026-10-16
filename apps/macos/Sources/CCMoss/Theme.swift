@@ -67,6 +67,8 @@ enum Icons {
     static let download = "arrow.down.circle"
     static let locked = "lock.shield"
     static let warning = "exclamationmark.triangle"
+    /// A session is asking you something (permission, a question).
+    static let needsYou = "hand.raised"
 
     static func state(_ state: SessionState) -> String {
         switch state {

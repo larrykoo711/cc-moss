@@ -26,6 +26,10 @@ enum Render {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
             return args[i + 1]
         }
+        if let state = value("--icon") {
+            icon(state, args: args, out: out)
+            return
+        }
         guard let demo = value("--demo"), let data = FileManager.default.contents(atPath: demo) else {
             FileHandle.standardError.write(Data("--render needs --demo <ls --json file>\n".utf8))
             exit(2)
@@ -62,6 +66,121 @@ enum Render {
             exit(0)
         }
         RunLoop.main.run()
+    }
+
+    /// The menu bar icon on a stand-in menu bar, for reviewing its frames.
+    ///
+    ///   CCMoss --render out.png --icon working|waiting|needsYou|interrupted|idle|all
+    ///          [--frame n | --sheet] [--count n] [--dark] [--scale 1|2]
+    ///
+    /// `--sheet` lays out every frame of the state left to right; `all` shows
+    /// each state's first frame. Template states are drawn in the bar's text colour.
+    @MainActor static func icon(_ name: String, args: [String], out: String) {
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        let states: [String: IconState] = [
+            "working": .working, "waiting": .waiting, "needsYou": .needsYou,
+            "interrupted": .interrupted, "idle": .idle,
+        ]
+        let frames: [IconFrame]
+        if name == "all" {
+            frames = [.needsYou, .interrupted, .working, .waiting, .idle].map { IconFrame(state: $0, index: 0) }
+        } else if let state = states[name] {
+            if args.contains("--sheet") {
+                frames = (0..<IconMotion.frameCount(state)).map { IconFrame(state: state, index: $0) }
+            } else {
+                let n = Int(value("--frame") ?? "0") ?? 0
+                frames = [IconFrame(state: state, index: n % IconMotion.frameCount(state))]
+            }
+        } else {
+            FileHandle.standardError.write(Data("--icon: one of \(states.keys.sorted().joined(separator: ", ")), all\n".utf8))
+            exit(2)
+        }
+        let badge = value("--count").flatMap(Int.init)
+        let dark = args.contains("--dark")
+        let scale = CGFloat(Double(value("--scale") ?? "2") ?? 2)
+        let cell = StatusIcon.size(badge: badge)
+        let pad: CGFloat = 8
+        let bar: CGFloat = 24
+        let width = pad + CGFloat(frames.count) * (cell.width + pad)
+        let pixels = NSSize(width: (width * scale).rounded(), height: (bar * scale).rounded())
+        guard let rep = NSBitmapImageRep(
+            bitmapDataPlanes: nil, pixelsWide: Int(pixels.width), pixelsHigh: Int(pixels.height),
+            bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+            colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0
+        ), let gc = NSGraphicsContext(bitmapImageRep: rep) else { exit(1) }
+        let ctx = gc.cgContext
+        // y-down, in points.
+        ctx.translateBy(x: 0, y: pixels.height)
+        ctx.scaleBy(x: scale, y: -scale)
+        let background = dark ? NSColor(red: 0.16, green: 0.16, blue: 0.18, alpha: 1) : NSColor(red: 0.93, green: 0.93, blue: 0.94, alpha: 1)
+        ctx.setFillColor(background.cgColor)
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: bar))
+        let ink = dark ? NSColor.white : NSColor.black.withAlphaComponent(0.85)
+        for (i, frame) in frames.enumerated() {
+            let x = pad + CGFloat(i) * (cell.width + pad)
+            StatusIcon.draw(frame, badge: badge, in: ctx, rect: CGRect(x: x, y: 0, width: cell.width, height: bar), ink: ink)
+        }
+        ctx.flush()
+        guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
+        do {
+            try png.write(to: URL(fileURLWithPath: out))
+        } catch {
+            FileHandle.standardError.write(Data("\(error)\n".utf8))
+            exit(1)
+        }
+        exit(0)
+    }
+
+    /// `CCMoss --bench-icon working|needsYou|idle [--seconds n]`: run the icon's
+    /// real timer into an off-screen button and print this process's CPU use.
+    /// It covers our side of a frame (timer, cache, setting the image), not
+    /// the menu bar's own redraw.
+    @MainActor static func benchIcon(args: [String]) {
+        func value(_ flag: String) -> String? {
+            guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
+            return args[i + 1]
+        }
+        let seconds = Double(value("--seconds") ?? "10") ?? 10
+        let state = value("--bench-icon") ?? "working"
+        let session: String = switch state {
+        case "needsYou": #"{"status":"running","busy":true,"attention":"permission"}"#
+        case "idle": #"{"status":"closed","busy":false}"#
+        default: #"{"status":"running","busy":true}"#
+        }
+        let json = #"{"schema":1,"sessions":[{"id":"A","session_id":"s","cwd":"/w","last_active_at":"2026-10-16T12:00:00Z","notes":{}, "#
+            + session.dropFirst() + "]}"
+        guard let snap = try? Snapshot.decode(Data(json.utf8)) else { exit(1) }
+        _ = NSApplication.shared
+        NSApp.setActivationPolicy(.prohibited)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 60, height: 24), styleMask: [.borderless], backing: .buffered, defer: false)
+        let button = NSButton(frame: window.contentLayoutRect)
+        window.contentView = button
+        let icon = MenuBarIcon()
+        var frames = 0
+        icon.onImage = { image in
+            button.image = image
+            button.display()
+            frames += 1
+        }
+        icon.update(snap.sessions, showCount: false)
+        func cpu() -> Double {
+            var usage = rusage()
+            getrusage(RUSAGE_SELF, &usage)
+            return Double(usage.ru_utime.tv_sec + usage.ru_stime.tv_sec)
+                + Double(usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1_000_000
+        }
+        // Let the first frames be drawn and cached before measuring.
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        let start = cpu(), began = Date(), startFrames = frames
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+        let wall = Date().timeIntervalSince(began)
+        let used = cpu() - start
+        print(String(format: "%@: %.2f%% CPU over %.1f s, %d frames (%.1f fps)",
+                     state, used / wall * 100, wall, frames - startFrames, Double(frames - startFrames) / wall))
+        exit(0)
     }
 
     @MainActor static func preview(args: [String]) {
