@@ -119,6 +119,7 @@ In the picker:
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting; today only `ui.language` (`auto`, `zh`, `en`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` alias |
@@ -252,6 +253,8 @@ language = "auto"         # "auto" (your system language), "en" or "zh"
 [update]
 check = true              # look for a new cc-moss once a day (picker and doctor); false turns it off
 ```
+
+You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).
 
 <details>
 <summary>Environment variables</summary>

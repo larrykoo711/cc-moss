@@ -1,6 +1,7 @@
 pub mod alias;
 pub mod attach;
 pub mod close;
+pub mod config;
 pub mod confirm;
 pub mod doctor;
 pub mod events;
