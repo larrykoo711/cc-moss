@@ -44,11 +44,17 @@ pub fn run(args: NoteArgs) -> Result<()> {
         }
         return Ok(());
     }
-    // Fields not given keep their value.
+    // Fields not given keep their value; a field given as blank is cleared
+    // (the menubar app saves an emptied note as `note <name> -- ""`).
+    let set = |given: Option<String>, kept: &Option<String>| match given {
+        Some(v) if v.trim().is_empty() => None,
+        Some(v) => Some(v),
+        None => kept.clone(),
+    };
     let notes = Notes {
-        goal: args.goal.or_else(|| slot.notes.goal.clone()),
-        state: args.state.or_else(|| slot.notes.state.clone()),
-        note: args.text.or_else(|| slot.notes.note.clone()),
+        goal: set(args.goal, &slot.notes.goal),
+        state: set(args.state, &slot.notes.state),
+        note: set(args.text, &slot.notes.note),
     };
     registry.set_notes(&slot.slot_id, &notes)?;
     println!(

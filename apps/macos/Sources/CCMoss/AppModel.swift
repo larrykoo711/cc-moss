@@ -48,6 +48,14 @@ final class AppModel {
     /// A short line in the action bar after something finished.
     var notice: String?
 
+    /// The form floating over the panel: new session or a note (T2.5).
+    var form: PanelForm?
+    /// The new-session form's fields; kept here so they survive the panel
+    /// closing while the folder chooser is open.
+    var newDraft = NewDraft()
+    /// "Stop reminding" waits for a second, deliberate click.
+    var closeGate = Confirmation<[Session]>()
+
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
     init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
         self.terminals = terminals ?? TerminalPrefs()

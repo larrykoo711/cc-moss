@@ -115,7 +115,7 @@ In the picker:
 | `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
-| `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes |
+| `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |

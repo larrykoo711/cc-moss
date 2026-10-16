@@ -85,6 +85,25 @@ fn note_round_trip() {
 }
 
 #[test]
+fn note_text_after_double_dash_is_one_argument_and_blank_clears_it() {
+    let (w, _) = interrupted_world("note-app");
+    assert!(run(&w, &["note", "job-a", "--state", "waiting"])
+        .status
+        .success());
+    // What the menubar app sends: the text as one argument after `--`.
+    let text = "--goal it's \"done\" -x";
+    assert!(run(&w, &["note", "job-a", "--", text]).status.success());
+    let notes = &ls_json(&w.state(), false)["sessions"][0]["notes"];
+    assert_eq!(notes["note"], text);
+    assert!(notes["goal"].is_null(), "not read as an option");
+
+    assert!(run(&w, &["note", "job-a", "--", ""]).status.success());
+    let notes = &ls_json(&w.state(), false)["sessions"][0]["notes"];
+    assert!(notes["note"].is_null(), "{notes}");
+    assert_eq!(notes["state"], "waiting", "only the note is cleared");
+}
+
+#[test]
 fn close_removes_candidate() {
     let (w, _) = interrupted_world("close");
     assert!(run(&w, &["close", "job-a"]).status.success());

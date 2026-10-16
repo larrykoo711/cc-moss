@@ -51,6 +51,24 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
             }
         }
+        .overlay {
+            if model.form != nil || model.closeGate.asking {
+                ZStack(alignment: .bottom) {
+                    FormScrim { dismissForm() }
+                    Group {
+                        switch model.form {
+                        case .newSession: NewSessionForm(model: model) { s in open(s) }
+                        case .note(let s): NoteForm(model: model, session: s)
+                        case nil:
+                            if let list = model.closeGate.pending { CloseConfirmCard(model: model, sessions: list) }
+                        }
+                    }
+                    .padding(.bottom, 54)
+                    .onKeyPress(.escape) { dismissForm(); return .handled }
+                }
+                .transition(.opacity)
+            }
+        }
         .overlay(alignment: .bottom) {
             if let problem = model.openProblem {
                 OpenProblemCard(problem: problem, copy: copy) { model.openProblem = nil }
@@ -60,6 +78,9 @@ struct PanelView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: showActions)
+        .animation(.easeOut(duration: 0.15), value: model.form)
+        .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
+        .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
@@ -85,7 +106,11 @@ struct PanelView: View {
                 .textFieldStyle(.plain)
                 .font(.system(size: 17))
                 .focused($searchFocused)
-                .onSubmit { flash("↵"); perform(primaryAction) }
+                .onSubmit {
+                    flash("↵")
+                    // Return answers the "stop reminding?" card when it is up.
+                    if model.closeGate.asking { model.confirmClose() } else { perform(primaryAction) }
+                }
                 .onKeyPress(.downArrow) { model.move(1); return .handled }
                 .onKeyPress(.upArrow) { model.move(-1); return .handled }
                 .onKeyPress(.escape) { escape(); return .handled }
@@ -188,6 +213,7 @@ struct PanelView: View {
         // Return (user 2026-10-16).
         SessionRow(session: s, selected: s.id == model.selected?.id,
                    action: s.id == hoveredID ? primaryAction : nil,
+                   secondary: s.id == hoveredID ? noteAction(s) : nil,
                    perform: { perform($0) },
                    problem: model.restoreProblem(s),
                    restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
@@ -223,7 +249,17 @@ struct PanelView: View {
                     .tip(notice)
                     .transition(.opacity)
             } else {
-                LogoButton(version: model.version) { showSettings() }
+                // The version gives way first when the main action is long.
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 4) {
+                        LogoButton(version: model.version) { showSettings() }
+                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
+                    }
+                    HStack(spacing: 4) {
+                        LogoButton(version: model.version, compact: true) { showSettings() }
+                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
+                    }
+                }
             }
             Spacer()
             // Raycast's floating pill: the main action, then everything else.
@@ -319,12 +355,37 @@ struct PanelView: View {
                 copy(s.cwd)
             })
         }
+        if let s = model.selected, model.phase == .ready {
+            list.append(noteAction(s))
+            if Close.allowed(s) {
+                list.append(PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
+                    model.askToClose([s])
+                })
+            }
+        }
+        if model.phase == .ready {
+            list.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
+                model.startNewSession()
+            })
+        }
         list.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
         list.append(PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() })
         list.append(PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
             NSApplication.shared.terminate(nil)
         })
         return list
+    }
+
+    private func noteAction(_ s: Session) -> PanelAction {
+        PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "⌘E",
+                    help: L.t("Write a note on this session", "给这个会话写一句便条")) {
+            model.editNote(s)
+        }
+    }
+
+    private func dismissForm() {
+        model.form = nil
+        model.closeGate.cancel()
     }
 
     private func perform(_ action: PanelAction?) {
@@ -364,7 +425,9 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if showActions {
+        if model.form != nil || model.closeGate.asking {
+            dismissForm()
+        } else if showActions {
             showActions = false
         } else if model.openProblem != nil {
             model.openProblem = nil
@@ -382,6 +445,8 @@ struct PanelView: View {
         switch press.characters.lowercased() {
         case "k": flash("⌘K"); showActions.toggle()
         case "r": model.refresh()
+        case "n" where model.phase == .ready: model.startNewSession()
+        case "e": if let s = model.selected, model.phase == .ready { model.editNote(s) }
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):

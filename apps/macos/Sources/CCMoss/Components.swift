@@ -171,6 +171,8 @@ struct SessionRow: View {
     let selected: Bool
     /// The row's main action, shown as a button while the row is hovered.
     var action: PanelAction?
+    /// A second, quieter button before it (write a note).
+    var secondary: PanelAction?
     var perform: (PanelAction) -> Void = { _ in }
     /// Why it could not be brought back; replaces the second line.
     var problem: String?
@@ -227,8 +229,13 @@ struct SessionRow: View {
                         .frame(width: 30, height: 30)
                         .accessibilityLabel(L.t("Bringing it back", "正在找回"))
                 } else if let action {
-                    RowActionButton(action: action, perform: perform)
-                        .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    HStack(spacing: 4) {
+                        if let secondary {
+                            RowActionButton(action: secondary, perform: perform)
+                        }
+                        RowActionButton(action: action, perform: perform)
+                    }
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
             .animation(.easeOut(duration: 0.12), value: action == nil)

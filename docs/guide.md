@@ -100,7 +100,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
-| `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注 |
+| `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具 |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |

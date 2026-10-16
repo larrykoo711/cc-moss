@@ -9,6 +9,7 @@ import SwiftUI
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
+///          [--form new|note|close [--form-name <name>]]
 ///          [--settings general|aliases|about [--aliases <alias ls --json file>]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
@@ -66,6 +67,14 @@ enum Render {
                 model.restoreFlow.finish(.one(id), report: RestoreReport(results: [RestoreResult(id: id, name: id, ok: false, reason: reason)]))
             }
             if let id = value("--select") { model.selectedID = id }
+            switch value("--form") {
+            case "new":
+                model.startNewSession()
+                if let name = value("--form-name") { model.newDraft.name = name; model.newDraft.nameEdited = true }
+            case "note": if let s = model.selected { model.editNote(s) }
+            case "close": if let s = model.selected { model.askToClose([s]) }
+            default: break
+            }
             let command = model.selected.map(model.attachCommand) ?? ""
             switch value("--problem") {
             case "denied": model.openProblem = OpenProblem(kind: .denied, terminalName: "Ghostty", command: command)

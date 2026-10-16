@@ -79,6 +79,10 @@ enum Icons {
     /// The folded group of sessions that stopped long ago.
     static let older = "clock.arrow.circlepath"
     static let expand = "chevron.right"
+    /// Start a new named session.
+    static let newSession = "plus"
+    /// Pick another folder for it.
+    static let chooseFolder = "folder.badge.plus"
 
     static func state(_ state: SessionState) -> String {
         switch state {

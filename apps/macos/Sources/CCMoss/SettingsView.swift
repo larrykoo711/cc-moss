@@ -316,6 +316,8 @@ struct FilledField: View {
     let placeholder: String
     @Binding var text: String
     var monospaced = false
+    /// Take the keyboard as soon as it appears (the panel's forms).
+    var autofocus = false
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -334,6 +336,7 @@ struct FilledField: View {
                     .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
             )
             .animation(.easeOut(duration: 0.12), value: focused)
+            .onAppear { if autofocus { focused = true } }
     }
 }
 
