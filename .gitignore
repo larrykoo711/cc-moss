@@ -6,3 +6,5 @@
 .idea/
 .vscode/
 /.claude/
+/apps/macos/.build
+/apps/macos/build

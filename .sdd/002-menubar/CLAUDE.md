@@ -28,12 +28,17 @@
 | `diagrams/sequence-open-session.html` | 开机提醒 → 找回 → 在终端打开的时序 |
 | `diagrams/src/` | 两张图的 archify 源 JSON |
 | `PLAN.md` ⭐ | 3 Phase × 10 Task、依赖图、Kanban、日志、开放问题 |
+| `notes/probes.md` | 探针结论：Swift Testing、通知要求 App 在应用程序目录、SwiftUI 宏需 Xcode 工具链 |
+| `notes/hook-probe-2.md` | Notification / PostToolUse 钩子真机探针 |
+| `reports/T1.1-manual.md` | T1.1 真机走查与用户反馈处置记录 |
 | `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
 
 ## 依赖链 & 推进
 - S0 立项 ✅、G1 设计批准 ✅（2026-10-16）
 - S2 编排完成：3 Phase × 10 Task，P1 是 MVP（T1.1–T1.3），待 G2
-- 第一波：T1.1（Swift 面板）与 T2.1（CLI 事件流）并行
+- 第一波 ✅：T1.1（Swift 面板，#14）与 T2.1（CLI 事件流，#15）
+- 2026-10-16 重排为 4 Phase × 16 Task：P3 桌面宠物并入本档案（亮点），发布顺延 P4
+- 第二波：T1.2、T2.2、T2.6、T3.1 四路 agent 并行
 - 后续 epic（另立档案）：003-pet、004-pet-approve、005-voice，见 `DESIGN-menubar.md` §1.1
 
 ## 开发笔记
