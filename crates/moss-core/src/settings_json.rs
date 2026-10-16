@@ -121,7 +121,7 @@ fn hook_binary(hook: &Value) -> Option<String> {
 
 /// The hooks cc-moss registers that `doc` has no cc-moss entry for, in
 /// [`HookKind::ALL`] order. An install from an older version lacks the
-/// newer ones (Notification and PostToolUse came with 0.2).
+/// newer ones (Notification and PostToolUse came after 0.1.1).
 pub fn missing_hooks(doc: &Value) -> Vec<HookKind> {
     HookKind::ALL
         .into_iter()

@@ -869,7 +869,7 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
             "name_scanned_to",
             "name_scanned_to INTEGER NOT NULL DEFAULT 0",
         ),
-        // 0.2: why the session waits for the user, if it does.
+        // After 0.1.1: why the session waits for the user, if it does.
         ("attention", "attention TEXT"),
     ] {
         let present = conn
@@ -880,7 +880,7 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
             let _ = conn.execute_batch(&format!("ALTER TABLE slots ADD COLUMN {ddl}"));
         }
     }
-    // 0.2: the event stream. Added without a version bump: 0.1.x reads and
+    // After 0.1.1: the event stream. Added without a version bump: 0.1.x reads and
     // writes the slots as before and simply records no events.
     if !has_events_table(conn)? {
         conn.execute_batch(

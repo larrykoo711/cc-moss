@@ -25,7 +25,7 @@ cc-moss doctor                           # 检查是否都装好了
 
 | 部分 | 做什么 |
 |---|---|
-| `hooks` | 在 `~/.claude/settings.json` 写入四个钩子，让 Claude Code 上报会话事件；在 `~/.zshrc` 加上 `t` 快捷命令 |
+| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；在 `~/.zshrc` 加上 `t` 快捷命令 |
 | `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
 | `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
 | `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
@@ -97,6 +97,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
 | `cc-moss new [名字] [-C 目录] [--detach] [--yes] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用 |
 | `cc-moss ls [--all] [--json]` | 列出会话（`--json` 给脚本用；1.0 之前格式仍可能调整） |
+| `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
 | `cc-moss restore [名字…] [--dry-run] [--yes]` | 把中断的会话恢复回来 |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注 |
@@ -112,7 +113,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 
 ```mermaid
 flowchart LR
-    CC["Claude Code"] -- "钩子：启动 · 提问 · 停止 · 结束" --> H["cc-moss hook"]
+    CC["Claude Code"] -- "钩子：启动 · 提问 · 停止 · 结束 · 等你确认 · 工具跑完" --> H["cc-moss hook"]
     H --> DB[("登记表<br/>SQLite")]
     A["claude agents"] -. "认领钩子漏掉的会话" .-> DB
     DB --> P["t · 选择器"]
@@ -122,6 +123,22 @@ flowchart LR
 ```
 
 每个会话在登记表里有一条记录：Claude Code 会话 id、目录、启动参数、进程和 tmux 会话。没有正常告别就消失的会话（崩溃、重启、终端被关）记为**中断**；你主动结束的记为**关闭**，之后不再提示恢复。钩子尽量不打扰你：几毫秒就结束，从不阻塞提问；cc-moss 的二进制不在了，它就什么都不做。
+
+### 会话事件
+
+除了「现在是什么样」，登记表还记着「刚发生了什么」：新会话、开始干活、这一轮做完、需要你确认、断了、结束、找回、改名、关闭，每件事一条，按序号排好，保留最近 7 天。`cc-moss events --json` 把它们读出来，带上 `--since <序号>` 就只要那之后的新事件，适合状态栏 App 或你自己的脚本轮询：
+
+```sh
+cc-moss events --json --since 42
+# {"schema":1,"events":[{"seq":43,"slot_id":"…","name":"api","kind":"needs_you",
+#   "detail":{"reason":"permission","message":"Claude needs your permission"},"at":"2026-10-16T08:00:00Z"}],"last_seq":43}
+```
+
+下次把 `last_seq` 当作 `--since` 传回去就行。`kind` 有 `started`、`working`、`finished`、`needs_you`、`renamed`、`ended`、`interrupted`、`restored`、`closed`；事件里不存你的提示词。
+
+**需要你确认**：Claude Code 弹出权限提示、提问或等你输入时，大约 6 秒后会发一条通知，cc-moss 记下 `needs_you`，`ls --json` 里这个会话的 `attention` 变成 `permission`、`question` 或 `input`。你点了同意（工具跑完）、回了话、这一轮结束或会话退出，它就自动清掉。cc-moss 只是记录，从不替你回答，也不拦任何提示。目前 Claude Code 把 AskUserQuestion 的提问也报成权限提示，所以这类提问显示为 `permission`。
+
+这两个钩子（`Notification`、`PostToolUse`）是 0.1.1 之后新加的。从 0.1.1 或更早的版本升级上来的话，`cc-moss doctor` 会提示少了 2 个钩子，运行一次 `cc-moss setup` 补上即可；setup 只加缺的那两个，照旧先给你看 diff。
 
 ### 恢复时带回什么
 
@@ -141,7 +158,7 @@ flowchart LR
 
 cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保存：
 
-- `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，以及最近一次提问的前 200 个字符（在选择器里显示）。
+- `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，以及最近一次提问的前 200 个字符（在选择器里显示）；还有最近 7 天的会话事件，不含提示词，权限提示的说明文字最多存 200 个字符。
 - `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
 - `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
 
@@ -199,6 +216,10 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 **我用 bash 或 fish**
 
 `cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。用 `cc-moss pick`（或给它绑个键）代替 `t`。
+
+**升级后 `doctor` 说少了 2 个钩子**
+
+新版本多了两个钩子，用来知道会话什么时候在等你确认。运行 `cc-moss setup`，它只补上缺的那两个，别的不动。
 
 **有会话没被登记上**
 
