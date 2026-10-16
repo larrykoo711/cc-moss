@@ -244,6 +244,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         startAlerts()
     }
 
+    /// A menu bar app lives on with no window open. SwiftUI otherwise answers
+    /// yes here (Settings is its only window scene), so Mo hiding for a moment
+    /// after a click, with Settings closed, quit the whole app.
+    func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        false
+    }
+
     private func startAlerts() {
         let notifier = SystemNotifier.available ? SystemNotifier() : nil
         notifier?.onAction = { [weak self] action, slot in
