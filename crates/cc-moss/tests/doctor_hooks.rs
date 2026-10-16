@@ -83,6 +83,27 @@ fn doctor_flags_hooks_whose_binary_is_not_executable() {
 }
 
 #[test]
+fn missing_new_hooks() {
+    // What a 0.1.x setup wrote: four hooks, all pointing at a working binary.
+    let home = tempfile::tempdir().unwrap();
+    write_settings(home.path(), env!("CARGO_BIN_EXE_cc-moss"));
+    let out = doctor(home.path(), "en");
+    assert!(!out.status.success());
+    let report = text(&out);
+    let line = report
+        .lines()
+        .find(|l| l.contains("hooks"))
+        .unwrap_or_else(|| panic!("{report}"));
+    assert!(
+        line.contains('✗') && line.contains("2 hook(s) missing (Notification, PostToolUse)"),
+        "{line}"
+    );
+    assert!(report.contains("→ cc-moss setup"), "{report}");
+    let report = text(&doctor(home.path(), "zh"));
+    assert!(report.contains("少了 2 个钩子"), "{report}");
+}
+
+#[test]
 fn doctor_accepts_hooks_from_setup() {
     let home = tempfile::tempdir().unwrap();
     let out = bin()

@@ -31,6 +31,18 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("ls", "all", "也列出主动关闭的会话"),
     ("ls", "json", "机器可读的输出（schema 1）"),
     (
+        "events",
+        "",
+        "会话刚发生了什么，按先后列出（给 App 和脚本用）",
+    ),
+    ("events", "json", "机器可读的输出（schema 1）"),
+    (
+        "events",
+        "since",
+        "只要这个序号之后的事件；不给就是最近 50 条",
+    ),
+    ("events", "limit", "最多返回这么多条"),
+    (
         "new",
         "",
         "新建一个命名的 Claude Code 会话，独占一个 tmux 会话",

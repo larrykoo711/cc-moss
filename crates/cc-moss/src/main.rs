@@ -40,6 +40,18 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// What just happened to the sessions, oldest first (for apps and scripts).
+    Events {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// Only events after this sequence number; without it, the latest 50.
+        #[arg(long, value_name = "SEQ")]
+        since: Option<i64>,
+        /// At most this many events.
+        #[arg(long, default_value_t = 500, value_name = "N")]
+        limit: usize,
+    },
     /// Start a named Claude Code session in its own tmux session.
     New {
         /// Session name; defaults to the directory name.
@@ -157,7 +169,7 @@ enum Command {
     /// Entry point for Claude Code hooks. Always exits 0.
     #[command(hide = true)]
     Hook {
-        /// session-start | user-prompt-submit | stop | session-end
+        /// session-start | user-prompt-submit | stop | session-end | notification | post-tool-use
         event: String,
     },
 }
@@ -206,6 +218,7 @@ fn main() -> std::process::ExitCode {
             claude_args,
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),
+        Command::Events { json, since, limit } => report(cmd::events::run(since, limit, json)),
         Command::Pick { query } => report(pick::run(&query.join(" "))),
         Command::Install {
             with,
