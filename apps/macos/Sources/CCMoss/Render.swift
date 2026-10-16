@@ -7,7 +7,20 @@ import SwiftUI
 ///   CCMoss --render out.png --demo sessions.json [--dark] [--query q]
 ///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
 ///          [--now 2026-10-16T12:00:00Z]
+///          [--terminals terminal,ghostty] [--problem denied|failed]
 enum Render {
+    /// `--terminals a,b`: pretend only these are installed (real icons);
+    /// the choice is never saved.
+    @MainActor static func terminals(_ args: [String]) -> TerminalPrefs {
+        let defaults = UserDefaults(suiteName: "cc-moss-render") ?? .standard
+        defaults.removeObject(forKey: "terminal")
+        guard let i = args.firstIndex(of: "--terminals"), i + 1 < args.count else {
+            return TerminalPrefs(defaults: defaults)
+        }
+        let list = args[i + 1].split(separator: ",").compactMap { Terminal(rawValue: String($0)) }
+        return TerminalPrefs(catalog: .only(list), defaults: defaults)
+    }
+
     @MainActor static func run(out: String, args: [String]) {
         func value(_ flag: String) -> String? {
             guard let i = args.firstIndex(of: flag), i + 1 < args.count else { return nil }
@@ -22,7 +35,7 @@ enum Render {
         }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
-        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)))
+        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)), terminals: terminals(args))
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             await model.loadNow()
@@ -34,6 +47,12 @@ enum Render {
             default: break
             }
             if let id = value("--select") { model.selectedID = id }
+            let command = model.selected.map(model.attachCommand) ?? ""
+            switch value("--problem") {
+            case "denied": model.openProblem = OpenProblem(kind: .denied, terminalName: "Ghostty", command: command)
+            case "failed": model.openProblem = OpenProblem(kind: .failed("Connection is invalid (-609)"), terminalName: "Ghostty", command: command)
+            default: break
+            }
             if let tab = value("--settings") {
                 drawSettings(model: model, tab: tab == "about" ? .about : .general, dark: args.contains("--dark"), out: out)
             } else {
@@ -54,7 +73,7 @@ enum Render {
         if let now = value("--now"), let date = ISO8601DateFormatter().date(from: now) { L.clock = { date } }
         let app = NSApplication.shared
         app.setActivationPolicy(.regular)
-        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)))
+        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)), terminals: terminals(args))
         let settings = args.contains("--settings-window")
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: settings ? 820 : Theme.panelWidth, height: settings ? 560 : Theme.panelHeight),

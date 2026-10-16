@@ -298,10 +298,7 @@ struct ActionsMenu: View {
                     a.perform()
                 } label: {
                     HStack(spacing: 9) {
-                        Image(systemName: a.icon)
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                            .frame(width: 16)
+                        ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
                         Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
                         Spacer(minLength: 16)
                         if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
