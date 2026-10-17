@@ -339,7 +339,7 @@ struct WelcomeStage: View {
 
     static var moScenes: [(PetPose, MoMove, String)] {
         [
-            (.idle, .wave, L.t("Hi! I'm Mo.", "嗨！我是小莫。")),
+            (.idle, .wave, L.t("Hi! I'm Moss.", "嗨！我是小莫。")),
             (.needsYou, .wave, L.t("\(demoNames[1]) is waiting for your OK", "\(demoNames[1]) 在等你点头")),
             (.interrupted, .none, L.t("\(demoNames[2]) stopped… click me to bring it back", "\(demoNames[2]) 断了…点我就能找回")),
             (.happy, .hop, L.t("It's back! Right where you left off.", "找回来啦！从刚才的地方接着来。")),
