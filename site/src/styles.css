@@ -3,14 +3,51 @@
 @source "./app.js";
 
 @theme {
-  --color-ink: #07080a;
-  --color-ink-2: #0d0e12;
+  --color-bg: #0c0b0a;
+  --color-bg-2: #141311;
+  --color-raise: #22201d;
+  --color-fg: #f5f0ea;
   --color-coral: #ff5a3c;
   --color-coral-soft: #ff8a6e;
   --color-amber: #e6ad4d;
-  --color-mint: #3fd1b4;
-  --font-sans: "Inter", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-sans: "Geist", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --ease-spring: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Skins. Dark is the default; light follows the system or the toggle.
+   Device-like mockups (.dark-scope) stay dark in both, like real screens. */
+:root,
+.dark-scope {
+  --hair: rgb(255 255 255 / 0.08);
+  --tray: rgb(255 255 255 / 0.035);
+  --drop: rgb(20 6 2 / 0.9);
+  --grain: 0.045;
+  --key-top: #2a2826;
+  --key-bottom: #1b1a18;
+  --key-base: #0a0908;
+  color-scheme: dark;
+}
+.dark-scope {
+  --color-bg: #0c0b0a;
+  --color-bg-2: #141311;
+  --color-raise: #22201d;
+  --color-fg: #f5f0ea;
+  color: var(--color-fg);
+}
+:root[data-theme="light"] {
+  --color-bg: #f3efe9;
+  --color-bg-2: #fbf9f6;
+  --color-raise: #ffffff;
+  --color-fg: #1b1815;
+  --hair: rgb(40 20 10 / 0.09);
+  --tray: rgb(40 20 10 / 0.035);
+  --drop: rgb(80 40 20 / 0.18);
+  --grain: 0.03;
+  --key-top: #ffffff;
+  --key-bottom: #ece7e1;
+  --key-base: #d6cfc7;
+  color-scheme: light;
 }
 
 /* One language at a time: every phrase is written in both, side by side. */
@@ -21,61 +58,58 @@ html[data-lang="en"] [lang="zh"] {
 
 html {
   scroll-behavior: smooth;
-  background: var(--color-ink);
+  background: var(--color-bg);
 }
 
 body {
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* The hero's light: coral beams falling at an angle, blurred, with grain. */
-.beams {
-  position: absolute;
-  inset: -20% -10% auto -10%;
-  height: 140%;
-  background:
-    linear-gradient(115deg, transparent 36%, rgb(255 90 60 / 0.75) 43%, transparent 50%),
-    linear-gradient(115deg, transparent 48%, rgb(255 110 80 / 0.6) 55%, transparent 62%),
-    linear-gradient(115deg, transparent 58%, rgb(255 70 90 / 0.35) 63%, transparent 68%),
-    linear-gradient(115deg, transparent 64%, rgb(80 110 255 / 0.3) 70%, transparent 78%);
-  filter: blur(34px) saturate(1.3);
-  opacity: 0.9;
-  animation: drift 18s ease-in-out infinite alternate;
-  pointer-events: none;
-}
+h1, h2, h3 { text-wrap: balance; }
+p { text-wrap: pretty; }
 
-@keyframes drift {
-  from { transform: translate3d(-3%, -2%, 0) rotate(-1deg); }
-  to { transform: translate3d(3%, 2%, 0) rotate(1deg); }
-}
-
-.grain::after {
+/* Film grain over everything, fixed so it never repaints on scroll. */
+body::after {
   content: "";
-  position: absolute;
+  position: fixed;
   inset: 0;
+  z-index: 50;
   pointer-events: none;
-  opacity: 0.08;
-  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+  opacity: var(--grain);
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
 }
 
-/* Soft round light, never a box: a radial gradient that fades to nothing. */
-.glow { pointer-events: none; }
-.glow-coral { background: radial-gradient(closest-side, rgb(255 90 60 / 0.28), rgb(255 90 60 / 0.08) 55%, transparent); }
-.glow-mint { background: radial-gradient(closest-side, rgb(63 209 180 / 0.16), rgb(63 209 180 / 0.05) 55%, transparent); }
-
-/* Glass, like the app's panel. */
-.glass {
-  background: rgb(22 23 28 / 0.6);
-  backdrop-filter: blur(18px) saturate(1.4);
-  -webkit-backdrop-filter: blur(18px) saturate(1.4);
-  border: 1px solid rgb(255 255 255 / 0.08);
+/* Machined surfaces: an outer tray and an inner plate with concentric corners. */
+.shell {
+  padding: 6px;
+  border-radius: 2rem;
+  background: var(--tray);
+  box-shadow: inset 0 0 0 1px var(--hair), 0 40px 100px -30px var(--drop);
+}
+.core {
+  border-radius: calc(2rem - 6px);
+  background: var(--color-bg-2);
+  box-shadow: inset 0 1px 0 var(--hair), inset 0 0 0 1px var(--hair);
 }
 
-.ring-soft {
-  box-shadow:
-    0 0 0 1px rgb(255 255 255 / 0.06),
-    0 30px 80px -20px rgb(0 0 0 / 0.8),
-    0 0 60px -10px rgb(255 90 60 / 0.25);
+/* The hero's light: the brand's loop, drawn huge, with a comet running it. */
+.loop-base { stroke: var(--hair); }
+.loop-glow,
+.loop-comet {
+  stroke-dasharray: 9 91;
+  animation: comet 11s linear infinite;
+}
+.loop-glow { stroke: rgb(255 90 60 / 0.35); filter: blur(10px); }
+.loop-comet { stroke: #ff7a5e; }
+@keyframes comet {
+  to { stroke-dashoffset: -100; }
+}
+
+.sky {
+  background:
+    radial-gradient(60% 45% at 50% 30%, rgb(255 90 60 / 0.16), transparent 70%),
+    radial-gradient(40% 30% at 50% 100%, rgb(255 120 80 / 0.08), transparent 70%);
 }
 
 /* Mo floats and its lamp breathes. */
@@ -97,40 +131,107 @@ body {
 }
 .blink { transform-origin: center; animation: blink 5s infinite; }
 
-/* Bubbles pop in. */
 @keyframes pop {
   from { opacity: 0; transform: translateY(6px) scale(0.92); }
   to { opacity: 1; transform: none; }
 }
-.pop { animation: pop 0.45s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.pop { animation: pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
 
 /* Keycaps pressed in turn: ⌃ then ⌃. */
 .keycap {
-  background: linear-gradient(#26272d, #1a1b20);
-  border: 1px solid rgb(255 255 255 / 0.09);
-  box-shadow: 0 6px 0 #0c0d10, 0 10px 24px rgb(0 0 0 / 0.5);
-  transition: transform 0.12s, box-shadow 0.12s, border-color 0.12s;
+  background: linear-gradient(var(--key-top), var(--key-bottom));
+  box-shadow: inset 0 1px 0 var(--hair), 0 6px 0 var(--key-base), 0 12px 28px var(--drop);
+  transition: transform 0.12s var(--ease-spring), box-shadow 0.12s, color 0.12s;
 }
 .keycap.down {
   transform: translateY(5px);
-  box-shadow: 0 1px 0 #0c0d10, 0 4px 10px rgb(0 0 0 / 0.5);
-  border-color: rgb(255 90 60 / 0.7);
+  color: var(--color-coral);
+  box-shadow: inset 0 1px 0 var(--hair), 0 1px 0 var(--key-base), 0 0 0 1px rgb(255 90 60 / 0.6), 0 6px 24px rgb(255 90 60 / 0.25);
 }
+.summon {
+  opacity: 0;
+  transform: translateY(14px) scale(0.96);
+  transition: opacity 0.5s var(--ease-spring), transform 0.6s var(--ease-spring);
+}
+.summon.on { opacity: 1; transform: none; }
 
-/* Things rise into view as you scroll. */
+/* Things rise into view, in a stagger set by --d. */
 .reveal {
   opacity: 0;
-  transform: translateY(24px);
-  transition: opacity 0.8s cubic-bezier(0.2, 0.8, 0.2, 1), transform 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transform: translateY(28px);
+  filter: blur(8px);
+  transition: opacity 0.9s var(--ease-spring), transform 0.9s var(--ease-spring), filter 0.9s var(--ease-spring);
+  transition-delay: var(--d, 0ms);
 }
-.reveal.in { opacity: 1; transform: none; }
+.reveal.in { opacity: 1; transform: none; filter: none; }
 
-/* The showcase screen cross-fades between shots. */
-.shot { transition: opacity 0.5s ease, transform 0.6s cubic-bezier(0.2, 0.8, 0.2, 1); }
-.shot[hidden] { display: block; opacity: 0; transform: scale(0.98); pointer-events: none; }
+/* The tour: screens cross-fade on a sticky stage; steps light as you reach them. */
+.screen {
+  opacity: 0;
+  transform: translateY(14px) scale(0.97);
+  transition: opacity 0.7s var(--ease-spring), transform 0.8s var(--ease-spring);
+  pointer-events: none;
+}
+.screen.on { opacity: 1; transform: none; }
+.step { opacity: 0.28; transition: opacity 0.6s var(--ease-spring); }
+.step.on { opacity: 1; }
+
+/* Restore rows flip from stopped to back. */
+.row-state { transition: color 0.4s, background-color 0.4s; }
+
+/* The skin toggle: a sun whose rays fold away as the moon's shadow slides in. */
+.theme-btn svg { transition: transform 0.6s var(--ease-spring); }
+.theme-btn .cut { transition: transform 0.6s var(--ease-spring); transform: translate(8px, -8px); }
+.theme-btn .orb { transition: transform 0.6s var(--ease-spring); transform-origin: center; transform-box: fill-box; }
+.theme-btn .rays { transition: opacity 0.35s, transform 0.6s var(--ease-spring); transform-origin: 12px 12px; }
+[data-theme="dark"] .theme-btn svg { transform: rotate(-25deg); }
+[data-theme="dark"] .theme-btn .cut { transform: none; }
+[data-theme="dark"] .theme-btn .orb { transform: scale(1.55); }
+[data-theme="dark"] .theme-btn .rays { opacity: 0; transform: rotate(-60deg) scale(0.6); }
+
+/* Skin changes reveal from the toggle; language changes cross-fade. */
+::view-transition-old(root),
+::view-transition-new(root) { animation-duration: 0.45s; animation-timing-function: var(--ease-spring); }
+.skin-change::view-transition-old(root) { animation: none; }
+.skin-change::view-transition-new(root) { animation: skin-reveal 0.7s var(--ease-spring); }
+@keyframes skin-reveal {
+  from { clip-path: circle(0 at var(--vx, 100%) var(--vy, 0)); }
+  to { clip-path: circle(var(--vr, 150vmax) at var(--vx, 100%) var(--vy, 0)); }
+}
+
+/* Scroll-driven choreography, where the browser can do it natively. */
+@supports (animation-timeline: view()) {
+  .hero-copy {
+    animation: hero-out linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 60vh;
+  }
+  .tilt {
+    animation: tilt-in linear both;
+    animation-timeline: scroll(root);
+    animation-range: 0 70vh;
+  }
+  .lit {
+    animation: lit linear both;
+    animation-timeline: view();
+    animation-range: cover 22% cover 40%;
+  }
+}
+@keyframes hero-out {
+  to { opacity: 0; transform: translateY(-48px) scale(0.97); }
+}
+@keyframes tilt-in {
+  from { transform: perspective(1800px) rotateX(18deg) scale(0.9); }
+  to { transform: none; }
+}
+@keyframes lit {
+  from { opacity: 0.12; }
+  to { opacity: 1; }
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .beams, .float, .lamp, .blink, .pop { animation: none; }
-  .reveal { opacity: 1; transform: none; transition: none; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
+  .loop-glow, .loop-comet, .float, .lamp, .blink, .pop, .hero-copy, .tilt, .lit { animation: none; }
+  .reveal { opacity: 1; transform: none; filter: none; transition: none; }
   html { scroll-behavior: auto; }
 }

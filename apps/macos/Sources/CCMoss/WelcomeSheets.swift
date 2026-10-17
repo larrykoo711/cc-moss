@@ -17,7 +17,7 @@ enum WelcomeSheets {
             .init(part: "starship", state: .ready, summary: nil),
             .init(part: "shell", state: .changes, summary: nil),
         ])
-        for (lang, dark) in [(Lang.zh, false), (Lang.en, true)] {
+        for (lang, dark) in [(Lang.zh, false), (Lang.zh, true), (Lang.en, false), (Lang.en, true)] {
             L.lang = lang
             let tag = "\(lang == .zh ? "zh" : "en")-\(dark ? "dark" : "light")"
             for step in WelcomeFlow.Step.allCases {

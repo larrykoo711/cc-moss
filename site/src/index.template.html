@@ -1,18 +1,18 @@
 <!doctype html>
-<html lang="zh-CN" data-lang="zh" class="bg-ink">
+<html lang="zh-CN" data-lang="zh" data-theme="dark" class="bg-bg">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>cc-moss · 文明会延续，对话也是。</title>
   <meta name="description" content="cc-moss 照看你的每一个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道；电脑重启了，点一下全都回来。开源、免费，住在你的 Mac 菜单栏里。">
-  <meta property="og:title" content="cc-moss · Civilizations carry on. So do conversations.">
+  <meta property="og:title" content="cc-moss · Every session, carried on.">
   <meta property="og:description" content="Looks after every Claude Code session: who's busy, who's waiting, who stopped. After a restart, one click brings them all back.">
-  <meta property="og:image" content="https://larrykoo711.github.io/cc-moss/assets/welcome.en.webp">
-  <meta name="theme-color" content="#07080a">
+  <meta property="og:image" content="https://cc-moss.larrykoo.com/assets/welcome.en.dark.webp">
+  <meta name="theme-color" content="#0c0b0a">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="styles.css">
   <script>
     // Pick the language before anything paints: saved choice, else the browser's.
@@ -22,24 +22,28 @@
       var lang = saved || ((navigator.language || "").toLowerCase().indexOf("zh") === 0 ? "zh" : "en");
       document.documentElement.dataset.lang = lang;
       document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+      // Skin: the visitor's choice, else the system's.
+      var theme = null;
+      try { theme = localStorage.getItem("theme"); } catch (e) {}
+      document.documentElement.dataset.theme = theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
     })();
   </script>
 </head>
-<body class="bg-ink text-white font-sans selection:bg-coral/40">
+<body class="bg-bg text-fg font-sans selection:bg-coral/40">
 
 <svg width="0" height="0" class="absolute" aria-hidden="true">
   <symbol id="continuum" viewBox="0 0 64 64">
     <path d="__CONTINUUM__" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
   </symbol>
-  <symbol id="mo" viewBox="0 0 120 132">
+  <symbol id="mo-figure" viewBox="0 0 120 132">
     <defs>
       <linearGradient id="mo-body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2c2e36"/><stop offset="1" stop-color="#121317"/>
+        <stop offset="0" stop-color="#2e2c2a"/><stop offset="1" stop-color="#131211"/>
       </linearGradient>
       <radialGradient id="mo-shadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
     </defs>
     <ellipse cx="60" cy="124" rx="34" ry="5" fill="url(#mo-shadow)"/>
-    <line x1="60" y1="20" x2="60" y2="32" stroke="#6b6e78" stroke-width="3" stroke-linecap="round"/>
+    <line x1="60" y1="20" x2="60" y2="32" stroke="#6e6a66" stroke-width="3" stroke-linecap="round"/>
     <circle class="lamp" cx="60" cy="15" r="6" fill="#ff5a3c"/>
     <rect x="14" y="30" width="92" height="86" rx="30" fill="url(#mo-body)"/>
     <rect x="14.5" y="30.5" width="91" height="85" rx="29.5" fill="none" stroke="#fff" stroke-opacity=".09"/>
@@ -47,292 +51,421 @@
       <use href="#continuum" x="26" y="41" width="68" height="64" style="color:#ff5a3c"/>
     </g>
   </symbol>
+  <symbol id="arrow" viewBox="0 0 16 16"><path d="M4 12L12 4M6 4h6v6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="chev" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
 </svg>
 
-<!-- Nav: a floating glass capsule -->
-<header class="fixed top-4 inset-x-0 z-50 px-4">
-  <nav class="glass mx-auto max-w-6xl rounded-2xl h-14 px-4 sm:px-5 flex items-center gap-6">
-    <a href="#" class="flex items-center gap-2 font-semibold tracking-tight">
-      <svg class="w-6 h-6 text-coral"><use href="#continuum"/></svg>
-      cc-moss
+<!-- Nav: a floating island -->
+<header class="fixed top-4 inset-x-0 z-40 px-4 flex justify-center">
+  <nav class="flex items-center gap-1 sm:gap-2 h-14 pl-2 pr-2 rounded-full bg-bg/70 backdrop-blur-xl backdrop-saturate-150 shadow-[inset_0_0_0_1px_var(--hair),0_20px_50px_-20px_var(--drop)] w-full max-w-[880px]">
+    <a href="#top" class="flex items-center gap-2.5 pl-1 pr-3 font-semibold tracking-tight">
+      <img src="icon.svg" alt="" width="34" height="34" class="w-[34px] h-[34px] drop-shadow-[0_4px_12px_rgba(255,90,60,.25)]">
+      <span>cc-moss</span>
     </a>
-    <div class="hidden md:flex items-center gap-6 text-sm text-white/60 ml-6">
-      <a href="#features" class="hover:text-white transition"><span lang="zh">功能</span><span lang="en">Features</span></a>
-      <a href="#mo" class="hover:text-white transition"><span lang="zh">小莫</span><span lang="en">Mo</span></a>
-      <a href="#terminal" class="hover:text-white transition"><span lang="zh">终端</span><span lang="en">Terminal</span></a>
-      <a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md" class="hover:text-white transition"><span lang="zh">使用手册</span><span lang="en">Guide</span></a>
+    <div class="hidden md:flex items-center text-sm">
+      <a href="#tour" data-nav="tour" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">功能</span><span lang="en">Tour</span></a>
+      <a href="#mo" data-nav="mo" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">小莫</span><span lang="en">Mo</span></a>
+      <a href="#terminal" data-nav="terminal" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">终端</span><span lang="en">Terminal</span></a>
+      <a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md" class="rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">使用手册</span><span lang="en">Guide</span></a>
     </div>
-    <div class="ml-auto flex items-center gap-3">
-      <div class="flex rounded-full bg-white/5 p-0.5 text-xs" role="group" aria-label="Language">
-        <button data-set-lang="zh" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer">中</button>
-        <button data-set-lang="en" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer">EN</button>
+    <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+      <div class="flex rounded-full bg-fg/[.06] p-1 text-xs" role="group" aria-label="Language">
+        <button data-set-lang="zh" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer transition-colors">中</button>
+        <button data-set-lang="en" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer transition-colors">EN</button>
       </div>
-      <a href="https://github.com/larrykoo711/cc-moss" class="hidden sm:flex items-center gap-1.5 text-sm text-white/70 hover:text-white transition" aria-label="GitHub">
-        <svg viewBox="0 0 16 16" class="w-4 h-4" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-        GitHub
+      <button id="theme" class="theme-btn grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] active:scale-90 transition cursor-pointer" aria-label="Light or dark">
+        <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <mask id="moon-cut"><rect width="24" height="24" fill="#fff"/><circle class="cut" cx="17" cy="7" r="6" fill="#000"/></mask>
+          <circle class="orb" cx="12" cy="12" r="5" fill="currentColor" stroke="none" mask="url(#moon-cut)"/>
+          <g class="rays"><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g>
+        </svg>
+      </button>
+      <a href="https://github.com/larrykoo711/cc-moss" class="hidden sm:grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] transition-colors" aria-label="GitHub">
+        <svg viewBox="0 0 16 16" class="w-[18px] h-[18px]" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
       </a>
-      <a href="#install" class="rounded-lg bg-white text-ink text-sm font-medium px-3.5 py-1.5 hover:bg-white/90 transition shadow-[0_0_0_2px_rgba(0,0,0,.5),0_0_14px_rgba(255,255,255,.2)]">
+      <a href="#install" class="rounded-full bg-fg text-bg text-sm font-medium px-4 py-2 hover:opacity-90 active:scale-[0.97] transition">
         <span lang="zh">安装</span><span lang="en">Install</span>
       </a>
     </div>
   </nav>
 </header>
 
-<main>
-  <!-- Hero -->
-  <section class="relative overflow-hidden grain pt-40 pb-24 sm:pt-48">
-    <div class="beams"></div>
-    <div class="absolute inset-0 bg-[radial-gradient(ellipse_at_top,transparent_0%,rgba(7,8,10,.35)_55%,#07080a_85%)]"></div>
-    <div class="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-b from-transparent to-ink pointer-events-none"></div>
-    <div class="relative mx-auto max-w-6xl px-6 text-center">
-      <a href="https://github.com/larrykoo711/cc-moss/releases/latest" class="pop inline-flex items-center gap-2 rounded-full glass px-3 py-1 text-xs text-white/80 hover:text-white transition">
-        <span class="w-1.5 h-1.5 rounded-full bg-coral"></span>
-        <span lang="zh">0.2.0 · 状态栏 App 来了</span><span lang="en">0.2.0 · The menu bar app is here</span>
-        <span class="text-white/40">→</span>
+<main id="top">
+  <!-- Hero: the loop is the light -->
+  <section class="relative overflow-hidden pt-36 sm:pt-44 pb-10">
+    <div class="sky absolute inset-0"></div>
+    <svg class="absolute left-1/2 top-16 sm:top-10 -translate-x-1/2 w-[min(1320px,180vw)] h-auto pointer-events-none" viewBox="2 14 60 36" fill="none" aria-hidden="true">
+      <path class="loop-base" d="__CONTINUUM__" pathLength="100" stroke-width="0.06"/>
+      <path class="loop-glow" d="__CONTINUUM__" pathLength="100" stroke-width="0.5" stroke-linecap="round"/>
+      <path class="loop-comet" d="__CONTINUUM__" pathLength="100" stroke-width="0.1" stroke-linecap="round"/>
+    </svg>
+
+    <div class="hero-copy relative mx-auto max-w-6xl px-5 text-center">
+      <a href="https://github.com/larrykoo711/cc-moss/releases/latest" class="reveal inline-flex items-center gap-2 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] pl-2 pr-3 py-1 text-xs text-fg/75 hover:text-fg transition-colors">
+        <span class="rounded-full bg-coral/15 text-coral px-2 py-0.5 font-medium">0.2.0</span>
+        <span lang="zh">状态栏 App 来了</span><span lang="en">Now in your menu bar</span>
       </a>
-      <h1 class="mt-7 text-5xl sm:text-7xl font-semibold tracking-tight leading-[1.08] [text-shadow:0_4px_40px_rgba(0,0,0,.5)]">
-        <span lang="zh">文明会延续，<br class="sm:hidden">对话也是。</span>
-        <span lang="en">Civilizations carry on.<br>So do conversations.</span>
+      <h1 class="reveal mt-7 text-[clamp(2.75rem,7.2vw,5.75rem)] font-semibold tracking-[-0.045em] leading-[0.98]" style="--d:80ms">
+        <span lang="zh">文明会延续，<br>对话也是。</span>
+        <span lang="en">Every session.<br>Carried on.</span>
       </h1>
-      <p class="mt-6 mx-auto max-w-2xl text-lg text-white/70 leading-relaxed">
-        <span lang="zh"><span class="whitespace-nowrap">cc-moss</span> 照看你的每一个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道。电脑重启了也不怕，点一下全都回来。</span>
-        <span lang="en"><span class="whitespace-nowrap">cc-moss</span> looks after every Claude Code session: who's busy, who's waiting for you, who got cut off, at a glance. And if your Mac restarts, one click brings them all back.</span>
+      <p class="reveal mt-7 mx-auto max-w-xl text-lg sm:text-xl text-fg/60 leading-relaxed" style="--d:160ms">
+        <span lang="zh">照看你的每个 Claude Code 会话。<br class="hidden sm:block">重启之后，点一下全都回来。</span>
+        <span lang="en">A quiet keeper for your Claude Code sessions.<br class="hidden sm:block"> Restart your Mac, and they&rsquo;re all back in one click.</span>
       </p>
-      <div class="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
-        <button data-copy="brew install larrykoo711/tap/cc-moss" class="copy group flex items-center gap-3 rounded-xl glass px-4 py-3 font-mono text-sm cursor-pointer hover:border-white/20 transition">
-          <span class="text-coral">$</span>
-          <span class="text-xs sm:text-sm text-left">brew install larrykoo711/tap/cc-moss</span>
-          <span class="copy-label ml-1 shrink-0 whitespace-nowrap text-xs text-white/40 group-hover:text-white/70 font-sans"><span lang="zh">复制</span><span lang="en">Copy</span></span>
-        </button>
-        <a href="https://github.com/larrykoo711/cc-moss" class="rounded-xl px-4 py-3 text-sm text-white/70 hover:text-white transition">
-          <span lang="zh">在 GitHub 上看看 →</span><span lang="en">View on GitHub →</span>
+      <div class="reveal mt-10 flex flex-col sm:flex-row items-center justify-center gap-3" style="--d:240ms">
+        <a href="#install" class="group inline-flex items-center gap-3 rounded-full bg-coral text-white font-medium pl-6 pr-1.5 py-1.5 shadow-[0_10px_40px_-10px_rgba(255,90,60,.7)] hover:brightness-110 active:scale-[0.98] transition">
+          <span lang="zh">免费安装</span><span lang="en">Get cc-moss</span>
+          <span class="grid place-items-center w-9 h-9 rounded-full bg-black/15 transition-transform duration-500 ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-px group-hover:scale-105"><svg class="w-4 h-4"><use href="#arrow"/></svg></span>
         </a>
+        <button data-copy="brew install larrykoo711/tap/cc-moss" class="group inline-flex items-center gap-2.5 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] px-5 py-3 font-mono text-[13px] text-fg/80 cursor-pointer hover:bg-fg/[.08] active:scale-[0.98] transition">
+          <span class="text-coral">$</span>
+          <span>brew install larrykoo711/tap/cc-moss</span>
+          <span class="copy-label whitespace-nowrap font-sans text-xs text-fg/40 group-hover:text-fg/70"><span lang="zh">复制</span><span lang="en">Copy</span></span>
+        </button>
       </div>
-      <p class="mt-4 text-xs text-white/40">
-        <span lang="zh">免费开源 · macOS 14 以上带状态栏 App · Linux 有终端版</span>
-        <span lang="en">Free and open source · Menu bar app on macOS 14+ · Terminal edition on Linux</span>
+      <p class="reveal mt-5 text-xs text-fg/35" style="--d:300ms">
+        <span lang="zh">免费开源 · macOS 14+ · Linux 有终端版</span><span lang="en">Free and open source · macOS 14 or later · Linux in the terminal</span>
       </p>
+    </div>
 
-      <!-- The product, dropping from a menu bar -->
-      <div class="reveal relative mt-20 mx-auto max-w-5xl">
-        <div class="glass rounded-xl h-9 flex items-center justify-end gap-4 px-4 text-xs text-white/60">
-          <span class="relative flex items-center">
-            <svg class="w-4 h-4 text-coral"><use href="#continuum"/></svg>
-            <span class="absolute -top-1 -right-1.5 w-1.5 h-1.5 rounded-full bg-amber"></span>
-          </span>
-          <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="currentColor"><path d="M12 18.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM4.2 11.1a11 11 0 0115.6 0l-1.4 1.4a9 9 0 00-12.8 0zM7 13.9a7 7 0 0110 0l-1.4 1.4a5 5 0 00-7.2 0z"/></svg>
-          <span>9:41</span>
-        </div>
-        <div class="relative flex justify-end pr-2 sm:pr-10">
-          <img data-src-zh="assets/panel.zh.webp" data-src-en="assets/panel.en.webp" src="assets/panel.zh.webp" alt="" width="420" height="540"
-               class="lang-img mt-2 w-[min(420px,90vw)] rounded-2xl ring-soft">
-          <div class="hidden lg:block absolute -left-4 bottom-6 w-72 text-left">
-            <img data-src-zh="assets/mo-message.zh.webp" data-src-en="assets/mo-message.en.webp" src="assets/mo-message.zh.webp" alt="" class="lang-img w-full drop-shadow-2xl">
-            <svg class="float w-24 h-28 ml-auto -mt-6 mr-6"><use href="#mo"/></svg>
+    <!-- A desktop rising over the fold -->
+    <div class="relative mt-20 mx-auto max-w-6xl px-4 sm:px-8 [perspective:1800px]">
+      <div class="tilt shell origin-top dark-scope">
+        <div class="core relative overflow-hidden aspect-[4/5] sm:aspect-[16/10] bg-[radial-gradient(80%_70%_at_70%_20%,#2a1712,transparent_70%),linear-gradient(180deg,#1a1715,#0f0e0d)]">
+          <!-- menu bar -->
+          <div class="absolute inset-x-0 top-0 h-8 flex items-center gap-5 px-4 text-[11px] text-fg/60 bg-black/25 backdrop-blur-md">
+            <span class="hidden sm:inline font-semibold text-fg/80">Ghostty</span>
+            <span class="hidden sm:inline"><span lang="zh">文件</span><span lang="en">File</span></span>
+            <span class="hidden sm:inline"><span lang="zh">编辑</span><span lang="en">Edit</span></span>
+            <span class="ml-auto relative flex items-center rounded-md bg-white/15 px-1.5 py-0.5">
+              <svg class="w-4 h-4 text-fg"><use href="#continuum"/></svg>
+              <span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber"></span>
+            </span>
+            <svg viewBox="0 0 24 24" class="w-3.5 h-3.5" fill="currentColor"><path d="M12 18.5a1.5 1.5 0 110 3 1.5 1.5 0 010-3zM4.2 11.1a11 11 0 0115.6 0l-1.4 1.4a9 9 0 00-12.8 0zM7 13.9a7 7 0 0110 0l-1.4 1.4a5 5 0 00-7.2 0z"/></svg>
+            <span class="tabular-nums">9:41</span>
+          </div>
+          <!-- a terminal behind -->
+          <div class="hidden sm:block absolute left-[5%] top-[14%] w-[44%] rounded-xl bg-[#0d0c0b]/90 shadow-[inset_0_0_0_1px_var(--hair),0_30px_60px_-20px_rgba(0,0,0,.8)] font-mono text-[11px] leading-6 text-fg/45 -rotate-1">
+            <div class="h-7 flex items-center gap-1.5 px-3"><span class="w-2.5 h-2.5 rounded-full bg-[#ff5f57]"></span><span class="w-2.5 h-2.5 rounded-full bg-[#febc2e]"></span><span class="w-2.5 h-2.5 rounded-full bg-[#28c840]"></span></div>
+            <div class="px-4 pb-4">
+              <p><span class="text-coral">✻</span> <span lang="zh">正在重构结算页…</span><span lang="en">Refactoring the checkout page…</span></p>
+              <p class="text-fg/30">  ⎿ src/checkout/summary.tsx</p>
+              <p class="text-fg/30">  ⎿ src/checkout/totals.ts</p>
+              <p><span class="text-amber">?</span> <span lang="zh">要运行测试吗？</span><span lang="en">Run the tests?</span></p>
+            </div>
+          </div>
+          <!-- the panel, dropped from the menu bar -->
+          <img data-pic="panel" data-skin="dark" src="assets/panel.zh.dark.webp" alt="" width="840" height="1080"
+               class="lang-img absolute right-1/2 translate-x-1/2 sm:translate-x-0 sm:right-[4%] top-10 h-[calc(100%-3.25rem)] w-auto rounded-2xl shadow-[0_40px_80px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+          <!-- Mo with a word -->
+          <div class="hidden lg:block absolute left-[20%] bottom-[6%] w-64">
+            <img data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img w-full drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
+            <svg class="float w-20 h-24 ml-auto -mt-5 mr-4"><use href="#mo-figure"/></svg>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Showcase: one screen, a dock to switch what it shows (after Raycast's) -->
-  <section id="features" class="relative py-28">
-    <div class="mx-auto max-w-6xl px-6">
-      <div class="reveal text-center max-w-2xl mx-auto">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">一个面板，全部会话</span><span lang="en">Every session, one panel</span></p>
-        <h2 class="mt-3 text-4xl sm:text-5xl font-semibold tracking-tight">
-          <span lang="zh">点一下菜单栏，<br>一切都在眼前。</span><span lang="en">One click in the menu bar.<br>Everything in view.</span>
+  <!-- The tour: steps scroll, the stage stays -->
+  <section id="tour" class="relative pt-32 sm:pt-40">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8">
+      <header class="reveal max-w-2xl">
+        <p class="text-coral text-sm font-medium"><span lang="zh">一次导览</span><span lang="en">Take a look</span></p>
+        <h2 class="mt-3 text-[clamp(2.25rem,5vw,3.75rem)] font-semibold tracking-[-0.035em] leading-[1.04]">
+          <span lang="zh">一个面板，<br>所有会话。</span><span lang="en">All your sessions.<br>One glance.</span>
         </h2>
+      </header>
+
+      <div class="relative mt-10 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
+        <div id="stage" class="sticky top-[76px] lg:top-[13vh] z-10 self-start lg:col-start-2 lg:row-start-1 bg-bg lg:bg-transparent pb-3 lg:pb-0">
+          <div class="shell">
+            <div class="core relative h-[46vh] lg:h-[68vh] overflow-hidden">
+              <div class="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.16),transparent_70%)]"></div>
+              <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="panel">
+                <img data-pic="panel" src="assets/panel.zh.dark.webp" alt="" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              </figure>
+              <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="actions">
+                <img data-pic="panel-actions" src="assets/panel-actions.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              </figure>
+              <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="welcome">
+                <img data-pic="welcome" src="assets/welcome.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              </figure>
+              <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="settings">
+                <img data-pic="settings-general" src="assets/settings-general.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              </figure>
+              <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="mo">
+                <img data-pic="settings-mo" src="assets/settings-mo.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              </figure>
+            </div>
+          </div>
+          <!-- Controls ride with the stage, so they are always in reach -->
+          <div class="mt-3 flex items-center gap-2">
+            <button class="tour-prev grid place-items-center w-10 h-10 shrink-0 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] text-fg/70 hover:text-fg hover:bg-fg/[.09] active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer" aria-label="Previous"><svg class="w-4 h-4"><use href="#chev"/></svg></button>
+            <div class="flex-1 min-w-0 flex gap-1 overflow-x-auto [scrollbar-width:none] rounded-full bg-fg/[.04] p-1 shadow-[inset_0_0_0_1px_var(--hair)]" role="tablist">
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="panel"><span lang="zh">面板</span><span lang="en">Panel</span></button>
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="actions">⌘K</button>
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="welcome"><span lang="zh">引导</span><span lang="en">Welcome</span></button>
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="settings"><span lang="zh">设置</span><span lang="en">Settings</span></button>
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="mo"><span lang="zh">小莫</span><span lang="en">Mo</span></button>
+            </div>
+            <button class="tour-next grid place-items-center w-10 h-10 shrink-0 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] text-fg/70 hover:text-fg hover:bg-fg/[.09] active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer" aria-label="Next"><svg class="w-4 h-4 rotate-180"><use href="#chev"/></svg></button>
+          </div>
+        </div>
+
+        <ol class="lg:col-start-1 lg:row-start-1 pb-[30vh] lg:pb-[20vh]">
+          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="panel">
+            <div class="max-w-sm py-10">
+              <p class="font-mono text-xs text-coral">01</p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">点一下菜单栏，全都在眼前。</span><span lang="en">Click. It&rsquo;s all there.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">按项目排好。打字就搜，回车就在终端里打开。</span><span lang="en">Sorted by project. Start typing to find one, press Return to jump back in.</span></p>
+            </div>
+          </li>
+          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="actions">
+            <div class="max-w-sm py-10">
+              <p class="font-mono text-xs text-coral">02</p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">想做的事，⌘K 都有。</span><span lang="en">⌘K does the rest.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">发消息、改名字、写便条、找回来。</span><span lang="en">Send a message. Rename. Leave a note. Bring one back.</span></p>
+            </div>
+          </li>
+          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="welcome">
+            <div class="max-w-sm py-10">
+              <p class="font-mono text-xs text-coral">03</p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">第一次打开，一分钟上手。</span><span lang="en">Set up in a minute.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">几步讲清楚，当场装好，不用读文档。</span><span lang="en">A friendly welcome does the setup for you. No manual required.</span></p>
+            </div>
+          </li>
+          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="settings">
+            <div class="max-w-sm py-10">
+              <p class="font-mono text-xs text-coral">04</p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">设置都是大白话。</span><span lang="en">Settings, in plain English.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">开机打开、快捷键、语言、工作区、终端。</span><span lang="en">Open at login, your shortcut, your workspace, your terminal. That&rsquo;s it.</span></p>
+            </div>
+          </li>
+          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="mo">
+            <div class="max-w-sm py-10">
+              <p class="font-mono text-xs text-coral">05</p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">小莫，脾气由你。</span><span lang="en">Mo, just how you like it.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">点它会跳、会说话。安静还是积极，你来定。</span><span lang="en">Click Mo and it hops and talks. Keep it quiet, or let it chat.</span></p>
+            </div>
+          </li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <!-- A statement, lit line by line as you scroll -->
+  <section class="relative pt-32 sm:pt-44 pb-10 sm:pb-12 overflow-x-clip">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8">
+      <div class="text-[clamp(2.5rem,6.5vw,5.75rem)] font-semibold tracking-[-0.045em] leading-[1.02]">
+        <p class="lit"><span lang="zh">电脑重启了。</span><span lang="en">Your Mac restarted.</span></p>
+        <p class="lit"><span lang="zh">终端崩了。</span><span lang="en">Your terminal crashed.</span></p>
+        <p class="lit"><span lang="zh">窗口关错了。</span><span lang="en">A window slipped shut.</span></p>
+        <p class="lit text-coral"><span lang="zh">对话，都还在。</span><span lang="en">Nothing was lost.</span></p>
       </div>
 
-      <div class="reveal mt-14 relative rounded-3xl border border-white/8 bg-gradient-to-b from-white/[.04] to-transparent p-4 sm:p-10 overflow-hidden">
-        <div class="glow glow-coral absolute left-1/2 -translate-x-1/2 -top-56 w-[1000px] h-[520px]"></div>
-        <div class="relative grid place-items-center min-h-[460px] sm:min-h-[620px]">
-          <figure class="shot absolute inset-0 grid place-items-center" data-shot="panel">
-            <img data-src-zh="assets/panel.zh.webp" data-src-en="assets/panel.en.webp" src="assets/panel.zh.webp" alt="" class="lang-img max-h-[600px] w-auto rounded-2xl ring-soft">
-          </figure>
-          <figure class="shot absolute inset-0 grid place-items-center" data-shot="actions" hidden>
-            <img data-src-zh="assets/panel-actions.zh.webp" data-src-en="assets/panel-actions.en.webp" src="assets/panel-actions.zh.webp" alt="" class="lang-img max-h-[600px] w-auto rounded-2xl ring-soft">
-          </figure>
-          <figure class="shot absolute inset-0 grid place-items-center" data-shot="welcome" hidden>
-            <img data-src-zh="assets/welcome.zh.webp" data-src-en="assets/welcome.en.webp" src="assets/welcome.zh.webp" alt="" class="lang-img max-h-[520px] w-auto rounded-2xl ring-soft">
-          </figure>
-          <figure class="shot absolute inset-0 grid place-items-center" data-shot="settings" hidden>
-            <img data-src-zh="assets/settings-general.zh.webp" data-src-en="assets/settings-general.en.webp" src="assets/settings-general.zh.webp" alt="" class="lang-img max-h-[540px] w-auto rounded-2xl ring-soft">
-          </figure>
-          <figure class="shot absolute inset-0 grid place-items-center" data-shot="mo" hidden>
-            <img data-src-zh="assets/settings-mo.zh.webp" data-src-en="assets/settings-mo.en.webp" src="assets/settings-mo.zh.webp" alt="" class="lang-img max-h-[540px] w-auto rounded-2xl ring-soft">
-          </figure>
-        </div>
-        <p class="relative mt-6 text-center text-white/60 min-h-[3rem]" id="shot-caption"></p>
-        <div class="relative mt-4 flex justify-center">
-          <div class="glass rounded-2xl p-2 flex gap-2" role="tablist">
-            <button class="dock" data-dock="panel" data-zh="会话按项目排好，打字就搜，回车就在你的终端里打开。" data-en="Sessions grouped by project. Type to search, Return opens one in your terminal." aria-label="Panel">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="16" rx="3"/><path d="M8 9h8M8 13h8M8 17h5"/></svg>
-            </button>
-            <button class="dock" data-dock="actions" data-zh="⌘K：发消息、改名字、写便条、找回、不再提醒，全在这儿。" data-en="⌘K: send a message, rename, jot a note, bring back, stop reminding. All here." aria-label="Actions">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 6a3 3 0 10-3 3h12a3 3 0 10-3-3v12a3 3 0 103-3H6a3 3 0 103 3z"/></svg>
-            </button>
-            <button class="dock" data-dock="welcome" data-zh="第一次打开时的欢迎引导：几步讲清楚，当场装好，不用读文档。" data-en="A welcome the first time: a few steps, everything set up on the spot, no docs needed." aria-label="Welcome">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 3l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 15.3 7 18l1.2-5.6L4 8.6 9.6 8z"/></svg>
-            </button>
-            <button class="dock" data-dock="settings" data-zh="设置都用大白话：开机打开、唤出快捷键、语言、工作区、终端。" data-en="Settings in plain words: open at login, the shortcut, language, workspace, terminal." aria-label="Settings">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg>
-            </button>
-            <button class="dock" data-dock="mo" data-zh="小莫的设置：点它会跳、会说话；大小、脾气、出不出声，都由你。" data-en="Mo's settings: click it and it hops and talks. Size, temper and voice are up to you." aria-label="Mo">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="7" width="16" height="13" rx="5"/><path d="M12 3v4M9 13.5c1-1.5 2-1.5 3 0s2 1.5 3 0"/></svg>
-            </button>
+      <div class="reveal mt-16 sm:mt-10 sm:ml-auto max-w-md">
+        <div class="shell">
+          <div class="core p-3" id="restore">
+            <div class="flex items-center justify-between px-3 pt-2 pb-3">
+              <p class="text-sm font-medium"><span lang="zh">3 个会话断了</span><span lang="en">3 sessions interrupted</span></p>
+              <button class="restore-demo rounded-full bg-coral text-white text-sm font-medium px-4 py-1.5 cursor-pointer hover:brightness-110 active:scale-[0.97] transition disabled:opacity-60"><span lang="zh">全部找回</span><span lang="en">Bring them back</span></button>
+            </div>
+            <ul class="space-y-1">
+              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-[#ff6b5b]"></span><span class="text-sm"><span lang="zh">官网改版</span><span lang="en">acme-web</span></span><span class="row-state ml-auto text-xs text-fg/40"><span lang="zh">断了</span><span lang="en">interrupted</span></span></li>
+              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-[#ff6b5b]"></span><span class="text-sm"><span lang="zh">接口评审</span><span lang="en">api-review</span></span><span class="row-state ml-auto text-xs text-fg/40"><span lang="zh">断了</span><span lang="en">interrupted</span></span></li>
+              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-[#ff6b5b]"></span><span class="text-sm"><span lang="zh">账单修复</span><span lang="en">billing-fix</span></span><span class="row-state ml-auto text-xs text-fg/40"><span lang="zh">断了</span><span lang="en">interrupted</span></span></li>
+            </ul>
           </div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- Bento: what it does -->
-  <section class="py-12">
-    <div class="mx-auto max-w-6xl px-6 grid gap-4 md:grid-cols-6">
-      <!-- Bring back -->
-      <article class="reveal md:col-span-4 rounded-3xl border border-white/8 bg-gradient-to-br from-coral/[.12] via-white/[.02] to-transparent p-8 overflow-hidden relative">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">断了也不怕</span><span lang="en">Stopped? No problem</span></p>
-        <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-tight"><span lang="zh">重启之后，点一下全都回来</span><span lang="en">After a restart, one click and they're all back</span></h3>
-        <p class="mt-3 text-white/60 max-w-md"><span lang="zh">电脑重启、终端崩了、窗口不小心关了，对话都还在。<span class="whitespace-nowrap">cc-moss</span> 记得每个会话在哪儿、叫什么，找回来接着聊。</span><span lang="en">Mac restarted, terminal crashed: the conversations are still there. <span class="whitespace-nowrap">cc-moss</span> remembers where each one was and what it was called, and brings it back.</span></p>
-        <div class="mt-8 glass rounded-2xl p-4 flex items-center gap-4 max-w-md">
-          <div class="w-10 h-10 rounded-xl bg-coral/15 grid place-items-center text-coral">
-            <svg viewBox="0 0 24 24" class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 109-9 9.7 9.7 0 00-6.7 2.7L3 8"/><path d="M3 3v5h5"/></svg>
+  <!-- Bento, asymmetric -->
+  <section class="py-12 sm:py-20">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8 grid gap-4 md:grid-cols-12">
+      <article class="reveal md:col-span-7 shell">
+        <div class="core h-full p-8 sm:p-10 flex flex-col">
+          <p class="text-coral text-sm font-medium"><span lang="zh">随叫随到</span><span lang="en">Always at hand</span></p>
+          <h3 class="mt-2 text-3xl sm:text-4xl font-semibold tracking-[-0.03em]"><span lang="zh">连按两下 Control</span><span lang="en">Double-tap Control.</span></h3>
+          <p class="mt-2 text-fg/50"><span lang="zh">在哪个 App 里都行。</span><span lang="en">From any app, anytime.</span></p>
+          <div class="mt-auto pt-10 flex items-end justify-between gap-6" id="keys">
+            <div class="flex gap-4">
+              <div class="keycap w-20 h-20 sm:w-24 sm:h-24 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-3xl">⌃</div><div class="text-[10px] text-fg/40">control</div></div></div>
+              <div class="keycap w-20 h-20 sm:w-24 sm:h-24 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-3xl">⌃</div><div class="text-[10px] text-fg/40">control</div></div></div>
+            </div>
+            <div class="summon hidden sm:block w-48 rounded-2xl bg-raise shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-10px_rgba(0,0,0,.8)] p-3 text-xs">
+              <div class="rounded-lg bg-fg/[.05] px-2.5 py-1.5 text-fg/35"><span lang="zh">搜索会话…</span><span lang="en">Search sessions…</span></div>
+              <p class="mt-2 flex items-center gap-2 px-1"><span class="w-1.5 h-1.5 rounded-full bg-coral"></span><span lang="zh">官网改版</span><span lang="en">acme-web</span></p>
+              <p class="mt-1.5 flex items-center gap-2 px-1"><span class="w-1.5 h-1.5 rounded-full bg-amber"></span><span lang="zh">接口评审</span><span lang="en">api-review</span></p>
+            </div>
           </div>
-          <div class="flex-1"><p class="font-medium"><span lang="zh">有 3 个会话断了</span><span lang="en">3 sessions stopped</span></p><p class="text-xs text-white/50"><span lang="zh">进度都在</span><span lang="en">Nothing's lost</span></p></div>
-          <button class="restore-demo rounded-lg bg-coral px-3 py-1.5 text-sm font-medium cursor-pointer hover:brightness-110 transition"><span lang="zh">全部找回</span><span lang="en">Bring all back</span></button>
         </div>
       </article>
-      <!-- Shortcut -->
-      <article class="reveal md:col-span-2 rounded-3xl border border-white/8 bg-white/[.02] p-8 flex flex-col">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">随叫随到</span><span lang="en">Right when you call</span></p>
-        <h3 class="mt-2 text-2xl font-semibold tracking-tight"><span lang="zh">连按两下 ⌃</span><span lang="en">Tap ⌃ twice</span></h3>
-        <p class="mt-2 text-white/60 text-sm"><span lang="zh">在任何 App 里，会话就在眼前。想换别的键也行。</span><span lang="en">In any app, your sessions are right there. Any other key works too.</span></p>
-        <div class="mt-auto pt-8 flex justify-center gap-4" id="keys">
-          <div class="keycap w-20 h-20 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-2xl">⌃</div><div class="text-[10px] text-white/50">control</div></div></div>
-          <div class="keycap w-20 h-20 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-2xl">⌃</div><div class="text-[10px] text-white/50">control</div></div></div>
+
+      <article class="reveal md:col-span-5 shell" style="--d:80ms">
+        <div class="core h-full p-8 sm:p-10 overflow-hidden">
+          <p class="text-coral text-sm font-medium"><span lang="zh">有事才叫你</span><span lang="en">Gentle nudges</span></p>
+          <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-[-0.03em]"><span lang="zh">Claude 等你时，<br>马上知道。</span><span lang="en">Know the moment Claude needs you.</span></h3>
+          <div class="relative mt-10 h-28">
+            <div class="absolute inset-x-6 top-0 h-16 rounded-2xl bg-fg/[.04] shadow-[inset_0_0_0_1px_rgba(255,255,255,.05)]"></div>
+            <div class="absolute inset-x-0 top-4 rounded-2xl bg-raise shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-12px_rgba(0,0,0,.8)] p-3.5 flex items-center gap-3">
+              <img src="icon.svg" alt="" class="w-9 h-9">
+              <div class="min-w-0"><p class="text-sm font-semibold truncate"><span lang="zh">接口评审 需要你确认</span><span lang="en">api-review needs your OK</span></p><p class="text-xs text-fg/50 truncate"><span lang="zh">它想做一件事，等你点头。</span><span lang="en">Claude wants to run a command.</span></p></div>
+              <span class="ml-auto text-[11px] text-fg/35 shrink-0"><span lang="zh">刚刚</span><span lang="en">now</span></span>
+            </div>
+          </div>
         </div>
       </article>
-      <!-- Notifications -->
-      <article class="reveal md:col-span-3 rounded-3xl border border-white/8 bg-white/[.02] p-8 overflow-hidden">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">有事才叫你</span><span lang="en">Only when it matters</span></p>
-        <h3 class="mt-2 text-2xl font-semibold tracking-tight"><span lang="zh">Claude 等你点头时，第一时间知道</span><span lang="en">Know the moment Claude needs a yes</span></h3>
-        <p class="mt-2 text-white/60 text-sm"><span lang="zh">系统通知或小莫，只会有一个来告诉你，不会两边都响。</span><span lang="en">A notification or Mo, never both.</span></p>
-        <div class="mt-7 glass rounded-2xl p-3.5 flex items-center gap-3">
-          <img src="favicon.svg" alt="" class="w-9 h-9 rounded-lg">
-          <div class="min-w-0"><p class="text-sm font-semibold truncate"><span lang="zh">接口评审 需要你确认</span><span lang="en">api-review needs you</span></p><p class="text-xs text-white/55 truncate"><span lang="zh">它想做一件事，等你点头。</span><span lang="en">It wants to do something and is waiting for your OK.</span></p></div>
-          <span class="ml-auto text-[11px] text-white/40"><span lang="zh">刚刚</span><span lang="en">now</span></span>
+
+      <article class="reveal md:col-span-5 shell">
+        <div class="core h-full p-8 sm:p-10">
+          <p class="text-coral text-sm font-medium"><span lang="zh">你的终端</span><span lang="en">Your setup</span></p>
+          <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-[-0.03em]"><span lang="zh">在你习惯的地方打开。</span><span lang="en">Opens in the terminal you love.</span></h3>
+          <div class="mt-8 flex flex-wrap gap-2 text-sm">
+            <span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">Terminal</span><span class="rounded-full bg-coral/15 text-coral px-3.5 py-1.5">Ghostty</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">iTerm</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">WezTerm</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">kitty</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">Alacritty</span>
+          </div>
         </div>
       </article>
-      <!-- Workspace + terminals -->
-      <article class="reveal md:col-span-3 rounded-3xl border border-white/8 bg-white/[.02] p-8">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">在你习惯的地方</span><span lang="en">Where you already work</span></p>
-        <h3 class="mt-2 text-2xl font-semibold tracking-tight"><span lang="zh">你的终端，你的工作区</span><span lang="en">Your terminal, your workspace</span></h3>
-        <p class="mt-2 text-white/60 text-sm"><span lang="zh">会话在系统终端、Ghostty、iTerm、WezTerm、kitty、Alacritty 里打开；新会话从你选的文件夹开始。</span><span lang="en">Sessions open in Terminal, Ghostty, iTerm, WezTerm, kitty or Alacritty; new ones start in the folder you pick.</span></p>
-        <div class="mt-6 flex flex-wrap gap-2 text-xs">
-          <span class="rounded-full bg-white/5 px-3 py-1.5">Terminal</span><span class="rounded-full bg-coral/15 text-coral px-3 py-1.5">Ghostty</span><span class="rounded-full bg-white/5 px-3 py-1.5">iTerm</span><span class="rounded-full bg-white/5 px-3 py-1.5">WezTerm</span><span class="rounded-full bg-white/5 px-3 py-1.5">kitty</span><span class="rounded-full bg-white/5 px-3 py-1.5">Alacritty</span>
-        </div>
-      </article>
-      <!-- Small truths -->
-      <article class="reveal md:col-span-2 rounded-3xl border border-white/8 bg-white/[.02] p-7">
-        <h3 class="font-semibold"><span lang="zh">只在你的电脑上</span><span lang="en">Stays on your Mac</span></h3>
-        <p class="mt-2 text-sm text-white/60"><span lang="zh">不联网、不上传。会话的记录只存在你电脑上的一个小数据库里。</span><span lang="en">No network, no uploads. Session records live in a small database on your Mac.</span></p>
-      </article>
-      <article class="reveal md:col-span-2 rounded-3xl border border-white/8 bg-white/[.02] p-7">
-        <h3 class="font-semibold"><span lang="zh">中文和英文</span><span lang="en">English and Chinese</span></h3>
-        <p class="mt-2 text-sm text-white/60"><span lang="zh">每一句都用两种语言认真写过，终端和 App 共用一个语言设置。</span><span lang="en">Every line written in both, carefully. The terminal and the app share one setting.</span></p>
-      </article>
-      <article class="reveal md:col-span-2 rounded-3xl border border-white/8 bg-white/[.02] p-7">
-        <h3 class="font-semibold"><span lang="zh">免费开源</span><span lang="en">Free and open source</span></h3>
-        <p class="mt-2 text-sm text-white/60"><span lang="zh">MIT 许可。代码、设计文档和每一次决定都在 GitHub 上。</span><span lang="en">MIT licensed. Code, design notes and every decision live on GitHub.</span></p>
+
+      <article class="reveal md:col-span-7 shell" style="--d:80ms">
+        <ul class="core h-full p-8 sm:p-10 grid sm:grid-cols-3 gap-8 content-center">
+          <li>
+            <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
+            <p class="mt-4 font-medium"><span lang="zh">只在你的电脑上</span><span lang="en">Private by design</span></p>
+            <p class="mt-1 text-sm text-fg/45"><span lang="zh">不联网，不上传。</span><span lang="en">Nothing leaves your Mac.</span></p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M8.5 4v2M6 6c.5 3 2.5 5.5 5 6.5M11 6c-.6 3.4-2.8 6-6 7.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/></svg>
+            <p class="mt-4 font-medium"><span lang="zh">中文和英文</span><span lang="en">Two languages</span></p>
+            <p class="mt-1 text-sm text-fg/45"><span lang="zh">每一句都认真写过。</span><span lang="en">English and Chinese, written by hand.</span></p>
+          </li>
+          <li>
+            <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 7l-5 5 5 5M16 7l5 5-5 5M14 4l-4 16"/></svg>
+            <p class="mt-4 font-medium"><span lang="zh">免费开源</span><span lang="en">Open source</span></p>
+            <p class="mt-1 text-sm text-fg/45"><span lang="zh">MIT 许可。</span><span lang="en">Free, MIT licensed.</span></p>
+          </li>
+        </ul>
       </article>
     </div>
   </section>
 
-  <!-- Mo -->
-  <section id="mo" class="relative py-28 overflow-hidden">
-    <div class="glow glow-mint absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[1100px] h-[760px]"></div>
-    <div class="relative mx-auto max-w-6xl px-6 grid lg:grid-cols-2 gap-14 items-center">
+  <!-- Mo: a little desktop, layered -->
+  <section id="mo" class="relative py-32 sm:py-40 overflow-hidden">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8 grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] gap-14 items-center">
       <div class="reveal">
-        <p class="text-mint text-sm font-semibold"><span lang="zh">认识一下小莫</span><span lang="en">Meet Mo</span></p>
-        <h2 class="mt-3 text-4xl sm:text-5xl font-semibold tracking-tight"><span lang="zh">住在桌面一角的小伙伴</span><span lang="en">A little friend in the corner of your desktop</span></h2>
-        <p class="mt-5 text-white/65 text-lg leading-relaxed"><span lang="zh">平时安安静静，会眨眼、会看你的鼠标。有会话等你了，它先冒个泡；你凑过去，它才把话说完。愿意的话，它还能叮一声，或者直接说出来。</span><span lang="en">Quiet most of the time; it blinks and follows your pointer. When a session needs you, it gives a little puff first and only says the rest when you come over. If you like, it can chime, or say it out loud.</span></p>
-        <div class="mt-7 flex flex-wrap gap-2 text-sm">
-          <button class="mode rounded-full px-4 py-2 bg-white/5 cursor-pointer" data-mode="quiet"><span lang="zh">安静</span><span lang="en">Quiet</span></button>
-          <button class="mode rounded-full px-4 py-2 bg-white/5 cursor-pointer" data-mode="everyday"><span lang="zh">日常</span><span lang="en">Everyday</span></button>
-          <button class="mode rounded-full px-4 py-2 bg-white/5 cursor-pointer" data-mode="active"><span lang="zh">积极</span><span lang="en">Active</span></button>
+        <p class="text-coral text-sm font-medium"><span lang="zh">认识小莫</span><span lang="en">Meet Mo</span></p>
+        <h2 class="mt-3 text-[clamp(2.25rem,5vw,3.75rem)] font-semibold tracking-[-0.035em] leading-[1.04]"><span lang="zh">住在桌面一角的<br>小伙伴。</span><span lang="en">A tiny friend on your desktop.</span></h2>
+        <p class="mt-5 text-lg text-fg/55 leading-relaxed max-w-md"><span lang="zh">平时安静地眨眼。有会话等你，它先冒个泡。</span><span lang="en">Mo blinks, follows your cursor, and speaks up only when a session needs you.</span></p>
+        <div class="mt-8 inline-flex rounded-full bg-fg/[.04] p-1 shadow-[inset_0_0_0_1px_var(--hair)] text-sm">
+          <button class="mode rounded-full px-4 py-1.5 cursor-pointer transition-colors" data-mode="quiet"><span lang="zh">安静</span><span lang="en">Quiet</span></button>
+          <button class="mode rounded-full px-4 py-1.5 cursor-pointer transition-colors" data-mode="everyday"><span lang="zh">日常</span><span lang="en">Everyday</span></button>
+          <button class="mode rounded-full px-4 py-1.5 cursor-pointer transition-colors" data-mode="active"><span lang="zh">积极</span><span lang="en">Active</span></button>
         </div>
-        <p class="mt-4 text-sm text-white/50 min-h-[2.5rem]" id="mode-caption"></p>
+        <p class="mt-3 text-sm text-fg/40 min-h-[2.5rem]" id="mode-caption"></p>
       </div>
-      <div class="reveal relative h-[380px] rounded-3xl border border-white/8 bg-gradient-to-br from-mint/[.08] to-transparent">
-        <div class="absolute left-8 top-10 w-56 h-28 rounded-xl bg-white/[.05] border border-white/8"></div>
-        <div class="absolute left-24 top-28 w-52 h-24 rounded-xl bg-white/[.04] border border-white/8"></div>
-        <div class="absolute right-8 bottom-8 flex flex-col items-end">
-          <div id="mo-bubble" class="pop mb-2 rounded-2xl bg-[#2a2b31] border border-white/10 px-4 py-2.5 text-sm shadow-2xl max-w-[260px]"></div>
-          <button id="mo-poke" class="cursor-pointer" aria-label="Mo"><svg class="float w-28 h-32"><use href="#mo"/></svg></button>
+      <div class="reveal shell dark-scope" style="--d:100ms">
+        <div class="core relative h-[460px] overflow-hidden bg-[radial-gradient(60%_50%_at_85%_95%,rgba(255,90,60,.16),transparent_70%),radial-gradient(70%_60%_at_15%_0%,rgba(255,170,120,.07),transparent_70%),linear-gradient(180deg,#1b1816,#0f0e0d)]">
+          <!-- menu bar -->
+          <div class="absolute inset-x-0 top-0 h-7 flex items-center gap-4 px-4 text-[10px] text-fg/55 bg-black/30 backdrop-blur-md">
+            <span class="font-semibold text-fg/80">Ghostty</span>
+            <span class="ml-auto relative flex items-center rounded bg-white/15 px-1 py-0.5"><svg class="w-3.5 h-3.5 text-fg"><use href="#continuum"/></svg><span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber"></span></span>
+            <span class="tabular-nums">9:41</span>
+          </div>
+          <!-- a busy session, behind -->
+          <div class="absolute left-[5%] top-[13%] w-[58%] rounded-xl bg-[#121110]/95 shadow-[inset_0_0_0_1px_var(--hair),0_24px_50px_-20px_rgba(0,0,0,.8)] font-mono text-[10.5px] leading-[1.7] -rotate-[1.5deg]">
+            <div class="h-6 flex items-center gap-1.5 px-3 border-b border-white/[.05]"><span class="w-2 h-2 rounded-full bg-[#ff5f57]"></span><span class="w-2 h-2 rounded-full bg-[#febc2e]"></span><span class="w-2 h-2 rounded-full bg-[#28c840]"></span><span class="ml-2 text-fg/35 font-sans">acme-web — claude</span></div>
+            <div class="px-3.5 py-2.5 text-fg/45">
+              <p><span class="text-coral">✻</span> <span lang="zh">正在重构结算页…</span><span lang="en">Refactoring the checkout page…</span> <span class="text-fg/25">(1m 42s)</span></p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">修改</span><span lang="en">Edited</span> src/checkout/summary.tsx</p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">修改</span><span lang="en">Edited</span> src/checkout/totals.ts</p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">运行</span><span lang="en">Running</span> pnpm test…</p>
+            </div>
+          </div>
+          <!-- a session waiting for you, in front -->
+          <div class="absolute left-[16%] top-[44%] w-[60%] rounded-xl bg-[#191715] shadow-[inset_0_0_0_1px_var(--hair),0_30px_60px_-20px_rgba(0,0,0,.9)] font-mono text-[10.5px] leading-[1.7] rotate-[1deg]">
+            <div class="h-6 flex items-center gap-1.5 px-3 border-b border-white/[.05]"><span class="w-2 h-2 rounded-full bg-[#ff5f57]"></span><span class="w-2 h-2 rounded-full bg-[#febc2e]"></span><span class="w-2 h-2 rounded-full bg-[#28c840]"></span><span class="ml-2 text-fg/35 font-sans">api-review — claude</span><span class="ml-auto w-1.5 h-1.5 rounded-full bg-amber animate-pulse"></span></div>
+            <div class="px-3.5 py-2.5 text-fg/55">
+              <p><span class="text-amber">?</span> <span lang="zh">允许运行 Bash(pnpm test:api)？</span><span lang="en">Allow Bash(pnpm test:api)?</span></p>
+              <p class="mt-1 rounded bg-amber/15 text-amber px-1.5">❯ 1. <span lang="zh">允许</span><span lang="en">Yes</span></p>
+              <p class="px-1.5 text-fg/35">  2. <span lang="zh">这次会话都允许</span><span lang="en">Yes, for this session</span></p>
+              <p class="px-1.5 text-fg/35">  3. <span lang="zh">不，换个做法</span><span lang="en">No, do something else</span></p>
+            </div>
+          </div>
+          <!-- Mo, and what Mo says -->
+          <div class="absolute right-4 bottom-4 flex flex-col items-end">
+            <img id="mo-card" data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img hidden w-60 -mb-1 mr-2 drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
+            <div id="mo-bubble" class="pop mb-2 rounded-[1.25rem] rounded-br-md bg-[#2a2826] shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-10px_rgba(0,0,0,.7)] px-4 py-2.5 text-sm max-w-[240px]"></div>
+            <button id="mo-poke" class="cursor-pointer active:scale-95 transition-transform" aria-label="Mo"><svg class="float w-24 h-28"><use href="#mo-figure"/></svg></button>
+          </div>
         </div>
       </div>
     </div>
   </section>
 
   <!-- Terminal -->
-  <section id="terminal" class="py-24">
-    <div class="mx-auto max-w-6xl px-6 grid lg:grid-cols-2 gap-14 items-center">
-      <div class="reveal order-2 lg:order-1 rounded-2xl border border-white/10 bg-[#0d0e12] overflow-hidden ring-soft font-mono text-[13px]">
-        <div class="h-9 flex items-center gap-2 px-4 border-b border-white/5"><span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span><span class="w-3 h-3 rounded-full bg-[#febc2e]"></span><span class="w-3 h-3 rounded-full bg-[#28c840]"></span></div>
-        <div class="p-5 leading-7">
-          <p><span class="text-mint">~/code/acme-web</span> <span class="text-coral">❯</span> <span id="typed"></span><span class="inline-block w-2 h-4 bg-coral align-middle animate-pulse"></span></p>
-          <div id="picker" class="mt-3 hidden">
-            <p class="text-white/40">  <span lang="zh">会话</span><span lang="en">Sessions</span> · 3</p>
-            <p class="bg-white/5 rounded px-2"><span class="text-coral">●</span> acme-web      <span class="text-white/40"><span lang="zh">在忙</span><span lang="en">busy</span></span></p>
-            <p class="px-2"><span class="text-amber">●</span> api-review    <span class="text-white/40"><span lang="zh">在等你</span><span lang="en">waiting</span></span></p>
-            <p class="px-2"><span class="text-[#ff6b6b]">●</span> billing-fix   <span class="text-white/40"><span lang="zh">断了 · 回车找回</span><span lang="en">stopped · Return brings it back</span></span></p>
+  <section id="terminal" class="py-20 sm:py-28">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8 grid lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] gap-14 items-center">
+      <div class="reveal order-2 lg:order-1 shell dark-scope">
+        <div class="core overflow-hidden font-mono text-[13px] bg-[#0e0d0c]">
+          <div class="h-9 flex items-center gap-2 px-4"><span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span><span class="w-3 h-3 rounded-full bg-[#febc2e]"></span><span class="w-3 h-3 rounded-full bg-[#28c840]"></span></div>
+          <div class="px-5 pb-6 pt-2 leading-7 min-h-[200px]">
+            <p><span class="text-fg/50">~/code/acme-web</span> <span class="text-coral">❯</span> <span id="typed"></span><span class="inline-block w-2 h-4 bg-coral align-middle animate-pulse"></span></p>
+            <div id="picker" class="mt-3 hidden">
+              <p class="text-fg/35 whitespace-pre">  <span lang="zh">会话</span><span lang="en">Sessions</span> · 3</p>
+              <p class="bg-fg/[.06] rounded px-2 whitespace-pre"><span class="text-coral">●</span> acme-web      <span class="text-fg/40"><span lang="zh">在忙</span><span lang="en">busy</span></span></p>
+              <p class="px-2 whitespace-pre"><span class="text-amber">●</span> api-review    <span class="text-fg/40"><span lang="zh">在等你</span><span lang="en">waiting</span></span></p>
+              <p class="px-2 whitespace-pre"><span class="text-[#ff6b5b]">●</span> billing-fix   <span class="text-fg/40"><span lang="zh">断了 · 回车找回</span><span lang="en">interrupted · ⏎ to resume</span></span></p>
+            </div>
           </div>
         </div>
       </div>
       <div class="reveal order-1 lg:order-2">
-        <p class="text-coral text-sm font-semibold"><span lang="zh">也住在终端里</span><span lang="en">At home in the terminal too</span></p>
-        <h2 class="mt-3 text-4xl sm:text-5xl font-semibold tracking-tight"><span lang="zh">敲一个 t，挑一个会话</span><span lang="en">Type t. Pick a session.</span></h2>
-        <p class="mt-5 text-white/65 text-lg leading-relaxed"><span lang="zh">不开 App 也行：在终端里敲 t，会话列表就出来，上下选、回车进。Linux 上也一样好用。</span><span lang="en">No app needed: type t in a terminal, the list appears, arrow keys and Return. Works the same on Linux.</span></p>
+        <p class="text-coral text-sm font-medium"><span lang="zh">也住在终端里</span><span lang="en">Also in the terminal</span></p>
+        <h2 class="mt-3 text-[clamp(2.25rem,5vw,3.75rem)] font-semibold tracking-[-0.035em] leading-[1.04]"><span lang="zh">敲一个 t，<br>挑一个会话。</span><span lang="en">Type t.<br>Pick a session.</span></h2>
+        <p class="mt-5 text-lg text-fg/55"><span lang="zh">不开 App 也行。Linux 上一样好用。</span><span lang="en">No app required. Works on Linux, too.</span></p>
       </div>
     </div>
   </section>
 
   <!-- Install -->
-  <section id="install" class="relative py-32 overflow-hidden">
-    <div class="glow glow-coral absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[1200px] h-[700px] opacity-70"></div>
-    <div class="relative mx-auto max-w-3xl px-6 text-center reveal">
-      <svg class="float w-20 h-24 mx-auto"><use href="#mo"/></svg>
-      <h2 class="mt-6 text-4xl sm:text-5xl font-semibold tracking-tight"><span lang="zh">三步装好</span><span lang="en">Three steps</span></h2>
-      <ol class="mt-10 grid sm:grid-cols-3 gap-4 text-left">
-        <li class="rounded-2xl border border-white/8 bg-white/[.03] p-5"><p class="text-coral font-mono text-sm">01</p><p class="mt-2 font-semibold"><span lang="zh">用 Homebrew 装</span><span lang="en">Install with Homebrew</span></p><p class="mt-1 text-sm text-white/55"><span lang="zh">App 会一起装上。</span><span lang="en">The app comes along.</span></p></li>
-        <li class="rounded-2xl border border-white/8 bg-white/[.03] p-5"><p class="text-coral font-mono text-sm">02</p><p class="mt-2 font-semibold"><span lang="zh">运行 <span class="whitespace-nowrap">cc-moss</span> install</span><span lang="en">Run <span class="whitespace-nowrap">cc-moss</span> install</span></p><p class="mt-1 text-sm text-white/55"><span lang="zh">连上 Claude Code，放好 App。</span><span lang="en">Connects Claude Code and puts the app in place.</span></p></li>
-        <li class="rounded-2xl border border-white/8 bg-white/[.03] p-5"><p class="text-coral font-mono text-sm">03</p><p class="mt-2 font-semibold"><span lang="zh">跟着引导走</span><span lang="en">Follow the welcome</span></p><p class="mt-1 text-sm text-white/55"><span lang="zh">一分钟，就能接着写代码了。</span><span lang="en">A minute, and back to work.</span></p></li>
-      </ol>
-      <div class="mt-8 flex flex-col items-center gap-3">
-        <button data-copy="brew install larrykoo711/tap/cc-moss && cc-moss install" class="copy group w-full max-w-xl flex items-center gap-3 rounded-xl glass px-5 py-4 font-mono text-sm cursor-pointer hover:border-white/20 transition text-left">
-          <span class="text-coral">$</span>
-          <span class="truncate">brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</span>
-          <span class="copy-label ml-auto whitespace-nowrap text-xs text-white/40 group-hover:text-white/70 font-sans shrink-0"><span lang="zh">复制</span><span lang="en">Copy</span></span>
-        </button>
-        <p class="text-xs text-white/40"><span lang="zh">没有 Homebrew？</span><span lang="en">No Homebrew?</span> <a class="underline hover:text-white" href="https://github.com/larrykoo711/cc-moss/releases/latest"><span lang="zh">直接下载</span><span lang="en">Download a release</span></a> · <a class="underline hover:text-white" href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"><span lang="zh">使用手册</span><span lang="en">Guide</span></a></p>
+  <section id="install" class="relative py-32 sm:py-44 overflow-hidden">
+    <div class="absolute inset-0 bg-[radial-gradient(50%_45%_at_50%_55%,rgba(255,90,60,.14),transparent_70%)]"></div>
+    <div class="relative mx-auto max-w-3xl px-5 text-center">
+      <svg class="reveal float w-20 h-24 mx-auto"><use href="#mo-figure"/></svg>
+      <h2 class="reveal mt-6 text-[clamp(2.5rem,6vw,4.5rem)] font-semibold tracking-[-0.04em] leading-[1.02]" style="--d:80ms"><span lang="zh">一分钟，装好。</span><span lang="en">Up and running<br>in a minute.</span></h2>
+      <div class="reveal mt-10 shell text-left" style="--d:160ms">
+        <div class="core p-2">
+          <button data-copy="brew install larrykoo711/tap/cc-moss && cc-moss install" class="group w-full flex items-center gap-3 rounded-[1.25rem] px-5 py-4 font-mono text-[13px] sm:text-sm cursor-pointer hover:bg-fg/[.04] active:scale-[0.99] transition">
+            <span class="text-coral">$</span>
+            <span class="truncate">brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</span>
+            <span class="copy-label ml-auto whitespace-nowrap text-xs text-fg/40 group-hover:text-fg/70 font-sans shrink-0"><span lang="zh">复制</span><span lang="en">Copy</span></span>
+          </button>
+        </div>
       </div>
+      <ol class="reveal mt-10 grid grid-cols-3 gap-3 text-sm text-fg/55" style="--d:240ms">
+        <li><span class="block font-mono text-xs text-coral">01</span><span class="mt-1.5 block"><span lang="zh">Homebrew 安装</span><span lang="en">Install with Homebrew</span></span></li>
+        <li><span class="block font-mono text-xs text-coral">02</span><span class="mt-1.5 block"><span lang="zh">连上 Claude Code</span><span lang="en">Connect Claude Code</span></span></li>
+        <li><span class="block font-mono text-xs text-coral">03</span><span class="mt-1.5 block"><span lang="zh">跟着引导走</span><span lang="en">Follow the welcome</span></span></li>
+      </ol>
+      <p class="reveal mt-10 text-xs text-fg/35" style="--d:300ms"><span lang="zh">没有 Homebrew？</span><span lang="en">No Homebrew?</span> <a class="underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/releases/latest"><span lang="zh">直接下载</span><span lang="en">Download the app</span></a> · <a class="underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"><span lang="zh">使用手册</span><span lang="en">Guide</span></a></p>
     </div>
   </section>
 </main>
 
-<footer class="border-t border-white/5">
-  <div class="mx-auto max-w-6xl px-6 py-10 flex flex-col sm:flex-row gap-6 sm:items-center justify-between text-sm text-white/45">
-    <div class="flex items-center gap-2">
-      <svg class="w-5 h-5 text-coral"><use href="#continuum"/></svg>
+<footer class="border-t border-fg/[.06]">
+  <div class="mx-auto max-w-6xl px-5 sm:px-8 py-10 flex flex-col sm:flex-row gap-6 sm:items-center justify-between text-sm text-fg/40">
+    <div class="flex items-center gap-3">
+      <img src="icon.svg" alt="" class="w-7 h-7">
       <span lang="zh">文明会延续，对话也是。</span><span lang="en">Civilizations carry on. So do conversations.</span>
     </div>
     <div class="flex flex-wrap gap-5">
-      <a class="hover:text-white" href="https://github.com/larrykoo711/cc-moss">GitHub</a>
-      <a class="hover:text-white" href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md"><span lang="zh">更新记录</span><span lang="en">Changelog</span></a>
-      <a class="hover:text-white" href="https://github.com/larrykoo711/cc-moss/issues/new/choose"><span lang="zh">报告问题</span><span lang="en">Report a problem</span></a>
-      <span>MIT · <span lang="zh">与 Anthropic 无关联</span><span lang="en">Not affiliated with Anthropic</span></span>
+      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss">GitHub</a>
+      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md"><span lang="zh">更新记录</span><span lang="en">Changelog</span></a>
+      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss/issues/new/choose"><span lang="zh">报告问题</span><span lang="en">Report a problem</span></a>
+      <span>MIT</span>
     </div>
   </div>
 </footer>
