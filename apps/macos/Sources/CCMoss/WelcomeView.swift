@@ -310,26 +310,29 @@ struct WelcomeView: View {
     // MARK: - Footer
 
     private var footer: some View {
-        HStack(spacing: 10) {
-            StepDots(flow: flow)
-            Spacer()
+        // Back on the left, the choices on the right; where you are shows
+        // above the title (4/7), so no dots here to crowd the button.
+        HStack(spacing: 14) {
             if flow.canGoBack, flow.step != .done {
                 Button(L.t("Back", "上一步")) { move(forward: false) { $0.back() } }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
+                    .fixedSize()
                     .handCursor()
-                    .padding(.trailing, 6)
+            } else {
+                StepDots(flow: flow)
             }
+            Spacer(minLength: 8)
             if pending != nil, !connecting, !asking {
                 Button(L.t("Later", "以后再说")) { move(forward: true) { $0.skipStep() } }
                     .buttonStyle(.plain)
                     .focusable(false)
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
+                    .fixedSize()
                     .handCursor()
-                    .padding(.trailing, 6)
                     .transition(.opacity)
             }
             BigButton(title: primaryTitle, icon: primaryIcon, busy: connecting || asking) {
@@ -350,8 +353,8 @@ struct WelcomeView: View {
     private var primaryTitle: String {
         if connecting { return L.t("Connecting…", "正在连接…") }
         switch pending {
-        case .connect: return L.t("Connect and Continue", "连接并继续")
-        case .notify: return L.t("Allow and Continue", "允许提醒并继续")
+        case .connect: return L.t("Connect", "连接并继续")
+        case .notify: return L.t("Allow", "允许提醒并继续")
         case .accessibility: return L.t("Allow", "去允许")
         case nil: break
         }
@@ -471,7 +474,7 @@ private struct BigButton: View {
         Button(action: action) {
             HStack(spacing: 7) {
                 if busy { ProgressView().controlSize(.small) }
-                Text(title).font(.system(size: 14, weight: .semibold))
+                Text(title).font(.system(size: 14, weight: .semibold)).lineLimit(1).fixedSize()
                 if !busy { Image(systemName: icon).font(.system(size: 12, weight: .bold)) }
             }
             .foregroundStyle(.white)
