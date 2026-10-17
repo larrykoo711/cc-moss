@@ -24,6 +24,8 @@ struct WelcomeView: View {
     @State private var connectProblem: String?
     /// Double Control pressed while on the shortcut step.
     @State private var triedShortcut = false
+    @State private var shortcutMode = PanelShortcutPicker.currentMode()
+    @State private var asking = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -181,7 +183,7 @@ struct WelcomeView: View {
                 ChoiceCard { TerminalChoice(prefs: model.terminals) }
             }
         case .shortcut:
-            ShortcutChoice(tried: triedShortcut)
+            ShortcutChoice(tried: triedShortcut, mode: $shortcutMode)
         case .startup:
             StartupChoice(live: live)
         case .mo:
@@ -221,12 +223,6 @@ struct WelcomeView: View {
             if let connectProblem {
                 Text(connectProblem).font(.system(size: 12)).foregroundStyle(Theme.amber)
             }
-            if plan?.isReady != true {
-                BigButton(title: connecting ? L.t("Connecting…", "正在连接…") : L.t("Connect", "一键连接"),
-                          icon: "link", busy: connecting) { connect() }
-                    .disabled(connecting || model.client == nil)
-                    .padding(.top, 6)
-            }
         }
     }
 
@@ -238,6 +234,7 @@ struct WelcomeView: View {
         tick()
     }
 
+    /// Connect, and on success move on by itself.
     private func connect() {
         guard let client = model.client else { return }
         connecting = true
@@ -251,6 +248,44 @@ struct WelcomeView: View {
             }
             await refreshPlan()
             connecting = false
+            if plan?.isReady == true {
+                try? await Task.sleep(for: .milliseconds(650)) // let the ticks land
+                if flow.step == .tools { move(forward: true) { $0.next() } }
+            }
+        }
+    }
+
+    /// The step's recommended thing, still to do: the main button does it.
+    private enum Pending { case connect, notify, accessibility }
+
+    private var pending: Pending? {
+        guard live else { return nil }
+        switch flow.step {
+        case .tools:
+            return plan?.isReady == true || model.client == nil ? nil : .connect
+        case .startup:
+            return [.allowed, .denied, .unavailable].contains(NotificationStatus.shared.auth) ? nil : .notify
+        case .shortcut:
+            return shortcutMode == "double" && !HotKeyCenter.shared.trust.allowed ? .accessibility : nil
+        default:
+            return nil
+        }
+    }
+
+    private func doPending(_ p: Pending) {
+        switch p {
+        case .connect:
+            connect()
+        case .notify:
+            asking = true
+            Task {
+                await NotificationStatus.shared.request()
+                asking = false
+                if flow.step == .startup { move(forward: true) { $0.next() } }
+            }
+        case .accessibility:
+            HotKeyCenter.shared.askForAccessibility()
+            HotKeyCenter.openAccessibilitySettings()
         }
     }
 
@@ -282,23 +317,52 @@ struct WelcomeView: View {
                     .handCursor()
                     .padding(.trailing, 6)
             }
-            BigButton(title: primaryTitle, icon: flow.step == .done ? "checkmark" : "arrow.right") {
-                if flow.step == .done {
+            if pending != nil, !connecting, !asking {
+                Button(L.t("Later", "以后再说")) { move(forward: true) { $0.skipStep() } }
+                    .buttonStyle(.plain)
+                    .focusable(false)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.secondary)
+                    .handCursor()
+                    .padding(.trailing, 6)
+                    .transition(.opacity)
+            }
+            BigButton(title: primaryTitle, icon: primaryIcon, busy: connecting || asking) {
+                if let p = pending {
+                    doPending(p)
+                } else if flow.step == .done {
                     WelcomeSound.finish()
                     close(openPanel: true)
                 } else {
                     move(forward: true) { $0.next() }
                 }
             }
+            .disabled(connecting || asking)
             .keyboardShortcut(.defaultAction)
         }
     }
 
     private var primaryTitle: String {
-        switch flow.step {
+        if connecting { return L.t("Connecting…", "正在连接…") }
+        switch pending {
+        case .connect: return L.t("Connect and Continue", "连接并继续")
+        case .notify: return L.t("Allow and Continue", "允许提醒并继续")
+        case .accessibility: return L.t("Allow", "去允许")
+        case nil: break
+        }
+        return switch flow.step {
         case .welcome: L.t("Let's Go", "开始吧")
         case .done: L.t("Open My Sessions", "打开我的会话")
         default: L.t("Continue", "继续")
+        }
+    }
+
+    private var primaryIcon: String {
+        switch pending {
+        case .connect: "link"
+        case .notify: "bell"
+        case .accessibility: "arrow.up.forward.app"
+        case nil: flow.step == .done ? "checkmark" : "arrow.right"
         }
     }
 
@@ -493,7 +557,7 @@ private struct TerminalChoice: View {
 /// Double Control (recommended) or a combination, with the permission it needs.
 private struct ShortcutChoice: View {
     let tried: Bool
-    @State private var mode = PanelShortcut.load(.standard) == .doubleControl ? "double" : "combo"
+    @Binding var mode: String
     private var trust: HotKeyCenter.Trust { HotKeyCenter.shared.trust }
 
     var body: some View {
@@ -504,20 +568,11 @@ private struct ShortcutChoice: View {
                 HotKeyRecorder(large: true)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             } else if !trust.allowed {
-                ChoiceCard {
-                    HStack(spacing: 10) {
-                        Image(systemName: "hand.raised.fill").foregroundStyle(Theme.amber)
-                        Text(L.t("Allow it once", "需要你允许一次"))
-                            .font(.system(size: 12))
-                            .fixedSize()
-                        Spacer(minLength: 6)
-                        SoftButton(title: L.t("Allow", "去允许"), icon: "arrow.up.forward.app") {
-                            HotKeyCenter.shared.askForAccessibility()
-                            HotKeyCenter.openAccessibilitySettings()
-                        }
-                    }
-                }
-                .transition(.opacity)
+                Label(L.t("macOS asks you to allow this once.", "macOS 需要你允许一次，点下面的按钮就好。"),
+                      systemImage: "hand.raised.fill")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .transition(.opacity)
             } else {
                 Label(tried ? L.t("Nice, that's it.", "成功，就是这样。") : L.t("Try it now: tap ⌃ twice.", "现在就试试：连按两下 ⌃。"),
                       systemImage: tried ? "checkmark.circle.fill" : "hand.point.up.left")
@@ -601,7 +656,7 @@ private struct StartupChoice: View {
                     case .denied:
                         SoftButton(title: L.t("Settings", "去设置"), icon: "gearshape") { NotificationStatus.openSystemSettings() }
                     default:
-                        SoftButton(title: L.t("Allow", "允许"), icon: "bell") { Task { await status.request() } }
+                        Text(L.t("Not yet", "还没允许")).font(.system(size: 12)).foregroundStyle(.tertiary)
                     }
                 }
                 .animation(.spring(response: 0.35, dampingFraction: 0.6), value: status.auth)
