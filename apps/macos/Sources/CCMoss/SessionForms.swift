@@ -400,7 +400,7 @@ struct MessageForm: View {
 
     var body: some View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
-                 aside: ("terminal", L.t("As if typed in its terminal", "像在终端里打字"))) {
+                 aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
             HStack(spacing: 8) {
                 Spacer()
@@ -468,13 +468,15 @@ struct RenameForm: View {
                 }
                 .padding(.horizontal, 2)
             }
+            let st = status
+            HStack(spacing: 5) {
+                Image(systemName: st.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(st.tint)
+                Text(st.text).font(.system(size: 11)).foregroundStyle(Theme.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            .animation(.easeOut(duration: 0.12), value: st.text)
             HStack(spacing: 8) {
-                let st = status
-                HStack(spacing: 5) {
-                    Image(systemName: st.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(st.tint)
-                    Text(st.text).font(.system(size: 11)).foregroundStyle(Theme.caption).lineLimit(1)
-                }
-                .animation(.easeOut(duration: 0.12), value: st.text)
                 Spacer(minLength: 8)
                 SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
                 SoftButton(title: L.t("Rename", "改名"), icon: Icons.rename, prominent: true, shortcut: "↵") { submit() }

@@ -428,6 +428,8 @@ struct SoftButton: View {
                     Text(shortcut)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 4)
                         .frame(minWidth: 18, minHeight: 16)
                         .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
