@@ -41,7 +41,7 @@ public enum AliasBoard {
         case "new": L.t("A session starts in this folder", "在当前目录开好一个会话")
         case "trusted": L.t("Claude goes ahead without asking each time", "Claude 做事不再逐条问你")
         case "restore": L.t("Every stopped session is back", "断了的会话全都回来了")
-        default: L.t("Hooks, tmux and aliases, checked", "钩子、tmux、别名都检查一遍")
+        default: L.t("Hooks, tmux and names, checked", "钩子、tmux、短名字都检查一遍")
         }
     }
 

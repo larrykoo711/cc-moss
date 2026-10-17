@@ -77,8 +77,29 @@ final class HotKeyCenter {
 
     /// The system's own "allow Accessibility" prompt.
     func askForAccessibility() {
+        if !AXIsProcessTrusted() { forgetStaleAccessibility() }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if AXIsProcessTrustedWithOptions(options) { refreshTrust() }
+    }
+
+    /// Without a Developer ID the app is signed ad hoc, and macOS ties the
+    /// permission to that exact build: after an update the old entry stays
+    /// ticked in the list but no longer counts, and ticking it again does
+    /// nothing. Clearing our own entry first lets the prompt add a fresh one.
+    private func forgetStaleAccessibility() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", id]
+        reset.standardOutput = FileHandle.nullDevice
+        reset.standardError = FileHandle.nullDevice
+        do {
+            try reset.run()
+            reset.waitUntilExit()
+            log.info("cleared a stale accessibility entry (exit \(reset.terminationStatus, privacy: .public))")
+        } catch {
+            log.error("tccutil failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func openAccessibilitySettings() {
@@ -238,6 +259,7 @@ struct HotKeyRecorder: View {
                         if value == .default {
                             Text(L.t("Default", "默认"))
                                 .font(.system(size: 10, weight: .semibold))
+                                .fixedSize()
                                 .foregroundStyle(Theme.brand)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Capsule().fill(Theme.brand.opacity(0.12)))
@@ -381,6 +403,8 @@ struct Keycaps: View {
                 Text(L.t("twice", "连按两下"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.leading, 2)
             }
         }
@@ -396,8 +420,7 @@ struct AccessibilityRow: View {
         CardRow(title: L.t("Let cc-moss hear \(k)\(k)", "让 cc-moss 听见连按 \(k)"),
                 detail: L.t("Turn it on once in System Settings. Until then, use ⌃⌥M.",
                             "在系统设置里打开一次就好，之前先用 ⌃⌥M。"),
-                divider: false,
-                icon: RowIcon("accessibility", .blue)) {
+                divider: false) {
             SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
                 HotKeyCenter.shared.askForAccessibility()
                 HotKeyCenter.openAccessibilitySettings()

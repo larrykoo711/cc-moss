@@ -93,8 +93,8 @@ public struct AliasFailure: Error, Equatable, Sendable {
     /// The app's own question: the name belongs to another alias.
     public static func taken(_ name: String) -> AliasFailure {
         AliasFailure(code: "taken",
-                     message: L.t("There is already an alias called `\(name)`. Replace it?",
-                                  "已经有一个叫 `\(name)` 的别名了，要替换它吗？"))
+                     message: L.t("`\(name)` is already in use. Replace it?",
+                                  "`\(name)` 已经被占用了，要替换吗？"))
     }
 
     /// Saving again with consent replaces the other alias.

@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
-///          [--settings general|menuBar|mo|notifications|aliases|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--settings general|menuBar|mo|notifications|shortcuts|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -84,7 +84,7 @@ enum Render {
             default: break
             }
             if let tab = value("--settings") {
-                // `--aliases <alias ls --json file>` for the aliases page.
+                // `--aliases <alias ls --json file>` for the shortcuts page.
                 let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
                     .flatMap { try? AliasList.decode($0) }
                 let page = SettingsView.Tab(rawValue: tab) ?? .general

@@ -141,12 +141,10 @@ struct TerminalSettings: View {
 
     var body: some View {
         SettingsCard(title: L.t("Terminal", "终端")) {
-            CardRow(title: L.t("Open sessions in", "用哪个终端打开"), detail: detail, divider: true,
-                    icon: RowIcon("apple.terminal.fill", .blue)) {
+            CardRow(title: L.t("Open sessions in", "用哪个终端打开"), detail: detail, divider: true) {
                 TerminalPicker(prefs: prefs)
             }
-            CardRow(title: L.t("Open as", "打开方式"), detail: styleDetail, divider: prefs.ghosttyMissing,
-                    icon: RowIcon("square.on.square", .blue)) {
+            CardRow(title: L.t("Open as", "打开方式"), detail: styleDetail, divider: prefs.ghosttyMissing) {
                 SlidingPicker(selection: Binding(get: { prefs.openStyle }, set: { prefs.openStyle = $0 }), options: [
                     (OpenStyle.tab, L.t("New tab", "新标签页")),
                     (OpenStyle.window, L.t("New window", "新窗口")),
@@ -156,8 +154,7 @@ struct TerminalSettings: View {
                 CardRow(
                     title: L.t("Try Ghostty", "试试 Ghostty"),
                     detail: L.t("A free, good-looking terminal, if you fancy a change.", "一个免费又好看的终端，想换可以试试。"),
-                    divider: false,
-                    icon: RowIcon("sparkles", .blue)
+                    divider: false
                 ) {
                     HStack(spacing: 8) {
                         RecommendedBadge()

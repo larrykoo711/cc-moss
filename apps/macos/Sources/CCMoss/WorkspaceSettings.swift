@@ -9,8 +9,7 @@ struct WorkspaceRow: View {
     @AppStorage(NewSession.workspaceKey) private var workspace = ""
 
     var body: some View {
-        CardRow(title: L.t("Start new sessions in", "新会话从这里开始"), detail: detail, divider: divider,
-                icon: RowIcon("folder.fill", .blue)) {
+        CardRow(title: L.t("Start new sessions in", "新会话从这里开始"), detail: detail, divider: divider) {
             HStack(spacing: 8) {
                 if !workspace.isEmpty {
                     SoftButton(title: L.t("Last Used", "用最近的"), icon: "clock.arrow.circlepath") { workspace = "" }

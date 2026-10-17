@@ -17,8 +17,7 @@ struct PetSettings: View {
         MoStudio(enabled: $enabled, size: $size, changed: changed)
         if enabled {
             SettingsCard(title: L.t("When Something Needs You", "有事找你时")) {
-                CardRow(title: L.t("How chatty", "互动方式"), detail: detail, divider: false,
-                        icon: RowIcon("face.smiling.inverse", .brand)) {
+                CardRow(title: L.t("How chatty", "互动方式"), detail: detail, divider: false) {
                     SlidingPicker(selection: $interaction, options: [
                         (PetInteraction.quiet.rawValue, L.t("Quiet", "安静")),
                         (PetInteraction.everyday.rawValue, L.t("Everyday", "日常")),
@@ -40,8 +39,7 @@ struct PetSettings: View {
     /// Off, a chime, or Mo reading the message title (DESIGN-pet §6.4).
     private var voiceCard: some View {
         SettingsCard(title: L.t("Voice", "声音")) {
-            CardRow(title: L.t("Sound", "出声方式"), detail: voiceDetail, divider: mode != .off,
-                    icon: RowIcon("speaker.wave.2.fill", .brand)) {
+            CardRow(title: L.t("Sound", "出声方式"), detail: voiceDetail, divider: mode != .off) {
                 SlidingPicker(selection: $voiceMode.animation(.easeOut(duration: 0.2)), options: [
                     (VoiceMode.off.rawValue, L.t("Off", "关")),
                     (VoiceMode.chime.rawValue, L.t("Chime", "提示音")),
@@ -53,7 +51,7 @@ struct PetSettings: View {
                 EmptyView()
             case .chime:
                 CardRow(title: L.t("Chime", "提示音"), detail: L.t("A soft sound built into macOS.", "macOS 自带的一声轻响。"),
-                        divider: false, icon: RowIcon("bell.fill", .brand)) {
+                        divider: false) {
                     SoftButton(title: L.t("Preview", "试听"), icon: "play.fill") { Speaker.shared.chime() }
                 }
                 .transition(.opacity)
@@ -67,7 +65,7 @@ struct PetSettings: View {
     @ViewBuilder private var voiceRows: some View {
         let voices = VoicePicker.installed(Speaker.installedVoices(), for: L.lang)
         let chosen = voices.first { $0.id == voiceId } ?? voices.first
-        CardRow(title: L.t("Voice", "嗓音"), detail: voiceCaption(voices), icon: RowIcon("waveform", .brand)) {
+        CardRow(title: L.t("Voice", "嗓音"), detail: voiceCaption(voices)) {
             HStack(spacing: 8) {
                 if !voices.isEmpty {
                     Dropdown(options: { voiceOptions(voices) }, selection: voices.contains { $0.id == voiceId } ? voiceId : "",

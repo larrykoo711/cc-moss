@@ -12,8 +12,7 @@ struct MenuBarSettings: View {
             CardRow(
                 title: L.t("Show in menu bar", "菜单栏里显示"),
                 detail: L.t("Counts what's waiting on you first, then the rest.",
-                            "数字先数在等你的，再数断了和在忙的。"),
-                icon: RowIcon("menubar.rectangle", .indigo)
+                            "数字先数在等你的，再数断了和在忙的。")
             ) {
                 SlidingPicker(selection: $showCount, options: [
                     (false, L.t("Icon only", "只显示图标")),
@@ -28,8 +27,7 @@ struct MenuBarSettings: View {
                           "会话在忙时，图标会轻轻动，稍微费一点电。")
                     : L.t("The icon stays still and costs nothing.",
                           "图标保持不动，不占资源。"),
-                divider: false,
-                icon: RowIcon("wand.and.stars", .indigo)
+                divider: false
             ) {
                 Toggle("", isOn: $motion)
                     .toggleStyle(.switch)

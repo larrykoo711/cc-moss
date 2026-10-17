@@ -10,7 +10,7 @@ struct NotificationSettings: View {
 
     var body: some View {
         SettingsCard(title: L.t("Delivery", "提醒方式")) {
-            CardRow(title: L.t("Who lets you know", "谁来提醒你"), detail: modeDetail, icon: RowIcon("bell.fill", .red)) {
+            CardRow(title: L.t("Who lets you know", "谁来提醒你"), detail: modeDetail) {
                 SlidingPicker(selection: $mode, options: [
                     (AlertMode.auto.rawValue, L.t("Automatic", "自动")),
                     (AlertMode.notificationsOnly.rawValue, L.t("Notifications", "系统通知")),
@@ -22,20 +22,16 @@ struct NotificationSettings: View {
         SettingsCard(title: L.t("What to Tell You", "提醒哪些事")) {
             KindRow(kind: .needsYou,
                     title: L.t("Waiting for you", "在等你"),
-                    detail: L.t("When Claude needs a yes or an answer.", "Claude 要你同意或回答问题时。"),
-                    icon: RowIcon("hand.wave.fill", .orange))
+                    detail: L.t("When Claude needs a yes or an answer.", "Claude 要你同意或回答问题时。"))
             KindRow(kind: .interrupted,
                     title: L.t("Session stopped", "会话断了"),
-                    detail: L.t("When one stops unexpectedly. Nothing's lost.", "意外停下时告诉你，进度都还在。"),
-                    icon: RowIcon("bolt.slash.fill", .red))
+                    detail: L.t("When one stops unexpectedly. Nothing's lost.", "意外停下时告诉你，进度都还在。"))
             KindRow(kind: .finished,
                     title: L.t("Turn finished", "这一轮做完了"),
-                    detail: L.t("Comes after every reply, so it's off by default.", "每轮都会响，有点吵，所以默认关着。"),
-                    icon: RowIcon("checkmark.circle.fill", .green))
+                    detail: L.t("Comes after every reply, so it's off by default.", "每轮都会响，有点吵，所以默认关着。"))
             KindRow(kind: .restored,
                     title: L.t("Back again", "找回来了"),
                     detail: L.t("When a stopped session is running again.", "断了的会话重新跑起来时。"),
-                    icon: RowIcon("arrow.uturn.backward.circle.fill", .teal),
                     divider: false)
         }
         Text(L.t("One session's same alert counts once in 30 seconds, and nothing pops up while the panel is open.",
@@ -73,20 +69,18 @@ private struct KindRow: View {
     let title: String
     let detail: String
     var divider = true
-    var icon: RowIcon?
     @AppStorage private var on: Bool
 
-    init(kind: AlertKind, title: String, detail: String, icon: RowIcon? = nil, divider: Bool = true) {
+    init(kind: AlertKind, title: String, detail: String, divider: Bool = true) {
         self.kind = kind
         self.title = title
         self.detail = detail
-        self.icon = icon
         self.divider = divider
         _on = AppStorage(wrappedValue: kind.defaultOn, AlertToggles.key(kind))
     }
 
     var body: some View {
-        CardRow(title: title, detail: detail, divider: divider, icon: icon) {
+        CardRow(title: title, detail: detail, divider: divider) {
             Toggle("", isOn: $on)
                 .toggleStyle(.switch)
                 .cursor(.pointingHand)
@@ -102,7 +96,7 @@ private struct AuthRow: View {
     let status: NotificationStatus
 
     var body: some View {
-        CardRow(title: L.t("Notifications", "系统通知"), detail: detail, divider: false, icon: RowIcon("bell.badge.fill", .red)) {
+        CardRow(title: L.t("Notifications", "系统通知"), detail: detail, divider: false) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .semibold))
