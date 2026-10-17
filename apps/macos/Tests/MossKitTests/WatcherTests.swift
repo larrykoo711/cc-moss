@@ -45,7 +45,9 @@ final class Counter: @unchecked Sendable {
         }
         #expect(await waitUntil(3) { count.value >= 1 })
         try await Task.sleep(nanoseconds: 1_500_000_000)
-        #expect(count.value <= 2, "20 writes in a burst arrive as one or two calls, got \(count.value)")
+        // FSEvents may cut a burst into a few batches on a busy machine (CI
+        // has given three); what matters is that 20 writes don't become 20 calls.
+        #expect(count.value <= 4, "20 writes in a burst arrive as a few calls, got \(count.value)")
     }
 
     @Test func singleFlightServesABurstWithOneExtraRun() async {

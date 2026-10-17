@@ -1,0 +1,13 @@
+{
+  "name": "cc-moss-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "tailwindcss -i src/styles.css -o dist/styles.css --watch"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.1.14",
+    "tailwindcss": "4.1.14"
+  }
+}
