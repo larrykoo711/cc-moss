@@ -602,6 +602,7 @@ struct AboutSettings: View {
     @State private var cliVersion: String?
     @State private var update: UpdateState = .idle
     @State private var problem: String?
+    @State private var aligning = false
 
     enum UpdateState: Equatable {
         case idle, checking
@@ -656,13 +657,7 @@ struct AboutSettings: View {
                 HStack(spacing: 6) {
                     VersionChip(label: "App", value: model.version)
                     VersionChip(label: L.t("CLI", "命令行"), value: cliVersion ?? "—")
-                    if let cli = cliVersion, cli != model.version, model.version != "dev" {
-                        Label(L.t("Versions differ", "版本不一致"), systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.amber)
-                            .tip(L.t("The app and the cc-moss command should be the same version. Updating fixes it.",
-                                      "App 和 cc-moss 命令应该是同一个版本，升级一下就好。"))
-                    }
+                    if let cli = cliVersion { alignButton(cli: cli) }
                 }
                 .padding(.top, 2)
             }
@@ -672,6 +667,44 @@ struct AboutSettings: View {
         // Room for the icon's shadow inside the scroll area, which clips.
         .padding(.top, 16)
         .padding(.bottom, 4)
+    }
+
+    // MARK: Versions
+
+    /// When the app and the command differ, one button brings the older one
+    /// up to date (A12): `cc-moss update` or, for the app, `cc-moss install`.
+    @ViewBuilder private func alignButton(cli: String) -> some View {
+        switch VersionMatch.of(app: model.version, cli: cli) {
+        case .cliOlder:
+            SoftButton(title: aligning ? L.t("Updating…", "正在升级…") : L.t("Update Command Line", "升级命令行"),
+                       icon: "exclamationmark.triangle.fill") { align(.cliOlder) }
+                .disabled(aligning)
+                .tip(L.t("The command line is older than the app. This runs cc-moss update.",
+                         "命令行比 App 旧，点一下运行 cc-moss update。"))
+        case .appOlder:
+            SoftButton(title: aligning ? L.t("Updating…", "正在更新…") : L.t("Update the App", "更新 App"),
+                       icon: "exclamationmark.triangle.fill") { align(.appOlder) }
+                .disabled(aligning)
+                .tip(L.t("The app is older than the command line. It updates itself and reopens.",
+                         "App 比命令行旧，点一下就换成新版，并自动重新打开。"))
+        case .same, .unknown:
+            EmptyView()
+        }
+    }
+
+    private func align(_ match: VersionMatch) {
+        guard let client = model.client, !aligning else { return }
+        aligning = true
+        Task {
+            do {
+                if match == .cliOlder { try await client.updateCLI() } else { try await client.installApp() }
+                problem = nil
+            } catch {
+                problem = L.t("Didn't finish: \(error)", "没弄完：\(error)")
+            }
+            aligning = false
+            cliVersion = try? await client.version()
+        }
     }
 
     // MARK: Update
