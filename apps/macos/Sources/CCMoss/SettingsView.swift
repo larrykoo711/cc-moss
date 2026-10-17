@@ -922,13 +922,19 @@ enum SettingsWindow {
 
     /// Move the close / minimise / zoom buttons inside the floating sidebar,
     /// as Raycast does, instead of on its rounded corner.
+    /// The window buttons sit inside the sidebar the way System Settings'
+    /// do: an empty unified toolbar makes the title bar tall, and macOS
+    /// itself centres the buttons in it. Moving them by hand didn't last:
+    /// macOS lays the title bar out again on focus, resize and appearance
+    /// changes and put them back.
     @MainActor static func tuckWindowButtons(in window: NSWindow) {
-        let kinds: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        for (i, kind) in kinds.enumerated() {
-            guard let button = window.standardWindowButton(kind), let bar = button.superview else { continue }
-            let step: CGFloat = 20
-            button.setFrameOrigin(NSPoint(x: 22 + CGFloat(i) * step, y: bar.bounds.height - button.frame.height - 14))
-        }
+        guard window.toolbar == nil else { return }
+        let toolbar = NSToolbar(identifier: "cc-moss.settings")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
     }
 }
 
