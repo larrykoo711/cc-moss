@@ -26,7 +26,7 @@ struct SettingsView: View {
     /// The sections, in the sidebar's order. Everyday things first, one
     /// subject per page; About stands apart at the bottom of the list.
     enum Tab: String, CaseIterable, Hashable {
-        case general, shortcuts, menuBar, mo, notifications, about
+        case general, shortcuts, menuBar, mo, notifications, permissions, about
 
         var title: String {
             switch self {
@@ -35,6 +35,7 @@ struct SettingsView: View {
             case .mo: L.t("Mo", "小莫")
             case .notifications: L.t("Notifications", "通知")
             case .shortcuts: L.t("Shortcuts", "快捷键")
+            case .permissions: L.t("Permissions", "权限")
             case .about: L.t("About", "关于")
             }
         }
@@ -46,6 +47,7 @@ struct SettingsView: View {
             case .mo: "face.smiling"
             case .notifications: Icons.notifications
             case .shortcuts: Icons.shortcuts
+            case .permissions: Icons.permissions
             case .about: "infinity"
             }
         }
@@ -65,6 +67,8 @@ struct SettingsView: View {
                                              "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
             case .shortcuts: [title, "alias", L.t("shortcut hotkey keyboard double tap control panel command terminal short name type",
                                                   "快捷键 热键 键盘 连按 唤出 面板 短命令 终端 别名 输入 alias")]
+            case .permissions: [title, L.t("privacy security accessibility automation notifications allow system events terminal tab double tap",
+                                           "隐私 安全 辅助功能 自动化 通知 允许 授权 system events 终端 标签页 连按")]
             case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }
@@ -121,6 +125,7 @@ struct SettingsView: View {
                         case .mo: PetSettings()
                         case .notifications: NotificationSettings()
                         case .shortcuts: ShortcutsSettings(model: model, demo: aliasDemo)
+                        case .permissions: PermissionsSettings(model: model)
                         case .about: AboutSettings(model: model)
                         }
                     }
@@ -205,7 +210,8 @@ struct SettingsView: View {
                     Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 1)
                         .padding(.horizontal, 8).padding(.vertical, 6)
                 }
-                SidebarItem(tab: t, selected: t == tab) { go(t) }
+                SidebarItem(tab: t, selected: t == tab,
+                            badge: t == .permissions && PermissionCenter.shared.attention(terminals: model.terminals) > 0) { go(t) }
             }
             Spacer()
         }
@@ -220,6 +226,8 @@ struct SettingsView: View {
 struct SidebarItem: View {
     let tab: SettingsView.Tab
     let selected: Bool
+    /// Something here needs you (a permission switched off).
+    var badge = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -236,6 +244,11 @@ struct SidebarItem: View {
                     .frame(width: 22, height: 22)
                 Text(tab.title).font(.system(size: 14)).foregroundStyle(ink.opacity(selected ? 1 : 0.85))
                 Spacer(minLength: 0)
+                if badge {
+                    Circle().fill(Theme.amber).frame(width: 7, height: 7)
+                        .padding(.trailing, 4)
+                        .accessibilityLabel(L.t("Needs you", "需要处理"))
+                }
             }
             .padding(.horizontal, 6)
             .frame(height: 36)

@@ -250,6 +250,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if WelcomeWindow.isShown, let tried = WelcomeWindow.onShortcut { tried() } else { self?.panel?.toggle() }
         }
         HotKeyCenter.shared.start()
+        // An update can take Accessibility away; the panel says so.
+        PermissionCenter.shared.checkAtLaunch(terminals: model.terminals)
         startLanguage()
         // The first-run welcome, once (T4.2).
         WelcomeWindow.openPanel = { [weak self] in self?.panel?.show() }

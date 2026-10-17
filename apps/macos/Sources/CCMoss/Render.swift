@@ -10,7 +10,8 @@ import SwiftUI
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
-///          [--settings general|menuBar|mo|notifications|shortcuts|about [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--access-lost]
+///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|about [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -78,6 +79,10 @@ enum Render {
             default: break
             }
             let command = model.selected.map(model.attachCommand) ?? ""
+            // `--access-lost`: the banner an update leaves when it took Accessibility away.
+            if args.contains("--access-lost") {
+                PermissionCenter.shared.pin(accessibility: .denied, automation: [:], lost: true)
+            }
             switch value("--problem") {
             case "denied": model.openProblem = OpenProblem(kind: .denied, terminalName: "Ghostty", command: command)
             case "failed": model.openProblem = OpenProblem(kind: .failed("Connection is invalid (-609)"), terminalName: "Ghostty", command: command)
@@ -103,6 +108,14 @@ enum Render {
                 case "denied": .denied
                 case "unavailable": .unavailable
                 default: .notDetermined
+                }
+                // `--grants mixed`: the Permissions page with one of each state.
+                if value("--grants") == "mixed" {
+                    PermissionCenter.shared.pin(accessibility: .denied,
+                                                automation: [.terminal(.terminal): .allowed, .systemEvents: .notAsked])
+                } else if value("--grants") == "allowed" {
+                    PermissionCenter.shared.pin(accessibility: .allowed,
+                                                automation: [.terminal(.terminal): .allowed, .systemEvents: .allowed])
                 }
                 drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"),
                              height: value("--height").flatMap(Double.init), out: out)

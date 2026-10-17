@@ -288,16 +288,17 @@ Mo can make a sound too, under Settings › Mo › Voice:
 
 | Page | What's there |
 |---|---|
-| General | Open at Login, the shortcut for the panel, interface language, the terminal sessions open in |
+| General | Open at Login, interface language, workspace, the terminal sessions open in, new tab or new window |
+| Shortcuts | The shortcut for the panel; short names to type in a terminal (open the session list, start a session, bring stopped ones back…): click the keycap, type, Return saves, and it plays what the name does. Your own commands sit under the folded Your own; the same names as `cc-moss alias` (see [Aliases](#aliases)). The keys inside the panel |
 | Menu Bar | How the icon shows, motion |
 | Mo | On or off, size, interaction, voice |
-| Notifications | Who tells you, what to tell you, Notification Center permission |
-| Aliases | A short name for the things you do often (open the session list, start a session, bring stopped ones back…): one field each, Return saves and it works at once; hovering a row plays what typing it does. Your own commands sit under the folded Custom. The same aliases as `cc-moss alias` (see [Aliases](#aliases)) |
+| Notifications | Who tells you, what to tell you; a word when notifications are turned off |
+| Permissions | Everything cc-moss asks macOS for, on one page: Accessibility, notifications, control of your terminal (Automation). Each says where it stands and what it's for, with Allow when one is missing. When one is off and something uses it, a small dot shows beside the page |
 | About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |
 
 The search field at the top of the sidebar finds any setting.
 
-**Shortcut**: tap Control twice, in any app. It needs cc-moss allowed once under System Settings › Privacy & Security › Accessibility; until then (or when an update asks again) ⌃⌥M works. In Settings › General you can switch to a key combination: click it and press a new one (it needs ⌃, ⌥ or ⌘, and you'll be told if another app has it).
+**Shortcut**: tap Control twice, in any app. It needs cc-moss allowed once under System Settings › Privacy & Security › Accessibility; until then ⌃⌥M works. In Settings › Shortcuts you can switch to a key combination: click it and press a new one (it needs ⌃, ⌥ or ⌘, and you'll be told if another app has it).
 
 **Workspace**: Claude works inside a folder. Pick one in Settings › General › Workspace and new sessions start there; otherwise they start in the folder you used last.
 
@@ -310,9 +311,15 @@ system).
 **No notifications arrive**
 
 macOS only sends notifications to an app in an Applications folder (`/Applications` or `~/Applications`).
-`cc-moss install` puts it in `~/Applications`; if you moved it somewhere else, move it back. Still nothing? Check the
-permission in Settings › Notifications: if it's turned off, click Open System Settings and switch on Notifications ›
+`cc-moss install` puts it in `~/Applications`; if you moved it somewhere else, move it back. Still nothing? Check
+notifications in Settings › Permissions: if they're turned off, click Open Settings and switch on Notifications ›
 cc-moss.
+
+**Double-tapping Control does nothing after an update**
+
+cc-moss isn't signed with an Apple developer ID yet, so macOS sees each version as a new app: after an update
+Accessibility stops working while System Settings still shows it ticked. The panel says "Allow Accessibility again" at
+the top; click Allow and tick it once more (cc-moss clears the old entry first). Settings › Permissions does the same.
 
 **Settings › About says "Versions differ"**
 
@@ -323,7 +330,7 @@ bring the app along; from then on, `cc-moss update` moves both together.
 **I chose Open, and the terminal did nothing**
 
 The first time cc-moss opens a session in a terminal, macOS asks whether it may control that terminal. If you said no,
-switch it on in System Settings › Privacy & Security › Automation, or press ⇧⌘C and paste the command yourself.
+click Open Settings beside it in Settings › Permissions and switch it on under Privacy & Security › Automation, or press ⇧⌘C and paste the command yourself.
 
 **The app can't find `cc-moss`**
 
