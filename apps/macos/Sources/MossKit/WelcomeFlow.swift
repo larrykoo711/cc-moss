@@ -5,7 +5,7 @@ import Foundation
 /// are ticked; any step, or the whole thing, can be skipped. Shown once.
 public struct WelcomeFlow: Equatable, Sendable {
     public enum Step: Int, CaseIterable, Sendable {
-        case welcome, tools, startup, terminal, mo, done
+        case welcome, tools, workspace, shortcut, startup, mo, done
     }
 
     public enum StepState: Equatable, Sendable {

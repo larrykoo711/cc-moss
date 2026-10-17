@@ -38,6 +38,30 @@ When something goes wrong, one command brings them all back: same folder, same c
 No shortcuts to learn: type to search, arrows to choose, Enter to go in. It speaks English and Chinese, following your
 system language.
 
+## The menubar app (Mac)
+
+On a Mac there is also a small app that lives in your menu bar, so you can see how your sessions are doing without even
+opening a terminal.
+
+<p align="center">
+  <img src="docs/assets/app-panel.png" alt="The menubar app's session panel" width="420">
+</p>
+
+- **An icon that moves.** When a session is working or waiting for you, the menu bar icon comes alive. Find it
+  distracting? Tell it to sit still and only change when the state does.
+- **Every session in one panel.** Click the icon or tap Control twice anywhere: sessions grouped by project, Return opens one
+  in your terminal (Terminal, Ghostty and friends), and a stopped one comes back with a click. New sessions, notes and
+  a quick message to a session live here too.
+- **It speaks up only when it matters.** A session needs your OK, or one just stopped? You'll hear about it, from
+  Notification Center or from Mo, never both.
+- **Mo.** A little pebble on your desktop whose face tells you how your sessions are doing. Pick quiet, everyday or
+  active, and if you like, it can chime or read the message out loud.
+- **Calm after a restart.** Your Mac rebooted? The app tells you "3 sessions stopped" straight away, and one click
+  brings them all back.
+
+Want the details? [The menubar app chapter](docs/guide.en.md#the-menubar-app) of the guide covers shortcuts and
+settings.
+
 ## Three steps to set up
 
 ```sh
@@ -50,6 +74,10 @@ cc-moss doctor
 configuration and never overwrites what you have; every file it touches is backed up first. If a tool is missing
 (tmux, say), it tells you and offers to install it. `doctor` then checks each piece and tells you how to fix anything
 that is off.
+
+On a Mac, `install` also offers to put the menubar app in your Applications folder; say yes and it shows up in the
+menu bar. From then on, `cc-moss update` updates the command line and the app together. On Linux you get the terminal
+edition, with everything described above.
 
 You need a Mac or a Linux machine with [Claude Code](https://code.claude.com/docs). No Homebrew? You can also
 [download a release or build from source](docs/guide.en.md#install).
@@ -90,11 +118,13 @@ cc-moss install --uninstall
 brew uninstall cc-moss
 ```
 
-The first command takes out everything cc-moss added and puts your files back; the second removes the program itself.
+The first command takes out everything cc-moss added (the menubar app too, on a Mac) and puts your files back; the
+second removes the program itself.
 
 ## Learn more
 
 - [The guide](docs/guide.en.md): every command and setting, how it works, and how it compares with other approaches
+- [The menubar app](docs/guide.en.md#the-menubar-app): panel shortcuts, notifications, Mo and its voice
 - [FAQ](docs/guide.en.md#faq): `t` does nothing after installing? Using bash? It's in there
 - [Changelog](CHANGELOG.md)
 - Want to help make it better? Start with [CONTRIBUTING](CONTRIBUTING.md)

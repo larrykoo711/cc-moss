@@ -27,7 +27,7 @@ import Testing
         var flow = WelcomeFlow()
         flow.next()
         flow.skipStep()
-        #expect(flow.step == .startup)
+        #expect(flow.step == .workspace)
         #expect(flow.state(of: .tools) == .skipped)
     }
 
@@ -36,7 +36,7 @@ import Testing
         flow.satisfied([.tools, .startup])
         #expect(flow.state(of: .tools) == .done)
         #expect(flow.state(of: .startup) == .done)
-        #expect(flow.state(of: .terminal) == .pending)
+        #expect(flow.state(of: .shortcut) == .pending)
         // Something satisfied later ticks too, but never un-ticks.
         flow.satisfied([])
         #expect(flow.state(of: .tools) == .done)

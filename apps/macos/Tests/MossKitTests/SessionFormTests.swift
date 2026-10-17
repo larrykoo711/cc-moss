@@ -20,6 +20,12 @@ import Testing
             == .create(["new", "fresh", "-C", "/home/u/projects/acme", "--detach"]))
     }
 
+    @Test func workspaceWinsWhileItExists() {
+        #expect(NewSession.defaultDirectory(list, workspace: "/home/u/work", exists: { _ in true }) == "/home/u/work")
+        #expect(NewSession.defaultDirectory(list, workspace: "/home/u/gone", exists: { _ in false }) == "/home/u/projects/docs")
+        #expect(NewSession.defaultDirectory(list, workspace: "", exists: { _ in true }) == "/home/u/projects/docs")
+    }
+
     @Test func defaultsToRecentProject() {
         #expect(NewSession.defaultDirectory(list) == "/home/u/projects/docs")
         #expect(NewSession.recentProjects(list) == [

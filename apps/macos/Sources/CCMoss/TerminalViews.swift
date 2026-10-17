@@ -119,20 +119,21 @@ struct TerminalSettings: View {
             return L.t("\(gone.displayName) isn't installed anymore, so sessions open in Terminal.",
                        "\(zhPad(gone.displayName, leading: false))已经不在这台 Mac 上了，会话改在终端里打开。")
         }
-        return L.t("A new window, straight into the session. Another terminal? ⇧⌘C copies the command.",
-                   "新开一个窗口，直接进到会话里。用别的终端？⇧⌘C 复制命令。")
+        return L.t("Where a session opens when you click it.", "点开会话时，会在这里打开。")
     }
 
     var body: some View {
         SettingsCard(title: L.t("Terminal", "终端")) {
-            CardRow(title: L.t("Open Sessions In", "会话在哪儿打开"), detail: detail, divider: prefs.ghosttyMissing) {
+            CardRow(title: L.t("Open sessions in", "用哪个终端打开"), detail: detail, divider: prefs.ghosttyMissing,
+                    icon: RowIcon("apple.terminal.fill", .blue)) {
                 TerminalPicker(prefs: prefs)
             }
             if prefs.ghosttyMissing, let url = Terminal.ghostty.downloadURL {
                 CardRow(
                     title: L.t("Try Ghostty", "试试 Ghostty"),
-                    detail: L.t("Fast, native, scriptable, and free.", "快、原生、能被脚本调动，还免费。"),
-                    divider: false
+                    detail: L.t("A free, good-looking terminal, if you fancy a change.", "一个免费又好看的终端，想换可以试试。"),
+                    divider: false,
+                    icon: RowIcon("sparkles", .blue)
                 ) {
                     HStack(spacing: 8) {
                         RecommendedBadge()

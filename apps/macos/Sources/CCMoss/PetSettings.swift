@@ -14,40 +14,11 @@ struct PetSettings: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        hero
-        SettingsCard(title: L.t("Companion", "小伙伴")) {
-            CardRow(
-                title: L.t("Show Mo", "显示小莫"),
-                detail: enabled
-                    ? L.t("Lives in a corner of your desktop and shows how your sessions are doing. Click it to open the panel.",
-                          "住在桌面一角，用表情告诉你会话怎么样了。点它打开面板。")
-                    : L.t("A small companion for your desktop. It stays quiet until something needs you.",
-                          "桌面上的小伙伴。平时安安静静，有事才找你。"),
-                divider: enabled
-            ) {
-                Toggle("", isOn: $enabled.animation(.easeOut(duration: 0.2)))
-                    .toggleStyle(.switch)
-                    .handCursor()
-                    .labelsHidden()
-                    .controlSize(.small)
-                    .onChange(of: enabled) { _, _ in changed() }
-            }
-            // Only what applies: with Mo off there is nothing to size.
-            if enabled {
-                CardRow(title: L.t("Size", "大小"), divider: false) {
-                    SlidingPicker(selection: $size, options: [
-                        (48, L.t("Small", "小")),
-                        (64, L.t("Medium", "中")),
-                        (88, L.t("Large", "大")),
-                    ])
-                    .onChange(of: size) { _, _ in changed() }
-                }
-                .transition(.opacity)
-            }
-        }
+        MoStudio(enabled: $enabled, size: $size, changed: changed)
         if enabled {
             SettingsCard(title: L.t("When Something Needs You", "有事找你时")) {
-                CardRow(title: L.t("Interaction", "互动方式"), detail: detail, divider: false) {
+                CardRow(title: L.t("How chatty", "互动方式"), detail: detail, divider: false,
+                        icon: RowIcon("face.smiling.inverse", .brand)) {
                     SlidingPicker(selection: $interaction, options: [
                         (PetInteraction.quiet.rawValue, L.t("Quiet", "安静")),
                         (PetInteraction.everyday.rawValue, L.t("Everyday", "日常")),
@@ -69,7 +40,8 @@ struct PetSettings: View {
     /// Off, a chime, or Mo reading the message title (DESIGN-pet §6.4).
     private var voiceCard: some View {
         SettingsCard(title: L.t("Voice", "声音")) {
-            CardRow(title: L.t("Sound", "出声方式"), detail: voiceDetail, divider: mode != .off) {
+            CardRow(title: L.t("Sound", "出声方式"), detail: voiceDetail, divider: mode != .off,
+                    icon: RowIcon("speaker.wave.2.fill", .brand)) {
                 SlidingPicker(selection: $voiceMode.animation(.easeOut(duration: 0.2)), options: [
                     (VoiceMode.off.rawValue, L.t("Off", "关")),
                     (VoiceMode.chime.rawValue, L.t("Chime", "提示音")),
@@ -81,7 +53,7 @@ struct PetSettings: View {
                 EmptyView()
             case .chime:
                 CardRow(title: L.t("Chime", "提示音"), detail: L.t("A soft sound built into macOS.", "macOS 自带的一声轻响。"),
-                        divider: false) {
+                        divider: false, icon: RowIcon("bell.fill", .brand)) {
                     SoftButton(title: L.t("Preview", "试听"), icon: "play.fill") { Speaker.shared.chime() }
                 }
                 .transition(.opacity)
@@ -95,7 +67,7 @@ struct PetSettings: View {
     @ViewBuilder private var voiceRows: some View {
         let voices = VoicePicker.installed(Speaker.installedVoices(), for: L.lang)
         let chosen = voices.first { $0.id == voiceId } ?? voices.first
-        CardRow(title: L.t("Speaking Voice", "嗓音"), detail: voiceCaption(voices)) {
+        CardRow(title: L.t("Voice", "嗓音"), detail: voiceCaption(voices), icon: RowIcon("waveform", .brand)) {
             HStack(spacing: 8) {
                 if !voices.isEmpty {
                     Dropdown(options: { voiceOptions(voices) }, selection: voices.contains { $0.id == voiceId } ? voiceId : "",
@@ -145,27 +117,6 @@ struct PetSettings: View {
               let region = Locale(identifier: L.lang == .zh ? "zh_CN" : "en_US").localizedString(forRegionCode: String(parts[1]))
         else { return voice.name }
         return "\(voice.name) · \(region)"
-    }
-
-    /// Mo itself at the top of the page: awake when on, asleep when off.
-    private var hero: some View {
-        HStack(spacing: 16) {
-            LayerPet(pose: enabled ? .happy : .sleeping, size: 72, dark: scheme == .dark)
-                .frame(width: 88, height: 88)
-                .animation(.easeOut(duration: 0.2), value: enabled)
-            VStack(alignment: .leading, spacing: 5) {
-                Text(L.t("Mo", "小莫"))
-                    .font(.system(size: 22, weight: .semibold))
-                Text(enabled
-                     ? L.t("On your desktop, keeping an eye on things.", "在桌面上，替你看着呢。")
-                     : L.t("Asleep. Switch it on and it moves in.", "睡着了。打开就搬到你桌面上。"))
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 8)
-        .padding(.top, 4)
     }
 
     /// What the chosen mode does when something needs you.

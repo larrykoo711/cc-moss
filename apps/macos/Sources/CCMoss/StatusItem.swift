@@ -245,12 +245,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
         startAlerts()
         // The global shortcut does what a click on the icon does.
-        HotKeyCenter.shared.onPress = { [weak self] in self?.panel?.toggle() }
+        HotKeyCenter.shared.onPress = { [weak self] in
+            // During the welcome, the shortcut proves itself there.
+            if WelcomeWindow.isShown, let tried = WelcomeWindow.onShortcut { tried() } else { self?.panel?.toggle() }
+        }
         HotKeyCenter.shared.start()
         startLanguage()
         // The first-run welcome, once (T4.2).
         WelcomeWindow.openPanel = { [weak self] in self?.panel?.show() }
-        if WelcomeFlow.shouldShow(.standard) { WelcomeWindow.show(model: model) }
+        // A moment after launch, once the menu bar icon has settled.
+        if WelcomeFlow.shouldShow(.standard) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                guard let self else { return }
+                WelcomeWindow.show(model: self.model)
+            }
+        }
     }
 
     /// `[ui] language` from the CLI's config; a switch reaches the CLI's own

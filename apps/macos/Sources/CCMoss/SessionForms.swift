@@ -26,7 +26,8 @@ struct NewDraft: Equatable {
 
 extension AppModel {
     func startNewSession() {
-        let dir = NewSession.defaultDirectory(sessions) ?? NSHomeDirectory()
+        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey)
+        let dir = NewSession.defaultDirectory(sessions, workspace: workspace) ?? NSHomeDirectory()
         newDraft = NewDraft(directory: dir, name: NewSession.defaultName(for: dir))
         closeGate.cancel()
         form = .newSession
@@ -287,10 +288,15 @@ struct NewSessionForm: View {
     static let chooseID = "\u{0}choose"
 
     private func folderOptions() -> [DropdownOption<String>] {
-        let recent = NewSession.recentProjects(model.sessions)
+        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey).flatMap { $0.isEmpty ? nil : $0 }
+        // Your workspace first, then the folders sessions worked in.
+        var folders = NewSession.recentProjects(model.sessions)
+        if let workspace { folders = [workspace] + folders.filter { $0 != workspace } }
+        if !draft.directory.isEmpty, !folders.contains(draft.directory) { folders.insert(draft.directory, at: 0) }
         let home = NSHomeDirectory()
-        var options = (recent.contains(draft.directory) || draft.directory.isEmpty ? recent : [draft.directory] + recent)
-            .map { DropdownOption(id: $0, title: Grouping.tilde($0, home: home), symbol: Icons.project) }
+        var options = folders.map { dir in
+            DropdownOption(id: dir, title: Grouping.tilde(dir, home: home), symbol: dir == workspace ? "star" : Icons.project)
+        }
         options.append(DropdownOption(id: Self.chooseID, title: L.t("Choose…", "选择…"), symbol: Icons.chooseFolder))
         return options
     }
@@ -400,7 +406,7 @@ struct MessageForm: View {
 
     var body: some View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
-                 aside: ("terminal", L.t("As if typed in its terminal", "像在终端里打字"))) {
+                 aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
             HStack(spacing: 8) {
                 Spacer()
@@ -468,13 +474,15 @@ struct RenameForm: View {
                 }
                 .padding(.horizontal, 2)
             }
+            let st = status
+            HStack(spacing: 5) {
+                Image(systemName: st.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(st.tint)
+                Text(st.text).font(.system(size: 11)).foregroundStyle(Theme.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.leading, 2)
+            .animation(.easeOut(duration: 0.12), value: st.text)
             HStack(spacing: 8) {
-                let st = status
-                HStack(spacing: 5) {
-                    Image(systemName: st.icon).font(.system(size: 11, weight: .semibold)).foregroundStyle(st.tint)
-                    Text(st.text).font(.system(size: 11)).foregroundStyle(Theme.caption).lineLimit(1)
-                }
-                .animation(.easeOut(duration: 0.12), value: st.text)
                 Spacer(minLength: 8)
                 SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
                 SoftButton(title: L.t("Rename", "改名"), icon: Icons.rename, prominent: true, shortcut: "↵") { submit() }

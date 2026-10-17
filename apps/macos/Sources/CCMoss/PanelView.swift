@@ -50,7 +50,8 @@ struct PanelView: View {
         .background(Theme.surface(scheme))
         .overlay(alignment: .bottomTrailing) {
             if showActions {
-                ActionsMenu(actions: menuActions) { showActions = false }
+                // Opened without ⌘K (screenshots start with it open): freeze the list now.
+                ActionsMenu(actions: menuActions.isEmpty ? actions : menuActions) { showActions = false }
                     .padding(.trailing, 10)
                     .padding(.bottom, 50)
                     .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
