@@ -211,7 +211,7 @@ you can tell at a glance. "Needs you" wins over "stopped", which wins over "work
 
 ### The panel
 
-Click the menu bar icon, or press ⌃⌥M anywhere, and the panel opens. Sessions are grouped by project, with git
+Click the menu bar icon, or tap Control twice anywhere, and the panel opens. Sessions are grouped by project, with git
 worktrees marked; the row at the top filters by state (all, working, waiting for you, stopped). Typing searches.
 
 On a stopped session, Return brings it back: the same conversation, in tmux, exactly like `cc-moss restore`. When
@@ -297,8 +297,9 @@ Mo can make a sound too, under Settings › Mo › Voice:
 
 The search field at the top of the sidebar finds any setting.
 
-**Shortcut**: ⌃⌥M by default. In Settings › General, click it and press a new one (it needs ⌃, ⌥ or ⌘, and you'll
-hear about it if another app already uses it).
+**Shortcut**: tap Control twice, in any app. It needs cc-moss allowed once under System Settings › Privacy & Security › Accessibility; until then (or when an update asks again) ⌃⌥M works. In Settings › General you can switch to a key combination: click it and press a new one (it needs ⌃, ⌥ or ⌘, and you'll be told if another app has it).
+
+**Workspace**: Claude works inside a folder. Pick one in Settings › General › Workspace and new sessions start there; otherwise they start in the folder you used last.
 
 **Language**: the app and the command line share one interface language setting, so changing it on one side changes
 both. Pick it in Settings › General, or run `cc-moss config set ui.language zh` (`en`, `zh`, or `auto` to follow the

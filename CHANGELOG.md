@@ -16,7 +16,7 @@ The menubar app: on a Mac, your Claude Code sessions are now one glance away.
   `cc-moss` command and never touches the registry itself.
   - **An icon that moves with your sessions**: working, waiting, needs you, stopped. Settings › Menu Bar can show a
     number beside it, and with Motion off it stays still and only changes when the state does.
-  - **A Raycast-style panel** (click the icon, or ⌃⌥M from anywhere): type to search, Tab to filter by state, sessions
+  - **A Raycast-style panel** (click the icon, or tap Control twice from anywhere): type to search, Tab to filter by state, sessions
     grouped by project with worktree labels. Return opens a session in a new window of your terminal: Terminal by
     default, Ghostty recommended, iTerm2, WezTerm, Kitty and Alacritty too; ⇧⌘C copies the command for any other.
     Stopped sessions come back one by one or all at once, and older ones are folded away. New session, notes, send a
@@ -32,7 +32,7 @@ The menubar app: on a Mac, your Claude Code sessions are now one glance away.
     or send it off. Optional voice: a chime, or the message title spoken by macOS's own speech synthesis, at most once
     every 30 seconds.
   - **Settings** in six pages (General, Menu Bar, Mo, Notifications, Aliases, About) with search: Open at Login, the
-    global shortcut (⌃⌥M, changeable), the terminal, the interface language (shared with the CLI), software update,
+    global shortcut (tap Control twice, or a key combination), a workspace where new sessions start, the terminal, the interface language (shared with the CLI), software update,
     and "Versions differ" when the app and the CLI are not the same version.
   - **A first-run welcome** in six skippable steps: set up the terminal side in one click, Open at Login and
     notifications, your terminal, Mo, and the shortcut. Settings › About shows it again.

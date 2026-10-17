@@ -49,7 +49,7 @@ opening a terminal.
 
 - **An icon that moves.** When a session is working or waiting for you, the menu bar icon comes alive. Find it
   distracting? Tell it to sit still and only change when the state does.
-- **Every session in one panel.** Click the icon or press ⌃⌥M anywhere: sessions grouped by project, Return opens one
+- **Every session in one panel.** Click the icon or tap Control twice anywhere: sessions grouped by project, Return opens one
   in your terminal (Terminal, Ghostty and friends), and a stopped one comes back with a click. New sessions, notes and
   a quick message to a session live here too.
 - **It speaks up only when it matters.** A session needs your OK, or one just stopped? You'll hear about it, from
