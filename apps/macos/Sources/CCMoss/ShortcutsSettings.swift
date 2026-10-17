@@ -41,7 +41,7 @@ struct ShortcutsSettings: View {
     // MARK: - Anywhere
 
     private var anywhere: some View {
-        let needsTrust = shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed
+        let needsTrust = shortcut.tapKey != nil && PermissionCenter.shared.accessibility != .allowed
         return SettingsCard(title: L.t("Anywhere", "随时唤出")) {
             CardRow(
                 title: L.t("Show the panel", "唤出面板"),
