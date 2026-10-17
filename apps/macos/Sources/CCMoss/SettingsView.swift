@@ -156,8 +156,9 @@ struct SettingsView: View {
         // undone by the next layout.
         .background(WindowLayoutHook())
         .tooltipLayer()
+        // No raising here: whoever opens Settings raises it. A language switch
+        // rebuilds this view, and raising on appear popped a closed Settings up.
         .onAppear {
-            SettingsWindow.bringToFront()
             if let t = Self.pendingTab {
                 Self.pendingTab = nil
                 tab = t

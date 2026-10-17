@@ -77,8 +77,29 @@ final class HotKeyCenter {
 
     /// The system's own "allow Accessibility" prompt.
     func askForAccessibility() {
+        if !AXIsProcessTrusted() { forgetStaleAccessibility() }
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if AXIsProcessTrustedWithOptions(options) { refreshTrust() }
+    }
+
+    /// Without a Developer ID the app is signed ad hoc, and macOS ties the
+    /// permission to that exact build: after an update the old entry stays
+    /// ticked in the list but no longer counts, and ticking it again does
+    /// nothing. Clearing our own entry first lets the prompt add a fresh one.
+    private func forgetStaleAccessibility() {
+        guard let id = Bundle.main.bundleIdentifier else { return }
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "Accessibility", id]
+        reset.standardOutput = FileHandle.nullDevice
+        reset.standardError = FileHandle.nullDevice
+        do {
+            try reset.run()
+            reset.waitUntilExit()
+            log.info("cleared a stale accessibility entry (exit \(reset.terminationStatus, privacy: .public))")
+        } catch {
+            log.error("tccutil failed: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static func openAccessibilitySettings() {

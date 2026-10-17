@@ -229,16 +229,15 @@ private struct TaskAliasRow: View {
                 IconTile(symbol: task.icon, colors: AliasesSettings.tint, size: 26)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(task.title).font(.system(size: 14))
-                    if preview, let name = alias?.name {
-                        TerminalPreview(name: name, result: task.result)
-                            .transition(.scale(scale: 0.9, anchor: .topLeading).combined(with: .opacity))
-                    } else if let problem {
-                        Text(problem).font(.system(size: 12)).foregroundStyle(Theme.amber)
-                    } else if broken, let detail = alias?.detail {
-                        Text(detail).font(.system(size: 12)).foregroundStyle(Theme.amber).lineLimit(1)
-                    } else {
-                        Text(task.result).font(.system(size: 12)).foregroundStyle(Theme.caption)
+                    // Caption and preview share one fixed-height slot and cross-fade,
+                    // so hovering never changes the row's height.
+                    ZStack(alignment: .leading) {
+                        caption.opacity(showsPreview ? 0 : 1)
+                        if showsPreview, let name = alias?.name {
+                            TerminalPreview(name: name, result: task.result).transition(.opacity)
+                        }
                     }
+                    .frame(height: 24, alignment: .leading)
                 }
                 Spacer(minLength: 12)
                 trailing
@@ -255,9 +254,9 @@ private struct TaskAliasRow: View {
                 // Rest a moment before playing, so sweeping past shows nothing.
                 if hovering {
                     try? await Task.sleep(for: .milliseconds(350))
-                    if hovering { withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { preview = true } }
+                    if hovering { withAnimation(.easeOut(duration: 0.18)) { preview = true } }
                 } else {
-                    withAnimation(.easeOut(duration: 0.15)) { preview = false }
+                    withAnimation(.easeOut(duration: 0.12)) { preview = false }
                 }
             }
             if divider {
@@ -265,6 +264,18 @@ private struct TaskAliasRow: View {
             }
         }
         .onChange(of: alias?.name) { _, new in if !dirty || new == field { field = new ?? "" } }
+    }
+
+    private var showsPreview: Bool { preview && alias != nil }
+
+    @ViewBuilder private var caption: some View {
+        if let problem {
+            Text(problem).font(.system(size: 12)).foregroundStyle(Theme.amber).lineLimit(1)
+        } else if broken, let detail = alias?.detail {
+            Text(detail).font(.system(size: 12)).foregroundStyle(Theme.amber).lineLimit(1)
+        } else {
+            Text(task.result).font(.system(size: 12)).foregroundStyle(Theme.caption).lineLimit(1)
+        }
     }
 
     @ViewBuilder private var trailing: some View {
@@ -298,7 +309,8 @@ private struct TaskAliasRow: View {
     }
 }
 
-/// A tiny terminal: the name typed out, then what happens.
+/// A tiny terminal: the name typed out, then what happens. The box is sized
+/// for the finished line from the start, so it never grows while typing.
 private struct TerminalPreview: View {
     let name: String
     let result: String
@@ -306,6 +318,23 @@ private struct TerminalPreview: View {
     @State private var done = false
 
     var body: some View {
+        line(typed: name.count, done: true)
+            .hidden()
+            .overlay(alignment: .leading) { line(typed: typed, done: done) }
+            .padding(.horizontal, 10)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(red: 0.11, green: 0.11, blue: 0.13)))
+            .task {
+                for i in 1...max(name.count, 1) {
+                    try? await Task.sleep(for: .milliseconds(90))
+                    typed = i
+                }
+                try? await Task.sleep(for: .milliseconds(220))
+                withAnimation(.easeOut(duration: 0.2)) { done = true }
+            }
+    }
+
+    private func line(typed: Int, done: Bool) -> some View {
         HStack(spacing: 8) {
             HStack(spacing: 0) {
                 Text("$ ").foregroundStyle(Color.white.opacity(0.45))
@@ -313,22 +342,12 @@ private struct TerminalPreview: View {
                 Rectangle().fill(Theme.brand).frame(width: 6, height: 12).opacity(done ? 0 : 1)
             }
             .font(.system(size: 12, weight: .medium, design: .monospaced))
-            if done {
+            HStack(spacing: 8) {
                 Image(systemName: "arrow.right").font(.system(size: 9, weight: .bold)).foregroundStyle(Color.white.opacity(0.4))
                 Text(result).font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.85)).lineLimit(1)
-                    .transition(.opacity.combined(with: .move(edge: .leading)))
             }
-        }
-        .padding(.horizontal, 10)
-        .frame(height: 24)
-        .background(RoundedRectangle(cornerRadius: 6, style: .continuous).fill(Color(red: 0.11, green: 0.11, blue: 0.13)))
-        .task {
-            for i in 1...max(name.count, 1) {
-                try? await Task.sleep(for: .milliseconds(90))
-                typed = i
-            }
-            try? await Task.sleep(for: .milliseconds(220))
-            withAnimation(.easeOut(duration: 0.2)) { done = true }
+            .opacity(done ? 1 : 0)
+            .offset(x: done ? 0 : -4)
         }
     }
 }
