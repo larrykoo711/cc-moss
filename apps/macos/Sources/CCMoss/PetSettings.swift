@@ -17,7 +17,7 @@ struct PetSettings: View {
         hero
         SettingsCard(title: L.t("Companion", "小伙伴")) {
             CardRow(
-                title: L.t("Show Mo", "显示小莫"),
+                title: L.t("Keep Mo on My Desktop", "让小莫住在桌面上"),
                 detail: enabled
                     ? L.t("Lives in a corner of your desktop and shows how your sessions are doing. Click it to open the panel.",
                           "住在桌面一角，用表情告诉你会话怎么样了。点它打开面板。")
@@ -150,8 +150,12 @@ struct PetSettings: View {
     /// Mo itself at the top of the page: awake when on, asleep when off.
     private var hero: some View {
         HStack(spacing: 16) {
-            LayerPet(pose: enabled ? .happy : .sleeping, size: 72, dark: scheme == .dark)
-                .frame(width: 88, height: 88)
+            // Drawn once at the largest size, scaled to the chosen one, so
+            // picking Small / Medium / Large shows right here.
+            LayerPet(pose: enabled ? .happy : .sleeping, size: 88, dark: scheme == .dark)
+                .scaleEffect(CGFloat(size) / 88)
+                .frame(width: 104, height: 104)
+                .animation(.spring(response: 0.35, dampingFraction: 0.6), value: size)
                 .animation(.easeOut(duration: 0.2), value: enabled)
             VStack(alignment: .leading, spacing: 5) {
                 Text(L.t("Mo", "小莫"))
