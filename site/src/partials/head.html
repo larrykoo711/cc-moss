@@ -1,0 +1,31 @@
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+<!--@seo-->
+  <meta name="theme-color" content="#0c0b0a">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+  <script>
+    // Before anything paints. The URL decides the language; a first-time visitor whose
+    // browser prefers the other one is moved once, and the choice is remembered after that.
+    (function () {
+      var root = document.documentElement, page = root.dataset.lang, store = null;
+      try { store = localStorage; } catch (e) {}
+      var saved = store && store.getItem("lang");
+      if (!saved) {
+        var wants = (navigator.languages || [navigator.language || ""]).join(",").toLowerCase();
+        var want = /(^|,)zh/.test(wants) ? "zh" : "en";
+        if (store) store.setItem("lang", want);
+        if (want !== page) {
+          var other = document.querySelector('link[rel="alternate"][hreflang="' + want + '"]');
+          // Same origin, other language: the path is all that changes.
+          if (other) { location.replace(new URL(other.href).pathname + location.search + location.hash); return; }
+        }
+      }
+      // Skin: the visitor's choice, else the system's.
+      var theme = store && store.getItem("theme");
+      root.dataset.theme = theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+    })();
+  </script>

@@ -1,0 +1,43 @@
+<!doctype html>
+<!-- The share card, 1200×630. gen-og.mjs opens this with ?eyebrow=&title=&sub= and screenshots it. -->
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+  body {
+    background:
+      radial-gradient(60% 70% at 85% 110%, rgba(255, 90, 60, .28), transparent 70%),
+      radial-gradient(50% 60% at 10% -10%, rgba(255, 140, 100, .10), transparent 70%),
+      #0c0b0a;
+    color: #f5f0ea;
+    font-family: Geist, "PingFang SC", system-ui, sans-serif;
+    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 72px 80px; box-sizing: border-box;
+  }
+  .brand { display: flex; align-items: center; gap: 18px; font-size: 34px; font-weight: 600; letter-spacing: -0.02em; }
+  .brand img { width: 64px; height: 64px; }
+  .eyebrow { color: #ff5a3c; font-size: 26px; font-weight: 500; margin-bottom: 18px; }
+  h1 { margin: 0; font-size: 76px; line-height: 1.04; font-weight: 600; letter-spacing: -0.045em; max-width: 980px; }
+  .sub { margin-top: 22px; font-size: 28px; color: rgba(245, 240, 234, .6); max-width: 900px; line-height: 1.4; }
+  .foot { display: flex; justify-content: space-between; color: rgba(245, 240, 234, .45); font-size: 22px; }
+  .loop { position: absolute; right: -120px; top: 40px; width: 760px; opacity: .14; }
+</style>
+</head>
+<body>
+  <svg class="loop" viewBox="2 14 60 36" fill="none"><path id="loop" stroke="#ff5a3c" stroke-width="0.45" stroke-linecap="round"/></svg>
+  <div class="brand"><img src="../../docs/assets/icon.svg" alt="">cc-moss</div>
+  <div>
+    <div class="eyebrow" id="eyebrow"></div>
+    <h1 id="title"></h1>
+    <div class="sub" id="sub"></div>
+  </div>
+  <div class="foot"><span>cc-moss.larrykoo.com</span><span id="meta"></span></div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    for (const id of ["eyebrow", "title", "sub", "meta"]) document.getElementById(id).innerHTML = q.get(id) || "";
+    document.getElementById("loop").setAttribute("d", q.get("loop") || "");
+  </script>
+</body>
+</html>

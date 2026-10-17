@@ -4,10 +4,22 @@
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "dev": "tailwindcss -i src/styles.css -o dist/styles.css --watch"
+    "test": "node --test test/*.test.mjs",
+    "dev": "node build.mjs && wrangler dev",
+    "deploy": "node build.mjs && wrangler deploy"
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.1.14",
-    "tailwindcss": "4.1.14"
+    "linkedom": "0.18.13",
+    "tailwindcss": "4.1.14",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2",
+    "wrangler": "4.151.1"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild",
+      "workerd"
+    ]
   }
 }

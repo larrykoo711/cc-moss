@@ -1,94 +1,12 @@
 <!doctype html>
-<html lang="zh-CN" data-lang="zh" data-theme="dark" class="bg-bg">
+<html lang="{{html_lang}}" data-lang="{{lang}}" data-page="home" data-theme="dark" class="bg-bg">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>cc-moss · 文明会延续，对话也是。</title>
-  <meta name="description" content="cc-moss 照看你的每一个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道；电脑重启了，点一下全都回来。开源、免费，住在你的 Mac 菜单栏里。">
-  <meta property="og:title" content="cc-moss · Every session, carried on.">
-  <meta property="og:description" content="Looks after every Claude Code session: who's busy, who's waiting, who stopped. After a restart, one click brings them all back.">
-  <meta property="og:image" content="https://cc-moss.larrykoo.com/assets/welcome.en.dark.webp">
-  <meta name="theme-color" content="#0c0b0a">
-  <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css">
-  <script>
-    // Pick the language before anything paints: saved choice, else the browser's.
-    (function () {
-      var saved = null;
-      try { saved = localStorage.getItem("lang"); } catch (e) {}
-      var lang = saved || ((navigator.language || "").toLowerCase().indexOf("zh") === 0 ? "zh" : "en");
-      document.documentElement.dataset.lang = lang;
-      document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-      // Skin: the visitor's choice, else the system's.
-      var theme = null;
-      try { theme = localStorage.getItem("theme"); } catch (e) {}
-      document.documentElement.dataset.theme = theme || (matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
-    })();
-  </script>
+<!--@head-->
 </head>
 <body class="bg-bg text-fg font-sans selection:bg-coral/40">
 
-<svg width="0" height="0" class="absolute" aria-hidden="true">
-  <symbol id="continuum" viewBox="0 0 64 64">
-    <path d="__CONTINUUM__" fill="none" stroke="currentColor" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
-  </symbol>
-  <symbol id="mo-figure" viewBox="0 0 120 132">
-    <defs>
-      <linearGradient id="mo-body" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#2e2c2a"/><stop offset="1" stop-color="#131211"/>
-      </linearGradient>
-      <radialGradient id="mo-shadow" cx=".5" cy=".5" r=".5"><stop offset="0" stop-color="#000" stop-opacity=".55"/><stop offset="1" stop-color="#000" stop-opacity="0"/></radialGradient>
-    </defs>
-    <ellipse cx="60" cy="124" rx="34" ry="5" fill="url(#mo-shadow)"/>
-    <line x1="60" y1="20" x2="60" y2="32" stroke="#6e6a66" stroke-width="3" stroke-linecap="round"/>
-    <circle class="lamp" cx="60" cy="15" r="6" fill="#ff5a3c"/>
-    <rect x="14" y="30" width="92" height="86" rx="30" fill="url(#mo-body)"/>
-    <rect x="14.5" y="30.5" width="91" height="85" rx="29.5" fill="none" stroke="#fff" stroke-opacity=".09"/>
-    <g class="blink" style="transform-box: fill-box">
-      <use href="#continuum" x="26" y="41" width="68" height="64" style="color:#ff5a3c"/>
-    </g>
-  </symbol>
-  <symbol id="arrow" viewBox="0 0 16 16"><path d="M4 12L12 4M6 4h6v6" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-  <symbol id="chev" viewBox="0 0 16 16"><path d="M10 3.5L5.5 8l4.5 4.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></symbol>
-</svg>
-
-<!-- Nav: a floating island -->
-<header class="fixed top-4 inset-x-0 z-40 px-4 flex justify-center">
-  <nav class="flex items-center gap-1 sm:gap-2 h-14 pl-2 pr-2 rounded-full bg-bg/70 backdrop-blur-xl backdrop-saturate-150 shadow-[inset_0_0_0_1px_var(--hair),0_20px_50px_-20px_var(--drop)] w-full max-w-[880px]">
-    <a href="#top" class="flex items-center gap-2.5 pl-1 pr-3 font-semibold tracking-tight">
-      <img src="icon.svg" alt="" width="34" height="34" class="w-[34px] h-[34px] drop-shadow-[0_4px_12px_rgba(255,90,60,.25)]">
-      <span>cc-moss</span>
-    </a>
-    <div class="hidden md:flex items-center text-sm">
-      <a href="#tour" data-nav="tour" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">功能</span><span lang="en">Tour</span></a>
-      <a href="#mo" data-nav="mo" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">小莫</span><span lang="en">Mo</span></a>
-      <a href="#terminal" data-nav="terminal" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">终端</span><span lang="en">Terminal</span></a>
-      <a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md" class="rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">使用手册</span><span lang="en">Guide</span></a>
-    </div>
-    <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
-      <div class="flex rounded-full bg-fg/[.06] p-1 text-xs" role="group" aria-label="Language">
-        <button data-set-lang="zh" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer transition-colors">中</button>
-        <button data-set-lang="en" class="lang-btn px-2.5 py-1 rounded-full cursor-pointer transition-colors">EN</button>
-      </div>
-      <button id="theme" class="theme-btn grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] active:scale-90 transition cursor-pointer" aria-label="Light or dark">
-        <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
-          <mask id="moon-cut"><rect width="24" height="24" fill="#fff"/><circle class="cut" cx="17" cy="7" r="6" fill="#000"/></mask>
-          <circle class="orb" cx="12" cy="12" r="5" fill="currentColor" stroke="none" mask="url(#moon-cut)"/>
-          <g class="rays"><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g>
-        </svg>
-      </button>
-      <a href="https://github.com/larrykoo711/cc-moss" class="hidden sm:grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] transition-colors" aria-label="GitHub">
-        <svg viewBox="0 0 16 16" class="w-[18px] h-[18px]" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-      </a>
-      <a href="#install" class="rounded-full bg-fg text-bg text-sm font-medium px-4 py-2 hover:opacity-90 active:scale-[0.97] transition">
-        <span lang="zh">安装</span><span lang="en">Install</span>
-      </a>
-    </div>
-  </nav>
-</header>
+<!--@sprites-->
+<!--@nav-->
 
 <main id="top">
   <!-- Hero: the loop is the light -->
@@ -131,7 +49,7 @@
 
     <!-- A desktop rising over the fold -->
     <div class="relative mt-20 mx-auto max-w-6xl px-4 sm:px-8 [perspective:1800px]">
-      <div class="tilt shell origin-top dark-scope">
+      <div class="tilt shell origin-top dark-scope" data-agent="skip">
         <div class="core relative overflow-hidden aspect-[4/5] sm:aspect-[16/10] bg-[radial-gradient(80%_70%_at_70%_20%,#2a1712,transparent_70%),linear-gradient(180deg,#1a1715,#0f0e0d)]">
           <!-- menu bar -->
           <div class="absolute inset-x-0 top-0 h-8 flex items-center gap-5 px-4 text-[11px] text-fg/60 bg-black/25 backdrop-blur-md">
@@ -156,11 +74,11 @@
             </div>
           </div>
           <!-- the panel, dropped from the menu bar -->
-          <img data-pic="panel" data-skin="dark" src="assets/panel.zh.dark.webp" alt="" width="840" height="1080"
+          <img data-pic="panel" data-skin="dark" src="/assets/panel.zh.dark.webp" alt="" data-alt-zh="cc-moss 菜单栏面板：会话按项目分组，显示在忙、在等你和已断开的状态" data-alt-en="The cc-moss menu bar panel: sessions grouped by project, showing which are busy, waiting for you or stopped" width="840" height="1080"
                class="lang-img absolute right-1/2 translate-x-1/2 sm:translate-x-0 sm:right-[4%] top-10 h-[calc(100%-3.25rem)] w-auto rounded-2xl shadow-[0_40px_80px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
           <!-- Mo with a word -->
           <div class="hidden lg:block absolute left-[20%] bottom-[6%] w-64">
-            <img data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img w-full drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
+            <img data-pic="mo-message" data-skin="none" src="/assets/mo-message.zh.webp" alt="" data-alt-zh="小莫的消息卡片：接口评审需要你确认，带「去看看」和「稍后」按钮" data-alt-en="Mo’s message card: api-review needs your OK, with Take a look and Later buttons" class="lang-img w-full drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
             <svg class="float w-20 h-24 ml-auto -mt-5 mr-4"><use href="#mo-figure"/></svg>
           </div>
         </div>
@@ -179,24 +97,24 @@
       </header>
 
       <div class="relative mt-10 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
-        <div id="stage" class="sticky top-[76px] lg:top-[13vh] z-10 self-start lg:col-start-2 lg:row-start-1 bg-bg lg:bg-transparent pb-3 lg:pb-0">
+        <div id="stage" data-agent="skip" class="sticky top-[76px] lg:top-[13vh] z-10 self-start lg:col-start-2 lg:row-start-1 bg-bg lg:bg-transparent pb-3 lg:pb-0">
           <div class="shell">
             <div class="core relative h-[46vh] lg:h-[68vh] overflow-hidden">
               <div class="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.16),transparent_70%)]"></div>
               <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="panel">
-                <img data-pic="panel" src="assets/panel.zh.dark.webp" alt="" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="panel" src="/assets/panel.zh.dark.webp" alt="" data-alt-zh="cc-moss 菜单栏面板：会话按项目分组，显示在忙、在等你和已断开的状态" data-alt-en="The cc-moss menu bar panel: sessions grouped by project, showing which are busy, waiting for you or stopped" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="actions">
-                <img data-pic="panel-actions" src="assets/panel-actions.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="panel-actions" src="/assets/panel-actions.zh.dark.webp" alt="" data-alt-zh="cc-moss 的 ⌘K 操作菜单：打开、发消息、改名、写便条、新会话" data-alt-en="The cc-moss ⌘K action menu: open, send a message, rename, write a note, new session" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="welcome">
-                <img data-pic="welcome" src="assets/welcome.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="welcome" src="/assets/welcome.zh.dark.webp" alt="" data-alt-zh="cc-moss 首次打开时的欢迎引导" data-alt-en="The cc-moss welcome shown on first launch" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="settings">
-                <img data-pic="settings-general" src="assets/settings-general.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="settings-general" src="/assets/settings-general.zh.dark.webp" alt="" data-alt-zh="cc-moss 通用设置：开机打开、唤出快捷键、语言、工作区、终端" data-alt-en="cc-moss general settings: open at login, shortcut, language, workspace, terminal" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="mo">
-                <img data-pic="settings-mo" src="assets/settings-mo.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="settings-mo" src="/assets/settings-mo.zh.dark.webp" alt="" data-alt-zh="cc-moss 小莫设置：大小、互动方式和声音" data-alt-en="cc-moss settings for Mo: size, how it speaks up, and sound" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
             </div>
           </div>
@@ -214,38 +132,38 @@
           </div>
         </div>
 
-        <ol class="lg:col-start-1 lg:row-start-1 pb-[30vh] lg:pb-[20vh]">
-          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="panel">
+        <ol data-agent="unwrap" class="lg:col-start-1 lg:row-start-1 pb-[30vh] lg:pb-[20vh]">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="panel">
             <div class="max-w-sm py-10">
-              <p class="font-mono text-xs text-coral">01</p>
+              <p class="font-mono text-xs text-coral" data-agent="skip">01</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">点一下菜单栏，全都在眼前。</span><span lang="en">Click. It&rsquo;s all there.</span></h3>
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">按项目排好。打字就搜，回车就在终端里打开。</span><span lang="en">Sorted by project. Start typing to find one, press Return to jump back in.</span></p>
             </div>
           </li>
-          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="actions">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="actions">
             <div class="max-w-sm py-10">
-              <p class="font-mono text-xs text-coral">02</p>
+              <p class="font-mono text-xs text-coral" data-agent="skip">02</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">想做的事，⌘K 都有。</span><span lang="en">⌘K does the rest.</span></h3>
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">发消息、改名字、写便条、找回来。</span><span lang="en">Send a message. Rename. Leave a note. Bring one back.</span></p>
             </div>
           </li>
-          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="welcome">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="welcome">
             <div class="max-w-sm py-10">
-              <p class="font-mono text-xs text-coral">03</p>
+              <p class="font-mono text-xs text-coral" data-agent="skip">03</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">第一次打开，一分钟上手。</span><span lang="en">Set up in a minute.</span></h3>
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">几步讲清楚，当场装好，不用读文档。</span><span lang="en">A friendly welcome does the setup for you. No manual required.</span></p>
             </div>
           </li>
-          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="settings">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="settings">
             <div class="max-w-sm py-10">
-              <p class="font-mono text-xs text-coral">04</p>
+              <p class="font-mono text-xs text-coral" data-agent="skip">04</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">设置都是大白话。</span><span lang="en">Settings, in plain English.</span></h3>
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">开机打开、快捷键、语言、工作区、终端。</span><span lang="en">Open at login, your shortcut, your workspace, your terminal. That&rsquo;s it.</span></p>
             </div>
           </li>
-          <li class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="mo">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="mo">
             <div class="max-w-sm py-10">
-              <p class="font-mono text-xs text-coral">05</p>
+              <p class="font-mono text-xs text-coral" data-agent="skip">05</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">小莫，脾气由你。</span><span lang="en">Mo, just how you like it.</span></h3>
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">点它会跳、会说话。安静还是积极，你来定。</span><span lang="en">Click Mo and it hops and talks. Keep it quiet, or let it chat.</span></p>
             </div>
@@ -256,7 +174,7 @@
   </section>
 
   <!-- A statement, lit line by line as you scroll -->
-  <section class="relative pt-32 sm:pt-44 pb-10 sm:pb-12 overflow-x-clip">
+  <section id="restore-story" class="relative pt-32 sm:pt-44 pb-10 sm:pb-12 overflow-x-clip">
     <div class="mx-auto max-w-6xl px-5 sm:px-8">
       <div class="text-[clamp(2.5rem,6.5vw,5.75rem)] font-semibold tracking-[-0.045em] leading-[1.02]">
         <p class="lit"><span lang="zh">电脑重启了。</span><span lang="en">Your Mac restarted.</span></p>
@@ -265,7 +183,7 @@
         <p class="lit text-coral"><span lang="zh">对话，都还在。</span><span lang="en">Nothing was lost.</span></p>
       </div>
 
-      <div class="reveal mt-16 sm:mt-10 sm:ml-auto max-w-md">
+      <div class="reveal mt-16 sm:mt-10 sm:ml-auto max-w-md" data-agent="skip">
         <div class="shell">
           <div class="core p-3" id="restore">
             <div class="flex items-center justify-between px-3 pt-2 pb-3">
@@ -284,14 +202,14 @@
   </section>
 
   <!-- Bento, asymmetric -->
-  <section class="py-12 sm:py-20">
+  <section id="features" class="py-12 sm:py-20">
     <div class="mx-auto max-w-6xl px-5 sm:px-8 grid gap-4 md:grid-cols-12">
       <article class="reveal md:col-span-7 shell">
         <div class="core h-full p-8 sm:p-10 flex flex-col">
           <p class="text-coral text-sm font-medium"><span lang="zh">随叫随到</span><span lang="en">Always at hand</span></p>
           <h3 class="mt-2 text-3xl sm:text-4xl font-semibold tracking-[-0.03em]"><span lang="zh">连按两下 Control</span><span lang="en">Double-tap Control.</span></h3>
           <p class="mt-2 text-fg/50"><span lang="zh">在哪个 App 里都行。</span><span lang="en">From any app, anytime.</span></p>
-          <div class="mt-auto pt-10 flex items-end justify-between gap-6" id="keys">
+          <div class="mt-auto pt-10 flex items-end justify-between gap-6" id="keys" data-agent="skip">
             <div class="flex gap-4">
               <div class="keycap w-20 h-20 sm:w-24 sm:h-24 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-3xl">⌃</div><div class="text-[10px] text-fg/40">control</div></div></div>
               <div class="keycap w-20 h-20 sm:w-24 sm:h-24 rounded-2xl grid place-items-center"><div class="text-center"><div class="text-3xl">⌃</div><div class="text-[10px] text-fg/40">control</div></div></div>
@@ -309,7 +227,7 @@
         <div class="core h-full p-8 sm:p-10 overflow-hidden">
           <p class="text-coral text-sm font-medium"><span lang="zh">有事才叫你</span><span lang="en">Gentle nudges</span></p>
           <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-[-0.03em]"><span lang="zh">Claude 等你时，<br>马上知道。</span><span lang="en">Know the moment Claude needs you.</span></h3>
-          <div class="relative mt-10 h-28">
+          <div class="relative mt-10 h-28" data-agent="skip">
             <div class="absolute inset-x-6 top-0 h-16 rounded-2xl bg-fg/[.04] shadow-[inset_0_0_0_1px_rgba(255,255,255,.05)]"></div>
             <div class="absolute inset-x-0 top-4 rounded-2xl bg-raise shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-12px_rgba(0,0,0,.8)] p-3.5 flex items-center gap-3">
               <img src="icon.svg" alt="" class="w-9 h-9">
@@ -324,7 +242,7 @@
         <div class="core h-full p-8 sm:p-10">
           <p class="text-coral text-sm font-medium"><span lang="zh">你的终端</span><span lang="en">Your setup</span></p>
           <h3 class="mt-2 text-2xl sm:text-3xl font-semibold tracking-[-0.03em]"><span lang="zh">在你习惯的地方打开。</span><span lang="en">Opens in the terminal you love.</span></h3>
-          <div class="mt-8 flex flex-wrap gap-2 text-sm">
+          <div class="mt-8 flex flex-wrap gap-2 text-sm" data-agent="join">
             <span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">Terminal</span><span class="rounded-full bg-coral/15 text-coral px-3.5 py-1.5">Ghostty</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">iTerm</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">WezTerm</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">kitty</span><span class="rounded-full bg-fg/[.05] px-3.5 py-1.5 text-fg/70">Alacritty</span>
           </div>
         </div>
@@ -335,7 +253,7 @@
           <li>
             <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
             <p class="mt-4 font-medium"><span lang="zh">只在你的电脑上</span><span lang="en">Private by design</span></p>
-            <p class="mt-1 text-sm text-fg/45"><span lang="zh">不联网，不上传。</span><span lang="en">Nothing leaves your Mac.</span></p>
+            <p class="mt-1 text-sm text-fg/45"><span lang="zh">你的会话和数据不出这台电脑。</span><span lang="en">Nothing about you leaves your Mac.</span></p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M8.5 4v2M6 6c.5 3 2.5 5.5 5 6.5M11 6c-.6 3.4-2.8 6-6 7.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/></svg>
@@ -366,7 +284,7 @@
         </div>
         <p class="mt-3 text-sm text-fg/40 min-h-[2.5rem]" id="mode-caption"></p>
       </div>
-      <div class="reveal shell dark-scope" style="--d:100ms">
+      <div class="reveal shell dark-scope" style="--d:100ms" data-agent="skip">
         <div class="core relative h-[460px] overflow-hidden bg-[radial-gradient(60%_50%_at_85%_95%,rgba(255,90,60,.16),transparent_70%),radial-gradient(70%_60%_at_15%_0%,rgba(255,170,120,.07),transparent_70%),linear-gradient(180deg,#1b1816,#0f0e0d)]">
           <!-- menu bar -->
           <div class="absolute inset-x-0 top-0 h-7 flex items-center gap-4 px-4 text-[10px] text-fg/55 bg-black/30 backdrop-blur-md">
@@ -396,7 +314,7 @@
           </div>
           <!-- Mo, and what Mo says -->
           <div class="absolute right-4 bottom-4 flex flex-col items-end">
-            <img id="mo-card" data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img hidden w-60 -mb-1 mr-2 drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
+            <img id="mo-card" data-pic="mo-message" data-skin="none" src="/assets/mo-message.zh.webp" alt="" data-alt-zh="小莫的消息卡片：接口评审需要你确认，带「去看看」和「稍后」按钮" data-alt-en="Mo’s message card: api-review needs your OK, with Take a look and Later buttons" class="lang-img hidden w-60 -mb-1 mr-2 drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
             <div id="mo-bubble" class="pop mb-2 rounded-[1.25rem] rounded-br-md bg-[#2a2826] shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-10px_rgba(0,0,0,.7)] px-4 py-2.5 text-sm max-w-[240px]"></div>
             <button id="mo-poke" class="cursor-pointer active:scale-95 transition-transform" aria-label="Mo"><svg class="float w-24 h-28"><use href="#mo-figure"/></svg></button>
           </div>
@@ -408,7 +326,7 @@
   <!-- Terminal -->
   <section id="terminal" class="py-20 sm:py-28">
     <div class="mx-auto max-w-6xl px-5 sm:px-8 grid lg:grid-cols-[minmax(0,7fr)_minmax(0,5fr)] gap-14 items-center">
-      <div class="reveal order-2 lg:order-1 shell dark-scope">
+      <div class="reveal order-2 lg:order-1 shell dark-scope" data-agent="skip">
         <div class="core overflow-hidden font-mono text-[13px] bg-[#0e0d0c]">
           <div class="h-9 flex items-center gap-2 px-4"><span class="w-3 h-3 rounded-full bg-[#ff5f57]"></span><span class="w-3 h-3 rounded-full bg-[#febc2e]"></span><span class="w-3 h-3 rounded-full bg-[#28c840]"></span></div>
           <div class="px-5 pb-6 pt-2 leading-7 min-h-[200px]">
@@ -430,6 +348,83 @@
     </div>
   </section>
 
+  <!-- How it compares -->
+  <section id="compare" class="py-20 sm:py-28">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8">
+      <header class="reveal max-w-2xl">
+        <p class="text-coral text-sm font-medium"><span lang="zh">怎么选</span><span lang="en">How it compares</span></p>
+        <h2 class="mt-3 text-[clamp(2rem,4.5vw,3.25rem)] font-semibold tracking-[-0.035em] leading-[1.06]"><span lang="zh">不只是找回一段对话。</span><span lang="en">More than one conversation back.</span></h2>
+      </header>
+      <div class="reveal mt-10 shell overflow-hidden">
+        <div class="core overflow-x-auto px-6 sm:px-8 py-2">
+          <table class="w-full min-w-[640px] text-sm text-fg/65">
+            <thead>
+              <tr class="text-left text-fg/45"><th class="py-4 pr-4 font-medium"><span class="sr-only"><span lang="zh">工具</span><span lang="en">Tool</span></span></th><th class="py-4 pr-4 font-medium"><span lang="zh">找回 Claude 对话</span><span lang="en">Brings back Claude conversations</span></th><th class="py-4 pr-4 font-medium"><span lang="zh">知道哪个会话在哪</span><span lang="en">Knows which session was where</span></th><th class="py-4 font-medium"><span lang="zh">重启之后</span><span lang="en">After a reboot</span></th></tr>
+            </thead>
+            <tbody>
+              <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]"><code>claude --resume</code> / <code>--continue</code></th><td class="py-4 pr-4"><span lang="zh">一次一个，自己挑</span><span lang="en">One at a time, you pick</span></td><td class="py-4 pr-4"><span lang="zh">不知道</span><span lang="en">No</span></td><td class="py-4"><span lang="zh">逐个手动</span><span lang="en">By hand, one by one</span></td></tr>
+              <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]">tmux-resurrect / continuum</th><td class="py-4 pr-4"><span lang="zh">不能（恢复的是面板和 shell）</span><span lang="en">No (restores panes and shells)</span></td><td class="py-4 pr-4"><span lang="zh">只有面板</span><span lang="en">Panes only</span></td><td class="py-4"><span lang="zh">可以</span><span lang="en">Yes</span></td></tr>
+              <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]"><span class="font-semibold text-coral">cc-moss</span></th><td class="py-4 pr-4"><span lang="zh">所有中断的会话，一次找回</span><span lang="en">Every interrupted one, in one go</span></td><td class="py-4 pr-4"><span lang="zh">知道：名字、目录、备注</span><span lang="en">Yes: name, folder, notes</span></td><td class="py-4"><span lang="zh">一条命令</span><span lang="en">One command</span></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FAQ -->
+  <section id="faq" class="py-20 sm:py-28">
+    <div class="mx-auto max-w-6xl px-5 sm:px-8 grid lg:grid-cols-[minmax(0,4fr)_minmax(0,8fr)] gap-10 lg:gap-16">
+      <header class="reveal lg:sticky lg:top-32 self-start">
+        <p class="text-coral text-sm font-medium"><span lang="zh">常见问题</span><span lang="en">FAQ</span></p>
+        <h2 class="mt-3 text-[clamp(2rem,4.5vw,3.25rem)] font-semibold tracking-[-0.035em] leading-[1.06]"><span lang="zh">问得最多的几件事。</span><span lang="en">Questions people ask.</span></h2>
+        <p class="mt-4 text-fg/50"><span lang="zh">没找到答案？</span><span lang="en">Didn’t find it?</span> <a href="https://github.com/larrykoo711/cc-moss/issues/new/choose" class="underline underline-offset-4 hover:text-fg"><span lang="zh">来 GitHub 问我们</span><span lang="en">Ask us on GitHub</span></a><span lang="zh">。</span><span lang="en">.</span></p>
+      </header>
+      <div class="reveal border-b border-fg/[.07]">
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-1">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">cc-moss 是什么？</span><span lang="en">What is cc-moss?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">一个照看 Claude Code 会话的小工具。它住在菜单栏里，告诉你每个会话是在忙、在等你，还是断了；电脑重启后，点一下就能把断了的会话都接回来，接着原来的对话。</span><span lang="en">A small app that looks after your Claude Code sessions. It lives in your menu bar and shows which sessions are busy, waiting for you, or stopped. After a restart, one click brings the stopped ones back, right where each conversation left off.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-2">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">怎么安装？</span><span lang="en">How do I install it?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">打开「终端」，粘贴 <code>brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</code> 回车，然后跟着欢迎页走，一分钟就好。没有 Homebrew 的话，可以<a href="https://github.com/larrykoo711/cc-moss/releases/latest">在 GitHub 上下载</a>。</span><span lang="en">Open Terminal, paste <code>brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</code> and press Return, then follow the welcome. It takes about a minute. No Homebrew? <a href="https://github.com/larrykoo711/cc-moss/releases/latest">Download it from GitHub</a>.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-3">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">怎么打开面板？</span><span lang="en">How do I open the panel?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">连按两下 Control，或者点菜单栏里的 ∞ 图标。想换成别的快捷键，在设置里改。</span><span lang="en">Double-tap Control, or click the ∞ icon in the menu bar. You can pick a different shortcut in Settings.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-4">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">电脑重启了，会话怎么找回？</span><span lang="en">My Mac restarted. How do I get my sessions back?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">打开面板，点「全部找回」。每个会话都会回到原来的文件夹，接着原来的对话继续。</span><span lang="en">Open the panel and click Bring All Back. Each session reopens in its own folder and picks up the same conversation.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-5">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">Claude 在等我确认时，我怎么知道？</span><span lang="en">How will I know when Claude needs me?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">cc-moss 会提醒你：发一条系统通知，或者让小莫冒个泡。两者只会有一个，不会重复打扰。</span><span lang="en">cc-moss tells you, with a notification or a word from Mo. Only one of the two, never both.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-6">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">小莫是谁？可以关掉吗？</span><span lang="en">Who is Mo? Can I turn it off?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">小莫是住在桌面一角的小伙伴：有会话等你时会冒泡提醒，点它还会跳、会说话。不喜欢的话，在设置里让它安静一点，或者干脆关掉。</span><span lang="en">Mo is a little friend in the corner of your desktop. It speaks up when a session needs you, and hops and talks when you click it. If it’s not for you, make it quieter in Settings, or turn it off.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-7">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">会上传我的对话吗？</span><span lang="en">Does cc-moss upload my conversations?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">不会。会话记录只存在你自己的电脑上。cc-moss 每天最多联网一次，只为检查有没有新版本，不带任何关于你的信息，也可以关掉。</span><span lang="en">No. Your session records stay on your own computer. cc-moss goes online at most once a day, only to check for a new version. It sends nothing about you, and you can turn it off.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-8">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">需要什么电脑？</span><span lang="en">What do I need?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">一台 macOS 14 或更新系统的 Mac，再装好 Claude Code。Linux 上也能用，不过是终端版，没有菜单栏 App。</span><span lang="en">A Mac with macOS 14 or later, and Claude Code. It also runs on Linux, as a terminal tool without the menu bar app.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-9">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">怎么更新？怎么卸载？</span><span lang="en">How do I update or remove it?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">更新：在终端运行 <code>cc-moss update</code>。卸载：运行 <code>cc-moss install --uninstall</code>，它会先问你，再把装过的东西都清理干净。</span><span lang="en">To update, run <code>cc-moss update</code> in Terminal. To remove it, run <code>cc-moss install --uninstall</code>: it asks first, then cleans up everything it added.</span></p>
+          </div>
+          <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-10">
+            <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">收费吗？</span><span lang="en">Is it free?</span></h3>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">免费，而且开源（MIT 许可）。</span><span lang="en">Yes. It’s free and open source (MIT).</span></p>
+          </div>
+      </div>
+    </div>
+  </section>
+
   <!-- Install -->
   <section id="install" class="relative py-32 sm:py-44 overflow-hidden">
     <div class="absolute inset-0 bg-[radial-gradient(50%_45%_at_50%_55%,rgba(255,90,60,.14),transparent_70%)]"></div>
@@ -446,30 +441,18 @@
         </div>
       </div>
       <ol class="reveal mt-10 grid grid-cols-3 gap-3 text-sm text-fg/55" style="--d:240ms">
-        <li><span class="block font-mono text-xs text-coral">01</span><span class="mt-1.5 block"><span lang="zh">Homebrew 安装</span><span lang="en">Install with Homebrew</span></span></li>
-        <li><span class="block font-mono text-xs text-coral">02</span><span class="mt-1.5 block"><span lang="zh">连上 Claude Code</span><span lang="en">Connect Claude Code</span></span></li>
-        <li><span class="block font-mono text-xs text-coral">03</span><span class="mt-1.5 block"><span lang="zh">跟着引导走</span><span lang="en">Follow the welcome</span></span></li>
+        <li><span class="block font-mono text-xs text-coral" data-agent="skip">01</span><span class="mt-1.5 block"><span lang="zh">Homebrew 安装</span><span lang="en">Install with Homebrew</span></span></li>
+        <li><span class="block font-mono text-xs text-coral" data-agent="skip">02</span><span class="mt-1.5 block"><span lang="zh">连上 Claude Code</span><span lang="en">Connect Claude Code</span></span></li>
+        <li><span class="block font-mono text-xs text-coral" data-agent="skip">03</span><span class="mt-1.5 block"><span lang="zh">跟着引导走</span><span lang="en">Follow the welcome</span></span></li>
       </ol>
-      <p class="reveal mt-10 text-xs text-fg/35" style="--d:300ms"><span lang="zh">没有 Homebrew？</span><span lang="en">No Homebrew?</span> <a class="underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/releases/latest"><span lang="zh">直接下载</span><span lang="en">Download the app</span></a> · <a class="underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"><span lang="zh">使用手册</span><span lang="en">Guide</span></a></p>
+      <p class="reveal mt-10 text-xs text-fg/35" style="--d:300ms"><span lang="zh">没有 Homebrew？</span><span lang="en">No Homebrew?</span> <a class="underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/releases/latest"><span lang="zh">直接下载</span><span lang="en">Download the app</span></a> · <a class="underline underline-offset-4 hover:text-fg" href="#faq"><span lang="zh">常见问题</span><span lang="en">FAQ</span></a></p>
     </div>
   </section>
 </main>
 
-<footer class="border-t border-fg/[.06]">
-  <div class="mx-auto max-w-6xl px-5 sm:px-8 py-10 flex flex-col sm:flex-row gap-6 sm:items-center justify-between text-sm text-fg/40">
-    <div class="flex items-center gap-3">
-      <img src="icon.svg" alt="" class="w-7 h-7">
-      <span lang="zh">文明会延续，对话也是。</span><span lang="en">Civilizations carry on. So do conversations.</span>
-    </div>
-    <div class="flex flex-wrap gap-5">
-      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss">GitHub</a>
-      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md"><span lang="zh">更新记录</span><span lang="en">Changelog</span></a>
-      <a class="hover:text-fg transition-colors" href="https://github.com/larrykoo711/cc-moss/issues/new/choose"><span lang="zh">报告问题</span><span lang="en">Report a problem</span></a>
-      <span>MIT</span>
-    </div>
-  </div>
-</footer>
 
-<script src="app.js"></script>
+<!--@footer-->
+
+<script src="/app.js"></script>
 </body>
 </html>

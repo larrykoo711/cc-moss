@@ -1,5 +1,5 @@
-// The landing page's small bits of life. No framework: a handful of
-// listeners, and every animation stops when the visitor prefers less motion.
+// The site's small bits of life. No framework: a handful of listeners, and every animation
+// stops when the visitor prefers less motion. Each page has one language; the build made it so.
 (() => {
   const root = document.documentElement;
   const calm = matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -40,7 +40,7 @@
   // data-skin pins one ("dark" inside the always-dark mockups, "none" when it has no skins).
   function picture(img, l, t) {
     const skin = img.dataset.skin || t;
-    return "assets/" + img.dataset.pic + "." + l + (skin === "none" ? "" : "." + skin) + ".webp";
+    return "/assets/" + img.dataset.pic + "." + l + (skin === "none" ? "" : "." + skin) + ".webp";
   }
   function refreshPictures() {
     $$("[data-pic]").forEach((img) => {
@@ -73,23 +73,29 @@
   });
   paint(root.dataset.theme);
 
-  // Language: every phrase is in the page twice; pictures swap their source.
-  function setLang(next) {
-    root.dataset.lang = next;
-    root.lang = next === "zh" ? "zh-CN" : "en";
-    try { localStorage.setItem("lang", next); } catch (e) {}
-    refreshPictures();
-    choose($$(".lang-btn"), (b) => b.dataset.setLang === next);
-    document.title = t("cc-moss · 文明会延续，对话也是。", "cc-moss · Every session, carried on.");
-    refreshMo();
-  }
-  $$("[data-set-lang]").forEach((b) => b.addEventListener("click", () => {
-    if (b.dataset.setLang !== lang()) smoothly(() => setLang(b.dataset.setLang));
+  // Language: each lives at its own URL. Switching keeps your place: the section in view and
+  // how far into it you were travel with you, and the page cross-fades instead of blinking.
+  const PLACE = "cc-moss:place";
+  $$("[data-set-lang]").forEach((a) => a.addEventListener("click", (e) => {
+    if (a.dataset.setLang === lang()) { e.preventDefault(); return; }
+    try {
+      localStorage.setItem("lang", a.dataset.setLang);
+      const at = document.elementFromPoint(innerWidth / 2, innerHeight / 3);
+      const section = at && at.closest("[id]");
+      if (section) sessionStorage.setItem(PLACE, JSON.stringify({ id: section.id, top: section.getBoundingClientRect().top }));
+    } catch (err) {}
   }));
-  // Fetch the other languages' and skins' pictures once the page is idle, so a switch never shows a blank.
+  try {
+    const place = JSON.parse(sessionStorage.getItem(PLACE) || "null");
+    sessionStorage.removeItem(PLACE);
+    const section = place && document.getElementById(place.id);
+    if (section && !location.hash) scrollTo({ top: section.getBoundingClientRect().top + scrollY - place.top, behavior: "instant" });
+  } catch (err) {}
+  choose($$(".lang-btn"), (b) => b.dataset.setLang === lang());
+  // Fetch the other skin's pictures once the page is idle, so switching never shows a blank.
   addEventListener("load", () => setTimeout(() => {
     $$("[data-pic]").forEach((img) => {
-      for (const l of ["zh", "en"]) for (const t of ["light", "dark"]) new Image().src = picture(img, l, t);
+      for (const t of ["light", "dark"]) new Image().src = picture(img, lang(), t);
     });
   }, 1500));
 
@@ -122,10 +128,11 @@
       });
     });
   }, { rootMargin: "-45% 0px -50% 0px" });
-  ["top", "tour", "mo", "terminal", "install"].forEach((id) => { const el = document.getElementById(id); if (el) navIO.observe(el); });
+  ["top", "tour", "mo", "terminal", "compare", "faq", "install"].forEach((id) => { const el = document.getElementById(id); if (el) navIO.observe(el); });
 
   // The tour: scrolling picks the step; tabs and arrows scroll to one.
   const steps = $$(".step");
+  if (steps.length) {
   const screens = $$(".screen");
   const tabs = $$(".tour-tab");
   const prev = document.querySelector(".tour-prev");
@@ -168,6 +175,7 @@
   matchMedia("(min-width: 1024px)").addEventListener("change", watchSteps);
   watchSteps();
   showStep(0);
+  }
 
   // Keycaps: ⌃ then ⌃, and the panel answers.
   const caps = $$("#keys .keycap");
@@ -249,6 +257,7 @@
     pop(bubble);
   }
   function showCard() {
+    if (!bubble) return;
     bubble.classList.add("hidden");
     card.classList.remove("hidden");
     pop(card);
@@ -280,5 +289,29 @@
     tio.observe(typed);
   }
 
-  setLang(lang());
+  if (bubble) refreshMo();
+
+  // WebMCP: the same tools as /mcp, offered to an AI agent working in this browser tab.
+  const modelContext = document.modelContext || navigator.modelContext;
+  if (modelContext) {
+    const call = (name, args) =>
+      fetch("/mcp", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args || {} } }),
+      }).then((r) => r.json()).then((r) => r.result);
+    fetch("/mcp", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })
+      .then((r) => r.json())
+      .then(({ result }) => {
+        const tools = result.tools.map((tool) => ({ ...tool, execute: (args) => call(tool.name, args) }));
+        if (typeof modelContext.registerTool === "function") return Promise.all(tools.map((tool) => modelContext.registerTool(tool)));
+        if (typeof modelContext.provideContext === "function") return modelContext.provideContext({ tools });
+      })
+      .then(() => dispatchEvent(new Event("cc-moss:webmcp")))
+      .catch(() => {});
+  }
 })();
