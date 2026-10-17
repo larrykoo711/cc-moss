@@ -33,14 +33,8 @@ struct WorkspaceRow: View {
     }
 
     private func choose() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.canCreateDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.prompt = L.t("Use This Folder", "用这个目录")
-        panel.message = L.t("New sessions will start here.", "以后新会话都从这里开始。")
-        if !workspace.isEmpty { panel.directoryURL = URL(fileURLWithPath: workspace) }
-        if panel.runModal() == .OK, let url = panel.url { workspace = url.path }
+        FilePicker.choose(.folder, from: NSApp.keyWindow, startingAt: workspace.isEmpty ? nil : workspace,
+                          message: L.t("New sessions will start here.", "以后新会话都从这里开始。"),
+                          prompt: L.t("Use This Folder", "用这个目录")) { workspace = $0 }
     }
 }
