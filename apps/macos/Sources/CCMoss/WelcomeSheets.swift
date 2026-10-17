@@ -26,7 +26,7 @@ enum WelcomeSheets {
                 PetSheets.snapshot(view, dark: dark, to: (outDir as NSString).appendingPathComponent("welcome-\(step.rawValue + 1)-\(tag).png"))
             }
             // The shortcut step once you've tried it: keys up, the panel in miniature.
-            let tried = WelcomeStage(step: .shortcut, dark: dark, tried: true, still: 2.0)
+            let tried = WelcomeStage(step: .shortcut, dark: dark, hits: 1, still: 2.0)
                 .frame(width: 380, height: 496)
                 .background(Theme.surface(dark ? .dark : .light).opacity(1))
             PetSheets.snapshot(tried, dark: dark, to: (outDir as NSString).appendingPathComponent("welcome-4-tried-\(tag).png"))

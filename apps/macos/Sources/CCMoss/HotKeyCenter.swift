@@ -6,8 +6,10 @@ import Observation
 import OSLog
 import SwiftUI
 
-/// The global shortcut that opens the panel: Carbon's hot keys, which need
-/// no Accessibility permission (unlike a global key monitor).
+/// The global shortcut that opens the panel. A key combination goes
+/// through Carbon's hot keys (no permission needed); a modifier tapped twice
+/// (double Control, the default) needs key events from other apps, so
+/// Accessibility. Until that is allowed, ⌃⌥M works instead.
 @MainActor
 final class HotKeyCenter {
     static let shared = HotKeyCenter()
@@ -16,49 +18,47 @@ final class HotKeyCenter {
     private var ref: EventHotKeyRef?
     private var handler: EventHandlerRef?
     private(set) var current: HotKey?
+    private(set) var shortcut: PanelShortcut = .default
 
-    private let log = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "hotkey")
+    fileprivate let log = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "hotkey")
 
     /// "MOSS", so the event is recognizably ours.
     private static let signature = OSType(0x4D4F_5353)
 
-    /// The way Settings says (double Control unless changed).
+    /// The shortcut Settings says (double Control unless changed).
     func start() {
         installHandler()
         apply(PanelShortcut.load(.standard))
     }
 
-    // MARK: - Double Control
+    // MARK: - Permission and live keys
 
-    /// Double Control needs Accessibility (key events from other apps);
-    /// until it is allowed, the ⌃⌥M combination works instead.
     @Observable
     final class Trust {
         var allowed = AXIsProcessTrusted()
     }
     let trust = Trust()
 
-    /// Control as you press it, for the welcome's keycaps.
+    /// The tapped modifier as you press it, for the welcome's keycaps.
     @Observable
     final class Keys {
-        var controlDown = false
-        /// Control presses so far (each release counts one).
+        var down = false
+        /// Presses so far (each release counts one).
         var presses = 0
     }
     let keys = Keys()
     private var monitors: [Any] = []
     private var tap = DoubleTap()
     private var trustTimer: Timer?
-    private(set) var shortcut: PanelShortcut = .doubleControl
 
     /// Switch to `s`: stops the old way, starts the new one.
     func apply(_ s: PanelShortcut) {
         shortcut = s
-        stopDoubleControl()
+        stopDoubleTap()
         unregister()
         switch s {
-        case .doubleControl:
-            startDoubleControl()
+        case let .doubleTap(k):
+            startDoubleTap(k)
             if !trust.allowed { _ = attempt(.default) }
         case let .combo(k):
             _ = attempt(k)
@@ -67,7 +67,15 @@ final class HotKeyCenter {
         }
     }
 
-    /// The system's own "allow Accessibility" prompt, then System Settings.
+    /// Off while you record a new one, so pressing the old one records it.
+    func pause() {
+        stopDoubleTap()
+        unregister()
+    }
+
+    func resume() { apply(shortcut) }
+
+    /// The system's own "allow Accessibility" prompt.
     func askForAccessibility() {
         let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
         if AXIsProcessTrustedWithOptions(options) { refreshTrust() }
@@ -79,7 +87,17 @@ final class HotKeyCenter {
         }
     }
 
-    private func startDoubleControl() {
+    static func flag(_ k: TapKey) -> NSEvent.ModifierFlags {
+        switch k {
+        case .control: .control
+        case .option: .option
+        case .shift: .shift
+        case .command: .command
+        }
+    }
+
+    private func startDoubleTap(_ k: TapKey) {
+        let mine = Self.flag(k)
         let handle: (NSEvent) -> Void = { [weak self] event in
             MainActor.assumeIsolated {
                 guard let self else { return }
@@ -87,15 +105,15 @@ final class HotKeyCenter {
                     self.tap.key()
                     return
                 }
-                let f = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-                let others = !f.intersection([.command, .option, .shift, .function, .capsLock]).isEmpty
-                let down = f.contains(.control) && !others
-                if down != self.keys.controlDown {
+                let f = event.modifierFlags.intersection([.command, .option, .shift, .control, .function, .capsLock])
+                let others = !f.subtracting(mine).isEmpty
+                let down = f.contains(mine) && !others
+                if down != self.keys.down {
                     if !down { self.keys.presses += 1 }
-                    self.keys.controlDown = down
+                    self.keys.down = down
                 }
-                if self.tap.modifiers(control: f.contains(.control), others: others, at: event.timestamp) {
-                    self.log.info("pressed (double control)")
+                if self.tap.modifiers(key: f.contains(mine), others: others, at: event.timestamp) {
+                    self.log.info("pressed (double \(k.rawValue, privacy: .public))")
                     self.onPress?()
                 }
             }
@@ -110,12 +128,13 @@ final class HotKeyCenter {
         }
     }
 
-    private func stopDoubleControl() {
+    private func stopDoubleTap() {
         monitors.forEach(NSEvent.removeMonitor)
         monitors.removeAll()
         trustTimer?.invalidate()
         trustTimer = nil
         tap = DoubleTap()
+        keys.down = false
     }
 
     private func refreshTrust() {
@@ -124,25 +143,10 @@ final class HotKeyCenter {
         trust.allowed = now
         log.info("accessibility \(now ? "allowed" : "not allowed", privacy: .public)")
         // Monitors added before the permission don't see other apps' keys: start again.
-        if shortcut == .doubleControl { apply(.doubleControl) }
+        if shortcut.tapKey != nil { apply(shortcut) }
     }
 
-    /// False when the system refuses it (another app already uses it); the
-    /// previous one stays registered then.
-    @discardableResult
-    func register(_ key: HotKey?) -> Bool {
-        let previous = current
-        unregister()
-        guard let key else { return true }
-        if attempt(key) { return true }
-        if let previous { _ = attempt(previous) }
-        return false
-    }
-
-    /// Off while you record a new one, so pressing the old one records it.
-    func pause() { unregister() }
-
-    func resume() { apply(shortcut) }
+    // MARK: - Combinations (Carbon)
 
     private func attempt(_ key: HotKey) -> Bool {
         var newRef: EventHotKeyRef?
@@ -198,51 +202,58 @@ final class HotKeyCenter {
     }
 }
 
-/// Settings › General: shows the shortcut; click to record a new one.
-/// While recording: press the combination, Esc cancels, Delete clears.
+/// Records the panel's shortcut, in Settings and in the welcome. Click it,
+/// then either tap a modifier twice (⌃ ⌃, ⌥ ⌥…) or press a combination
+/// (⌃⌥M). Esc cancels, Delete clears. Shows the keys as keycaps.
 struct HotKeyRecorder: View {
     var onSave: ((PanelShortcut) -> Void)?
-    /// The welcome's version: a whole row, large type, a breathing border while recording.
+    /// The welcome's: a whole row, taller, with a line under it.
     var large = false
-    @State private var key: HotKey? = {
-        if case let .combo(k) = PanelShortcut.load(.standard) { return k }
-        return nil
-    }()
+
+    @State private var value = PanelShortcut.load(.standard)
     @State private var recording = false
     @State private var problem: String?
     @State private var monitor: Any?
     @State private var hover = false
+    @State private var taps: [TapKey: DoubleTap] = [:]
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        if large { largeBody } else { smallBody }
-    }
-
-    /// A whole row: the combination in large type, or "press keys" with a
-    /// breathing brand border while recording; a line under it says what's next.
-    private var largeBody: some View {
         VStack(alignment: .leading, spacing: 6) {
             Button(action: toggle) {
-                HStack(spacing: 10) {
-                    Image(systemName: recording ? "record.circle" : "keyboard")
-                        .font(.system(size: 16))
-                        .foregroundStyle(recording ? Theme.brand : Color.secondary)
-                        .symbolEffect(.pulse, isActive: recording)
-                    Text(recording ? L.t("Press the keys you want…", "按下你想用的组合键…") : (key?.display ?? L.t("Click to set", "点这里设置")))
-                        .font(.system(size: recording || key == nil ? 14 : 18, weight: key == nil || recording ? .regular : .semibold))
-                        .foregroundStyle(recording || key == nil ? .secondary : .primary)
-                    Spacer()
-                    if !recording, key != nil {
-                        Text(L.t("Change", "更换")).font(.system(size: 12)).foregroundStyle(.secondary)
+                HStack(spacing: 8) {
+                    if recording {
+                        Image(systemName: "record.circle")
+                            .font(.system(size: large ? 16 : 13))
+                            .foregroundStyle(Theme.brand)
+                            .symbolEffect(.pulse, isActive: true)
+                        Text(L.t("Tap a key twice, or press keys…", "连按两下某个键，或按下组合键…"))
+                            .font(.system(size: large ? 13 : 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if value == .none {
+                        Text(L.t("Click to set", "点这里设置")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    } else {
+                        Keycaps(shortcut: value, large: large)
+                        if value == .default {
+                            Text(L.t("Default", "默认"))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.brand)
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Capsule().fill(Theme.brand.opacity(0.12)))
+                        }
+                    }
+                    Spacer(minLength: 6)
+                    if !recording {
+                        Text(L.t("Change", "更换")).font(.system(size: 11)).foregroundStyle(.tertiary)
                     }
                 }
-                .padding(.horizontal, 14)
-                .frame(maxWidth: .infinity, minHeight: 52)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(recording ? Theme.brand.opacity(0.08) : (hover ? Theme.selection(scheme) : Color.primary.opacity(0.04))))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(recording ? Theme.brand.opacity(0.7) : Color.primary.opacity(0.1),
-                                  style: StrokeStyle(lineWidth: recording ? 1.5 : 1, dash: recording ? [] : [4, 3])))
+                .padding(.horizontal, large ? 14 : 10)
+                .frame(minWidth: large ? nil : 236, maxWidth: large ? .infinity : 236, minHeight: large ? 52 : 34)
+                .background(RoundedRectangle(cornerRadius: large ? 12 : 9, style: .continuous)
+                    .fill(recording ? Theme.brand.opacity(0.08) : (hover ? Theme.selection(scheme) : Color.primary.opacity(0.045))))
+                .overlay(RoundedRectangle(cornerRadius: large ? 12 : 9, style: .continuous)
+                    .strokeBorder(recording ? Theme.brand.opacity(0.7) : Color.primary.opacity(0.08), lineWidth: recording ? 1.5 : 1))
                 .contentShape(Rectangle())
             }
             .buttonStyle(PressStyle())
@@ -250,47 +261,15 @@ struct HotKeyRecorder: View {
             .handCursor()
             .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hover = inside } }
             .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
-            Text(problem ?? (recording ? L.t("Include ⌃, ⌥ or ⌘. Esc cancels.", "要带上 ⌃、⌥ 或 ⌘；按 Esc 取消。")
-                                       : L.t("Click, then press the keys together.", "点一下，再同时按下几个键。")))
-                .font(.system(size: 11))
-                .foregroundStyle(problem == nil ? Theme.caption : Theme.amber)
+            if large || problem != nil {
+                Text(problem ?? (recording ? L.t("Esc cancels, Delete clears.", "Esc 取消，删除键清除。")
+                                           : L.t("Click, then tap a key twice or press a combination.", "点一下，再连按两下某个键，或者按下组合键。")))
+                    .font(.system(size: 11))
+                    .foregroundStyle(problem == nil ? Theme.caption : Theme.amber)
+                    .lineLimit(1)
+            }
         }
         .onDisappear(perform: stop)
-    }
-
-    private var smallBody: some View {
-        HStack(spacing: 8) {
-            if let problem {
-                Text(problem)
-                    .font(.system(size: 12))
-                    .foregroundStyle(Theme.amber)
-            }
-            Button(action: toggle) {
-                Text(label)
-                    .font(.system(size: 13, weight: key == nil || recording ? .regular : .medium))
-                    .foregroundStyle(recording || key == nil ? .secondary : .primary)
-                    .frame(minWidth: 96)
-                    .padding(.horizontal, 10)
-                    .frame(height: 26)
-                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .fill(recording ? Theme.brand.opacity(0.12) : (hover ? Theme.selection(scheme) : Color.primary.opacity(0.06))))
-                    .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(recording ? Theme.brand.opacity(0.6) : .clear))
-                    .contentShape(Rectangle())
-            }
-            .buttonStyle(PressStyle())
-            .focusable(false)
-            .handCursor()
-            .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hover = inside } }
-            .tip(recording ? L.t("Esc to cancel, Delete to clear", "Esc 取消，删除键清除")
-                           : L.t("Click, then press the keys", "点一下，再按下组合键"))
-        }
-        .onDisappear(perform: stop)
-    }
-
-    private var label: String {
-        if recording { return L.t("Press keys…", "按下组合键…") }
-        return key?.display ?? L.t("None", "未设置")
     }
 
     private func toggle() {
@@ -300,8 +279,9 @@ struct HotKeyRecorder: View {
     private func start() {
         problem = nil
         recording = true
+        taps = [:]
         HotKeyCenter.shared.pause()
-        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { event in
             MainActor.assumeIsolated { handle(event) }
             return nil
         }
@@ -316,12 +296,27 @@ struct HotKeyRecorder: View {
     }
 
     private func handle(_ event: NSEvent) {
+        if event.type == .flagsChanged {
+            let f = event.modifierFlags.intersection([.command, .option, .shift, .control])
+            for k in TapKey.allCases {
+                let mine = HotKeyCenter.flag(k)
+                var t = taps[k] ?? DoubleTap()
+                let fired = t.modifiers(key: f.contains(mine), others: !f.subtracting(mine).isEmpty, at: event.timestamp)
+                taps[k] = t
+                if fired {
+                    save(.doubleTap(k))
+                    return
+                }
+            }
+            return
+        }
+        for k in TapKey.allCases { taps[k]?.key() }
         switch Int(event.keyCode) {
         case kVK_Escape:
             stop()
             return
         case kVK_Delete, kVK_ForwardDelete:
-            save(nil)
+            save(.none)
             return
         default:
             break
@@ -329,69 +324,78 @@ struct HotKeyRecorder: View {
         let candidate = HotKey(keyCode: Int(event.keyCode), key: event.charactersIgnoringModifiers ?? "",
                                modifiers: HotKeyCenter.modifiers(event.modifierFlags))
         guard candidate.isValid else {
-            problem = L.t("Add ⌃, ⌥ or ⌘", "要带上 ⌃、⌥ 或 ⌘")
+            problem = L.t("Add ⌃, ⌥ or ⌘, or tap one key twice", "要带上 ⌃、⌥ 或 ⌘，或者连按两下某个键")
             return
         }
-        save(candidate)
+        save(.combo(candidate))
     }
 
-    private func save(_ new: HotKey?) {
+    private func save(_ next: PanelShortcut) {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         recording = false
         let center = HotKeyCenter.shared
         let previous = center.shortcut
-        let next: PanelShortcut = new.map(PanelShortcut.combo) ?? .none
         center.apply(next)
-        if let new, center.current != new {
+        if case let .combo(k) = next, center.current != k {
             problem = L.t("Another app uses it", "被别的 App 占用了")
             center.apply(previous)
             return
         }
         PanelShortcut.save(next, .standard)
-        key = new
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.75)) { value = next }
         problem = nil
         onSave?(next)
     }
 }
 
-/// Settings › General and the welcome: how to call the panel. Double
-/// Control (recommended) or a combination; double Control explains and asks
-/// for Accessibility when it doesn't have it yet.
-struct PanelShortcutPicker: View {
-    @Binding var mode: String
+/// A shortcut as keycaps: ⌃ ⌃ for a double tap, ⌃ ⌥ M for a combination.
+struct Keycaps: View {
+    let shortcut: PanelShortcut
+    var large = false
+    @Environment(\.colorScheme) private var scheme
 
-    var body: some View {
-        HStack(spacing: 8) {
-                SlidingPicker(selection: $mode, options: [
-                    ("double", L.t("Tap ⌃ Twice", "连按两下 ⌃")),
-                    ("combo", L.t("Key Combo", "组合键")),
-                ])
-                .onChange(of: mode) { _, new in
-                    if new == "double" {
-                        PanelShortcut.save(.doubleControl, .standard)
-                        HotKeyCenter.shared.apply(.doubleControl)
-                    } else {
-                        let combo = HotKey.load(.standard) ?? .default
-                        PanelShortcut.save(.combo(combo), .standard)
-                        HotKeyCenter.shared.apply(.combo(combo))
-                    }
-                }
-            if mode == "combo" { HotKeyRecorder() }
+    private var keys: [String] {
+        switch shortcut {
+        case let .doubleTap(k): [k.glyph, k.glyph]
+        case let .combo(k):
+            k.display.map(String.init).filter { $0 != " " }.reduce(into: [String]()) { out, c in
+                if "⌃⌥⇧⌘".contains(c) || out.isEmpty || "⌃⌥⇧⌘".contains(out.last!) { out.append(c) } else { out[out.count - 1] += c }
+            }
+        case .none: []
         }
     }
 
-    static func currentMode() -> String {
-        PanelShortcut.load(.standard) == .doubleControl ? "double" : "combo"
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(keys.enumerated()), id: \.offset) { _, k in
+                Text(k)
+                    .font(.system(size: large ? 14 : 12, weight: .medium))
+                    .frame(minWidth: large ? 26 : 22, minHeight: large ? 26 : 22)
+                    .padding(.horizontal, k.count > 1 ? 4 : 0)
+                    .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.raised(scheme)))
+                    .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+                    .shadow(color: .black.opacity(0.06), radius: 0.5, y: 1)
+            }
+            if case .doubleTap = shortcut {
+                Text(L.t("twice", "连按两下"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 2)
+            }
+        }
     }
 }
 
-/// Under the shortcut row while double Control still needs Accessibility.
+/// Under the shortcut row while a double tap still needs Accessibility.
 struct AccessibilityRow: View {
+    let shortcut: PanelShortcut
+
     var body: some View {
-        CardRow(title: L.t("Let cc-moss hear ⌃", "允许 cc-moss 听见 ⌃"),
+        let k = shortcut.tapKey?.glyph ?? "⌃"
+        CardRow(title: L.t("Let cc-moss hear \(k)", "允许 cc-moss 听见 \(k)"),
                 detail: L.t("One click in System Settings › Accessibility. Until then, ⌃⌥M works.",
-                            "在「系统设置 › 辅助功能」里点一下就好；允许之前先用 ⌃⌥M。"),
+                            "在「系统设置 › 辅助功能」里点一下；允许之前先用 ⌃⌥M。"),
                 divider: false) {
             SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
                 HotKeyCenter.shared.askForAccessibility()

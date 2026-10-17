@@ -23,8 +23,8 @@ struct WelcomeView: View {
     @State private var connecting = false
     @State private var connectProblem: String?
     /// Double Control pressed while on the shortcut step.
-    @State private var triedShortcut = false
-    @State private var shortcutMode = PanelShortcutPicker.currentMode()
+    @State private var shortcutHits = 0
+    @State private var shortcut = PanelShortcut.load(.standard)
     @State private var asking = false
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -51,6 +51,9 @@ struct WelcomeView: View {
             stage
                 .padding(12)
         }
+        // A language switch redraws every word in place: the step and what
+        // you chose stay (the window doesn't rebuild the whole view).
+        .id(LanguageState.shared.lang)
         .frame(width: Self.size.width, height: Self.size.height)
         .background(Theme.surface(scheme).opacity(1))
         .focusEffectDisabled()
@@ -87,6 +90,8 @@ struct WelcomeView: View {
                     .frame(width: 20, height: 20)
                 Text("cc-moss").font(.system(size: 13, weight: .semibold))
                 Spacer()
+                LanguageSwitch(client: model.client)
+                    .padding(.trailing, 10)
                 if flow.step != .done {
                     Button(L.t("Skip", "跳过")) { close(openPanel: false) }
                         .buttonStyle(.plain)
@@ -149,8 +154,8 @@ struct WelcomeView: View {
                                   "Claude 在一个目录里干活。选好你的工作区，新会话就从那儿开始。"))
         case .shortcut:
             return Copy(eyebrow: n, title: L.t("There when you call", "随叫随到"),
-                        body: L.t("Tap Control twice, in any app, and your sessions are right there.",
-                                  "在任何 App 里连按两下 ⌃，会话就在眼前。"))
+                        body: L.t("In any app, \(shortcut.spoken) and your sessions are right there. Prefer other keys? Change it below.",
+                                  "在任何 App 里\(shortcut.spoken)，会话就在眼前。想换别的键，下面点一下就行。"))
         case .startup:
             return Copy(eyebrow: n, title: L.t("We'll tap you on the shoulder", "有事，我们叫你"),
                         body: L.t("When a session needs you or stops, you'll hear about it, even right after a restart.",
@@ -167,8 +172,8 @@ struct WelcomeView: View {
     }
 
     private var shortcutText: String {
-        let s = PanelShortcut.load(.standard)
-        return s == .doubleControl ? L.t("Tapping ⌃ twice", "连按两下 ⌃") : s.display
+        let spoken = shortcut.spoken
+        return spoken.prefix(1).uppercased() + spoken.dropFirst()
     }
 
     @ViewBuilder private var controls: some View {
@@ -183,7 +188,7 @@ struct WelcomeView: View {
                 ChoiceCard { TerminalChoice(prefs: model.terminals) }
             }
         case .shortcut:
-            ShortcutChoice(tried: triedShortcut, mode: $shortcutMode)
+            ShortcutChoice(tried: shortcutHits > 0, shortcut: $shortcut)
         case .startup:
             StartupChoice(live: live)
         case .mo:
@@ -266,7 +271,7 @@ struct WelcomeView: View {
         case .startup:
             return [.allowed, .denied, .unavailable].contains(NotificationStatus.shared.auth) ? nil : .notify
         case .shortcut:
-            return shortcutMode == "double" && !HotKeyCenter.shared.trust.allowed ? .accessibility : nil
+            return shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed ? .accessibility : nil
         default:
             return nil
         }
@@ -299,7 +304,7 @@ struct WelcomeView: View {
     private func triedIt() {
         guard flow.step == .shortcut else { return }
         WelcomeSound.success()
-        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { triedShortcut = true }
+        withAnimation(.spring(response: 0.3, dampingFraction: 0.55)) { shortcutHits += 1 }
     }
 
     // MARK: - Footer
@@ -393,7 +398,8 @@ struct WelcomeView: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .fill(LinearGradient(colors: stageColors, startPoint: .topLeading, endPoint: .bottomTrailing))
                 .animation(.easeInOut(duration: 0.5), value: flow.step)
-            WelcomeStage(step: flow.step, dark: scheme == .dark, tried: triedShortcut, ready: plan?.isReady == true,
+            WelcomeStage(step: flow.step, dark: scheme == .dark, hits: shortcutHits,
+                         shortcut: shortcut, ready: plan?.isReady == true,
                          still: live ? nil : 2.0)
                 .id(flow.step)
                 .scaleEffect(shown ? 1 : 0.94)
@@ -554,27 +560,25 @@ private struct TerminalChoice: View {
     }
 }
 
-/// Double Control (recommended) or a combination, with the permission it needs.
+/// The shortcut, already set to double Control; change it right here, and
+/// try it: the stage plays along.
 private struct ShortcutChoice: View {
     let tried: Bool
-    @Binding var mode: String
+    @Binding var shortcut: PanelShortcut
     private var trust: HotKeyCenter.Trust { HotKeyCenter.shared.trust }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            option("double", title: L.t("Tap ⌃ twice", "连按两下 ⌃"), badge: L.t("Recommended", "推荐"))
-            option("combo", title: L.t("A key combination", "用组合键"), badge: nil)
-            if mode == "combo" {
-                HotKeyRecorder(large: true)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            } else if !trust.allowed {
+            HotKeyRecorder(onSave: { shortcut = $0 }, large: true)
+            if shortcut.tapKey != nil, !trust.allowed {
                 Label(L.t("macOS asks you to allow this once.", "macOS 需要你允许一次，点下面的按钮就好。"),
                       systemImage: "hand.raised.fill")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .transition(.opacity)
-            } else {
-                Label(tried ? L.t("Nice, that's it.", "成功，就是这样。") : L.t("Try it now: tap ⌃ twice.", "现在就试试：连按两下 ⌃。"),
+            } else if shortcut != .none {
+                Label(tried ? L.t("Nice, that's it. Again?", "成功！再按一次试试？")
+                            : L.t("Try it now: \(shortcut.spoken).", "现在就试试：\(shortcut.spoken)。"),
                       systemImage: tried ? "checkmark.circle.fill" : "hand.point.up.left")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(tried ? Color.green : Color.secondary)
@@ -582,41 +586,7 @@ private struct ShortcutChoice: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.85), value: trust.allowed)
-        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: mode)
-    }
-
-    private func option(_ id: String, title: String, badge: String?) -> some View {
-        let on = mode == id
-        return Button {
-            mode = id
-            let s: PanelShortcut = id == "double" ? .doubleControl : .combo(HotKey.load(.standard) ?? .default)
-            PanelShortcut.save(s, .standard)
-            HotKeyCenter.shared.apply(s)
-        } label: {
-            HStack(spacing: 10) {
-                Image(systemName: on ? "largecircle.fill.circle" : "circle")
-                    .font(.system(size: 15))
-                    .foregroundStyle(on ? Theme.brand : Color.secondary)
-                Text(title).font(.system(size: 13, weight: on ? .semibold : .regular))
-                if let badge {
-                    Text(badge)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(Theme.brand)
-                        .padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(Capsule().fill(Theme.brand.opacity(0.12)))
-                }
-                Spacer()
-            }
-            .padding(10)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(on ? Theme.brand.opacity(0.08) : Color.primary.opacity(0.035)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(on ? Theme.brand.opacity(0.45) : .clear))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(PressStyle())
-        .focusable(false)
-        .handCursor()
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: shortcut)
     }
 }
 
@@ -690,15 +660,16 @@ private struct MoChoice: View {
             }
             if enabled {
                 ChoiceCard {
-                    HStack(spacing: 10) {
-                        Image(systemName: "speaker.wave.2").foregroundStyle(Theme.brand).frame(width: 22)
-                        Text(L.t("When it needs you", "有事的时候")).font(.system(size: 13, weight: .semibold))
-                        Spacer()
+                    VStack(alignment: .leading, spacing: 10) {
+                        Label(L.t("When something needs you, it…", "有事的时候，它会…"), systemImage: "speaker.wave.2")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.primary)
                         SlidingPicker(selection: $voice, options: [
-                            (VoiceMode.off.rawValue, L.t("Quiet", "不出声")),
-                            (VoiceMode.chime.rawValue, L.t("A chime", "叮一声")),
+                            (VoiceMode.off.rawValue, L.t("Stay quiet", "安静示意")),
+                            (VoiceMode.chime.rawValue, L.t("Chime", "叮一声")),
                             (VoiceMode.speak.rawValue, L.t("Say it", "说出来")),
                         ])
+                        .frame(maxWidth: .infinity)
                         .onChange(of: voice) { _, _ in changed() }
                     }
                 }
@@ -787,7 +758,7 @@ enum WelcomeWindow {
         let host = NSHostingView(rootView: WelcomeView(model: model) { open in
             close()
             if open { DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { openPanel() } }
-        }.followsLanguage())
+        })
         // No title-bar inset: the view fills the window to its edge.
         host.safeAreaRegions = []
         w.contentView = host
@@ -816,5 +787,43 @@ enum WelcomeWindow {
 
     static func close() {
         window?.close()
+    }
+}
+
+/// 中 / EN at the top of the welcome: switches the whole app (and the
+/// terminal's cc-moss, which shares the setting) right away.
+private struct LanguageSwitch: View {
+    let client: MossClient?
+    @Environment(\.colorScheme) private var scheme
+    private var lang: Lang { LanguageState.shared.lang }
+
+    var body: some View {
+        HStack(spacing: 0) {
+            item("中", .zh)
+            item("EN", .en)
+        }
+        .padding(2)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
+        .accessibilityLabel(L.t("Language", "语言"))
+    }
+
+    private func item(_ title: String, _ target: Lang) -> some View {
+        let on = lang == target
+        return Button {
+            guard !on else { return }
+            Task { try? await LanguageState.shared.choose(target == .zh ? .zh : .en, client: client) }
+        } label: {
+            Text(title)
+                .font(.system(size: 11, weight: on ? .semibold : .regular))
+                .foregroundStyle(on ? Color.primary : Color.secondary)
+                .frame(width: 30, height: 20)
+                .background(Capsule().fill(on ? Theme.raised(scheme) : .clear))
+                .shadow(color: .black.opacity(on ? 0.08 : 0), radius: 1, y: 0.5)
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .animation(.easeOut(duration: 0.15), value: on)
     }
 }

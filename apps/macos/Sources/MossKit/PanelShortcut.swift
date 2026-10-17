@@ -1,27 +1,42 @@
 import Foundation
 
-/// How the panel is called from anywhere: tap Control twice (the default,
-/// like Raycast's and Spotlight's double-tap options), a key combination,
-/// or nothing.
+/// A modifier key that can be tapped twice to call the panel.
+public enum TapKey: String, CaseIterable, Sendable {
+    case control, option, shift, command
+
+    public var glyph: String {
+        switch self {
+        case .control: "⌃"
+        case .option: "⌥"
+        case .shift: "⇧"
+        case .command: "⌘"
+        }
+    }
+}
+
+/// How the panel is called from anywhere: one shortcut, recorded like any
+/// other. It can be a modifier tapped twice (double Control by default,
+/// like Raycast's and Spotlight's double-tap options) or a key combination.
 public enum PanelShortcut: Equatable, Sendable {
-    case doubleControl
+    case doubleTap(TapKey)
     case combo(HotKey)
     case none
 
+    public static let `default` = PanelShortcut.doubleTap(.control)
+
     static let key = "panelShortcut"
 
-    /// Unset: double Control. A combination keeps its keys in `HotKey`'s own entry.
     public static func load(_ defaults: UserDefaults) -> PanelShortcut {
-        switch defaults.string(forKey: key) {
-        case "combo": HotKey.load(defaults).map(PanelShortcut.combo) ?? .none
-        case "none": .none
-        default: .doubleControl
-        }
+        guard let raw = defaults.string(forKey: key) else { return .default }
+        if raw == "combo" { return HotKey.load(defaults).map(PanelShortcut.combo) ?? .none }
+        if raw == "none" { return .none }
+        if raw.hasPrefix("double-"), let k = TapKey(rawValue: String(raw.dropFirst("double-".count))) { return .doubleTap(k) }
+        return .default
     }
 
     public static func save(_ s: PanelShortcut, _ defaults: UserDefaults) {
         switch s {
-        case .doubleControl: defaults.set("double-control", forKey: key)
+        case let .doubleTap(k): defaults.set("double-\(k.rawValue)", forKey: key)
         case let .combo(k):
             defaults.set("combo", forKey: key)
             HotKey.save(k, defaults)
@@ -29,18 +44,33 @@ public enum PanelShortcut: Equatable, Sendable {
         }
     }
 
+    /// Keys only: `⌃ ⌃`, `⌃⌥M`.
     public var display: String {
         switch self {
-        case .doubleControl: "⌃ ⌃"
+        case let .doubleTap(k): "\(k.glyph) \(k.glyph)"
         case let .combo(k): k.display
         case .none: L.t("None", "未设置")
         }
     }
+
+    /// In a sentence: "tap ⌃ twice", "⌃⌥M".
+    public var spoken: String {
+        switch self {
+        case let .doubleTap(k): L.t("tap \(k.glyph) twice", "连按两下 \(k.glyph)")
+        case let .combo(k): k.display
+        case .none: L.t("no shortcut", "没有快捷键")
+        }
+    }
+
+    public var tapKey: TapKey? {
+        if case let .doubleTap(k) = self { return k }
+        return nil
+    }
 }
 
-/// Spots Control tapped twice: two short presses of Control alone, the
+/// Spots a modifier tapped twice: two short presses of it alone, the
 /// second within `window` of the first. Any other key or modifier in
-/// between, or holding Control, starts over.
+/// between, or holding it, starts over.
 public struct DoubleTap: Sendable {
     public var window: TimeInterval = 0.35
     /// Longer than this is holding, not tapping.
@@ -51,9 +81,9 @@ public struct DoubleTap: Sendable {
 
     public init() {}
 
-    /// A modifier change: `control` is Control down, `others` any other modifier down.
+    /// A modifier change: `key` is the watched modifier down, `others` any other modifier down.
     /// True when this completes a double tap.
-    public mutating func modifiers(control: Bool, others: Bool, at t: TimeInterval) -> Bool {
+    public mutating func modifiers(key control: Bool, others: Bool, at t: TimeInterval) -> Bool {
         if others {
             reset()
             return false
