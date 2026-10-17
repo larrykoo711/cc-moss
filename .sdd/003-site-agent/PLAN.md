@@ -55,6 +55,18 @@ text/markdown` negotiation, `Vary`, Link headers, a Markdown 404.
 and the discovery files returns 200.
 **Status**: Complete
 
+## Kanban
+
+| Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
+|------|----|------|------|-----|----------|
+| **S1** Worker 托管与一页一语言 | cc-moss | — | ✅ Done | —（阶段计划，无逐任务 spec） | `/` 与 `/zh/` 只含本语言；切换保位 |
+| **S2** 搜索基础 | cc-moss | S1 | ✅ Done | — | sitemap、hreflang、JSON-LD 来自可见 FAQ；seo-geo 审计 |
+| **S3** Agent 可读层 | cc-moss | S1 | ✅ Done | — | Markdown 协商、Link、llms.txt、Markdown 404 |
+| **S4** MCP 与发现文件 | cc-moss | S3 | ✅ Done | — | 线上三工具可调；server card、技能、WebMCP |
+| **S5** 切换与评分 | cc-moss | S1–S4 | ✅ Done | — | 线上冒烟 46/46；isitagentready L4；is-agentic 100 |
+| **F1** 反馈：手册改为 Agent 专用、FAQ 大白话 | cc-moss | S5 | ✅ Done | — | 人看不到 `/guide/`；FAQ 10 条 |
+| **F2** 反馈：中文页通知图标裂图 | cc-moss | F1 | ✅ Done | — | 相对路径改绝对；链接可达测试（变异验证） |
+
 ## Results (2026-10-17, production)
 
 - Smoke (`scripts/smoke.mjs https://cc-moss.larrykoo.com`): 46/46.
@@ -72,3 +84,15 @@ and the discovery files returns 200.
 - Submit the sitemap to Google Search Console and Bing Webmaster Tools (needs the owner's accounts).
 - DNS-AID record for the MCP server, if DNSSEC is turned on for the zone.
 - GitHub Pages stays enabled only so the old github.io address keeps redirecting here.
+
+## 日志
+
+- 2026-10-17 用户：参照两个已在生产的兄弟站点（营销站、文档站）与 seo/geo/agent-readable skill 全面升级，含站点的 agent MCP 能力；三个决策（Workers 托管、zone 级关托管 robots、URL 决定语言 + 首访跳一次）均按推荐
+- 2026-10-17 用户反馈：手册太技术，C 端只要 FAQ；手册放在用户看不到、agent 能读的地方 → F1
+- 2026-10-17 用户「直接 PR 合并，我从线上查看」→ #24 合入，Site 工作流部署并线上冒烟通过
+- 2026-10-17 用户反馈：中文页通知图标裂图 → F2；新增「每个链接与图片都能解析」构建测试，变异（改回相对路径）可被抓到
+- DEVIATION: 本迭代按阶段计划直接实施，没有逐任务 spec、未过 sdd-gate；用户在过程中逐项定调与验收，如实记录
+- ARCHIVE: 原地标记收尾，不移入 archive/（同 002，宿主约定）
+E2E: assertion=site 32/32 + 线上冒烟 46/46 green, console clean feel=done（用户线上查看并反馈 F1、F2，均已修复）
+DISTILL: CLAUDE.md items=5（与 002 共用一次沉淀，见 002 PLAN 同名行）
+REPORT: playground=n/a（本迭代无 playground，报告即 reports/delivery.md）buckets=[delivered:7 new:2 sub:1 deferred:3]
