@@ -57,7 +57,7 @@ struct SettingsView: View {
             case .menuBar: [Color(red: 0.30, green: 0.62, blue: 1.0), Color(red: 0.12, green: 0.44, blue: 0.95)]
             case .mo: [Color(red: 0.25, green: 0.80, blue: 0.72), Color(red: 0.08, green: 0.62, blue: 0.56)]
             case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
-            case .aliases: AliasRow.tint
+            case .aliases: AliasesSettings.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
         }

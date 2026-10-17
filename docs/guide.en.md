@@ -292,7 +292,7 @@ Mo can make a sound too, under Settings › Mo › Voice:
 | Menu Bar | How the icon shows, motion |
 | Mo | On or off, size, interaction, voice |
 | Notifications | Who tells you, what to tell you, Notification Center permission |
-| Aliases | Add, edit and remove aliases, the same ones as `cc-moss alias` (see [Aliases](#aliases)) |
+| Aliases | A short name for the things you do often (open the session list, start a session, bring stopped ones back…): one field each, Return saves and it works at once; hovering a row plays what typing it does. Your own commands sit under the folded Custom. The same aliases as `cc-moss alias` (see [Aliases](#aliases)) |
 | About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |
 
 The search field at the top of the sidebar finds any setting.
