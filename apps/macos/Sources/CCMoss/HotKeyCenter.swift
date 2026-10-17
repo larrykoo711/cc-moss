@@ -299,12 +299,10 @@ struct HotKeyRecorder: View {
 /// Control (recommended) or a combination; double Control explains and asks
 /// for Accessibility when it doesn't have it yet.
 struct PanelShortcutPicker: View {
-    @State private var mode: String = PanelShortcut.load(.standard) == .doubleControl ? "double" : "combo"
-    private var trust: HotKeyCenter.Trust { HotKeyCenter.shared.trust }
+    @Binding var mode: String
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
-            HStack(spacing: 8) {
+        HStack(spacing: 8) {
                 SlidingPicker(selection: $mode, options: [
                     ("double", L.t("Tap ⌃ Twice", "连按两下 ⌃")),
                     ("combo", L.t("Key Combo", "组合键")),
@@ -319,18 +317,25 @@ struct PanelShortcutPicker: View {
                         HotKeyCenter.shared.apply(.combo(combo))
                     }
                 }
-                if mode == "combo" { HotKeyRecorder() }
-            }
-            if mode == "double", !trust.allowed {
-                HStack(spacing: 6) {
-                    Text(L.t("Needs Accessibility; until then ⌃⌥M works.", "需要「辅助功能」权限；允许之前先用 ⌃⌥M。"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.caption)
-                    SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
-                        HotKeyCenter.shared.askForAccessibility()
-                        HotKeyCenter.openAccessibilitySettings()
-                    }
-                }
+            if mode == "combo" { HotKeyRecorder() }
+        }
+    }
+
+    static func currentMode() -> String {
+        PanelShortcut.load(.standard) == .doubleControl ? "double" : "combo"
+    }
+}
+
+/// Under the shortcut row while double Control still needs Accessibility.
+struct AccessibilityRow: View {
+    var body: some View {
+        CardRow(title: L.t("Let cc-moss hear ⌃", "允许 cc-moss 听见 ⌃"),
+                detail: L.t("One click in System Settings › Accessibility. Until then, ⌃⌥M works.",
+                            "在「系统设置 › 辅助功能」里点一下就好；允许之前先用 ⌃⌥M。"),
+                divider: false) {
+            SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
+                HotKeyCenter.shared.askForAccessibility()
+                HotKeyCenter.openAccessibilitySettings()
             }
         }
     }

@@ -461,6 +461,7 @@ struct GeneralSettings: View {
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var shortcutMode = PanelShortcutPicker.currentMode()
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
 
@@ -478,12 +479,16 @@ struct GeneralSettings: View {
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
+            let needsTrust = shortcutMode == "double" && !HotKeyCenter.shared.trust.allowed
             CardRow(
                 title: L.t("Open the Panel", "唤出面板"),
                 detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。"),
-                divider: false
+                divider: needsTrust
             ) {
-                PanelShortcutPicker()
+                PanelShortcutPicker(mode: $shortcutMode)
+            }
+            if needsTrust {
+                AccessibilityRow().transition(.opacity)
             }
         }
         SettingsCard(title: L.t("Language", "语言")) {
