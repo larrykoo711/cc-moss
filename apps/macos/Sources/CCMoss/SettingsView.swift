@@ -344,11 +344,16 @@ struct CardRow<Control: View>: View {
     let title: String
     var detail: String?
     var divider = true
+    /// A small icon tile before the words, as in System Settings.
+    var icon: RowIcon?
     @ViewBuilder let control: () -> Control
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
+                if let icon {
+                    IconTile(symbol: icon.symbol, colors: icon.colors, size: 26)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 14))
                     if let detail {
@@ -364,8 +369,42 @@ struct CardRow<Control: View>: View {
             .padding(12)
             .frame(minHeight: 46)
             if divider {
-                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
+                // Under an icon, the hairline starts at the words, as in System Settings.
+                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1)
+                    .padding(.leading, icon == nil ? 12 : 50).padding(.trailing, 12)
             }
+        }
+    }
+}
+
+/// A settings row's icon: an SF Symbol on a coloured tile.
+struct RowIcon {
+    let symbol: String
+    let colors: [Color]
+
+    init(_ symbol: String, _ hue: RowHue) {
+        self.symbol = symbol
+        self.colors = hue.colors
+    }
+}
+
+/// One hue per kind of thing, top-lit like System Settings' tiles.
+enum RowHue {
+    case gray, blue, teal, green, orange, red, purple, pink, indigo, brand
+
+    var colors: [Color] {
+        func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
+        switch self {
+        case .gray: return [c(0.62, 0.62, 0.65), c(0.45, 0.45, 0.48)]
+        case .blue: return [c(0.30, 0.62, 1.0), c(0.12, 0.44, 0.95)]
+        case .teal: return [c(0.25, 0.80, 0.72), c(0.08, 0.62, 0.56)]
+        case .green: return [c(0.35, 0.83, 0.42), c(0.18, 0.68, 0.28)]
+        case .orange: return [c(1.0, 0.70, 0.30), c(0.97, 0.53, 0.12)]
+        case .red: return [c(1.0, 0.42, 0.40), c(0.92, 0.24, 0.24)]
+        case .purple: return [c(0.70, 0.52, 0.98), c(0.52, 0.34, 0.88)]
+        case .pink: return [c(1.0, 0.45, 0.65), c(0.92, 0.28, 0.50)]
+        case .indigo: return [c(0.45, 0.48, 0.98), c(0.32, 0.32, 0.86)]
+        case .brand: return [Theme.brand.opacity(0.85), Theme.brand]
         }
     }
 }
@@ -468,9 +507,10 @@ struct GeneralSettings: View {
     var body: some View {
         SettingsCard(title: L.t("Startup", "启动")) {
             CardRow(
-                title: L.t("Open at Login", "开机自动打开"),
-                detail: loginError ?? L.t("Keep an eye on your sessions from the moment you log in.",
-                                         "一登录就开始替你看着会话。")
+                title: L.t("Open at login", "开机自动打开"),
+                detail: loginError ?? L.t("Starts with your Mac, so you don't have to remember.",
+                                         "开机后自己出来，不用你记着。"),
+                icon: RowIcon("power", .blue)
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
@@ -481,9 +521,10 @@ struct GeneralSettings: View {
             }
             let needsTrust = shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed
             CardRow(
-                title: L.t("Open the Panel", "唤出面板"),
-                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。"),
-                divider: needsTrust
+                title: L.t("Panel shortcut", "唤出面板"),
+                detail: L.t("See every session from anywhere.", "在哪儿按一下，都能看到所有会话。"),
+                divider: needsTrust,
+                icon: RowIcon("keyboard.fill", .blue)
             ) {
                 HotKeyRecorder(onSave: { shortcut = $0 })
             }
@@ -493,10 +534,11 @@ struct GeneralSettings: View {
         }
         SettingsCard(title: L.t("Language", "语言")) {
             CardRow(
-                title: L.t("Interface Language", "界面语言"),
-                detail: languageError ?? L.t("Also used by t and the terminal.",
-                                             "和终端共用；t 下次打开时跟着换。"),
-                divider: false
+                title: L.t("Language", "语言"),
+                detail: languageError ?? L.t("Follow your Mac, or pick one. The terminal follows too.",
+                                             "跟随系统，也可以固定成中文或英文。"),
+                divider: false,
+                icon: RowIcon("globe", .blue)
             ) {
                 SlidingPicker(selection: $language, options: [
                     (LangChoice.auto.rawValue, L.t("System", "跟随系统")),
@@ -543,10 +585,12 @@ struct ProgramRow: View {
 
     var body: some View {
         CardRow(
-            title: L.t("Command Line", "命令行程序"),
-            detail: model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) }
-                ?? L.t("Not found in the usual places", "常见位置里没找到"),
-            divider: false
+            title: L.t("cc-moss in Terminal", "终端里的 cc-moss"),
+            detail: model.cliPath == nil
+                ? L.t("Not found yet. Use Choose… to point to it.", "还没找到，点「选择…」指一下位置。")
+                : L.t("Type cc-moss in any terminal to use it there.", "在终端里输入 cc-moss 也能用。"),
+            divider: false,
+            icon: RowIcon("shippingbox.fill", .gray)
         ) {
             HStack(spacing: 8) {
                 if UserDefaults.standard.string(forKey: "cliPath") != nil {
@@ -556,6 +600,7 @@ struct ProgramRow: View {
                 SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
             }
         }
+        .tip(model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) } ?? L.t("Not found", "没找到"))
     }
 
     private func set(_ path: String?) {
@@ -623,7 +668,7 @@ struct AboutSettings: View {
         VStack(spacing: 22) {
             hero
             SettingsCard(title: L.t("Software Update", "软件更新")) {
-                CardRow(title: updateTitle, detail: updateDetail) {
+                CardRow(title: updateTitle, detail: updateDetail, icon: RowIcon("arrow.triangle.2.circlepath", .gray)) {
                     updateControl
                 }
                 ProgramRow(model: model)

@@ -10,10 +10,10 @@ struct NotificationSettings: View {
 
     var body: some View {
         SettingsCard(title: L.t("Delivery", "提醒方式")) {
-            CardRow(title: L.t("Who Tells You", "谁来告诉你"), detail: modeDetail) {
+            CardRow(title: L.t("Who lets you know", "谁来提醒你"), detail: modeDetail, icon: RowIcon("bell.fill", .red)) {
                 SlidingPicker(selection: $mode, options: [
                     (AlertMode.auto.rawValue, L.t("Automatic", "自动")),
-                    (AlertMode.notificationsOnly.rawValue, L.t("Notifications", "通知中心")),
+                    (AlertMode.notificationsOnly.rawValue, L.t("Notifications", "系统通知")),
                     (AlertMode.petOnly.rawValue, L.t("Mo", "小莫")),
                 ])
             }
@@ -21,24 +21,25 @@ struct NotificationSettings: View {
         }
         SettingsCard(title: L.t("What to Tell You", "提醒哪些事")) {
             KindRow(kind: .needsYou,
-                    title: L.t("Needs You", "需要你确认"),
-                    detail: L.t("A permission prompt or a question. It reaches cc-moss a few seconds after it appears.",
-                                "权限请求或提问。弹出后过几秒才会传到 cc-moss。"))
+                    title: L.t("Waiting for you", "在等你"),
+                    detail: L.t("When Claude needs a yes or an answer.", "Claude 要你同意或回答问题时。"),
+                    icon: RowIcon("hand.wave.fill", .orange))
             KindRow(kind: .interrupted,
-                    title: L.t("Session Stopped", "会话断了"),
-                    detail: L.t("The process went away without anyone ending it. The alert offers to bring it back.",
-                                "进程没打招呼就没了。提醒里可以直接找回。"))
+                    title: L.t("Session stopped", "会话断了"),
+                    detail: L.t("When one stops unexpectedly. Nothing's lost.", "意外停下时告诉你，进度都还在。"),
+                    icon: RowIcon("bolt.slash.fill", .red))
             KindRow(kind: .finished,
-                    title: L.t("Turn Finished", "这一轮做完了"),
-                    detail: L.t("Every turn ends with one, so this gets chatty. Off unless you like company.",
-                                "每一轮结束都会提醒，有点话多，默认关着。"))
+                    title: L.t("Turn finished", "这一轮做完了"),
+                    detail: L.t("Comes after every reply, so it's off by default.", "每轮都会响，有点吵，所以默认关着。"),
+                    icon: RowIcon("checkmark.circle.fill", .green))
             KindRow(kind: .restored,
-                    title: L.t("Session Back", "找回完成"),
-                    detail: L.t("A stopped session is running again.", "断了的会话又跑起来了。"),
+                    title: L.t("Back again", "找回来了"),
+                    detail: L.t("When a stopped session is running again.", "断了的会话重新跑起来时。"),
+                    icon: RowIcon("arrow.uturn.backward.circle.fill", .teal),
                     divider: false)
         }
-        Text(L.t("The same alert from the same session within 30 seconds counts once. While the panel is open, nothing pops up: it's all in front of you already.",
-                 "同一个会话 30 秒内的同类提醒只算一次。面板开着的时候不另外提醒，反正都在眼前了。"))
+        Text(L.t("One session's same alert counts once in 30 seconds, and nothing pops up while the panel is open.",
+                 "同一个会话 30 秒内只提醒一次；面板开着时不再另外提醒。"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -72,18 +73,20 @@ private struct KindRow: View {
     let title: String
     let detail: String
     var divider = true
+    var icon: RowIcon?
     @AppStorage private var on: Bool
 
-    init(kind: AlertKind, title: String, detail: String, divider: Bool = true) {
+    init(kind: AlertKind, title: String, detail: String, icon: RowIcon? = nil, divider: Bool = true) {
         self.kind = kind
         self.title = title
         self.detail = detail
+        self.icon = icon
         self.divider = divider
         _on = AppStorage(wrappedValue: kind.defaultOn, AlertToggles.key(kind))
     }
 
     var body: some View {
-        CardRow(title: title, detail: detail, divider: divider) {
+        CardRow(title: title, detail: detail, divider: divider, icon: icon) {
             Toggle("", isOn: $on)
                 .toggleStyle(.switch)
                 .cursor(.pointingHand)
@@ -99,7 +102,7 @@ private struct AuthRow: View {
     let status: NotificationStatus
 
     var body: some View {
-        CardRow(title: L.t("Notification Center", "通知中心"), detail: detail, divider: false) {
+        CardRow(title: L.t("Notifications", "系统通知"), detail: detail, divider: false, icon: RowIcon("bell.badge.fill", .red)) {
             HStack(spacing: 8) {
                 Image(systemName: symbol)
                     .font(.system(size: 13, weight: .semibold))
@@ -114,8 +117,8 @@ private struct AuthRow: View {
 
     private var title: String {
         switch status.auth {
-        case .allowed: L.t("Allowed", "已允许")
-        case .denied: L.t("Turned off in System Settings", "在系统设置里被关掉了")
+        case .allowed: L.t("On", "已打开")
+        case .denied: L.t("Turned off in System Settings", "在系统设置里关掉了")
         case .unavailable: L.t("Not available here", "这里用不了")
         case .notDetermined, .unknown: L.t("Not asked yet", "还没问过你")
         }
@@ -126,17 +129,17 @@ private struct AuthRow: View {
     private var explanation: String {
         switch status.auth {
         case .allowed:
-            L.t("Banners can open a session or bring it back.",
-                "横幅上能直接打开或找回。")
+            L.t("Click one to open a session or bring it back.",
+                "点一下通知就能打开或找回会话。")
         case .denied:
-            L.t("Turn them on in Notifications › cc-moss.",
-                "到「通知 › cc-moss」里打开即可。")
+            L.t("Turn them back on there.",
+                "去那里打开就行。")
         case .unavailable:
-            L.t("Needs the app in an Applications folder.",
-                "App 要放在「应用程序」文件夹里才能发通知。")
+            L.t("Move cc-moss into Applications to use them.",
+                "把 cc-moss 放进「应用程序」文件夹才能用。")
         case .notDetermined, .unknown:
-            L.t("macOS will ask the first time there's something to tell you. Or let it ask now.",
-                "第一次有事要告诉你时，macOS 会问你一次。也可以现在就问。")
+            L.t("macOS asks the first time there's news.",
+                "第一次有事时 macOS 会问一次。")
         }
     }
 

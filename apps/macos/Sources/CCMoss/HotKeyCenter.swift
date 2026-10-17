@@ -393,10 +393,11 @@ struct AccessibilityRow: View {
 
     var body: some View {
         let k = shortcut.tapKey?.glyph ?? "⌃"
-        CardRow(title: L.t("Let cc-moss hear \(k)", "允许 cc-moss 听见 \(k)"),
-                detail: L.t("One click in System Settings › Accessibility. Until then, ⌃⌥M works.",
-                            "在「系统设置 › 辅助功能」里点一下；允许之前先用 ⌃⌥M。"),
-                divider: false) {
+        CardRow(title: L.t("Let cc-moss hear \(k)\(k)", "让 cc-moss 听见连按 \(k)"),
+                detail: L.t("Turn it on once in System Settings. Until then, use ⌃⌥M.",
+                            "在系统设置里打开一次就好，之前先用 ⌃⌥M。"),
+                divider: false,
+                icon: RowIcon("accessibility", .blue)) {
             SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
                 HotKeyCenter.shared.askForAccessibility()
                 HotKeyCenter.openAccessibilitySettings()

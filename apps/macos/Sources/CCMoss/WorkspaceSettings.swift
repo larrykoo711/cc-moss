@@ -9,7 +9,8 @@ struct WorkspaceRow: View {
     @AppStorage(NewSession.workspaceKey) private var workspace = ""
 
     var body: some View {
-        CardRow(title: L.t("New Sessions Start In", "新会话从哪儿开始"), detail: detail, divider: divider) {
+        CardRow(title: L.t("Start new sessions in", "新会话从这里开始"), detail: detail, divider: divider,
+                icon: RowIcon("folder.fill", .blue)) {
             HStack(spacing: 8) {
                 if !workspace.isEmpty {
                     SoftButton(title: L.t("Last Used", "用最近的"), icon: "clock.arrow.circlepath") { workspace = "" }
@@ -22,8 +23,8 @@ struct WorkspaceRow: View {
 
     private var detail: String {
         guard !workspace.isEmpty else {
-            return L.t("The folder you worked in last. Pick a workspace to always start there.",
-                       "上次工作的目录。选一个工作区，以后都从那儿开始。")
+            return L.t("The folder you used last. Pick one to always start there.",
+                       "默认是上次用的文件夹，也可以固定一个。")
         }
         if !FileManager.default.fileExists(atPath: workspace) {
             return L.t("\(Grouping.tilde(workspace, home: NSHomeDirectory())) is gone; using the last folder for now.",
