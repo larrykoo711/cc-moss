@@ -1,6 +1,8 @@
 import AppKit
+import ApplicationServices
 import Carbon.HIToolbox
 import MossKit
+import Observation
 import OSLog
 import SwiftUI
 
@@ -20,10 +22,95 @@ final class HotKeyCenter {
     /// "MOSS", so the event is recognizably ours.
     private static let signature = OSType(0x4D4F_5353)
 
-    /// Register what Settings says, or the default.
+    /// The way Settings says (double Control unless changed).
     func start() {
         installHandler()
-        _ = register(HotKey.load(.standard))
+        apply(PanelShortcut.load(.standard))
+    }
+
+    // MARK: - Double Control
+
+    /// Double Control needs Accessibility (key events from other apps);
+    /// until it is allowed, the ⌃⌥M combination works instead.
+    @Observable
+    final class Trust {
+        var allowed = AXIsProcessTrusted()
+    }
+    let trust = Trust()
+    private var monitors: [Any] = []
+    private var tap = DoubleTap()
+    private var trustTimer: Timer?
+    private(set) var shortcut: PanelShortcut = .doubleControl
+
+    /// Switch to `s`: stops the old way, starts the new one.
+    func apply(_ s: PanelShortcut) {
+        shortcut = s
+        stopDoubleControl()
+        unregister()
+        switch s {
+        case .doubleControl:
+            startDoubleControl()
+            if !trust.allowed { _ = attempt(.default) }
+        case let .combo(k):
+            _ = attempt(k)
+        case .none:
+            break
+        }
+    }
+
+    /// The system's own "allow Accessibility" prompt, then System Settings.
+    func askForAccessibility() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        if AXIsProcessTrustedWithOptions(options) { refreshTrust() }
+    }
+
+    static func openAccessibilitySettings() {
+        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
+    private func startDoubleControl() {
+        let handle: (NSEvent) -> Void = { [weak self] event in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                if event.type == .keyDown {
+                    self.tap.key()
+                    return
+                }
+                let f = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+                let others = !f.intersection([.command, .option, .shift, .function, .capsLock]).isEmpty
+                if self.tap.modifiers(control: f.contains(.control), others: others, at: event.timestamp) {
+                    self.log.info("pressed (double control)")
+                    self.onPress?()
+                }
+            }
+        }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.flagsChanged, .keyDown], handler: handle) { monitors.append(m) }
+        if let m = NSEvent.addLocalMonitorForEvents(matching: [.flagsChanged, .keyDown], handler: { handle($0); return $0 }) {
+            monitors.append(m)
+        }
+        // Watch for the permission arriving (or going away after an update).
+        trustTimer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.refreshTrust() }
+        }
+    }
+
+    private func stopDoubleControl() {
+        monitors.forEach(NSEvent.removeMonitor)
+        monitors.removeAll()
+        trustTimer?.invalidate()
+        trustTimer = nil
+        tap = DoubleTap()
+    }
+
+    private func refreshTrust() {
+        let now = AXIsProcessTrusted()
+        guard now != trust.allowed else { return }
+        trust.allowed = now
+        log.info("accessibility \(now ? "allowed" : "not allowed", privacy: .public)")
+        // Monitors added before the permission don't see other apps' keys: start again.
+        if shortcut == .doubleControl { apply(.doubleControl) }
     }
 
     /// False when the system refuses it (another app already uses it); the
@@ -41,7 +128,7 @@ final class HotKeyCenter {
     /// Off while you record a new one, so pressing the old one records it.
     func pause() { unregister() }
 
-    func resume() { if let k = HotKey.load(.standard) { _ = attempt(k) } }
+    func resume() { apply(shortcut) }
 
     private func attempt(_ key: HotKey) -> Bool {
         var newRef: EventHotKeyRef?
@@ -100,7 +187,11 @@ final class HotKeyCenter {
 /// Settings › General: shows the shortcut; click to record a new one.
 /// While recording: press the combination, Esc cancels, Delete clears.
 struct HotKeyRecorder: View {
-    @State private var key: HotKey? = HotKey.load(.standard)
+    var onSave: ((PanelShortcut) -> Void)?
+    @State private var key: HotKey? = {
+        if case let .combo(k) = PanelShortcut.load(.standard) { return k }
+        return nil
+    }()
     @State private var recording = false
     @State private var problem: String?
     @State private var monitor: Any?
@@ -188,13 +279,59 @@ struct HotKeyRecorder: View {
         if let monitor { NSEvent.removeMonitor(monitor) }
         monitor = nil
         recording = false
-        if HotKeyCenter.shared.register(new) {
-            HotKey.save(new, .standard)
-            key = new
-            problem = nil
-        } else {
+        let center = HotKeyCenter.shared
+        let previous = center.shortcut
+        let next: PanelShortcut = new.map(PanelShortcut.combo) ?? .none
+        center.apply(next)
+        if let new, center.current != new {
             problem = L.t("Another app uses it", "被别的 App 占用了")
-            HotKeyCenter.shared.resume()
+            center.apply(previous)
+            return
+        }
+        PanelShortcut.save(next, .standard)
+        key = new
+        problem = nil
+        onSave?(next)
+    }
+}
+
+/// Settings › General and the welcome: how to call the panel. Double
+/// Control (recommended) or a combination; double Control explains and asks
+/// for Accessibility when it doesn't have it yet.
+struct PanelShortcutPicker: View {
+    @State private var mode: String = PanelShortcut.load(.standard) == .doubleControl ? "double" : "combo"
+    private var trust: HotKeyCenter.Trust { HotKeyCenter.shared.trust }
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 8) {
+            HStack(spacing: 8) {
+                SlidingPicker(selection: $mode, options: [
+                    ("double", L.t("Tap ⌃ Twice", "连按两下 ⌃")),
+                    ("combo", L.t("Key Combo", "组合键")),
+                ])
+                .onChange(of: mode) { _, new in
+                    if new == "double" {
+                        PanelShortcut.save(.doubleControl, .standard)
+                        HotKeyCenter.shared.apply(.doubleControl)
+                    } else {
+                        let combo = HotKey.load(.standard) ?? .default
+                        PanelShortcut.save(.combo(combo), .standard)
+                        HotKeyCenter.shared.apply(.combo(combo))
+                    }
+                }
+                if mode == "combo" { HotKeyRecorder() }
+            }
+            if mode == "double", !trust.allowed {
+                HStack(spacing: 6) {
+                    Text(L.t("Needs Accessibility; until then ⌃⌥M works.", "需要「辅助功能」权限；允许之前先用 ⌃⌥M。"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(Theme.caption)
+                    SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
+                        HotKeyCenter.shared.askForAccessibility()
+                        HotKeyCenter.openAccessibilitySettings()
+                    }
+                }
+            }
         }
     }
 }

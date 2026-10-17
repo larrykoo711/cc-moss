@@ -483,7 +483,7 @@ struct GeneralSettings: View {
                 detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。"),
                 divider: false
             ) {
-                HotKeyRecorder()
+                PanelShortcutPicker()
             }
         }
         SettingsCard(title: L.t("Language", "语言")) {
