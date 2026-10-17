@@ -26,7 +26,8 @@ struct NewDraft: Equatable {
 
 extension AppModel {
     func startNewSession() {
-        let dir = NewSession.defaultDirectory(sessions) ?? NSHomeDirectory()
+        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey)
+        let dir = NewSession.defaultDirectory(sessions, workspace: workspace) ?? NSHomeDirectory()
         newDraft = NewDraft(directory: dir, name: NewSession.defaultName(for: dir))
         closeGate.cancel()
         form = .newSession
@@ -287,10 +288,15 @@ struct NewSessionForm: View {
     static let chooseID = "\u{0}choose"
 
     private func folderOptions() -> [DropdownOption<String>] {
-        let recent = NewSession.recentProjects(model.sessions)
+        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey).flatMap { $0.isEmpty ? nil : $0 }
+        // Your workspace first, then the folders sessions worked in.
+        var folders = NewSession.recentProjects(model.sessions)
+        if let workspace { folders = [workspace] + folders.filter { $0 != workspace } }
+        if !draft.directory.isEmpty, !folders.contains(draft.directory) { folders.insert(draft.directory, at: 0) }
         let home = NSHomeDirectory()
-        var options = (recent.contains(draft.directory) || draft.directory.isEmpty ? recent : [draft.directory] + recent)
-            .map { DropdownOption(id: $0, title: Grouping.tilde($0, home: home), symbol: Icons.project) }
+        var options = folders.map { dir in
+            DropdownOption(id: dir, title: Grouping.tilde(dir, home: home), symbol: dir == workspace ? "star" : Icons.project)
+        }
         options.append(DropdownOption(id: Self.chooseID, title: L.t("Choose…", "选择…"), symbol: Icons.chooseFolder))
         return options
     }

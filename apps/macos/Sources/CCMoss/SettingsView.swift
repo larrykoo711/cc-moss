@@ -68,8 +68,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 工作区 目录 文件夹 新会话 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
@@ -500,6 +500,9 @@ struct GeneralSettings: View {
                 ])
                 .onChange(of: language) { _, new in setLanguage(new) }
             }
+        }
+        SettingsCard(title: L.t("Workspace", "工作区")) {
+            WorkspaceRow()
         }
         TerminalSettings(prefs: model.terminals)
     }
