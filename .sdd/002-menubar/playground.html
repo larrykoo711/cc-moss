@@ -289,6 +289,7 @@
     <a data-sec="anchors"><span class="ic">⚿</span>代码锚点</a>
     <div class="group">实施</div>
     <a data-sec="kanban"><span class="ic">☑</span>Kanban 推进</a>
+    <a data-sec="delivery"><span class="ic">✓</span>交付报告</a>
     <!-- 需交互模拟器的需求（决策/参数类）在此加板块，如 <a data-sec="simulator">模拟器</a> -->
   </nav>
   <div class="side-foot">
@@ -348,6 +349,20 @@
     <!-- 卡片点开抽屉看全文：卡面的标题/dep/验收锚点都是截断显示的 -->
     <div class="kb-scroll"><div id="kanban-grid"></div></div>
   </section>
+
+  <section id="delivery">
+    <h2>交付报告 <span class="badge info">0.2.0 · 2026-10-17</span></h2>
+    <table><tr><th>检查</th><th>结果</th></tr>
+    <tr><td>Rust（fmt · clippy · test）</td><td>全绿；45 组（首轮 restore_regressions 高负载偶发 2 红，复跑 5/5 绿）</td></tr>
+    <tr><td>Swift</td><td>258 项通过</td></tr>
+    <tr><td>发布</td><td>release 四目标全绿，Homebrew 公式含 App；3 台 Mac 升到 0.2.0</td></tr></table>
+    <table><tr><th>桶</th><th>内容</th></tr>
+    <tr><td>完成 16</td><td>T1.1–T4.3 全部</td></tr>
+    <tr><td>新独立 3</td><td>004 小莫代办确认 · 005 语音对话 · 公证与 cask（需开发者账号）</td></tr>
+    <tr><td>子任务 2</td><td>找回回归测试在高负载下的时间余量 · CI 里真装一次 brew</td></tr>
+    <tr><td>延后 3</td><td>T3.4 部分真机播报项 · T4.1 干净账户全新安装 · 第四台 Mac 升级（运维）</td></tr></table>
+    <p>完整报告：<code>reports/delivery.md</code>。</p>
+  </section>
 </main>
 
 <!-- 任务抽屉：内容由 openDrawer 填充 -->
@@ -393,10 +408,10 @@ const TASKS = [
   {id:'T3.1', t:'宠物设计', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'—', ac:'用户批准宠物设计', steps:[]},
   {id:'T3.2', t:'宠物窗口与动画', repo:'cc-moss', dep:'T3.1,T2.2', st:'done', sdd:'—', ac:'透明置顶、按状态播放动作', steps:[]},
   {id:'T3.3', t:'气泡消息', repo:'cc-moss', dep:'T3.2,T2.3,T1.2', st:'done', sdd:'—', ac:'事件气泡、点击打开会话', steps:[]},
-  {id:'T3.4', t:'语音播报', repo:'cc-moss', dep:'T3.3', st:'review', sdd:'—', ac:'中英播报、勿扰静音', steps:[]},
-  {id:'T4.1', t:'打包与分发', repo:'cc-moss', dep:'T1.3,T2.2,T2.4,T2.5,T2.6,T3.4', st:'review', sdd:'—', ac:'干净用户目录 brew 全流程', steps:[]},
-  {id:'T4.2', t:'首次启动引导', repo:'cc-moss', dep:'T4.1', st:'review', sdd:'—', ac:'干净用户目录首次启动走完引导', steps:[]},
-  {id:'T4.3', t:'打磨、文档与 0.2.0', repo:'cc-moss', dep:'T4.2', st:'backlog', sdd:'—', ac:'3 台 Mac 升到 0.2.0', steps:[]},
+  {id:'T3.4', t:'语音播报', repo:'cc-moss', dep:'T3.3', st:'done', sdd:'—', ac:'中英播报、勿扰静音', steps:[]},
+  {id:'T4.1', t:'打包与分发', repo:'cc-moss', dep:'T1.3,T2.2,T2.4,T2.5,T2.6,T3.4', st:'done', sdd:'—', ac:'干净用户目录 brew 全流程', steps:[]},
+  {id:'T4.2', t:'首次启动引导', repo:'cc-moss', dep:'T4.1', st:'done', sdd:'—', ac:'干净用户目录首次启动走完引导', steps:[]},
+  {id:'T4.3', t:'打磨、文档与 0.2.0', repo:'cc-moss', dep:'T4.2', st:'done', sdd:'—', ac:'3 台 Mac 升到 0.2.0', steps:[]},
 ];
 const PHASES = [
   {k:'P1', name:'MVP：看清、打开、找回', ids:['T1.1','T1.2','T1.3']},

@@ -135,3 +135,16 @@ test("both language links are visible on both pages", () => {
     assert.match(html, /data-set-lang="en"/);
   }
 });
+
+test("every link and picture on a page resolves to a file the site serves", () => {
+  for (const p of PAGES) {
+    const html = read(`${p}index.html`).replace(/<script[\s\S]*?<\/script>/g, "");
+    for (const m of html.matchAll(/\s(?:src|href)="([^"]+)"/g)) {
+      const ref = m[1];
+      if (/^(https?:|mailto:|#|data:)/.test(ref)) continue;
+      const path = new URL(ref, `${ORIGIN}${p}`).pathname;
+      const file = path.endsWith("/") ? `${path}index.html` : path;
+      assert.ok(existsSync(`dist${file}`), `${p}: ${ref} → dist${file}`);
+    }
+  }
+});

@@ -210,10 +210,10 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 | **T3.1** 宠物设计 | cc-moss | T2.1 | ✅ Done | done/T3.1-pet-design.spec.md | 用户批准宠物设计 |
 | **T3.2** 宠物窗口与动画 | cc-moss | T3.1,T2.2 | ✅ Done | done/T3.2-pet-window.spec.md | 透明置顶、按状态播放动作 |
 | **T3.3** 气泡消息 | cc-moss | T3.2,T2.3,T1.2 | ✅ Done | done/T3.3-pet-bubbles.spec.md | 事件气泡、点击打开会话 |
-| **T3.4** 语音播报 | cc-moss | T3.3 | 🟩 Review | in-progress/T3.4-voice.spec.md | 中英播报、勿扰静音 |
-| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.3 | 🟩 Review | in-progress/T4.1-ship-the-app.spec.md | 干净用户目录 brew 全流程 |
-| **T4.2** 首次启动引导 | cc-moss | T4.1 | 🟩 Review | in-progress/T4.2-welcome.spec.md | 干净用户目录首次启动走完引导 |
-| **T4.3** 打磨、文档与 0.2.0 | cc-moss | T4.2 | ⬜ Backlog | — | 3 台 Mac 升到 0.2.0 |
+| **T3.4** 语音播报 | cc-moss | T3.3 | ✅ Done | done/T3.4-voice.spec.md | 中英播报、勿扰静音 |
+| **T4.1** 打包与分发 | cc-moss | T1.3,T2.2,T2.4,T2.5,T2.6,T3.3 | ✅ Done | done/T4.1-ship-the-app.spec.md | 干净用户目录 brew 全流程 |
+| **T4.2** 首次启动引导 | cc-moss | T4.1 | ✅ Done | done/T4.2-welcome.spec.md | 干净用户目录首次启动走完引导 |
+| **T4.3** 打磨、文档与 0.2.0 | cc-moss | T4.2 | ✅ Done | —（无 spec，见 reports/T4.3-release.md） | 3 台 Mac 升到 0.2.0 |
 
 ## 日志
 
@@ -254,6 +254,14 @@ P1–P3 全部 ─> T4.1 打包与分发 ─> T4.2 首次启动引导 ─> T4.3 
 - 2026-10-16 用户修订宠物交互：需要你时不直接弹消息框，先用表情动作（日常模式另加半透明口头禅小气泡）示意，悬停或点击才展开；三种模式安静 / 日常（默认）/ 积极；平时半透明、互动或悬停时过渡到不透明 → DESIGN-pet §6.5；半透明与悬停过渡并入 T3.2，模式与气泡在 T3.3
 - 2026-10-16 第二波合入 main（#17）：T1.2、T2.2、T2.6 Done（用户真机确认终端与 Ghostty 都能打开），T3.1 Done；期间按用户反馈完成关于页重做（软件更新 `update --check --json`）、Raycast 式下拉、会话行悬停打开、全局手形指针、菜单栏动态效果开关
 - 2026-10-16 第三波：T3.2 小莫离屏 CPU ≤ 0.04%、内存 +5MB；真机开启后 App CPU +0.3%、WindowServer 无增量、footprint 19MB，交互待用户走查。T1.3、T2.3、T2.5 spec 过 gate；两路 agent：A = T1.3 → T2.5（同在面板动作），B = T2.3（含 AlertRouter，T3.3 复用）
+
+- 2026-10-17 S6 收尾：T3.4、T4.1、T4.2 转 Done（spec 移入 done/，验收项写 evidence；T3.4、T4.1 的真机项部分已发生、其余按用户「随日常使用验证」口径进延后桶）；T4.3 转 Done（报告 `reports/T4.3-release.md`）
+- DEVIATION: T4.3 没有 spec、未过 G3 就实施，也没有用户批准的 SKIP-GATE 行；工作在用户逐条验收下完成，如实记录，不补写批准
+- 2026-10-17 收尾全量（main `ae0286b`）：fmt、clippy 通过；Rust 首轮 `restore_regressions` 2 条红（当时负载 12–16，clippy 与测试并行），单独复跑 5/5 绿、全量复跑 45 组全绿，main 上 CI 绿 → 判为负载下的偶发，测试稳定性进子任务桶；Swift 258 通过
+- ARCHIVE: 原地标记收尾，不移入 archive/。理由：宿主约定，`.sdd/README.md` 直接链接各阶段目录，`001-cli` 收尾后同样留在原位
+E2E: assertion=Swift 258/258 + Rust 45 组 + site 32/32 green, console clean feel=done（用户逐页走查设置、引导、小莫，中英各一遍）
+DISTILL: CLAUDE.md items=5 (plain-copy-for-everyday-users, site-shows-faq-agents-get-guide, claims-match-the-guide, root-absolute-site-paths, structured-data-from-what-is-shown)；与 003 共用一次沉淀
+REPORT: playground=refreshed buckets=[delivered:16 new:3 sub:2 deferred:3]（`reports/delivery.md`）
 
 ## 推进节奏
 
