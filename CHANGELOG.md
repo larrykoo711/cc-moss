@@ -6,6 +6,36 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-17
+
+Tabs instead of piles of windows, and every shortcut on one settings page.
+
+### Added
+
+- **Sessions open as tabs.** Settings › General › Terminal has a new "Open as" choice, new tab (the default) or new
+  window. Ghostty 1.3 or newer, iTerm2 and WezTerm open real tabs; Terminal opens a tab when cc-moss is allowed under
+  Accessibility, otherwise a window; kitty and Alacritty keep opening windows.
+- **A Shortcuts page in Settings** (it replaces Aliases): the key that shows the panel (moved from General), the short
+  names you type in a terminal, and the keys inside the panel. A short name is set like the panel key: click the
+  keycap, type, press Return (Esc cancels, an empty name removes it). Saving plays a little preview of what the name
+  does.
+
+### Changed
+
+- Settings looks quieter: the sidebar uses plain monochrome symbols and setting rows no longer carry coloured icons.
+- In English, Mo's spoken lines call it "Moss". Chinese stays 小莫.
+
+### Fixed
+
+- Opening a session when the terminal isn't running no longer leaves two windows: the session runs in the window the
+  terminal starts with.
+- Mo's message bubble stays above other floating windows and the Dock.
+- Switching the language during the welcome no longer pops up a closed Settings window.
+- The Accessibility step no longer gets stuck after an update. Each update looked like a new app to macOS, so the old
+  permission stopped working while System Settings still showed it ticked; cc-moss now clears its stale entry before
+  asking again, and you tick it once more.
+- The short-name preview no longer jumps while it plays.
+
 ## [0.2.0] - 2026-10-17
 
 The menubar app: on a Mac, your Claude Code sessions are now one glance away.
@@ -121,7 +151,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/larrykoo711/cc-moss/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/larrykoo711/cc-moss/releases/tag/v0.1.0
