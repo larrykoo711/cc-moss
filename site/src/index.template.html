@@ -110,8 +110,8 @@
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="welcome">
                 <img data-pic="welcome" src="/assets/welcome.zh.dark.webp" alt="" data-alt-zh="cc-moss 首次打开时的欢迎引导" data-alt-en="The cc-moss welcome shown on first launch" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
-              <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="settings">
-                <img data-pic="settings-general" src="/assets/settings-general.zh.dark.webp" alt="" data-alt-zh="cc-moss 通用设置：开机打开、唤出快捷键、语言、工作区、终端" data-alt-en="cc-moss general settings: open at login, shortcut, language, workspace, terminal" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+              <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="shortcuts">
+                <img data-pic="settings-shortcuts" src="/assets/settings-shortcuts.zh.dark.webp" alt="" data-alt-zh="cc-moss 快捷键设置：唤出面板的快捷键、终端里敲的短名字、面板里的按键" data-alt-en="cc-moss shortcut settings: the key that shows the panel, short names to type in the terminal, keys inside the panel" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="mo">
                 <img data-pic="settings-mo" src="/assets/settings-mo.zh.dark.webp" alt="" data-alt-zh="cc-moss 小莫设置：大小、互动方式和声音" data-alt-en="cc-moss settings for Mo: size, how it speaks up, and sound" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
@@ -125,7 +125,7 @@
               <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="panel"><span lang="zh">面板</span><span lang="en">Panel</span></button>
               <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="actions">⌘K</button>
               <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="welcome"><span lang="zh">引导</span><span lang="en">Welcome</span></button>
-              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="settings"><span lang="zh">设置</span><span lang="en">Settings</span></button>
+              <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="shortcuts"><span lang="zh">快捷键</span><span lang="en">Shortcuts</span></button>
               <button class="tour-tab flex-1 whitespace-nowrap rounded-full px-3 py-1.5 text-xs sm:text-sm cursor-pointer transition-colors" data-go="mo"><span lang="zh">小莫</span><span lang="en">Mo</span></button>
             </div>
             <button class="tour-next grid place-items-center w-10 h-10 shrink-0 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] text-fg/70 hover:text-fg hover:bg-fg/[.09] active:scale-95 disabled:opacity-30 disabled:pointer-events-none transition cursor-pointer" aria-label="Next"><svg class="w-4 h-4 rotate-180"><use href="#chev"/></svg></button>
@@ -154,11 +154,11 @@
               <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">几步讲清楚，当场装好，不用读文档。</span><span lang="en">A friendly welcome does the setup for you. No manual required.</span></p>
             </div>
           </li>
-          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="settings">
+          <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="shortcuts">
             <div class="max-w-sm py-10">
               <p class="font-mono text-xs text-coral" data-agent="skip">04</p>
-              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">设置都是大白话。</span><span lang="en">Settings, in plain English.</span></h3>
-              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">开机打开、快捷键、语言、工作区、终端。</span><span lang="en">Open at login, your shortcut, your workspace, your terminal. That&rsquo;s it.</span></p>
+              <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">快捷键，一页管完。</span><span lang="en">Every shortcut, one page.</span></h3>
+              <p class="mt-3 text-fg/55 leading-relaxed"><span lang="zh">连按两下 Control 唤出面板。在终端里敲 <code class="font-mono">t</code>，回车就是会话列表。名字你来定。</span><span lang="en">Double-tap Control for the panel. Type <code class="font-mono">t</code> in any terminal for your sessions. Pick names you like.</span></p>
             </div>
           </li>
           <li data-agent="unwrap" class="step min-h-[48vh] lg:min-h-[80vh] flex items-center" data-step="mo">

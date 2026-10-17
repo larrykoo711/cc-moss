@@ -160,7 +160,7 @@ and `|` are plain text. It can only run cc-moss's own commands.
   add `--force`; a file in `~/.local/bin` that cc-moss did not create is never replaced.
 - A shell alias or function with the same name runs instead of the alias. `alias add` and `doctor` point it out; your
   shell files are never edited.
-- The menubar app's Settings › Shortcuts page (under "In the terminal") adds, edits and removes them, through these same commands; the panel's shortcut lives on the same page.
+- The menubar app's Settings › Shortcuts page (under "In the Terminal") adds, edits and removes them, through these same commands; the panel's shortcut lives on the same page.
 
 ## The menubar app
 

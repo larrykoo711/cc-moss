@@ -47,7 +47,7 @@ struct MoStudio: View {
                 }
                 if enabled {
                     HStack(spacing: 10) {
-                        Text(L.t("Size", "大小")).font(.system(size: 14))
+                        Text(L.t("Size", "大小")).font(.system(size: 14)).fixedSize()
                         Spacer()
                         SlidingPicker(selection: $size, options: [
                             (48, L.t("Small", "小")),

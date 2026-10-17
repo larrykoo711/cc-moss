@@ -60,7 +60,7 @@ struct ShortcutsSettings: View {
 
     private var terminal: some View {
         VStack(alignment: .leading, spacing: 6) {
-            SettingsCard(title: L.t("In the terminal", "在终端里")) {
+            SettingsCard(title: L.t("In the Terminal", "在终端里")) {
                 if let loadError {
                     CardRow(title: loadError, divider: false) { EmptyView() }
                 } else {
@@ -417,7 +417,7 @@ private struct PanelKeys: View {
     }
 
     var body: some View {
-        SettingsCard(title: L.t("In the panel", "面板里")) {
+        SettingsCard(title: L.t("In the Panel", "面板里")) {
             ForEach(Array(keys.enumerated()), id: \.offset) { i, item in
                 VStack(spacing: 0) {
                     HStack {
