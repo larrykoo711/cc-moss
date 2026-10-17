@@ -192,7 +192,7 @@ final class AppModel {
     /// `openProblem` says why.
     func open(_ s: Session) -> Bool {
         terminals.settle()
-        openProblem = Opener.open(handle: s.handle, cli: cli, in: terminals.current)
+        openProblem = Opener.open(handle: s.handle, cli: cli, in: terminals.current, style: terminals.openStyle)
         return openProblem == nil
     }
 

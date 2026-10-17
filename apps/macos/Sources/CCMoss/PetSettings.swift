@@ -76,7 +76,7 @@ struct PetSettings: View {
                     }
                 }
                 SoftButton(title: L.t("Preview", "试听"), icon: "play.fill") {
-                    Speaker.shared.say(L.t("Hi, I'm Mo. This is how I'll call you when something needs you.",
+                    Speaker.shared.say(L.t("Hi, I'm Moss. This is how I'll call you when something needs you.",
                                            "你好，我是小莫。有事找你时，我就这样说。"),
                                        voice: chosen?.id, language: VoicePicker.languageCode(L.lang))
                 }

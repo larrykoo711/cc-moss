@@ -525,13 +525,17 @@ final class BubbleHost: NSHostingView<PetBubbleRoot> {
     }
 }
 
-/// The bubble's window: like Mo's, transparent, above other windows, never key.
+/// The bubble's window: transparent, never key, and above everything but menus.
+/// It is a message for you, like a notification, so it sits at the status-bar
+/// level: over the Dock and over other apps' always-on-top windows, which share
+/// Mo's own floating level and would otherwise cover it. (Measured: a child
+/// window keeps its own level, above its parent's.)
 final class BubblePanel: NSPanel {
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 10, height: 10),
                    styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
         isFloatingPanel = true
-        level = .floating
+        level = .statusBar
         collectionBehavior = [.canJoinAllSpaces, .stationary, .ignoresCycle]
         backgroundColor = .clear
         isOpaque = false
@@ -627,7 +631,12 @@ final class PetBubbles {
         if panel.parent == nil {
             panel.alphaValue = 0
             parent.addChildWindow(panel, ordered: .above)
+            panel.level = .statusBar
         }
+        // Windows opened since Mo appeared may sit on top at the same level;
+        // whenever Mo has something to say, bring both forward again.
+        parent.orderFrontRegardless()
+        panel.orderFrontRegardless()
         if panel.alphaValue < 1 {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.15

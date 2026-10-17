@@ -238,7 +238,7 @@
   let mode = "everyday";
   const pokes = {
     zh: ["嗨，我是小莫", "别戳啦，痒～", "账单修复断了，点我就能找回", "找回来啦，从刚才的地方接着来", "官网改版正在忙，我盯着呢"],
-    en: ["Hi, I'm Mo.", "Hey, that tickles.", "billing-fix stopped. Want it back?", "Back where you left off.", "acme-web is busy. I've got it."],
+    en: ["Hi, I'm Moss.", "Hey, that tickles.", "billing-fix stopped. Want it back?", "Back where you left off.", "acme-web is busy. I've got it."],
   };
   let poke = 0;
   const card = document.getElementById("mo-card");
