@@ -7,7 +7,7 @@
   <meta name="description" content="cc-moss 照看你的每一个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道；电脑重启了，点一下全都回来。开源、免费，住在你的 Mac 菜单栏里。">
   <meta property="og:title" content="cc-moss · Every session, carried on.">
   <meta property="og:description" content="Looks after every Claude Code session: who's busy, who's waiting, who stopped. After a restart, one click brings them all back.">
-  <meta property="og:image" content="https://larrykoo711.github.io/cc-moss/assets/welcome.en.webp">
+  <meta property="og:image" content="https://larrykoo711.github.io/cc-moss/assets/welcome.en.dark.webp">
   <meta name="theme-color" content="#0c0b0a">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -156,11 +156,11 @@
             </div>
           </div>
           <!-- the panel, dropped from the menu bar -->
-          <img data-src-zh="assets/panel.zh.webp" data-src-en="assets/panel.en.webp" src="assets/panel.zh.webp" alt="" width="840" height="1080"
+          <img data-pic="panel" data-skin="dark" src="assets/panel.zh.dark.webp" alt="" width="840" height="1080"
                class="lang-img absolute right-1/2 translate-x-1/2 sm:translate-x-0 sm:right-[4%] top-10 h-[calc(100%-3.25rem)] w-auto rounded-2xl shadow-[0_40px_80px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
           <!-- Mo with a word -->
           <div class="hidden lg:block absolute left-[20%] bottom-[6%] w-64">
-            <img data-src-zh="assets/mo-message.zh.webp" data-src-en="assets/mo-message.en.webp" src="assets/mo-message.zh.webp" alt="" class="lang-img w-full drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
+            <img data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img w-full drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
             <svg class="float w-20 h-24 ml-auto -mt-5 mr-4"><use href="#mo-figure"/></svg>
           </div>
         </div>
@@ -184,19 +184,19 @@
             <div class="core relative h-[46vh] lg:h-[68vh] overflow-hidden">
               <div class="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.16),transparent_70%)]"></div>
               <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="panel">
-                <img data-src-zh="assets/panel.zh.webp" data-src-en="assets/panel.en.webp" src="assets/panel.zh.webp" alt="" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="panel" src="assets/panel.zh.dark.webp" alt="" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-4 lg:p-8" data-screen="actions">
-                <img data-src-zh="assets/panel-actions.zh.webp" data-src-en="assets/panel-actions.en.webp" src="assets/panel-actions.zh.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="panel-actions" src="assets/panel-actions.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="welcome">
-                <img data-src-zh="assets/welcome.zh.webp" data-src-en="assets/welcome.en.webp" src="assets/welcome.zh.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="welcome" src="assets/welcome.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="settings">
-                <img data-src-zh="assets/settings-general.zh.webp" data-src-en="assets/settings-general.en.webp" src="assets/settings-general.zh.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="settings-general" src="assets/settings-general.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
               <figure class="screen absolute inset-0 flex items-center justify-center p-3 lg:p-8" data-screen="mo">
-                <img data-src-zh="assets/settings-mo.zh.webp" data-src-en="assets/settings-mo.en.webp" src="assets/settings-mo.zh.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
+                <img data-pic="settings-mo" src="assets/settings-mo.zh.dark.webp" alt="" loading="lazy" class="lang-img max-h-full max-w-full w-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.9),0_0_0_1px_var(--hair)]">
               </figure>
             </div>
           </div>
@@ -367,16 +367,38 @@
         <p class="mt-3 text-sm text-fg/40 min-h-[2.5rem]" id="mode-caption"></p>
       </div>
       <div class="reveal shell dark-scope" style="--d:100ms">
-        <div class="core relative h-[420px] overflow-hidden bg-[radial-gradient(70%_60%_at_80%_90%,rgba(255,90,60,.14),transparent_70%),linear-gradient(180deg,#1a1715,#100f0e)]">
-          <div class="absolute left-[8%] top-[12%] w-[52%] h-36 rounded-xl bg-fg/[.04] shadow-[inset_0_0_0_1px_var(--hair)] -rotate-2"></div>
-          <div class="absolute left-[22%] top-[30%] w-[48%] h-32 rounded-xl bg-[#1f1d1b] shadow-[inset_0_0_0_1px_var(--hair),0_30px_60px_-20px_rgba(0,0,0,.8)] rotate-1 p-4">
-            <div class="h-2 w-24 rounded-full bg-white/10"></div>
-            <div class="mt-3 h-2 w-40 rounded-full bg-fg/[.06]"></div>
-            <div class="mt-2 h-2 w-32 rounded-full bg-fg/[.06]"></div>
+        <div class="core relative h-[460px] overflow-hidden bg-[radial-gradient(60%_50%_at_85%_95%,rgba(255,90,60,.16),transparent_70%),radial-gradient(70%_60%_at_15%_0%,rgba(255,170,120,.07),transparent_70%),linear-gradient(180deg,#1b1816,#0f0e0d)]">
+          <!-- menu bar -->
+          <div class="absolute inset-x-0 top-0 h-7 flex items-center gap-4 px-4 text-[10px] text-fg/55 bg-black/30 backdrop-blur-md">
+            <span class="font-semibold text-fg/80">Ghostty</span>
+            <span class="ml-auto relative flex items-center rounded bg-white/15 px-1 py-0.5"><svg class="w-3.5 h-3.5 text-fg"><use href="#continuum"/></svg><span class="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber"></span></span>
+            <span class="tabular-nums">9:41</span>
           </div>
-          <div class="absolute right-6 bottom-6 flex flex-col items-end">
+          <!-- a busy session, behind -->
+          <div class="absolute left-[5%] top-[13%] w-[58%] rounded-xl bg-[#121110]/95 shadow-[inset_0_0_0_1px_var(--hair),0_24px_50px_-20px_rgba(0,0,0,.8)] font-mono text-[10.5px] leading-[1.7] -rotate-[1.5deg]">
+            <div class="h-6 flex items-center gap-1.5 px-3 border-b border-white/[.05]"><span class="w-2 h-2 rounded-full bg-[#ff5f57]"></span><span class="w-2 h-2 rounded-full bg-[#febc2e]"></span><span class="w-2 h-2 rounded-full bg-[#28c840]"></span><span class="ml-2 text-fg/35 font-sans">acme-web — claude</span></div>
+            <div class="px-3.5 py-2.5 text-fg/45">
+              <p><span class="text-coral">✻</span> <span lang="zh">正在重构结算页…</span><span lang="en">Refactoring the checkout page…</span> <span class="text-fg/25">(1m 42s)</span></p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">修改</span><span lang="en">Edited</span> src/checkout/summary.tsx</p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">修改</span><span lang="en">Edited</span> src/checkout/totals.ts</p>
+              <p class="text-fg/30">  ⎿ <span lang="zh">运行</span><span lang="en">Running</span> pnpm test…</p>
+            </div>
+          </div>
+          <!-- a session waiting for you, in front -->
+          <div class="absolute left-[16%] top-[44%] w-[60%] rounded-xl bg-[#191715] shadow-[inset_0_0_0_1px_var(--hair),0_30px_60px_-20px_rgba(0,0,0,.9)] font-mono text-[10.5px] leading-[1.7] rotate-[1deg]">
+            <div class="h-6 flex items-center gap-1.5 px-3 border-b border-white/[.05]"><span class="w-2 h-2 rounded-full bg-[#ff5f57]"></span><span class="w-2 h-2 rounded-full bg-[#febc2e]"></span><span class="w-2 h-2 rounded-full bg-[#28c840]"></span><span class="ml-2 text-fg/35 font-sans">api-review — claude</span><span class="ml-auto w-1.5 h-1.5 rounded-full bg-amber animate-pulse"></span></div>
+            <div class="px-3.5 py-2.5 text-fg/55">
+              <p><span class="text-amber">?</span> <span lang="zh">允许运行 Bash(pnpm test:api)？</span><span lang="en">Allow Bash(pnpm test:api)?</span></p>
+              <p class="mt-1 rounded bg-amber/15 text-amber px-1.5">❯ 1. <span lang="zh">允许</span><span lang="en">Yes</span></p>
+              <p class="px-1.5 text-fg/35">  2. <span lang="zh">这次会话都允许</span><span lang="en">Yes, for this session</span></p>
+              <p class="px-1.5 text-fg/35">  3. <span lang="zh">不，换个做法</span><span lang="en">No, do something else</span></p>
+            </div>
+          </div>
+          <!-- Mo, and what Mo says -->
+          <div class="absolute right-4 bottom-4 flex flex-col items-end">
+            <img id="mo-card" data-pic="mo-message" data-skin="none" src="assets/mo-message.zh.webp" alt="" class="lang-img hidden w-60 -mb-1 mr-2 drop-shadow-[0_20px_30px_rgba(0,0,0,.6)]">
             <div id="mo-bubble" class="pop mb-2 rounded-[1.25rem] rounded-br-md bg-[#2a2826] shadow-[inset_0_0_0_1px_var(--hair),0_20px_40px_-10px_rgba(0,0,0,.7)] px-4 py-2.5 text-sm max-w-[240px]"></div>
-            <button id="mo-poke" class="cursor-pointer active:scale-95 transition-transform" aria-label="Mo"><svg class="float w-28 h-32"><use href="#mo-figure"/></svg></button>
+            <button id="mo-poke" class="cursor-pointer active:scale-95 transition-transform" aria-label="Mo"><svg class="float w-24 h-28"><use href="#mo-figure"/></svg></button>
           </div>
         </div>
       </div>

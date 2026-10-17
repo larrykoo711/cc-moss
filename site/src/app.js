@@ -36,9 +36,22 @@
   // Skin: follows the system until the visitor picks one with the toggle.
   const system = matchMedia("(prefers-color-scheme: light)");
   const themeColor = document.querySelector('meta[name="theme-color"]');
+  // Every screenshot exists per language and per skin: name.zh.light.webp.
+  // data-skin pins one ("dark" inside the always-dark mockups, "none" when it has no skins).
+  function picture(img, l, t) {
+    const skin = img.dataset.skin || t;
+    return "assets/" + img.dataset.pic + "." + l + (skin === "none" ? "" : "." + skin) + ".webp";
+  }
+  function refreshPictures() {
+    $$("[data-pic]").forEach((img) => {
+      const src = picture(img, lang(), root.dataset.theme);
+      if (img.getAttribute("src") !== src) img.src = src;
+    });
+  }
   function paint(theme) {
     root.dataset.theme = theme;
     if (themeColor) themeColor.content = theme === "light" ? "#f3efe9" : "#0c0b0a";
+    refreshPictures();
   }
   system.addEventListener("change", () => {
     let saved = null;
@@ -65,10 +78,7 @@
     root.dataset.lang = next;
     root.lang = next === "zh" ? "zh-CN" : "en";
     try { localStorage.setItem("lang", next); } catch (e) {}
-    $$(".lang-img").forEach((img) => {
-      const src = img.dataset["src" + (next === "zh" ? "Zh" : "En")];
-      if (src && img.getAttribute("src") !== src) img.src = src;
-    });
+    refreshPictures();
     choose($$(".lang-btn"), (b) => b.dataset.setLang === next);
     document.title = t("cc-moss · 文明会延续，对话也是。", "cc-moss · Every session, carried on.");
     refreshMo();
@@ -76,9 +86,11 @@
   $$("[data-set-lang]").forEach((b) => b.addEventListener("click", () => {
     if (b.dataset.setLang !== lang()) smoothly(() => setLang(b.dataset.setLang));
   }));
-  // Fetch the other language's pictures once the page is idle, so a switch never shows a blank.
+  // Fetch the other languages' and skins' pictures once the page is idle, so a switch never shows a blank.
   addEventListener("load", () => setTimeout(() => {
-    $$(".lang-img").forEach((img) => { new Image().src = img.dataset.srcZh; new Image().src = img.dataset.srcEn; });
+    $$("[data-pic]").forEach((img) => {
+      for (const l of ["zh", "en"]) for (const t of ["light", "dark"]) new Image().src = picture(img, l, t);
+    });
   }, 1500));
 
   // Copy buttons.
@@ -221,21 +233,35 @@
     en: ["Hi, I'm Mo.", "Hey, that tickles.", "billing-fix stopped. Want it back?", "Back where you left off.", "acme-web is busy. I've got it."],
   };
   let poke = 0;
+  const card = document.getElementById("mo-card");
+  // Pop something in again, so a repeat still reads as new.
+  function pop(el) {
+    el.classList.remove("pop");
+    void el.offsetWidth;
+    el.classList.add("pop");
+  }
+  // Mo speaks in a bubble; in the active temper it hands over the full message card.
   function say(text) {
     if (!bubble) return;
-    bubble.classList.remove("pop");
-    void bubble.offsetWidth;
+    if (card) card.classList.add("hidden");
+    bubble.classList.remove("hidden");
     bubble.textContent = text;
-    bubble.classList.add("pop");
+    pop(bubble);
+  }
+  function showCard() {
+    bubble.classList.add("hidden");
+    card.classList.remove("hidden");
+    pop(card);
   }
   const modeButtons = $$(".mode");
-  modeButtons.forEach((b) => b.addEventListener("click", () => { mode = b.dataset.mode; refreshMo(); say(modes[mode][lang()][1]); }));
+  modeButtons.forEach((b) => b.addEventListener("click", () => { mode = b.dataset.mode; refreshMo(); }));
   const pokeBtn = document.getElementById("mo-poke");
   if (pokeBtn) pokeBtn.addEventListener("click", () => { say(pokes[lang()][poke++ % pokes[lang()].length]); });
   function refreshMo() {
     choose(modeButtons, (b) => b.dataset.mode === mode);
     if (modeCaption) modeCaption.textContent = modes[mode][lang()][0];
-    if (bubble) say(modes[mode][lang()][1]);
+    if (mode === "active" && card) showCard();
+    else say(modes[mode][lang()][1]);
   }
 
   // The terminal types `t`, and the picker appears.
