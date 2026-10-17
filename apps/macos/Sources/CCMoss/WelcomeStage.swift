@@ -16,6 +16,9 @@ struct WelcomeStage: View {
     var still: Double?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var start = Date()
+    @AppStorage(NewSession.workspaceKey) private var workspace = ""
+    /// Control presses before this step, so only yours count.
+    @State private var keysAtStart = 0
 
     var body: some View {
         TimelineView(.animation(paused: reduceMotion || still != nil)) { context in
@@ -90,9 +93,28 @@ struct WelcomeStage: View {
         }
     }
 
-    /// A folder, with sessions settling into it one by one.
+    /// Your folder, named, with its full path under it and sessions
+    /// settling into it one by one.
     private func workspace(_ t: Double) -> some View {
         ZStack {
+            VStack(spacing: 8) {
+                Spacer().frame(height: 200)
+                Text(workspace.isEmpty ? L.t("The folder you used last", "上次用的目录") : (workspace as NSString).lastPathComponent)
+                    .font(.system(size: 15, weight: .semibold))
+                if !workspace.isEmpty {
+                    Text(Grouping.tilde(workspace, home: NSHomeDirectory()))
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(3)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Capsule().fill(Theme.raised(dark ? .dark : .light).opacity(0.8)))
+                        .frame(maxWidth: 300)
+                        .transition(.opacity)
+                }
+            }
+            .animation(.spring(response: 0.35, dampingFraction: 0.8), value: workspace)
             Image(systemName: "folder.fill")
                 .font(.system(size: 120))
                 .foregroundStyle(LinearGradient(colors: [Color(red: 1.0, green: 0.78, blue: 0.35), Color(red: 0.96, green: 0.62, blue: 0.20)],
@@ -109,24 +131,72 @@ struct WelcomeStage: View {
         }
     }
 
-    /// Two Control keys pressed in turn, and a burst when you try it.
+    /// Two Control keys. They demo the double tap until you try it, then
+    /// follow your real presses (first press the left one, second the
+    /// right); when it works they rise and a little panel slides up, just
+    /// as the real one will.
     private func shortcut(_ t: Double) -> some View {
+        let keys = HotKeyCenter.shared.keys
+        let count = keys.presses - keysAtStart
+        let yours = still == nil && (count > 0 || keys.controlDown)
         let phase = t.truncatingRemainder(dividingBy: 2.2)
-        func pressed(_ at: Double) -> Bool { phase > at && phase < at + 0.18 }
+        func demo(_ at: Double) -> Bool { !yours && !tried && phase > at && phase < at + 0.18 }
+        let left = demo(0.4) || (yours && keys.controlDown && count % 2 == 0)
+        let right = demo(0.75) || (yours && keys.controlDown && count % 2 == 1)
         return ZStack {
+            if tried { burst(t).offset(y: -60) }
             HStack(spacing: 18) {
-                keycap("⌃", pressed: pressed(0.4) || tried)
-                keycap("⌃", pressed: pressed(0.75) || tried)
+                keycap("⌃", pressed: left)
+                keycap("⌃", pressed: right)
             }
+            .scaleEffect(tried ? 0.72 : 1)
+            .offset(y: tried ? -96 : 0)
             if tried {
-                burst(t)
-                Text(L.t("Got it", "收到"))
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(Theme.brand)
-                    .offset(y: 82)
-                    .transition(.opacity)
+                miniPanel
+                    .offset(y: 56)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else if yours {
+                Text(count % 2 == 1 ? L.t("Once more!", "再按一下！") : L.t("Tap ⌃ twice", "连按两下 ⌃"))
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .offset(y: 84)
             }
         }
+        .animation(.spring(response: 0.45, dampingFraction: 0.78), value: tried)
+        .onAppear { keysAtStart = HotKeyCenter.shared.keys.presses }
+    }
+
+    /// The panel, in miniature: what the shortcut opens.
+    private var miniPanel: some View {
+        let s: ColorScheme = dark ? .dark : .light
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 10))
+                Text(L.t("Search sessions…", "搜索会话…")).font(.system(size: 11))
+                Spacer()
+            }
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            Rectangle().fill(Color.primary.opacity(0.06)).frame(height: 1)
+            ForEach(Array([("acme-web", Theme.brand, L.t("Busy", "在忙")),
+                           ("api-review", Theme.amber, L.t("Waiting", "在等你")),
+                           ("billing-fix", Theme.red, L.t("Stopped", "断了"))].enumerated()), id: \.offset) { i, row in
+                HStack(spacing: 8) {
+                    Circle().fill(row.1).frame(width: 7, height: 7)
+                    Text(row.0).font(.system(size: 12, weight: .medium))
+                    Spacer()
+                    Text(row.2).font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 10)
+                .frame(height: 30)
+                .background(i == 0 ? Theme.selection(s) : .clear)
+            }
+        }
+        .frame(width: 230)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised(s)))
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .shadow(color: .black.opacity(0.16), radius: 14, y: 6)
     }
 
     /// A menu bar with the cc-moss icon, and a notification sliding in.

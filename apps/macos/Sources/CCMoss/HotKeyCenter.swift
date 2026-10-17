@@ -37,6 +37,15 @@ final class HotKeyCenter {
         var allowed = AXIsProcessTrusted()
     }
     let trust = Trust()
+
+    /// Control as you press it, for the welcome's keycaps.
+    @Observable
+    final class Keys {
+        var controlDown = false
+        /// Control presses so far (each release counts one).
+        var presses = 0
+    }
+    let keys = Keys()
     private var monitors: [Any] = []
     private var tap = DoubleTap()
     private var trustTimer: Timer?
@@ -80,6 +89,11 @@ final class HotKeyCenter {
                 }
                 let f = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
                 let others = !f.intersection([.command, .option, .shift, .function, .capsLock]).isEmpty
+                let down = f.contains(.control) && !others
+                if down != self.keys.controlDown {
+                    if !down { self.keys.presses += 1 }
+                    self.keys.controlDown = down
+                }
                 if self.tap.modifiers(control: f.contains(.control), others: others, at: event.timestamp) {
                     self.log.info("pressed (double control)")
                     self.onPress?()
@@ -188,6 +202,8 @@ final class HotKeyCenter {
 /// While recording: press the combination, Esc cancels, Delete clears.
 struct HotKeyRecorder: View {
     var onSave: ((PanelShortcut) -> Void)?
+    /// The welcome's version: a whole row, large type, a breathing border while recording.
+    var large = false
     @State private var key: HotKey? = {
         if case let .combo(k) = PanelShortcut.load(.standard) { return k }
         return nil
@@ -199,6 +215,50 @@ struct HotKeyRecorder: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        if large { largeBody } else { smallBody }
+    }
+
+    /// A whole row: the combination in large type, or "press keys" with a
+    /// breathing brand border while recording; a line under it says what's next.
+    private var largeBody: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button(action: toggle) {
+                HStack(spacing: 10) {
+                    Image(systemName: recording ? "record.circle" : "keyboard")
+                        .font(.system(size: 16))
+                        .foregroundStyle(recording ? Theme.brand : Color.secondary)
+                        .symbolEffect(.pulse, isActive: recording)
+                    Text(recording ? L.t("Press the keys you want…", "按下你想用的组合键…") : (key?.display ?? L.t("Click to set", "点这里设置")))
+                        .font(.system(size: recording || key == nil ? 14 : 18, weight: key == nil || recording ? .regular : .semibold))
+                        .foregroundStyle(recording || key == nil ? .secondary : .primary)
+                    Spacer()
+                    if !recording, key != nil {
+                        Text(L.t("Change", "更换")).font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.horizontal, 14)
+                .frame(maxWidth: .infinity, minHeight: 52)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(recording ? Theme.brand.opacity(0.08) : (hover ? Theme.selection(scheme) : Color.primary.opacity(0.04))))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .strokeBorder(recording ? Theme.brand.opacity(0.7) : Color.primary.opacity(0.1),
+                                  style: StrokeStyle(lineWidth: recording ? 1.5 : 1, dash: recording ? [] : [4, 3])))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .focusable(false)
+            .handCursor()
+            .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hover = inside } }
+            .animation(.spring(response: 0.3, dampingFraction: 0.8), value: recording)
+            Text(problem ?? (recording ? L.t("Include ⌃, ⌥ or ⌘. Esc cancels.", "要带上 ⌃、⌥ 或 ⌘；按 Esc 取消。")
+                                       : L.t("Click, then press the keys together.", "点一下，再同时按下几个键。")))
+                .font(.system(size: 11))
+                .foregroundStyle(problem == nil ? Theme.caption : Theme.amber)
+        }
+        .onDisappear(perform: stop)
+    }
+
+    private var smallBody: some View {
         HStack(spacing: 8) {
             if let problem {
                 Text(problem)

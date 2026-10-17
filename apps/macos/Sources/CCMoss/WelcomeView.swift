@@ -437,23 +437,29 @@ private struct WorkspaceChoice: View {
     @AppStorage(NewSession.workspaceKey) private var workspace = ""
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: workspace.isEmpty ? "folder" : "folder.fill")
-                .font(.system(size: 18))
-                .foregroundStyle(Theme.brand)
-                .frame(width: 26)
-            VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: workspace.isEmpty ? "folder" : "folder.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Theme.brand)
+                    .frame(width: 26)
                 Text(workspace.isEmpty ? L.t("The folder I used last", "上次用的目录") : (workspace as NSString).lastPathComponent)
                     .font(.system(size: 13, weight: .semibold))
-                Text(workspace.isEmpty ? L.t("Or pick one to always start in", "也可以选一个固定的工作区")
-                                       : Grouping.tilde(workspace, home: NSHomeDirectory()))
-                    .font(.system(size: 11))
-                    .foregroundStyle(Theme.caption)
                     .lineLimit(1)
-                    .truncationMode(.middle)
+                Spacer(minLength: 6)
+                SoftButton(title: workspace.isEmpty ? L.t("Choose…", "选择…") : L.t("Change…", "换一个…"),
+                           icon: Icons.chooseFolder) { choose() }
             }
-            Spacer(minLength: 6)
-            SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.chooseFolder) { choose() }
+            // The whole path on its own line: long ones wrap once, then
+            // lose their middle, never their ends.
+            Text(workspace.isEmpty ? L.t("Or pick a workspace to always start in.", "也可以选一个固定的工作区。")
+                                   : Grouping.tilde(workspace, home: NSHomeDirectory()))
+                .font(.system(size: 11, design: workspace.isEmpty ? .default : .monospaced))
+                .foregroundStyle(Theme.caption)
+                .lineLimit(2)
+                .truncationMode(.middle)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.leading, 36)
         }
     }
 
@@ -495,13 +501,15 @@ private struct ShortcutChoice: View {
             option("double", title: L.t("Tap ⌃ twice", "连按两下 ⌃"), badge: L.t("Recommended", "推荐"))
             option("combo", title: L.t("A key combination", "用组合键"), badge: nil)
             if mode == "combo" {
-                HStack { Spacer(); HotKeyRecorder() }
+                HotKeyRecorder(large: true)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             } else if !trust.allowed {
                 ChoiceCard {
                     HStack(spacing: 10) {
                         Image(systemName: "hand.raised.fill").foregroundStyle(Theme.amber)
-                        Text(L.t("macOS asks you to allow this once.", "macOS 需要你点一下允许。"))
+                        Text(L.t("Allow it once", "需要你允许一次"))
                             .font(.system(size: 12))
+                            .fixedSize()
                         Spacer(minLength: 6)
                         SoftButton(title: L.t("Allow", "去允许"), icon: "arrow.up.forward.app") {
                             HotKeyCenter.shared.askForAccessibility()
