@@ -6,23 +6,71 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-17
+
+The menubar app: on a Mac, your Claude Code sessions are now one glance away.
+
 ### Added
 
-- The menubar app ships with cc-moss: same version, same release. The Homebrew formula and the macOS release archives
+- **The menubar app** (macOS 14 or newer). A native app in the menu bar that reads and writes everything through the
+  `cc-moss` command and never touches the registry itself.
+  - **An icon that moves with your sessions**: working, waiting, needs you, stopped. Settings › Menu Bar can show a
+    number beside it, and with Motion off it stays still and only changes when the state does.
+  - **A Raycast-style panel** (click the icon, or tap Control twice from anywhere): type to search, Tab to filter by state, sessions
+    grouped by project with worktree labels. Return opens a session in a new window of your terminal: Terminal by
+    default, Ghostty recommended, iTerm2, WezTerm, Kitty and Alacritty too; ⇧⌘C copies the command for any other.
+    Stopped sessions come back one by one or all at once, and older ones are folded away. New session, notes, send a
+    message, rename and stop reminding are all there, and ⌘K lists every action with its shortcut.
+  - **Alerts in one place**: a session needs you, stopped, or is back (and, if you ask, finished a turn), told by
+    Notification Center or by Mo, never both. The same alert within 30 seconds counts once, and nothing pops up while
+    the panel is open. A banner can open the session or bring it back.
+  - **A startup reminder**: sessions that stopped while your Mac restarted, or while the app was away, are reported
+    as soon as it starts.
+  - **Mo, the desktop companion** (off until you switch it on): a small graphite pebble whose face shows how your
+    sessions are doing. Three interaction modes (quiet, everyday, active) and three sizes; click it for the panel, drag
+    it anywhere (it snaps to screen edges), right-click to keep it quiet for an hour or for the day, tuck it by the edge
+    or send it off. Optional voice: a chime, or the message title spoken by macOS's own speech synthesis, at most once
+    every 30 seconds.
+  - **Settings** in six pages (General, Menu Bar, Mo, Notifications, Aliases, About) with search: Open at Login, the
+    global shortcut (tap Control twice, or a key combination), a workspace where new sessions start, the terminal, the interface language (shared with the CLI), software update,
+    and "Versions differ" when the app and the CLI are not the same version.
+  - **A first-run welcome** in six skippable steps: set up the terminal side in one click, Open at Login and
+    notifications, your terminal, Mo, and the shortcut. Settings › About shows it again.
+
+- The app ships with cc-moss: same version, same release. The Homebrew formula and the macOS release archives
   carry `cc-moss.app` (ad-hoc signed); `cc-moss install` asks, then copies it to `~/Applications`, where macOS
   delivers its notifications (`--skip app` leaves it out). `cc-moss update` brings the app to the new version and
   restarts it if it was running, and `cc-moss doctor` reports its version and where it lives. Replacing the app is
   all or nothing (a failure keeps the old one), it is never downgraded, and under sudo it is left alone.
-  `cc-moss install --uninstall` removes it too, with its "Open at Login" launch agent.
+  `cc-moss install --uninstall` removes it too, with its "Open at Login" launch agent. Linux keeps the terminal
+  edition.
 
 - Native aliases: `cc-moss alias add tn new` makes `tn` work in every shell right away. Aliases are links in
   `~/.local/bin`, never go through a shell, and can be managed from the menubar app's Settings › Aliases.
   `doctor` reports broken or hidden ones; `doctor --fix` relinks them.
 
+- Session events: two new hooks (`Notification`, `PostToolUse`) tell cc-moss when a session is waiting for your
+  permission or answer. `cc-moss events [--json] [--since SEQ] [--limit N]` lists what just happened (kept for 7 days,
+  never your prompts), and `ls --json` gains `attention`. Coming from 0.1.x, `doctor` reports the 2 missing hooks and
+  `cc-moss setup` adds just those.
+
+- `cc-moss send NAME -- TEXT` types a message into a running session, as if you typed it in its terminal; several
+  lines arrive whole.
+
+- `cc-moss config get|set ui.language` reads or changes the interface language without opening the file; comments
+  and everything else in `config.toml` stay as they were.
+
+- JSON for scripts and the app: `restore --yes --json` (with stable reason codes for failures),
+  `install --dry-run --json`, `update --check --json`, `alias ls|add|rm --json`, `config get|set --json`, and
+  `state_dir` and per-session `worktree` in `ls --json`.
+
 ### Changed
 
 - `t` is now a native alias instead of a zsh function, so bash and fish users get it too. `setup` and `install`
   take the old function out of `.zshrc` (only cc-moss's own block).
+- `cc-moss new` takes Claude Code's flags directly (`cc-moss new api --model opus`); the `--` before them is now
+  optional.
+- `cc-moss note` clears a field given as an empty string instead of saving it blank.
 
 ## [0.1.1] - 2026-10-16
 
@@ -73,6 +121,7 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/larrykoo711/cc-moss/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/larrykoo711/cc-moss/releases/tag/v0.1.0

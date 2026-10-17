@@ -10,24 +10,26 @@ struct MenuBarSettings: View {
     var body: some View {
         SettingsCard(title: L.t("Icon", "图标")) {
             CardRow(
-                title: L.t("Show", "显示"),
-                detail: L.t("Counts what needs you first, then what broke or is busy.",
-                            "先数需要你的，再数断了的、在忙的。")
+                title: L.t("Show in menu bar", "菜单栏里显示"),
+                detail: L.t("Counts what's waiting on you first, then the rest.",
+                            "数字先数在等你的，再数断了和在忙的。"),
+                icon: RowIcon("menubar.rectangle", .indigo)
             ) {
                 SlidingPicker(selection: $showCount, options: [
-                    (false, L.t("Icon", "仅图标")),
-                    (true, L.t("Icon and Number", "图标 + 数字")),
+                    (false, L.t("Icon only", "只显示图标")),
+                    (true, L.t("Icon and count", "图标加数字")),
                 ])
                 .onChange(of: showCount) { _, _ in model.syncIcon() }
             }
             CardRow(
-                title: L.t("Motion", "动态效果"),
+                title: L.t("Animation", "动态效果"),
                 detail: motion
-                    ? L.t("The icon moves while a session works or needs you. Uses a little CPU (about 1–2%).",
-                          "会话在忙或需要你时，图标会动。会用一点 CPU（约 1–2%）。")
-                    : L.t("The icon stays still and only changes when the state does. Costs nothing.",
-                          "图标保持静止，只在状态变化时换样子，不占资源。"),
-                divider: false
+                    ? L.t("The icon moves gently while sessions work. Costs a little battery.",
+                          "会话在忙时，图标会轻轻动，稍微费一点电。")
+                    : L.t("The icon stays still and costs nothing.",
+                          "图标保持不动，不占资源。"),
+                divider: false,
+                icon: RowIcon("wand.and.stars", .indigo)
             ) {
                 Toggle("", isOn: $motion)
                     .toggleStyle(.switch)

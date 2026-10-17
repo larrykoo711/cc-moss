@@ -35,10 +35,16 @@ public enum NewSession {
             .map { $0 }
     }
 
-    /// The folder the form starts with: where the last activity was.
-    public static func defaultDirectory(_ sessions: [Session]) -> String? {
-        recentProjects(sessions, limit: 1).first
+    /// The folder the form starts with: your workspace when you set one
+    /// (and it is still there), else where the last activity was.
+    public static func defaultDirectory(_ sessions: [Session], workspace: String? = nil,
+                                        exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String? {
+        if let workspace, !workspace.isEmpty, exists(workspace) { return workspace }
+        return recentProjects(sessions, limit: 1).first
     }
+
+    /// Settings › General: where new sessions start. Unset: the most recent folder.
+    public static let workspaceKey = "newSessionWorkspace"
 
     /// The name the form suggests: the folder's name, like `cc-moss new` does.
     public static func defaultName(for directory: String) -> String {

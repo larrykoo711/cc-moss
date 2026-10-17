@@ -57,7 +57,7 @@ struct SettingsView: View {
             case .menuBar: [Color(red: 0.30, green: 0.62, blue: 1.0), Color(red: 0.12, green: 0.44, blue: 0.95)]
             case .mo: [Color(red: 0.25, green: 0.80, blue: 0.72), Color(red: 0.08, green: 0.62, blue: 0.56)]
             case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
-            case .aliases: AliasRow.tint
+            case .aliases: AliasesSettings.tint
             case .about: [Theme.brand.opacity(0.85), Theme.brand]
             }
         }
@@ -68,8 +68,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 工作区 目录 文件夹 新会话 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
@@ -344,11 +344,16 @@ struct CardRow<Control: View>: View {
     let title: String
     var detail: String?
     var divider = true
+    /// A small icon tile before the words, as in System Settings.
+    var icon: RowIcon?
     @ViewBuilder let control: () -> Control
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
+                if let icon {
+                    IconTile(symbol: icon.symbol, colors: icon.colors, size: 26)
+                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 14))
                     if let detail {
@@ -364,8 +369,42 @@ struct CardRow<Control: View>: View {
             .padding(12)
             .frame(minHeight: 46)
             if divider {
-                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
+                // Under an icon, the hairline starts at the words, as in System Settings.
+                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1)
+                    .padding(.leading, icon == nil ? 12 : 50).padding(.trailing, 12)
             }
+        }
+    }
+}
+
+/// A settings row's icon: an SF Symbol on a coloured tile.
+struct RowIcon {
+    let symbol: String
+    let colors: [Color]
+
+    init(_ symbol: String, _ hue: RowHue) {
+        self.symbol = symbol
+        self.colors = hue.colors
+    }
+}
+
+/// One hue per kind of thing, top-lit like System Settings' tiles.
+enum RowHue {
+    case gray, blue, teal, green, orange, red, purple, pink, indigo, brand
+
+    var colors: [Color] {
+        func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
+        switch self {
+        case .gray: return [c(0.62, 0.62, 0.65), c(0.45, 0.45, 0.48)]
+        case .blue: return [c(0.30, 0.62, 1.0), c(0.12, 0.44, 0.95)]
+        case .teal: return [c(0.25, 0.80, 0.72), c(0.08, 0.62, 0.56)]
+        case .green: return [c(0.35, 0.83, 0.42), c(0.18, 0.68, 0.28)]
+        case .orange: return [c(1.0, 0.70, 0.30), c(0.97, 0.53, 0.12)]
+        case .red: return [c(1.0, 0.42, 0.40), c(0.92, 0.24, 0.24)]
+        case .purple: return [c(0.70, 0.52, 0.98), c(0.52, 0.34, 0.88)]
+        case .pink: return [c(1.0, 0.45, 0.65), c(0.92, 0.28, 0.50)]
+        case .indigo: return [c(0.45, 0.48, 0.98), c(0.32, 0.32, 0.86)]
+        case .brand: return [Theme.brand.opacity(0.85), Theme.brand]
         }
     }
 }
@@ -428,6 +467,8 @@ struct SoftButton: View {
                     Text(shortcut)
                         .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(prominent ? Color.white.opacity(0.85) : Color.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
                         .padding(.horizontal, 4)
                         .frame(minWidth: 18, minHeight: 16)
                         .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
@@ -459,15 +500,17 @@ struct GeneralSettings: View {
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    @State private var shortcut = PanelShortcut.load(.standard)
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
 
     var body: some View {
         SettingsCard(title: L.t("Startup", "启动")) {
             CardRow(
-                title: L.t("Open at Login", "开机自动打开"),
-                detail: loginError ?? L.t("Keep an eye on your sessions from the moment you log in.",
-                                         "一登录就开始替你看着会话。")
+                title: L.t("Open at login", "开机自动打开"),
+                detail: loginError ?? L.t("Starts with your Mac, so you don't have to remember.",
+                                         "开机后自己出来，不用你记着。"),
+                icon: RowIcon("power", .blue)
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
@@ -476,20 +519,26 @@ struct GeneralSettings: View {
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
+            let needsTrust = shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed
             CardRow(
-                title: L.t("Open the Panel", "唤出面板"),
-                detail: L.t("From anywhere, like clicking the menu bar icon.", "在哪儿都能按，和点菜单栏图标一样。"),
-                divider: false
+                title: L.t("Panel shortcut", "唤出面板"),
+                detail: L.t("See every session from anywhere.", "在哪儿按一下，都能看到所有会话。"),
+                divider: needsTrust,
+                icon: RowIcon("keyboard.fill", .blue)
             ) {
-                HotKeyRecorder()
+                HotKeyRecorder(onSave: { shortcut = $0 })
+            }
+            if needsTrust {
+                AccessibilityRow(shortcut: shortcut).transition(.opacity)
             }
         }
         SettingsCard(title: L.t("Language", "语言")) {
             CardRow(
-                title: L.t("Interface Language", "界面语言"),
-                detail: languageError ?? L.t("Also used by t and the terminal.",
-                                             "和终端共用；t 下次打开时跟着换。"),
-                divider: false
+                title: L.t("Language", "语言"),
+                detail: languageError ?? L.t("Follow your Mac, or pick one. The terminal follows too.",
+                                             "跟随系统，也可以固定成中文或英文。"),
+                divider: false,
+                icon: RowIcon("globe", .blue)
             ) {
                 SlidingPicker(selection: $language, options: [
                     (LangChoice.auto.rawValue, L.t("System", "跟随系统")),
@@ -498,6 +547,9 @@ struct GeneralSettings: View {
                 ])
                 .onChange(of: language) { _, new in setLanguage(new) }
             }
+        }
+        SettingsCard(title: L.t("Workspace", "工作区")) {
+            WorkspaceRow()
         }
         TerminalSettings(prefs: model.terminals)
     }
@@ -533,10 +585,12 @@ struct ProgramRow: View {
 
     var body: some View {
         CardRow(
-            title: L.t("Command Line", "命令行程序"),
-            detail: model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) }
-                ?? L.t("Not found in the usual places", "常见位置里没找到"),
-            divider: false
+            title: L.t("cc-moss in Terminal", "终端里的 cc-moss"),
+            detail: model.cliPath == nil
+                ? L.t("Not found yet. Use Choose… to point to it.", "还没找到，点「选择…」指一下位置。")
+                : L.t("Type cc-moss in any terminal to use it there.", "在终端里输入 cc-moss 也能用。"),
+            divider: false,
+            icon: RowIcon("shippingbox.fill", .gray)
         ) {
             HStack(spacing: 8) {
                 if UserDefaults.standard.string(forKey: "cliPath") != nil {
@@ -546,6 +600,7 @@ struct ProgramRow: View {
                 SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.choose) { choose() }
             }
         }
+        .tip(model.cliPath.map { Grouping.tilde($0, home: NSHomeDirectory()) } ?? L.t("Not found", "没找到"))
     }
 
     private func set(_ path: String?) {
@@ -600,6 +655,7 @@ struct AboutSettings: View {
     @State private var cliVersion: String?
     @State private var update: UpdateState = .idle
     @State private var problem: String?
+    @State private var aligning = false
 
     enum UpdateState: Equatable {
         case idle, checking
@@ -612,7 +668,7 @@ struct AboutSettings: View {
         VStack(spacing: 22) {
             hero
             SettingsCard(title: L.t("Software Update", "软件更新")) {
-                CardRow(title: updateTitle, detail: updateDetail) {
+                CardRow(title: updateTitle, detail: updateDetail, icon: RowIcon("arrow.triangle.2.circlepath", .gray)) {
                     updateControl
                 }
                 ProgramRow(model: model)
@@ -654,13 +710,7 @@ struct AboutSettings: View {
                 HStack(spacing: 6) {
                     VersionChip(label: "App", value: model.version)
                     VersionChip(label: L.t("CLI", "命令行"), value: cliVersion ?? "—")
-                    if let cli = cliVersion, cli != model.version, model.version != "dev" {
-                        Label(L.t("Versions differ", "版本不一致"), systemImage: "exclamationmark.triangle.fill")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(Theme.amber)
-                            .tip(L.t("The app and the cc-moss command should be the same version. Updating fixes it.",
-                                      "App 和 cc-moss 命令应该是同一个版本，升级一下就好。"))
-                    }
+                    if let cli = cliVersion { alignButton(cli: cli) }
                 }
                 .padding(.top, 2)
             }
@@ -670,6 +720,44 @@ struct AboutSettings: View {
         // Room for the icon's shadow inside the scroll area, which clips.
         .padding(.top, 16)
         .padding(.bottom, 4)
+    }
+
+    // MARK: Versions
+
+    /// When the app and the command differ, one button brings the older one
+    /// up to date (A12): `cc-moss update` or, for the app, `cc-moss install`.
+    @ViewBuilder private func alignButton(cli: String) -> some View {
+        switch VersionMatch.of(app: model.version, cli: cli) {
+        case .cliOlder:
+            SoftButton(title: aligning ? L.t("Updating…", "正在升级…") : L.t("Update Command Line", "升级命令行"),
+                       icon: "exclamationmark.triangle.fill") { align(.cliOlder) }
+                .disabled(aligning)
+                .tip(L.t("The command line is older than the app. This runs cc-moss update.",
+                         "命令行比 App 旧，点一下运行 cc-moss update。"))
+        case .appOlder:
+            SoftButton(title: aligning ? L.t("Updating…", "正在更新…") : L.t("Update the App", "更新 App"),
+                       icon: "exclamationmark.triangle.fill") { align(.appOlder) }
+                .disabled(aligning)
+                .tip(L.t("The app is older than the command line. It updates itself and reopens.",
+                         "App 比命令行旧，点一下就换成新版，并自动重新打开。"))
+        case .same, .unknown:
+            EmptyView()
+        }
+    }
+
+    private func align(_ match: VersionMatch) {
+        guard let client = model.client, !aligning else { return }
+        aligning = true
+        Task {
+            do {
+                if match == .cliOlder { try await client.updateCLI() } else { try await client.installApp() }
+                problem = nil
+            } catch {
+                problem = L.t("Didn't finish: \(error)", "没弄完：\(error)")
+            }
+            aligning = false
+            cliVersion = try? await client.version()
+        }
     }
 
     // MARK: Update
@@ -834,13 +922,19 @@ enum SettingsWindow {
 
     /// Move the close / minimise / zoom buttons inside the floating sidebar,
     /// as Raycast does, instead of on its rounded corner.
+    /// The window buttons sit inside the sidebar the way System Settings'
+    /// do: an empty unified toolbar makes the title bar tall, and macOS
+    /// itself centres the buttons in it. Moving them by hand didn't last:
+    /// macOS lays the title bar out again on focus, resize and appearance
+    /// changes and put them back.
     @MainActor static func tuckWindowButtons(in window: NSWindow) {
-        let kinds: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
-        for (i, kind) in kinds.enumerated() {
-            guard let button = window.standardWindowButton(kind), let bar = button.superview else { continue }
-            let step: CGFloat = 20
-            button.setFrameOrigin(NSPoint(x: 22 + CGFloat(i) * step, y: bar.bounds.height - button.frame.height - 14))
-        }
+        guard window.toolbar == nil else { return }
+        let toolbar = NSToolbar(identifier: "cc-moss.settings")
+        toolbar.showsBaselineSeparator = false
+        toolbar.displayMode = .iconOnly
+        window.toolbar = toolbar
+        window.toolbarStyle = .unified
+        window.titlebarSeparatorStyle = .none
     }
 }
 
