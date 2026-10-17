@@ -8,7 +8,9 @@ mkdirSync("dist");
 execFileSync("node_modules/.bin/tailwindcss", ["-i", "src/styles.css", "-o", "dist/styles.css", "--minify"], { stdio: "inherit" });
 // The page's ∞ is the brand logo's own path, read from the repo's logo.
 const continuum = readFileSync("../docs/assets/logo.svg", "utf8").match(/<path d="([^"]+)"/)[1];
-writeFileSync("dist/index.html", readFileSync("src/index.template.html", "utf8").replace("__CONTINUUM__", continuum));
+writeFileSync("dist/index.html", readFileSync("src/index.template.html", "utf8").replaceAll("__CONTINUUM__", continuum));
 for (const f of ["app.js", "favicon.svg"]) cpSync(`src/${f}`, `dist/${f}`);
 cpSync("assets", "dist/assets", { recursive: true });
+// The app icon, for the nav and the notification.
+cpSync("../docs/assets/icon.svg", "dist/icon.svg");
 console.log("built dist/");
