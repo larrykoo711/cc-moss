@@ -13,7 +13,7 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 | `crates/moss-core` | Library: registry, hooks, tmux, restore planning |
 | `crates/cc-moss` | The `cc-moss` binary and the picker |
 | `docs/assets/` | README images (banner, picker screenshots rendered from demo data) |
-| `site/` | The landing page (Tailwind, `pnpm build`), published to GitHub Pages at cc-moss.larrykoo.com (DNS on Cloudflare, DNS-only CNAME) by `.github/workflows/pages.yml` |
+| `site/` | The website at cc-moss.larrykoo.com: static pages built by `build.mjs` (one per language, plus Markdown for agents) served by a Cloudflare Worker (`worker/`: content negotiation, `/mcp`); deployed by `.github/workflows/site.yml` |
 | `.sdd/` | Spec-driven development archive (config, per-iteration designs, plans, specs) |
 | `.sdd/001-cli/` | Stage 1: terminal edition |
 | `packaging/homebrew/` | Homebrew formula template; `release.yml` renders it into `larrykoo711/homebrew-tap` |

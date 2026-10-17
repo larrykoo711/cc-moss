@@ -1,6 +1,6 @@
 class CcMoss < Formula
   desc "Recoverable Claude Code sessions in tmux"
-  homepage "https://github.com/larrykoo711/cc-moss"
+  homepage "https://cc-moss.larrykoo.com"
   license "MIT"
 
   depends_on "tmux"

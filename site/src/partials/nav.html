@@ -1,0 +1,34 @@
+<!-- Nav: a floating island -->
+<header class="fixed top-4 inset-x-0 z-40 px-4 flex justify-center">
+  <nav class="flex items-center gap-1 sm:gap-2 h-14 pl-2 pr-2 rounded-full bg-bg/70 backdrop-blur-xl backdrop-saturate-150 shadow-[inset_0_0_0_1px_var(--hair),0_20px_50px_-20px_var(--drop)] w-full max-w-[880px]">
+    <a href="{{home}}" class="flex items-center gap-2.5 pl-1 pr-3 font-semibold tracking-tight">
+      <img src="/icon.svg" alt="" width="34" height="34" class="w-[34px] h-[34px] drop-shadow-[0_4px_12px_rgba(255,90,60,.25)]">
+      <span>cc-moss</span>
+    </a>
+    <div class="hidden md:flex items-center text-sm">
+      <a href="{{home}}#tour" data-nav="tour" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">功能</span><span lang="en">Tour</span></a>
+      <a href="{{home}}#mo" data-nav="mo" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">小莫</span><span lang="en">Mo</span></a>
+      <a href="{{home}}#terminal" data-nav="terminal" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">终端</span><span lang="en">Terminal</span></a>
+      <a href="{{home}}#faq" data-nav="faq" class="nav-link rounded-full px-3.5 py-2 text-fg/55 hover:text-fg transition-colors"><span lang="zh">常见问题</span><span lang="en">FAQ</span></a>
+    </div>
+    <div class="ml-auto flex items-center gap-1.5 sm:gap-2">
+      <div class="flex rounded-full bg-fg/[.06] p-1 text-xs" role="group" aria-label="Language">
+        <a data-set-lang="zh" href="{{url_zh}}" hreflang="zh" lang="zh-CN" class="lang-btn px-2.5 py-1 rounded-full transition-colors">中</a>
+        <a data-set-lang="en" href="{{url_en}}" hreflang="en" lang="en" class="lang-btn px-2.5 py-1 rounded-full transition-colors">EN</a>
+      </div>
+      <button id="theme" class="theme-btn grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] active:scale-90 transition cursor-pointer" aria-label="Light or dark">
+        <svg viewBox="0 0 24 24" class="w-[18px] h-[18px]" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+          <mask id="moon-cut"><rect width="24" height="24" fill="#fff"/><circle class="cut" cx="17" cy="7" r="6" fill="#000"/></mask>
+          <circle class="orb" cx="12" cy="12" r="5" fill="currentColor" stroke="none" mask="url(#moon-cut)"/>
+          <g class="rays"><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/></g>
+        </svg>
+      </button>
+      <a href="https://github.com/larrykoo711/cc-moss" class="hidden sm:grid w-9 h-9 place-items-center rounded-full text-fg/60 hover:text-fg hover:bg-fg/[.06] transition-colors" aria-label="GitHub">
+        <svg viewBox="0 0 16 16" class="w-[18px] h-[18px]" fill="currentColor"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+      </a>
+      <a href="{{home}}#install" class="rounded-full bg-fg text-bg text-sm font-medium px-4 py-2 hover:opacity-90 active:scale-[0.97] transition">
+        <span lang="zh">安装</span><span lang="en">Install</span>
+      </a>
+    </div>
+  </nav>
+</header>
