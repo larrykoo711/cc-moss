@@ -12,6 +12,7 @@ If you are curious how it works inside, three files are worth reading:
 | [`001-cli/notes/hook-probe.md`](001-cli/notes/hook-probe.md) | What Claude Code's hooks actually do, measured (the facts the state machine rests on) |
 | [`001-cli/LESSONS.md`](001-cli/LESSONS.md) | Mistakes made along the way and how the project now avoids them |
 
-`001-cli/` is Stage 1, the terminal edition. Each task's spec lives in `001-cli/tasks/<state>/`, where the folder
+`001-cli/` is Stage 1, the terminal edition. `002-menubar/` is Stage 2, the macOS menu bar app (0.2.0), and
+`003-site-agent/` is the website at cc-moss.larrykoo.com, readable by search engines and AI assistants. Each task's spec lives in `001-cli/tasks/<state>/`, where the folder
 is its state (draft, todo, in-progress, done). Code comments that mention a task id (for example `T1.5`) point at
 these specs.

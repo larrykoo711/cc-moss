@@ -31,6 +31,8 @@
 | `notes/probes.md` | 探针结论：Swift Testing、通知要求 App 在应用程序目录、SwiftUI 宏需 Xcode 工具链 |
 | `notes/hook-probe-2.md` | Notification / PostToolUse 钩子真机探针 |
 | `reports/T1.1-manual.md` | T1.1 真机走查与用户反馈处置记录 |
+| `reports/delivery.md` ⭐ | 收尾交付报告：指标、批次、四桶 |
+| `notes/design-voice.md` | 用户可见文案的规则（已沉淀到仓库根 `CLAUDE.md`） |
 | `playground.html` | 可视化档案（背景、缺口、方案、Kanban） |
 
 ## 依赖链 & 推进
@@ -40,6 +42,8 @@
 - 2026-10-16 重排为 4 Phase × 16 Task：P3 桌面宠物并入本档案（亮点），发布顺延 P4
 - 第二波：T1.2、T2.2、T2.6、T3.1 四路 agent 并行
 - 后续 epic（另立档案）：003-pet、004-pet-approve、005-voice，见 `DESIGN-menubar.md` §1.1
+- ✅ 2026-10-17 收尾：16 个任务全部 Done，0.2.0 发布（#21）。交付报告 `reports/delivery.md`；
+  宠物已并入本档案 P3，后续只剩 004-pet-approve、005-voice
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名

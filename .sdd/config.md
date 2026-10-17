@@ -9,7 +9,7 @@
 ## {EDITION}
 - 当前无 tracker：用三位自增序号（`001`、`002`…）。仓库公开到 GitHub 后改用 GitHub issue，
   届时由用户拍板是否把既有档案映射到 issue 号
-- 规划：`001-cli` = Stage 1 终端版；`002-menubar` = Stage 2 macOS 状态栏 App；之后 `003-pet` 桌面宠物、`004-pet-approve` 宠物代办确认、`005-voice` 语音对话
+- 规划：`001-cli` = Stage 1 终端版；`002-menubar` = Stage 2 macOS 状态栏 App（桌面宠物并入其 P3）；`003-site-agent` = 网站；之后 `004-pet-approve` 宠物代办确认、`005-voice` 语音对话
 
 ## {REPOS}
 | 子项目 | 语言 | 完整 CI 命令（L3 的组成） |
