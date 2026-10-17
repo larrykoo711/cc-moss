@@ -122,11 +122,35 @@ struct TerminalSettings: View {
         return L.t("Where a session opens when you click it.", "点开会话时，会在这里打开。")
     }
 
+    /// Says what will actually happen when the pick and the terminal disagree.
+    private var styleDetail: String {
+        guard let current = prefs.current else { return "" }
+        let name = current.terminal.displayName
+        if prefs.openStyle == .tab, !current.terminal.supportsTabs(version: current.version) {
+            return L.t("\(name) has no tabs to open into, so sessions get a new window.",
+                       "\(zhPad(name, leading: false))没有标签页，会话会在新窗口里打开。")
+        }
+        if prefs.openStyle == .tab, current.terminal == .terminal, !AXIsProcessTrusted() {
+            return L.t("Terminal opens a tab with ⌘T, which needs Accessibility (the same as the shortcut). Until then, a new window.",
+                       "终端要按 ⌘T 才能开标签页，需要辅助功能权限（和快捷键是同一个）；没开之前会用新窗口。")
+        }
+        return prefs.openStyle == .tab
+            ? L.t("Sessions open side by side as tabs in one window.", "会话以标签页排在同一个窗口里。")
+            : L.t("Each session gets a window of its own.", "每个会话单独一个窗口。")
+    }
+
     var body: some View {
         SettingsCard(title: L.t("Terminal", "终端")) {
-            CardRow(title: L.t("Open sessions in", "用哪个终端打开"), detail: detail, divider: prefs.ghosttyMissing,
+            CardRow(title: L.t("Open sessions in", "用哪个终端打开"), detail: detail, divider: true,
                     icon: RowIcon("apple.terminal.fill", .blue)) {
                 TerminalPicker(prefs: prefs)
+            }
+            CardRow(title: L.t("Open as", "打开方式"), detail: styleDetail, divider: prefs.ghosttyMissing,
+                    icon: RowIcon("square.on.square", .blue)) {
+                SlidingPicker(selection: Binding(get: { prefs.openStyle }, set: { prefs.openStyle = $0 }), options: [
+                    (OpenStyle.tab, L.t("New tab", "新标签页")),
+                    (OpenStyle.window, L.t("New window", "新窗口")),
+                ])
             }
             if prefs.ghosttyMissing, let url = Terminal.ghostty.downloadURL {
                 CardRow(

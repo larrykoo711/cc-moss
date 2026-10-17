@@ -40,6 +40,25 @@ public enum Terminal: String, CaseIterable, Codable, Sendable {
         default: nil
         }
     }
+
+    /// Whether cc-moss can open a session as a tab in this terminal's window.
+    /// Ghostty learnt it with scripting in 1.3; kitty needs remote control
+    /// switched on and Alacritty has no tabs, so those always get a window.
+    public func supportsTabs(version: String?) -> Bool {
+        switch self {
+        case .terminal, .iterm2, .wezterm: true
+        case .ghostty: Version.atLeast(version, [1, 3])
+        case .kitty, .alacritty: false
+        }
+    }
+}
+
+/// How a session opens: as a tab in the terminal's front window (what most
+/// developer tools do, and the default) or in a window of its own.
+public enum OpenStyle: String, CaseIterable, Codable, Sendable {
+    case tab, window
+
+    public static let `default`: OpenStyle = .tab
 }
 
 /// A supported terminal found on this Mac.

@@ -22,17 +22,23 @@ final class TerminalPrefs {
     @ObservationIgnored let catalog: TerminalCatalog
     @ObservationIgnored private let defaults: UserDefaults
     private static let key = "terminal"
+    private static let styleKey = "terminalOpenStyle"
 
     private(set) var installed: [InstalledTerminal] = []
     /// nil until the user picks one: then the system terminal.
     private(set) var chosen: Terminal?
     /// The pick that went missing; the settings mention it once.
     var notice: Terminal?
+    /// New tab (the default) or new window.
+    var openStyle: OpenStyle {
+        didSet { defaults.set(openStyle.rawValue, forKey: Self.styleKey) }
+    }
 
     init(catalog: TerminalCatalog = .live, defaults: UserDefaults = .standard) {
         self.catalog = catalog
         self.defaults = defaults
         chosen = defaults.string(forKey: Self.key).flatMap(Terminal.init(rawValue:))
+        openStyle = defaults.string(forKey: Self.styleKey).flatMap(OpenStyle.init(rawValue:)) ?? .default
         rescan()
     }
 
@@ -118,18 +124,26 @@ enum Opener {
 
     /// Run an already quoted cc-moss `command` (e.g. `cc-moss update`) in a
     /// new window of `terminal`, so the user watches it happen.
-    static func run(command: String, in terminal: InstalledTerminal?) -> OpenProblem? {
+    /// What the plan needs to know about this moment: the user's style, whether
+    /// the terminal is up, and whether cc-moss may press ⌘T (Accessibility).
+    static func context(for terminal: InstalledTerminal, style: OpenStyle) -> LaunchContext {
+        let running = !NSRunningApplication.runningApplications(withBundleIdentifier: terminal.terminal.bundleID).isEmpty
+        return LaunchContext(style: style, running: running, canSendKeys: AXIsProcessTrusted())
+    }
+
+    static func run(command: String, in terminal: InstalledTerminal?, style: OpenStyle = .window) -> OpenProblem? {
         guard let terminal else {
             return OpenProblem(kind: .noTerminal, terminalName: L.t("a terminal", "终端"), command: command)
         }
         let name = terminal.terminal.displayName
         let plan: LaunchPlan
         do {
-            plan = try LaunchPlan.make(for: terminal, command: command, shell: loginShell)
+            plan = try LaunchPlan.make(for: terminal, command: command, shell: loginShell,
+                                       context: context(for: terminal, style: style))
         } catch {
             return OpenProblem(kind: .unsafeName, terminalName: name, command: command)
         }
-        switch run(plan) {
+        switch run(plan, terminal: terminal) {
         case .opened: return nil
         case .denied: return OpenProblem(kind: .denied, terminalName: name, command: command)
         case .failed(let why): return OpenProblem(kind: .failed(why), terminalName: name, command: command)
@@ -139,7 +153,7 @@ enum Opener {
     /// Open `handle` in `terminal`. AppleScript runs on the main thread (as
     /// NSAppleScript requires); the first time, macOS asks the user for
     /// Automation permission while this waits.
-    static func open(handle: String, cli: String, in terminal: InstalledTerminal?) -> OpenProblem? {
+    static func open(handle: String, cli: String, in terminal: InstalledTerminal?, style: OpenStyle = .default) -> OpenProblem? {
         let command = LaunchPlan.attachCommand(cli: cli, handle: handle)
         guard let terminal else {
             return OpenProblem(kind: .noTerminal, terminalName: L.t("a terminal", "终端"), command: command)
@@ -147,15 +161,26 @@ enum Opener {
         let name = terminal.terminal.displayName
         let plan: LaunchPlan
         do {
-            plan = try LaunchPlan.make(for: terminal, cli: cli, handle: handle, shell: loginShell)
+            plan = try LaunchPlan.make(for: terminal, cli: cli, handle: handle, shell: loginShell,
+                                       context: context(for: terminal, style: style))
         } catch {
             return OpenProblem(kind: .unsafeName, terminalName: name, command: command)
         }
-        switch run(plan) {
+        switch run(plan, terminal: terminal) {
         case .opened: return nil
         case .denied: return OpenProblem(kind: .denied, terminalName: name, command: command)
         case .failed(let why): return OpenProblem(kind: .failed(why), terminalName: name, command: command)
         }
+    }
+
+    static func run(_ plan: LaunchPlan, terminal: InstalledTerminal) -> Outcome {
+        let outcome = run(plan)
+        // A tab spawned from the command line (WezTerm) doesn't bring its app
+        // forward on its own; scripted terminals already said `activate`.
+        if outcome == .opened, case .process = plan {
+            NSRunningApplication.runningApplications(withBundleIdentifier: terminal.terminal.bundleID).first?.activate()
+        }
+        return outcome
     }
 
     static func run(_ plan: LaunchPlan) -> Outcome {

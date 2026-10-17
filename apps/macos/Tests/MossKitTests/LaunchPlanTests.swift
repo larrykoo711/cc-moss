@@ -59,9 +59,10 @@ import Testing
     }
 
     @Test func weztermProcess() throws {
+        // Running already: the new window goes into that WezTerm, not a second one.
         #expect(try plan(.wezterm, app: "/Applications/WezTerm.app") == .process(
             executable: "/Applications/WezTerm.app/Contents/MacOS/wezterm",
-            arguments: ["start", "--", "/bin/zsh", "-lc", cmd]
+            arguments: ["cli", "spawn", "--new-window", "--", "/bin/zsh", "-lc", cmd]
         ))
     }
 
@@ -124,5 +125,153 @@ import Testing
             Issue.record("expected AppleScript"); return
         }
         #expect(script.contains("do script \"'/opt/homebrew/bin/cc-moss' 'update'\""))
+    }
+}
+
+/// New tab or new window, and the first launch of a terminal that isn't running yet.
+@Suite struct LaunchStyleTests {
+    let cli = "/opt/homebrew/bin/cc-moss"
+    let name = "job"
+    var cmd: String { LaunchPlan.attachCommand(cli: cli, handle: name) }
+    var viaShell: String { ["/bin/zsh", "-lc", cmd].map(LaunchPlan.quoteAlways).joined(separator: " ") }
+
+    func plan(_ t: Terminal, _ context: LaunchContext, version: String? = nil, app: String = "/Applications/X.app") throws -> LaunchPlan {
+        try LaunchPlan.make(for: InstalledTerminal(terminal: t, appPath: app, version: version),
+                            cli: cli, handle: name, shell: "/bin/zsh", context: context)
+    }
+
+    @Test func tabIsTheDefault() {
+        #expect(OpenStyle.default == .tab)
+        #expect(OpenStyle(rawValue: "window") == .window)
+    }
+
+    @Test func whichTerminalsCanOpenTabs() {
+        #expect(Terminal.terminal.supportsTabs(version: nil))
+        #expect(Terminal.iterm2.supportsTabs(version: nil))
+        #expect(Terminal.wezterm.supportsTabs(version: nil))
+        #expect(Terminal.ghostty.supportsTabs(version: "1.3.1"))
+        #expect(!Terminal.ghostty.supportsTabs(version: "1.2.3"))
+        #expect(!Terminal.kitty.supportsTabs(version: nil))
+        #expect(!Terminal.alacritty.supportsTabs(version: nil))
+    }
+
+    // MARK: Terminal
+
+    @Test func terminalNotRunningUsesItsFirstWindow() throws {
+        // Starting Terminal opens a window of its own; running the command in it
+        // (rather than in another new one) is what keeps it to one window.
+        let script = """
+        tell application id "com.apple.Terminal"
+        \tactivate
+        \trepeat 50 times
+        \t\tif (count of windows) > 0 then exit repeat
+        \t\tdelay 0.1
+        \tend repeat
+        \tif (count of windows) > 0 then
+        \t\tdo script \(LaunchPlan.appleScriptString(cmd)) in front window
+        \telse
+        \t\tdo script \(LaunchPlan.appleScriptString(cmd))
+        \tend if
+        end tell
+        """
+        #expect(try plan(.terminal, LaunchContext(style: .tab, running: false)) == .appleScript(script))
+        #expect(try plan(.terminal, LaunchContext(style: .window, running: false)) == .appleScript(script))
+    }
+
+    @Test func terminalTabPressesCommandT() throws {
+        #expect(try plan(.terminal, LaunchContext(style: .tab, running: true, canSendKeys: true)) == .appleScript("""
+        tell application id "com.apple.Terminal"
+        \tactivate
+        \tif (count of windows) > 0 then
+        \t\ttell application "System Events" to keystroke "t" using command down
+        \t\tdelay 0.3
+        \t\tdo script \(LaunchPlan.appleScriptString(cmd)) in front window
+        \telse
+        \t\tdo script \(LaunchPlan.appleScriptString(cmd))
+        \tend if
+        end tell
+        """))
+    }
+
+    @Test func terminalTabWithoutKeysIsAWindow() throws {
+        // Terminal has no "new tab" command; without permission to press ⌘T, a window it is.
+        #expect(try plan(.terminal, LaunchContext(style: .tab, running: true, canSendKeys: false))
+            == plan(.terminal, LaunchContext(style: .window, running: true)))
+    }
+
+    // MARK: Ghostty
+
+    @Test func ghosttyTab() throws {
+        #expect(try plan(.ghostty, LaunchContext(style: .tab, running: true), version: "1.3.1") == .appleScript("""
+        tell application id "com.mitchellh.ghostty"
+        \tactivate
+        \tset cfg to new surface configuration
+        \tset command of cfg to \(LaunchPlan.appleScriptString(viaShell))
+        \tif (count of windows) > 0 then
+        \t\tnew tab in front window with configuration cfg
+        \telse
+        \t\tnew window with configuration cfg
+        \tend if
+        end tell
+        """))
+    }
+
+    @Test func ghosttyNotRunningStartsWithTheCommand() throws {
+        #expect(try plan(.ghostty, LaunchContext(style: .tab, running: false), version: "1.3.1", app: "/Applications/Ghostty.app") == .process(
+            executable: "/usr/bin/open",
+            arguments: ["-a", "/Applications/Ghostty.app", "--args", "-e", "/bin/zsh", "-lc", cmd]
+        ))
+    }
+
+    // MARK: iTerm2
+
+    @Test func itermTab() throws {
+        #expect(try plan(.iterm2, LaunchContext(style: .tab, running: true)) == .appleScript("""
+        tell application id "com.googlecode.iterm2"
+        \tactivate
+        \tif (count of windows) > 0 then
+        \t\ttell current window to create tab with default profile command \(LaunchPlan.appleScriptString(viaShell))
+        \telse
+        \t\tcreate window with default profile command \(LaunchPlan.appleScriptString(viaShell))
+        \tend if
+        end tell
+        """))
+    }
+
+    @Test func itermNotRunningUsesItsFirstWindow() throws {
+        #expect(try plan(.iterm2, LaunchContext(style: .window, running: false)) == .appleScript("""
+        tell application id "com.googlecode.iterm2"
+        \tactivate
+        \trepeat 50 times
+        \t\tif (count of windows) > 0 then exit repeat
+        \t\tdelay 0.1
+        \tend repeat
+        \tif (count of windows) > 0 then
+        \t\ttell current session of current window to write text \(LaunchPlan.appleScriptString(cmd))
+        \telse
+        \t\tcreate window with default profile command \(LaunchPlan.appleScriptString(viaShell))
+        \tend if
+        end tell
+        """))
+    }
+
+    // MARK: WezTerm
+
+    @Test func weztermSpawnsIntoTheRunningOne() throws {
+        let exe = "/Applications/WezTerm.app/Contents/MacOS/wezterm"
+        #expect(try plan(.wezterm, LaunchContext(style: .tab, running: true), app: "/Applications/WezTerm.app")
+            == .process(executable: exe, arguments: ["cli", "spawn", "--", "/bin/zsh", "-lc", cmd]))
+        #expect(try plan(.wezterm, LaunchContext(style: .window, running: true), app: "/Applications/WezTerm.app")
+            == .process(executable: exe, arguments: ["cli", "spawn", "--new-window", "--", "/bin/zsh", "-lc", cmd]))
+        #expect(try plan(.wezterm, LaunchContext(style: .tab, running: false), app: "/Applications/WezTerm.app")
+            == .process(executable: exe, arguments: ["start", "--", "/bin/zsh", "-lc", cmd]))
+    }
+
+    // MARK: no tabs
+
+    @Test func kittyAndAlacrittyAlwaysOpenAWindow() throws {
+        for t in [Terminal.kitty, .alacritty] {
+            #expect(try plan(t, LaunchContext(style: .tab, running: true)) == plan(t, LaunchContext(style: .window, running: true)))
+        }
     }
 }
