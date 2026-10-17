@@ -1,0 +1,21 @@
+// The site: static files from dist/ (built by build.mjs), with worker/index.mjs in front of every
+// request so pages can answer in HTML or Markdown and /mcp can take POSTs.
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "cc-moss-site",
+  "main": "worker/index.mjs",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  },
+  "routes": [{ "pattern": "cc-moss.larrykoo.com", "custom_domain": true }],
+  "observability": { "enabled": true },
+  // `wrangler deploy --env preview`: the same site on workers.dev, to check before it goes live.
+  "env": {
+    "preview": { "name": "cc-moss-site-preview", "routes": [], "workers_dev": true }
+  }
+}

@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/" xml:lang="en-US">
+  <id>tag:github.com,2008:https://github.com/larrykoo711/cc-moss/releases</id>
+  <link type="text/html" rel="alternate" href="https://github.com/larrykoo711/cc-moss/releases"/>
+  <link type="application/atom+xml" rel="self" href="https://github.com/larrykoo711/cc-moss/releases.atom"/>
+  <title>Release notes from cc-moss</title>
+  <updated>2026-10-17T06:12:14Z</updated>
+  <entry>
+    <id>tag:github.com,2008:Repository/1421230282/v0.2.0</id>
+    <updated>2026-10-17T06:17:19Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/larrykoo711/cc-moss/releases/tag/v0.2.0"/>
+    <title>cc-moss v0.2.0</title>
+    <content type="html">&lt;p&gt;The menubar app: on a Mac, your Claude Code sessions are now one glance away.&lt;/p&gt;
+&lt;h3&gt;Added&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;strong&gt;The menubar app&lt;/strong&gt; (macOS 14 or newer). A native app in the menu bar that reads and writes everything through the&lt;br&gt;
+&lt;code&gt;cc-moss&lt;/code&gt; command and never touches the registry itself.&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;An icon that moves with your sessions&lt;/strong&gt;: working, waiting, needs you, stopped. Settings › Menu Bar can show a&lt;br&gt;
+number beside it, and with Motion off it stays still and only changes when the state does.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A Raycast-style panel&lt;/strong&gt; (click the icon, or tap Control twice from anywhere): type to search, Tab to filter by state, sessions&lt;br&gt;
+grouped by project with worktree labels. Return opens a session in a new window of your terminal: Terminal by&lt;br&gt;
+default, Ghostty recommended, iTerm2, WezTerm, Kitty and Alacritty too; ⇧⌘C copies the command for any other.&lt;br&gt;
+Stopped sessions come back one by one or all at once, and older ones are folded away. New session, notes, send a&lt;br&gt;
+message, rename and stop reminding are all there, and ⌘K lists every action with its shortcut.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Alerts in one place&lt;/strong&gt;: a session needs you, stopped, or is back (and, if you ask, finished a turn), told by&lt;br&gt;
+Notification Center or by Mo, never both. The same alert within 30 seconds counts once, and nothing pops up while&lt;br&gt;
+the panel is open. A banner can open the session or bring it back.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A startup reminder&lt;/strong&gt;: sessions that stopped while your Mac restarted, or while the app was away, are reported&lt;br&gt;
+as soon as it starts.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Mo, the desktop companion&lt;/strong&gt; (off until you switch it on): a small graphite pebble whose face shows how your&lt;br&gt;
+sessions are doing. Three interaction modes (quiet, everyday, active) and three sizes; click it for the panel, drag&lt;br&gt;
+it anywhere (it snaps to screen edges), right-click to keep it quiet for an hour or for the day, tuck it by the edge&lt;br&gt;
+or send it off. Optional voice: a chime, or the message title spoken by macOS&#39;s own speech synthesis, at most once&lt;br&gt;
+every 30 seconds.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Settings&lt;/strong&gt; in six pages (General, Menu Bar, Mo, Notifications, Aliases, About) with search: Open at Login, the&lt;br&gt;
+global shortcut (tap Control twice, or a key combination), a workspace where new sessions start, the terminal, the interface language (shared with the CLI), software update,&lt;br&gt;
+and &quot;Versions differ&quot; when the app and the CLI are not the same version.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A first-run welcome&lt;/strong&gt; in six skippable steps: set up the terminal side in one click, Open at Login and&lt;br&gt;
+notifications, your terminal, Mo, and the shortcut. Settings › About shows it again.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;The app ships with cc-moss: same version, same release. The Homebrew formula and the macOS release archives&lt;br&gt;
+carry &lt;code&gt;cc-moss.app&lt;/code&gt; (ad-hoc signed); &lt;code&gt;cc-moss install&lt;/code&gt; asks, then copies it to &lt;code&gt;~/Applications&lt;/code&gt;, where macOS&lt;br&gt;
+delivers its notifications (&lt;code&gt;--skip app&lt;/code&gt; leaves it out). &lt;code&gt;cc-moss update&lt;/code&gt; brings the app to the new version and&lt;br&gt;
+restarts it if it was running, and &lt;code&gt;cc-moss doctor&lt;/code&gt; reports its version and where it lives. Replacing the app is&lt;br&gt;
+all or nothing (a failure keeps the old one), it is never downgraded, and under sudo it is left alone.&lt;br&gt;
+&lt;code&gt;cc-moss install --uninstall&lt;/code&gt; removes it too, with its &quot;Open at Login&quot; launch agent. Linux keeps the terminal&lt;br&gt;
+edition.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Native aliases: &lt;code&gt;cc-moss alias add tn new&lt;/code&gt; makes &lt;code&gt;tn&lt;/code&gt; work in every shell right away. Aliases are links in&lt;br&gt;
+&lt;code&gt;~/.local/bin&lt;/code&gt;, never go through a shell, and can be managed from the menubar app&#39;s Settings › Aliases.&lt;br&gt;
+&lt;code&gt;doctor&lt;/code&gt; reports broken or hidden ones; &lt;code&gt;doctor --fix&lt;/code&gt; relinks them.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;Session events: two new hooks (&lt;code&gt;Notification&lt;/code&gt;, &lt;code&gt;PostToolUse&lt;/code&gt;) tell cc-moss when a session is waiting for your&lt;br&gt;
+permission or answer. &lt;code&gt;cc-moss events [--json] [--since SEQ] [--limit N]&lt;/code&gt; lists what just happened (kept for 7 days,&lt;br&gt;
+never your prompts), and &lt;code&gt;ls --json&lt;/code&gt; gains &lt;code&gt;attention&lt;/code&gt;. Coming from 0.1.x, &lt;code&gt;doctor&lt;/code&gt; reports the 2 missing hooks and&lt;br&gt;
+&lt;code&gt;cc-moss setup&lt;/code&gt; adds just those.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;code&gt;cc-moss send NAME -- TEXT&lt;/code&gt; types a message into a running session, as if you typed it in its terminal; several&lt;br&gt;
+lines arrive whole.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;&lt;code&gt;cc-moss config get|set ui.language&lt;/code&gt; reads or changes the interface language without opening the file; comments&lt;br&gt;
+and everything else in &lt;code&gt;config.toml&lt;/code&gt; stay as they were.&lt;/p&gt;
+&lt;/li&gt;
+&lt;li&gt;
+&lt;p&gt;JSON for scripts and the app: &lt;code&gt;restore --yes --json&lt;/code&gt; (with stable reason codes for failures),&lt;br&gt;
+&lt;code&gt;install --dry-run --json&lt;/code&gt;, &lt;code&gt;update --check --json&lt;/code&gt;, &lt;code&gt;alias ls|add|rm --json&lt;/code&gt;, &lt;code&gt;config get|set --json&lt;/code&gt;, and&lt;br&gt;
+&lt;code&gt;state_dir&lt;/code&gt; and per-session &lt;code&gt;worktree&lt;/code&gt; in &lt;code&gt;ls --json&lt;/code&gt;.&lt;/p&gt;
+&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Changed&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;code&gt;t&lt;/code&gt; is now a native alias instead of a zsh function, so bash and fish users get it too. &lt;code&gt;setup&lt;/code&gt; and &lt;code&gt;install&lt;/code&gt;&lt;br&gt;
+take the old function out of &lt;code&gt;.zshrc&lt;/code&gt; (only cc-moss&#39;s own block).&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;cc-moss new&lt;/code&gt; takes Claude Code&#39;s flags directly (&lt;code&gt;cc-moss new api --model opus&lt;/code&gt;); the &lt;code&gt;--&lt;/code&gt; before them is now&lt;br&gt;
+optional.&lt;/li&gt;
+&lt;li&gt;&lt;code&gt;cc-moss note&lt;/code&gt; clears a field given as an empty string instead of saving it blank.&lt;/li&gt;
+&lt;/ul&gt;</content>
+    <author>
+      <name>github-actions[bot]</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/in/15368?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1421230282/v0.1.1</id>
+    <updated>2026-10-16T06:52:08Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/larrykoo711/cc-moss/releases/tag/v0.1.1"/>
+    <title>cc-moss v0.1.1</title>
+    <content type="html">&lt;h3&gt;Changed&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;The picker&#39;s menu, note box and &quot;end it?&quot; question open right under the session card, where &quot;↵ Open  → More&quot;&lt;br&gt;
+was, instead of at the bottom of a tall terminal.&lt;/li&gt;
+&lt;li&gt;Dependencies: ratatui 0.30, crossterm 0.29, rusqlite 0.40, toml 1, ulid 3.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;h3&gt;Fixed&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&quot;Last message&quot; no longer shows Claude Code&#39;s own markup (&lt;code&gt;&amp;lt;cross-session-message …&amp;gt;&lt;/code&gt;, &lt;code&gt;&amp;lt;command-name&amp;gt;&lt;/code&gt;) for&lt;br&gt;
+messages from other sessions and slash commands: it shows the words inside, or nothing.&lt;/li&gt;
+&lt;/ul&gt;</content>
+    <author>
+      <name>github-actions[bot]</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/in/15368?s=60&amp;v=4"/>
+  </entry>
+  <entry>
+    <id>tag:github.com,2008:Repository/1421230282/v0.1.0</id>
+    <updated>2026-10-16T04:22:56Z</updated>
+    <link rel="alternate" type="text/html" href="https://github.com/larrykoo711/cc-moss/releases/tag/v0.1.0"/>
+    <title>cc-moss v0.1.0</title>
+    <content type="html">&lt;p&gt;The first release: Claude Code sessions that survive crashes, reboots and closed tabs.&lt;/p&gt;
+&lt;h3&gt;Added&lt;/h3&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;Session registry.&lt;/strong&gt; Claude Code hooks (start, prompt, stop, end) record every interactive session in a local&lt;br&gt;
+SQLite registry: session id, folder, launch arguments, process and tmux session. Sessions that were already running&lt;br&gt;
+before setup are adopted the next time you look.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss restore&lt;/code&gt;.&lt;/strong&gt; Brings every interrupted session back in its own tmux session with &lt;code&gt;claude --resume&lt;/code&gt;, in its&lt;br&gt;
+original folder, with &lt;code&gt;--model&lt;/code&gt;, &lt;code&gt;--permission-mode&lt;/code&gt;, &lt;code&gt;--effort&lt;/code&gt;, &lt;code&gt;--add-dir&lt;/code&gt;, &lt;code&gt;--agent&lt;/code&gt; and&lt;br&gt;
+&lt;code&gt;--dangerously-skip-permissions&lt;/code&gt; as they were. Anything that looks like a secret is dropped. A Claude Code that&lt;br&gt;
+exits right after starting is reported, not counted as restored. &lt;code&gt;--dry-run&lt;/code&gt; and &lt;code&gt;--yes&lt;/code&gt; are supported.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss new [NAME]&lt;/code&gt;.&lt;/strong&gt; One name, one session: jumps into a running session, offers to restore an interrupted one,&lt;br&gt;
+or starts a new one. &lt;code&gt;/rename&lt;/code&gt; inside Claude Code renames the tmux session too.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Notes.&lt;/strong&gt; &lt;code&gt;cc-moss note&lt;/code&gt; records a session&#39;s goal and where it stopped.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The picker&lt;/strong&gt; (&lt;code&gt;t&lt;/code&gt;, or plain &lt;code&gt;cc-moss&lt;/code&gt;; &lt;code&gt;t api&lt;/code&gt; opens it already searching). Type to search or name a new session, arrows and Enter to open, → for the&lt;br&gt;
+session menu, mouse support. Marks for working, waiting, interrupted and plain tmux sessions, plus git worktree&lt;br&gt;
+labels.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss install&lt;/code&gt; and &lt;code&gt;cc-moss doctor&lt;/code&gt;.&lt;/strong&gt; Set up hooks, a tuned tmux config, a starship prompt, shell fixes and&lt;br&gt;
+optional aliases in marked blocks with timestamped backups. Missing tools are installed with Homebrew or apt, after&lt;br&gt;
+asking. &lt;code&gt;doctor&lt;/code&gt; checks every piece and says how to fix it. &lt;code&gt;install --uninstall&lt;/code&gt; takes it all out again. On a&lt;br&gt;
+login shell other than zsh, the zsh parts are skipped and your shell files are left alone.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss setup&lt;/code&gt; / &lt;code&gt;setup --uninstall&lt;/code&gt;.&lt;/strong&gt; Hooks and the &lt;code&gt;t&lt;/code&gt; shortcut only.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss update&lt;/code&gt;.&lt;/strong&gt; Checks for a new version and, after asking, updates the way cc-moss was installed:&lt;br&gt;
+&lt;code&gt;brew upgrade&lt;/code&gt;, &lt;code&gt;cargo install&lt;/code&gt;, or for a release download, a SHA-256-verified, test-run, atomic swap of the binary&lt;br&gt;
+that leaves the old one untouched if anything fails. Once a day the picker (top line, &quot;Update to X.Y.Z&quot;) and&lt;br&gt;
+&lt;code&gt;doctor&lt;/code&gt; mention a new version; one HTTPS request to the GitHub releases page, never from the hooks. Turn it off&lt;br&gt;
+with &lt;code&gt;[update] check = false&lt;/code&gt; or &lt;code&gt;CC_MOSS_NO_UPDATE_CHECK=1&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code&gt;cc-moss ls&lt;/code&gt;&lt;/strong&gt; (with &lt;code&gt;--json&lt;/code&gt; for scripts), &lt;strong&gt;&lt;code&gt;attach&lt;/code&gt;&lt;/strong&gt; and &lt;strong&gt;&lt;code&gt;close&lt;/code&gt;&lt;/strong&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;English and Simplified Chinese&lt;/strong&gt;, picked from the system language (&lt;code&gt;CC_MOSS_LANG&lt;/code&gt; or &lt;code&gt;[ui] language&lt;/code&gt; overrides it).&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Built to stay out of the way.&lt;/strong&gt; The hook never blocks a prompt, never exits non-zero and does nothing if the&lt;br&gt;
+cc-moss binary is gone. State files are private to you. An older cc-moss leaves a newer registry alone.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The Continuum mark&lt;/strong&gt;: a coral ∞ in the README, the picker and &lt;code&gt;cc-moss --version&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.&lt;/li&gt;
+&lt;/ul&gt;</content>
+    <author>
+      <name>github-actions[bot]</name>
+    </author>
+    <media:thumbnail height="30" width="30" url="https://avatars.githubusercontent.com/in/15368?s=60&amp;v=4"/>
+  </entry>
+</feed>

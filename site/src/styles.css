@@ -1,5 +1,7 @@
 @import "tailwindcss";
 @source "./index.template.html";
+@source "./404.template.html";
+@source "./partials";
 @source "./app.js";
 
 @theme {
@@ -50,11 +52,8 @@
   color-scheme: light;
 }
 
-/* One language at a time: every phrase is written in both, side by side. */
-html[data-lang="zh"] [lang="en"],
-html[data-lang="en"] [lang="zh"] {
-  display: none !important;
-}
+/* Switching language is a page load now; let it cross-fade instead of blinking. */
+@view-transition { navigation: auto; }
 
 html {
   scroll-behavior: smooth;
