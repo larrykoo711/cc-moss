@@ -35,7 +35,7 @@ cc-moss doctor                           # checks that everything is in place
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
-| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same or a newer version, or a development build, is left alone, and so is everything under sudo |
+| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same or a newer version, or a development build, is left alone, and so is everything under sudo (see [The menubar app](#the-menubar-app)) |
 | `aliases` | Optional (`--with aliases`): `ll`, `lla`, `psg`, `gl`, plus `lg`/`lt` (eza), `catp`/`catn` (bat), `ff` (fd) and `psp` (procs) when those are installed. `ls`, `cat`, `grep` and `cd` keep their usual behaviour |
 
 Leave a part out with `--skip <part>`. Shell additions live in clearly marked `# >>> cc-moss: … >>>` blocks, and each
@@ -126,6 +126,7 @@ In the picker:
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
+| `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
@@ -160,6 +161,173 @@ and `|` are plain text. It can only run cc-moss's own commands.
 - A shell alias or function with the same name runs instead of the alias. `alias add` and `doctor` point it out; your
   shell files are never edited.
 - The menubar app's Settings › Aliases page adds, edits and removes them, through these same commands.
+
+## The menubar app
+
+On a Mac, cc-moss also comes with an app that lives in the menu bar. It has the same version as the command line and
+ships in the same release, and it does all its reading and writing through the `cc-moss` command; it never touches the
+registry itself. It needs macOS 14 or newer. Linux has the terminal edition only, with every command above.
+
+<table>
+  <tr>
+    <td width="42%"><img src="assets/app-panel.png" alt="The menubar app's session panel"></td>
+    <td width="58%"><img src="assets/app-mo.png" alt="Mo with its message box"></td>
+  </tr>
+  <tr>
+    <td align="center"><sub>The panel: sessions by project, stopped ones back in one click</sub></td>
+    <td align="center"><sub>Mo knocks when a session needs you</sub></td>
+  </tr>
+</table>
+
+### Install, update, uninstall
+
+| You want to… | Do this |
+|---|---|
+| Install the app | `cc-moss install`: after asking, it copies `cc-moss.app` to `~/Applications` and opens it (`--skip app` leaves it out) |
+| Update | `cc-moss update`: the command line and the app move to the new version together; a running app quits first and opens again afterwards |
+| Uninstall | `cc-moss install --uninstall`: quits and deletes the app and its Open at Login item, after asking separately |
+
+The Homebrew install and the macOS release downloads both carry the app; a source install (`cargo install`) does not.
+`cc-moss doctor` tells you which version the app is and where it lives.
+
+The first time it opens, a short welcome walks you through: setting up the terminal side (hooks, tmux, the prompt: the
+same set as `cc-moss install`, in one click), Open at Login and notifications, the terminal you use, whether Mo should
+come out, and finally the shortcut that opens the panel. Every step can be skipped, and Settings › About shows the
+welcome again.
+
+<p align="center">
+  <img src="assets/app-welcome.png" alt="The first page of the welcome" width="70%">
+</p>
+
+### The menu bar icon
+
+The icon is cc-moss's infinity loop, and it follows your sessions: one working, one waiting for you, one that stopped,
+you can tell at a glance. "Needs you" wins over "stopped", which wins over "working". In Settings › Menu Bar:
+
+- **Show**: the icon alone, or the icon and a number (how many need you; if none, how many stopped; if none, how many
+  are working).
+- **Motion**: on, the icon moves while a session works or needs you, for about 1–2% CPU. Off, it stays still and only
+  changes when the state does, for free.
+
+### The panel
+
+Click the menu bar icon, or press ⌃⌥M anywhere, and the panel opens. Sessions are grouped by project, with git
+worktrees marked; the row at the top filters by state (all, working, waiting for you, stopped). Typing searches.
+
+On a stopped session, Return brings it back: the same conversation, in tmux, exactly like `cc-moss restore`. When
+several stopped at once (after a restart, say), a "2 sessions stopped" strip at the top has a Bring All Back button.
+Sessions that stopped more than a week ago are folded under "Stopped earlier", and Stop Reminding sends any of them away
+for good.
+
+On a session you can open, Return opens a new window in your terminal, straight into the session. Terminal (the default),
+Ghostty (recommended), iTerm2, WezTerm, Kitty and Alacritty are supported; pick yours in Settings › General. Using
+another one? ⇧⌘C copies the command for you to paste.
+
+| Key | What it does |
+|---|---|
+| Typing | Search sessions |
+| ↑ ↓ | Move the selection |
+| ↵ | Open the selected session; bring it back if it stopped |
+| Tab / ⇧Tab | Cycle the filter: all, working, waiting, stopped |
+| ⌘K | Every action for the selected session: open, copy the command, copy the folder path, send a message, rename, write a note, stop reminding |
+| ⌘N | New session: a name and a folder |
+| ⌘E | Send a message: types it into the session's terminal for you (a session outside tmux gets a note instead) |
+| ⇧⌘C | Copy the command (for a stopped session, the restore command) |
+| ⌘R | Refresh |
+| ⌘, | Settings |
+| Esc | Step back: close the form, the menu, the filter, the search, then the panel |
+| ⌘Q | Quit the app |
+
+Notes, renames and messages are typed right in the panel and go through `cc-moss note` and `cc-moss send`; a rename
+simply types `/rename <new name>` into the session for you.
+
+### Notifications and Mo
+
+The app tells you when a session needs you (a permission prompt or a question), when one stops, and when a stopped one
+is back. "Turn finished" is off by default: every turn ends with one, so it gets chatty. Settings › Notifications picks
+which of these you hear about, and **who tells you**:
+
+| Choice | What happens |
+|---|---|
+| Automatic (default) | Mo, while it's on your desktop; otherwise Notification Center |
+| Notification Center | Always Notification Center; Mo only shows it on its face |
+| Mo | Only Mo, even when it's tucked away at the edge |
+
+Each alert comes from one place only: never a banner and Mo saying the same thing. The same alert from the same session
+within 30 seconds counts once, and while the panel is open nothing pops up, since it's all in front of you already.
+
+**After a restart**: sessions that stopped while your Mac restarted, or while the app wasn't running, are reported as
+soon as the app starts ("3 sessions stopped"), and the panel brings them all back in one click.
+
+**Mo** is a small graphite pebble that lives in a corner of your desktop: the infinity loop is its eyes, and the light
+on its antenna shows what's going on. It stays in until you switch it on in Settings › Mo (the welcome asks too).
+
+- Click it to open the panel. Drag it anywhere; near a screen edge it snaps to it.
+- Right-click to keep it quiet for an hour, leave you be for today, hide by the edge with only its eyes showing, or
+  clock off (hide).
+- It comes in small, medium and large.
+- **Interaction** sets how forward it is when something needs you: **Quiet** only makes a face, and you click it to
+  see what's up; **Everyday** (the default) makes a face and murmurs a word or two, and hovering shows the rest;
+  **Active** pops up the message right away, buttons and all.
+
+<p align="center">
+  <img src="assets/app-settings.png" alt="The Mo page in Settings" width="85%">
+</p>
+
+### Voice
+
+Mo can make a sound too, under Settings › Mo › Voice:
+
+- **Off** (the default): silent, faces only.
+- **Chime**: a soft sound built into macOS, at most every 30 seconds.
+- **Speak**: Mo reads the message title aloud, at most every 30 seconds. The voice is macOS's own speech synthesis,
+  on your Mac, with nothing sent anywhere. Download a Premium or Enhanced voice in System Settings and it sounds far
+  more natural.
+
+### Settings
+
+| Page | What's there |
+|---|---|
+| General | Open at Login, the shortcut for the panel, interface language, the terminal sessions open in |
+| Menu Bar | How the icon shows, motion |
+| Mo | On or off, size, interaction, voice |
+| Notifications | Who tells you, what to tell you, Notification Center permission |
+| Aliases | Add, edit and remove aliases, the same ones as `cc-moss alias` (see [Aliases](#aliases)) |
+| About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |
+
+The search field at the top of the sidebar finds any setting.
+
+**Shortcut**: ⌃⌥M by default. In Settings › General, click it and press a new one (it needs ⌃, ⌥ or ⌘, and you'll
+hear about it if another app already uses it).
+
+**Language**: the app and the command line share one interface language setting, so changing it on one side changes
+both. Pick it in Settings › General, or run `cc-moss config set ui.language zh` (`en`, `zh`, or `auto` to follow the
+system).
+
+### Menubar app FAQ
+
+**No notifications arrive**
+
+macOS only sends notifications to an app in an Applications folder (`/Applications` or `~/Applications`).
+`cc-moss install` puts it in `~/Applications`; if you moved it somewhere else, move it back. Still nothing? Check the
+permission in Settings › Notifications: if it's turned off, click Open System Settings and switch on Notifications ›
+cc-moss.
+
+**Settings › About says "Versions differ"**
+
+The app and the command line aren't the same version. The usual cause is running only `brew upgrade cc-moss`: Homebrew
+updates the command line, and the app in `~/Applications` stays on the old version. Run `cc-moss install` once more to
+bring the app along; from then on, `cc-moss update` moves both together.
+
+**I chose Open, and the terminal did nothing**
+
+The first time cc-moss opens a session in a terminal, macOS asks whether it may control that terminal. If you said no,
+switch it on in System Settings › Privacy & Security › Automation, or press ⇧⌘C and paste the command yourself.
+
+**The app can't find `cc-moss`**
+
+It looks in the usual places (Homebrew, `~/.cargo/bin`, `~/.local/bin` and so on). If yours is somewhere else, choose it
+in Settings › About › Command Line.
 
 ## How it works
 
