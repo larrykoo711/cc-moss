@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **A Permissions page in Settings**: Accessibility, notifications and control of your terminal (Automation), each
+  with where it stands, what it's for and Allow when it's missing. A dot beside the page means one is off while
+  something uses it. Pages that rely on a permission show the same row where it's missing.
+- **Told when an update takes Accessibility away.** The panel says "Allow Accessibility again" at the top, with Allow,
+  instead of the shortcut going quiet without a word.
+
 ## [0.2.1] - 2026-10-17
 
 Tabs instead of piles of windows, and every shortcut on one settings page.

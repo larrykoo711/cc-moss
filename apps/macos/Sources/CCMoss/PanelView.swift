@@ -26,6 +26,12 @@ struct PanelView: View {
         VStack(spacing: 0) {
             searchBar
             Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+            if AccessLostBanner.shows() {
+                AccessLostBanner()
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if model.phase == .ready && !model.sessions.isEmpty {
                 StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
                     .padding(.horizontal, 10)
@@ -91,6 +97,7 @@ struct PanelView: View {
         .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
+        .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true

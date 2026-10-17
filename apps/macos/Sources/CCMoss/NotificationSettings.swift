@@ -2,7 +2,8 @@ import MossKit
 import SwiftUI
 
 /// Settings › Notifications: where alerts go (A23), which events count
-/// (A9), and whether macOS lets cc-moss use Notification Center.
+/// (A9), and a word when macOS won't let cc-moss use Notification Center
+/// (the full picture is on the Permissions page).
 struct NotificationSettings: View {
     var status: NotificationStatus = .shared
     @AppStorage(AlertMode.key) private var mode = AlertMode.auto.rawValue
@@ -10,15 +11,18 @@ struct NotificationSettings: View {
 
     var body: some View {
         SettingsCard(title: L.t("Delivery", "提醒方式")) {
-            CardRow(title: L.t("Who lets you know", "谁来提醒你"), detail: modeDetail) {
+            CardRow(title: L.t("Who lets you know", "谁来提醒你"), detail: modeDetail, divider: status.auth != .allowed) {
                 SlidingPicker(selection: $mode, options: [
                     (AlertMode.auto.rawValue, L.t("Automatic", "自动")),
                     (AlertMode.notificationsOnly.rawValue, L.t("Notifications", "系统通知")),
                     (AlertMode.petOnly.rawValue, L.t("Mo", "小莫")),
                 ])
             }
-            AuthRow(status: status)
+            if status.auth != .allowed {
+                PermissionRow(kind: .notifications, divider: false)
+            }
         }
+        .task { await status.refresh() }
         SettingsCard(title: L.t("What to Tell You", "提醒哪些事")) {
             KindRow(kind: .needsYou,
                     title: L.t("Waiting for you", "在等你"),
@@ -87,88 +91,6 @@ private struct KindRow: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .accessibilityLabel(title)
-        }
-    }
-}
-
-/// Whether macOS lets cc-moss post, and the one thing to do about it.
-private struct AuthRow: View {
-    let status: NotificationStatus
-
-    var body: some View {
-        CardRow(title: L.t("Notifications", "系统通知"), detail: detail, divider: false) {
-            HStack(spacing: 8) {
-                Image(systemName: symbol)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(tint)
-                    .accessibilityLabel(title)
-                    .tip(title)
-                control
-            }
-        }
-        .task { await status.refresh() }
-    }
-
-    private var title: String {
-        switch status.auth {
-        case .allowed: L.t("On", "已打开")
-        case .denied: L.t("Turned off in System Settings", "在系统设置里关掉了")
-        case .unavailable: L.t("Not available here", "这里用不了")
-        case .notDetermined, .unknown: L.t("Not asked yet", "还没问过你")
-        }
-    }
-
-    private var detail: String { title + L.t(". ", "。") + explanation }
-
-    private var explanation: String {
-        switch status.auth {
-        case .allowed:
-            L.t("Click one to open a session or bring it back.",
-                "点一下通知就能打开或找回会话。")
-        case .denied:
-            L.t("Turn them back on there.",
-                "去那里打开就行。")
-        case .unavailable:
-            L.t("Move cc-moss into Applications to use them.",
-                "把 cc-moss 放进「应用程序」文件夹才能用。")
-        case .notDetermined, .unknown:
-            L.t("macOS asks the first time there's news.",
-                "第一次有事时 macOS 会问一次。")
-        }
-    }
-
-    private var symbol: String {
-        switch status.auth {
-        case .allowed: "checkmark.circle.fill"
-        case .denied, .unavailable: "exclamationmark.triangle.fill"
-        case .notDetermined, .unknown: "questionmark.circle"
-        }
-    }
-
-    private var tint: Color {
-        switch status.auth {
-        case .allowed: .green
-        case .denied, .unavailable: Theme.amber
-        case .notDetermined, .unknown: .secondary
-        }
-    }
-
-    @ViewBuilder private var control: some View {
-        switch status.auth {
-        case .denied, .allowed:
-            SoftButton(title: L.t("Open System Settings", "打开系统设置"), icon: Icons.settings) {
-                NotificationStatus.openSystemSettings()
-            }
-            .handCursor()
-            .tip(L.t("System Settings › Notifications", "系统设置 › 通知"))
-        case .notDetermined, .unknown:
-            SoftButton(title: L.t("Allow Notifications", "允许通知"), icon: "bell.badge", prominent: true) {
-                Task { await status.request() }
-            }
-            .handCursor()
-            .tip(L.t("macOS asks you once", "macOS 会问你一次"))
-        case .unavailable:
-            EmptyView()
         }
     }
 }

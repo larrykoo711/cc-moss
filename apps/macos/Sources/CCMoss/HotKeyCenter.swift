@@ -158,6 +158,9 @@ final class HotKeyCenter {
         keys.down = false
     }
 
+    /// Settings' Permissions page looks every couple of seconds.
+    func recheckTrust() { refreshTrust() }
+
     private func refreshTrust() {
         let now = AXIsProcessTrusted()
         guard now != trust.allowed else { return }
@@ -417,14 +420,10 @@ struct AccessibilityRow: View {
 
     var body: some View {
         let k = shortcut.tapKey?.glyph ?? "⌃"
-        CardRow(title: L.t("Let cc-moss hear \(k)\(k)", "让 cc-moss 听见连按 \(k)"),
-                detail: L.t("Turn it on once in System Settings. Until then, use ⌃⌥M.",
-                            "在系统设置里打开一次就好，之前先用 ⌃⌥M。"),
-                divider: false) {
-            SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
-                HotKeyCenter.shared.askForAccessibility()
-                HotKeyCenter.openAccessibilitySettings()
-            }
-        }
+        PermissionRow(kind: .accessibility,
+                      title: L.t("Let cc-moss hear \(k)\(k)", "让 cc-moss 听见连按 \(k)"),
+                      detail: L.t("Turn it on once in System Settings. Until then, use ⌃⌥M.",
+                                  "在系统设置里打开一次就好，之前先用 ⌃⌥M。"),
+                      divider: false)
     }
 }
