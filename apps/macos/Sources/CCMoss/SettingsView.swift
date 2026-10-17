@@ -26,7 +26,7 @@ struct SettingsView: View {
     /// The sections, in the sidebar's order. Everyday things first, one
     /// subject per page; About stands apart at the bottom of the list.
     enum Tab: String, CaseIterable, Hashable {
-        case general, menuBar, mo, notifications, aliases, about
+        case general, shortcuts, menuBar, mo, notifications, about
 
         var title: String {
             switch self {
@@ -34,7 +34,7 @@ struct SettingsView: View {
             case .menuBar: L.t("Menu Bar", "菜单栏")
             case .mo: L.t("Mo", "小莫")
             case .notifications: L.t("Notifications", "通知")
-            case .aliases: L.t("Aliases", "别名")
+            case .shortcuts: L.t("Shortcuts", "快捷键")
             case .about: L.t("About", "关于")
             }
         }
@@ -45,37 +45,26 @@ struct SettingsView: View {
             case .menuBar: "menubar.rectangle"
             case .mo: "face.smiling"
             case .notifications: Icons.notifications
-            case .aliases: Icons.aliases
+            case .shortcuts: Icons.shortcuts
             case .about: "infinity"
             }
         }
 
-        /// System Settings' palette: one hue per section, top-lit.
-        var tint: [Color] {
-            switch self {
-            case .general: [Color(white: 0.62), Color(white: 0.45)]
-            case .menuBar: [Color(red: 0.30, green: 0.62, blue: 1.0), Color(red: 0.12, green: 0.44, blue: 0.95)]
-            case .mo: [Color(red: 0.25, green: 0.80, blue: 0.72), Color(red: 0.08, green: 0.62, blue: 0.56)]
-            case .notifications: [Color(red: 1.0, green: 0.42, blue: 0.40), Color(red: 0.92, green: 0.24, blue: 0.24)]
-            case .aliases: AliasesSettings.tint
-            case .about: [Theme.brand.opacity(0.85), Theme.brand]
-            }
-        }
-
         /// A little room above this one in the sidebar: it starts a group.
-        var startsGroup: Bool { self == .aliases || self == .about }
+        var startsGroup: Bool { self == .about }
 
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup shortcut hotkey keyboard language english chinese workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 快捷键 热键 唤出 语言 中文 英文 english 工作区 目录 文件夹 新会话 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup language english chinese workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 语言 中文 英文 english 工作区 目录 文件夹 新会话 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
             case .notifications: [title, L.t("alert banner notification center needs you permission question stopped interrupted finished turn bring back restore mo pet do not disturb",
                                              "提醒 通知中心 横幅 需要你确认 权限 提问 断了 中断 做完 这一轮 找回 小莫 宠物 勿扰 notification")]
-            case .aliases: [title, "alias t", L.t("shortcut command shell link", "快捷 命令 shell 链接 alias")]
+            case .shortcuts: [title, "alias", L.t("shortcut hotkey keyboard double tap control panel command terminal short name type",
+                                                  "快捷键 热键 键盘 连按 唤出 面板 短命令 终端 别名 输入 alias")]
             case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }
@@ -131,7 +120,7 @@ struct SettingsView: View {
                         case .menuBar: MenuBarSettings(model: model)
                         case .mo: PetSettings()
                         case .notifications: NotificationSettings()
-                        case .aliases: AliasesSettings(model: model, demo: aliasDemo)
+                        case .shortcuts: ShortcutsSettings(model: model, demo: aliasDemo)
                         case .about: AboutSettings(model: model)
                         }
                     }
@@ -227,18 +216,25 @@ struct SettingsView: View {
     }
 }
 
-/// A sidebar entry: an icon tile and the section's name, Raycast-sized.
+/// A sidebar entry: a plain symbol and the section's name, the way Finder's sidebar does it.
 struct SidebarItem: View {
     let tab: SettingsView.Tab
     let selected: Bool
     let action: () -> Void
     @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+    /// Spelled out per scheme: on the glass sidebar the semantic colours
+    /// went through vibrancy and came out near-invisible.
+    private var ink: Color { scheme == .dark ? .white : .black }
 
     var body: some View {
         Button(action: action) {
             HStack(spacing: 10) {
-                IconTile(symbol: tab.icon, colors: tab.tint, size: 22)
-                Text(tab.title).font(.system(size: 14))
+                Image(systemName: tab.icon)
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(ink.opacity(selected ? 0.9 : 0.55))
+                    .frame(width: 22, height: 22)
+                Text(tab.title).font(.system(size: 14)).foregroundStyle(ink.opacity(selected ? 1 : 0.85))
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 6)
@@ -345,16 +341,11 @@ struct CardRow<Control: View>: View {
     let title: String
     var detail: String?
     var divider = true
-    /// A small icon tile before the words, as in System Settings.
-    var icon: RowIcon?
     @ViewBuilder let control: () -> Control
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                if let icon {
-                    IconTile(symbol: icon.symbol, colors: icon.colors, size: 26)
-                }
                 VStack(alignment: .leading, spacing: 3) {
                     Text(title).font(.system(size: 14))
                     if let detail {
@@ -370,42 +361,8 @@ struct CardRow<Control: View>: View {
             .padding(12)
             .frame(minHeight: 46)
             if divider {
-                // Under an icon, the hairline starts at the words, as in System Settings.
-                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1)
-                    .padding(.leading, icon == nil ? 12 : 50).padding(.trailing, 12)
+                Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
             }
-        }
-    }
-}
-
-/// A settings row's icon: an SF Symbol on a coloured tile.
-struct RowIcon {
-    let symbol: String
-    let colors: [Color]
-
-    init(_ symbol: String, _ hue: RowHue) {
-        self.symbol = symbol
-        self.colors = hue.colors
-    }
-}
-
-/// One hue per kind of thing, top-lit like System Settings' tiles.
-enum RowHue {
-    case gray, blue, teal, green, orange, red, purple, pink, indigo, brand
-
-    var colors: [Color] {
-        func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
-        switch self {
-        case .gray: return [c(0.62, 0.62, 0.65), c(0.45, 0.45, 0.48)]
-        case .blue: return [c(0.30, 0.62, 1.0), c(0.12, 0.44, 0.95)]
-        case .teal: return [c(0.25, 0.80, 0.72), c(0.08, 0.62, 0.56)]
-        case .green: return [c(0.35, 0.83, 0.42), c(0.18, 0.68, 0.28)]
-        case .orange: return [c(1.0, 0.70, 0.30), c(0.97, 0.53, 0.12)]
-        case .red: return [c(1.0, 0.42, 0.40), c(0.92, 0.24, 0.24)]
-        case .purple: return [c(0.70, 0.52, 0.98), c(0.52, 0.34, 0.88)]
-        case .pink: return [c(1.0, 0.45, 0.65), c(0.92, 0.28, 0.50)]
-        case .indigo: return [c(0.45, 0.48, 0.98), c(0.32, 0.32, 0.86)]
-        case .brand: return [Theme.brand.opacity(0.85), Theme.brand]
         }
     }
 }
@@ -494,14 +451,12 @@ struct SoftButton: View {
     }
 }
 
-/// General: starting up and calling the panel, the language, and where
-/// sessions open.
+/// General: starting up, the language, and where sessions open.
 struct GeneralSettings: View {
     @Bindable var model: AppModel
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
-    @State private var shortcut = PanelShortcut.load(.standard)
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
 
@@ -511,7 +466,7 @@ struct GeneralSettings: View {
                 title: L.t("Open at login", "开机自动打开"),
                 detail: loginError ?? L.t("Starts with your Mac, so you don't have to remember.",
                                          "开机后自己出来，不用你记着。"),
-                icon: RowIcon("power", .blue)
+                divider: false
             ) {
                 Toggle("", isOn: $openAtLogin)
                     .toggleStyle(.switch)
@@ -520,26 +475,13 @@ struct GeneralSettings: View {
                     .controlSize(.small)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
-            let needsTrust = shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed
-            CardRow(
-                title: L.t("Panel shortcut", "唤出面板"),
-                detail: L.t("See every session from anywhere.", "在哪儿按一下，都能看到所有会话。"),
-                divider: needsTrust,
-                icon: RowIcon("keyboard.fill", .blue)
-            ) {
-                HotKeyRecorder(onSave: { shortcut = $0 })
-            }
-            if needsTrust {
-                AccessibilityRow(shortcut: shortcut).transition(.opacity)
-            }
         }
         SettingsCard(title: L.t("Language", "语言")) {
             CardRow(
                 title: L.t("Language", "语言"),
                 detail: languageError ?? L.t("Follow your Mac, or pick one. The terminal follows too.",
                                              "跟随系统，也可以固定成中文或英文。"),
-                divider: false,
-                icon: RowIcon("globe", .blue)
+                divider: false
             ) {
                 SlidingPicker(selection: $language, options: [
                     (LangChoice.auto.rawValue, L.t("System", "跟随系统")),
@@ -590,8 +532,7 @@ struct ProgramRow: View {
             detail: model.cliPath == nil
                 ? L.t("Not found yet. Use Choose… to point to it.", "还没找到，点「选择…」指一下位置。")
                 : L.t("Type cc-moss in any terminal to use it there.", "在终端里输入 cc-moss 也能用。"),
-            divider: false,
-            icon: RowIcon("shippingbox.fill", .gray)
+            divider: false
         ) {
             HStack(spacing: 8) {
                 if UserDefaults.standard.string(forKey: "cliPath") != nil {
@@ -669,7 +610,7 @@ struct AboutSettings: View {
         VStack(spacing: 22) {
             hero
             SettingsCard(title: L.t("Software Update", "软件更新")) {
-                CardRow(title: updateTitle, detail: updateDetail, icon: RowIcon("arrow.triangle.2.circlepath", .gray)) {
+                CardRow(title: updateTitle, detail: updateDetail) {
                     updateControl
                 }
                 ProgramRow(model: model)

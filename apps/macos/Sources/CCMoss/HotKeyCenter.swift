@@ -259,6 +259,7 @@ struct HotKeyRecorder: View {
                         if value == .default {
                             Text(L.t("Default", "默认"))
                                 .font(.system(size: 10, weight: .semibold))
+                                .fixedSize()
                                 .foregroundStyle(Theme.brand)
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Capsule().fill(Theme.brand.opacity(0.12)))
@@ -402,6 +403,8 @@ struct Keycaps: View {
                 Text(L.t("twice", "连按两下"))
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .fixedSize()
                     .padding(.leading, 2)
             }
         }
@@ -417,8 +420,7 @@ struct AccessibilityRow: View {
         CardRow(title: L.t("Let cc-moss hear \(k)\(k)", "让 cc-moss 听见连按 \(k)"),
                 detail: L.t("Turn it on once in System Settings. Until then, use ⌃⌥M.",
                             "在系统设置里打开一次就好，之前先用 ⌃⌥M。"),
-                divider: false,
-                icon: RowIcon("accessibility", .blue)) {
+                divider: false) {
             SoftButton(title: L.t("Allow", "去允许"), icon: "hand.raised") {
                 HotKeyCenter.shared.askForAccessibility()
                 HotKeyCenter.openAccessibilitySettings()

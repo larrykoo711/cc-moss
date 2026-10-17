@@ -33,7 +33,6 @@ struct MoStudio: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 10) {
-                    IconTile(symbol: "house.fill", colors: RowHue.brand.colors, size: 26)
                     Text(L.t("Show Mo on desktop", "住在桌面上")).font(.system(size: 14))
                     Spacer()
                     Toggle("", isOn: $enabled.animation(.easeOut(duration: 0.2)))
@@ -48,7 +47,6 @@ struct MoStudio: View {
                 }
                 if enabled {
                     HStack(spacing: 10) {
-                        IconTile(symbol: "arrow.up.left.and.arrow.down.right", colors: RowHue.brand.colors, size: 26)
                         Text(L.t("Size", "大小")).font(.system(size: 14))
                         Spacer()
                         SlidingPicker(selection: $size, options: [

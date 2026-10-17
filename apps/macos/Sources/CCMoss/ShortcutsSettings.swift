@@ -2,14 +2,12 @@ import AppKit
 import MossKit
 import SwiftUI
 
-/// Settings › Aliases, for everyday people: a few things you do often, each
-/// with one field for a short name to type in any terminal. Return (or the
-/// tick) saves it and it works at once; hovering a row plays what typing
-/// the name does. The commands behind them stay out of sight; aliases made
-/// by hand live under "Custom", folded away. Everything goes through
-/// `cc-moss alias … --json`; the app never touches config.toml or
-/// ~/.local/bin itself.
-struct AliasesSettings: View {
+/// Settings › Shortcuts: every way to get somewhere fast, in one place.
+/// The panel's key from anywhere; short names to type in any terminal (each
+/// set the way the panel's key is: click, type, Return); and the keys that
+/// work inside the panel. The terminal names go through `cc-moss alias …
+/// --json`; the app never touches config.toml or ~/.local/bin itself.
+struct ShortcutsSettings: View {
     @Bindable var model: AppModel
     /// Screenshots pass canned data instead of asking cc-moss.
     var demo: AliasList?
@@ -19,8 +17,7 @@ struct AliasesSettings: View {
     @State private var showCustom = false
     @State private var customLine = ""
     @State private var customError: String?
-
-    static let tint = [Color(red: 0.55, green: 0.45, blue: 0.95), Color(red: 0.42, green: 0.32, blue: 0.85)]
+    @State private var shortcut = PanelShortcut.load(.standard)
 
     private var client: MossClient? { model.client }
 
@@ -34,40 +31,60 @@ struct AliasesSettings: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text(L.t("Give the things you do often a short name, then type it in any terminal.",
-                     "给常做的事起个短名字，在任何终端里一敲就行。"))
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 12)
-            if let loadError {
-                SettingsCard {
-                    CardRow(title: loadError, divider: false) { EmptyView() }
-                }
-            } else {
-                if let list, !list.dirOnPath {
-                    SettingsCard {
-                        CardRow(title: L.t("Open a new terminal first", "先新开一个终端"),
-                                detail: L.t("Your current terminals don't see the new names yet; a new one does. Still not? Run cc-moss install once.",
-                                            "已经开着的终端还看不到新名字，新开一个就行；还不行就在终端里运行一次 cc-moss install。"),
-                                divider: false) {
-                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
-                        }
-                    }
-                }
-                SettingsCard(title: L.t("Everyday", "常用")) {
-                    ForEach(Array(board.rows.enumerated()), id: \.element.task.id) { i, row in
-                        TaskAliasRow(task: row.task, alias: row.alias, divider: i < board.rows.count - 1,
-                                     save: { await save(task: row.task, field: $0, current: row.alias) },
-                                     fix: { await fix(row.alias) })
-                    }
-                }
-                custom
-            }
+            anywhere
+            terminal
+            PanelKeys()
         }
         .task(id: model.cliPath) { await load() }
     }
 
-    // MARK: - Custom
+    // MARK: - Anywhere
+
+    private var anywhere: some View {
+        let needsTrust = shortcut.tapKey != nil && !HotKeyCenter.shared.trust.allowed
+        return SettingsCard(title: L.t("Anywhere", "随时唤出")) {
+            CardRow(
+                title: L.t("Show the panel", "唤出面板"),
+                detail: L.t("See every session from any app.", "在哪儿按一下，都能看到所有会话。"),
+                divider: needsTrust
+            ) {
+                HotKeyRecorder(onSave: { shortcut = $0 })
+            }
+            if needsTrust {
+                AccessibilityRow(shortcut: shortcut).transition(.opacity)
+            }
+        }
+    }
+
+    // MARK: - In the terminal
+
+    private var terminal: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsCard(title: L.t("In the terminal", "在终端里")) {
+                if let loadError {
+                    CardRow(title: loadError, divider: false) { EmptyView() }
+                } else {
+                    if let list, !list.dirOnPath {
+                        CardRow(title: L.t("Open a new terminal first", "先新开一个终端"),
+                                detail: L.t("Your current terminals don't see the names yet; a new one does. Still not? Run cc-moss install once.",
+                                            "已经开着的终端还认不出这些名字，新开一个就行；还不行就在终端里运行一次 cc-moss install。")) {
+                            Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Theme.amber)
+                        }
+                    }
+                    ForEach(Array(board.rows.enumerated()), id: \.element.task.id) { i, row in
+                        TaskNameRow(task: row.task, alias: row.alias, divider: i < board.rows.count - 1,
+                                    save: { await save(task: row.task, field: $0, current: row.alias) },
+                                    fix: { await fix(row.alias) })
+                    }
+                }
+            }
+            Text(L.t("Type the name in any terminal and press Return.", "在任何终端里敲这个名字，回车就行。"))
+                .font(.system(size: 11))
+                .foregroundStyle(Theme.caption)
+                .padding(.horizontal, 12)
+            if loadError == nil { custom }
+        }
+    }
 
     private var custom: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -78,7 +95,7 @@ struct AliasesSettings: View {
                     Image(systemName: "chevron.right")
                         .font(.system(size: 10, weight: .semibold))
                         .rotationEffect(.degrees(showCustom ? 90 : 0))
-                    Text(L.t("Custom", "自定义"))
+                    Text(L.t("Your own", "自己写的"))
                         .font(.system(size: 13, weight: .semibold))
                     if !board.custom.isEmpty {
                         Text("\(board.custom.count)")
@@ -126,10 +143,10 @@ struct AliasesSettings: View {
             list = try await client.aliases()
             loadError = nil
         } catch MossClient.Failure.command {
-            loadError = L.t("This cc-moss is too old for aliases. Update it to use them here.",
-                            "这个版本的 cc-moss 还不支持别名，升级之后就能在这里用。")
+            loadError = L.t("This cc-moss is too old for terminal names. Update it to use them here.",
+                            "这个版本的 cc-moss 还不支持终端里的短名字，升级之后就能在这里用。")
         } catch {
-            loadError = L.t("Couldn't read the aliases: \(error)", "读不到别名：\(error)")
+            loadError = L.t("Couldn't read the names: \(error)", "读不到这些名字：\(error)")
         }
     }
 
@@ -137,12 +154,12 @@ struct AliasesSettings: View {
     private func save(task: AliasBoard.Task, field: String, current: Alias?) async -> String? {
         guard let client else { return L.t("cc-moss was not found.", "没找到 cc-moss。") }
         let change = AliasBoard.change(field: field, current: current)
-        // Another alias already has the name: say so instead of taking it over.
-        if case let .add(name) = change, let other = list?.aliases.first(where: { $0.name == name }) {
-            return L.t("“\(name)” is taken by another alias (\(other.command)).", "「\(name)」已经被另一个别名用了。")
+        // Another name already has it: say so instead of taking it over.
+        if case let .add(name) = change, list?.aliases.contains(where: { $0.name == name }) == true {
+            return L.t("“\(name)” is already in use.", "「\(name)」已经被占用了。")
         }
         if case let .rename(_, name) = change, list?.aliases.contains(where: { $0.name == name }) == true {
-            return L.t("“\(name)” is taken by another alias.", "「\(name)」已经被另一个别名用了。")
+            return L.t("“\(name)” is already in use.", "「\(name)」已经被占用了。")
         }
         do {
             switch change {
@@ -160,7 +177,7 @@ struct AliasesSettings: View {
         return nil
     }
 
-    /// Relink a broken or stale alias: adding it again puts the link back.
+    /// Relink a broken or stale name: adding it again puts the link back.
     private func fix(_ alias: Alias?) async {
         guard let client, let alias else { return }
         _ = try? await client.addAlias(name: alias.name, command: alias.command, force: true)
@@ -194,43 +211,30 @@ struct AliasesSettings: View {
     }
 }
 
-/// One everyday task: what it does, a field for its short name, and on
-/// hover a little terminal playing what typing the name does.
-private struct TaskAliasRow: View {
+/// One everyday task: what it does, and its short name set like the
+/// panel's key. Saving plays what typing the name does; so does hovering.
+private struct TaskNameRow: View {
     let task: AliasBoard.Task
     let alias: Alias?
     let divider: Bool
     let save: (String) async -> String?
     let fix: () async -> Void
 
-    @State private var field: String
     @State private var problem: String?
-    @State private var justSaved = false
-    @State private var working = false
+    @State private var editing = false
     @State private var hovering = false
     @State private var preview = false
+    @State private var working = false
 
-    init(task: AliasBoard.Task, alias: Alias?, divider: Bool,
-         save: @escaping (String) async -> String?, fix: @escaping () async -> Void) {
-        self.task = task
-        self.alias = alias
-        self.divider = divider
-        self.save = save
-        self.fix = fix
-        _field = State(initialValue: alias?.name ?? "")
-    }
-
-    private var dirty: Bool { AliasBoard.change(field: field, current: alias) != .nothing }
     private var broken: Bool { alias.map { !$0.status.isFine } ?? false }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: 12) {
-                IconTile(symbol: task.icon, colors: AliasesSettings.tint, size: 26)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(task.title).font(.system(size: 14))
                     // Caption and preview share one fixed-height slot and cross-fade,
-                    // so hovering never changes the row's height.
+                    // so the row never changes height.
                     ZStack(alignment: .leading) {
                         caption.opacity(showsPreview ? 0 : 1)
                         if showsPreview, let name = alias?.name {
@@ -240,14 +244,16 @@ private struct TaskAliasRow: View {
                     .frame(height: 24, alignment: .leading)
                 }
                 Spacer(minLength: 12)
-                trailing
-                FilledField(placeholder: L.t("e.g. \(task.example)", "比如 \(task.example)"), text: $field, monospaced: true) {
-                    commit()
+                if broken, !editing {
+                    SoftButton(title: L.t("Fix", "修复"), icon: "wrench.adjustable") {
+                        Task { working = true; await fix(); working = false }
+                    }
                 }
-                .frame(width: 104)
+                NameRecorder(name: alias?.name, example: task.example, editing: $editing, working: working) { field in
+                    await commit(field)
+                }
             }
             .padding(12)
-            .frame(minHeight: 56)
             .contentShape(Rectangle())
             .onHover { inside in hovering = inside }
             .task(id: hovering) {
@@ -263,14 +269,16 @@ private struct TaskAliasRow: View {
                 Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
             }
         }
-        .onChange(of: alias?.name) { _, new in if !dirty || new == field { field = new ?? "" } }
     }
 
-    private var showsPreview: Bool { preview && alias != nil }
+    private var showsPreview: Bool { preview && alias != nil && !editing && problem == nil }
 
     @ViewBuilder private var caption: some View {
         if let problem {
             Text(problem).font(.system(size: 12)).foregroundStyle(Theme.amber).lineLimit(1)
+        } else if editing {
+            Text(L.t("Return saves · Esc cancels · empty removes it", "回车保存 · Esc 取消 · 清空即删除"))
+                .font(.system(size: 12)).foregroundStyle(Theme.caption).lineLimit(1)
         } else if broken, let detail = alias?.detail {
             Text(detail).font(.system(size: 12)).foregroundStyle(Theme.amber).lineLimit(1)
         } else {
@@ -278,33 +286,152 @@ private struct TaskAliasRow: View {
         }
     }
 
-    @ViewBuilder private var trailing: some View {
-        if working {
-            ProgressView().controlSize(.small)
-        } else if dirty {
-            IconButton(symbol: "checkmark", help: L.t("Save (Return)", "保存（回车）")) { commit() }
-        } else if justSaved {
-            Image(systemName: "checkmark.circle.fill")
-                .foregroundStyle(.green)
-                .transition(.scale.combined(with: .opacity))
-        } else if broken {
-            SoftButton(title: L.t("Fix", "修复"), icon: "wrench.adjustable") {
-                Task { working = true; await fix(); working = false }
+    /// True when it saved. Then the little terminal plays it once.
+    private func commit(_ field: String) async -> Bool {
+        working = true
+        let error = await save(field)
+        working = false
+        problem = error
+        guard error == nil else { return false }
+        guard !field.trimmingCharacters(in: .whitespaces).isEmpty else { return true }
+        withAnimation(.easeOut(duration: 0.18)) { preview = true }
+        try? await Task.sleep(for: .seconds(3))
+        if !hovering { withAnimation(.easeOut(duration: 0.2)) { preview = false } }
+        return true
+    }
+}
+
+/// A short name, recorded the way the panel's key is: a capsule showing it
+/// as a keycap (or "Click to set"); click, type, Return. Esc or clicking
+/// away cancels; Return on an empty field removes it.
+private struct NameRecorder: View {
+    let name: String?
+    let example: String
+    @Binding var editing: Bool
+    let working: Bool
+    let commit: (String) async -> Bool
+
+    @State private var field = ""
+    @State private var hover = false
+    @State private var saved = false
+    @FocusState private var focused: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        ZStack {
+            if editing {
+                HStack(spacing: 8) {
+                    TextField(L.t("e.g. \(example)", "比如 \(example)"), text: $field)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                        .focused($focused)
+                        .onSubmit(submit)
+                        .onExitCommand(perform: cancel)
+                        .onChange(of: focused) { _, now in if !now, !working { cancel() } }
+                    if working {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        KeyCap(text: "↵")
+                    }
+                }
+            } else {
+                Button(action: start) {
+                    HStack(spacing: 8) {
+                        if let name {
+                            Text(name)
+                                .font(.system(size: 12, weight: .medium, design: .monospaced))
+                                .padding(.horizontal, 7)
+                                .frame(minWidth: 22, minHeight: 22)
+                                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(Theme.raised(scheme)))
+                                .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+                                .shadow(color: .black.opacity(0.06), radius: 0.5, y: 1)
+                            if saved {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundStyle(.green)
+                                    .transition(.scale.combined(with: .opacity))
+                            }
+                        } else {
+                            Text(L.t("Click to set", "点这里设置")).font(.system(size: 12)).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 6)
+                        Text(name == nil ? "" : L.t("Change", "更换")).font(.system(size: 11)).foregroundStyle(.tertiary)
+                    }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+                .handCursor()
             }
+        }
+        .padding(.horizontal, 10)
+        .frame(width: 168, height: 34)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .fill(editing ? Theme.brand.opacity(0.08) : (hover ? Theme.selection(scheme) : Color.primary.opacity(0.045))))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+            .strokeBorder(editing ? Theme.brand.opacity(0.7) : Color.primary.opacity(0.08), lineWidth: editing ? 1.5 : 1))
+        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hover = inside } }
+        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: editing)
+    }
+
+    private func start() {
+        field = name ?? ""
+        editing = true
+        DispatchQueue.main.async {
+            focused = true
+            NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil)
         }
     }
 
-    private func commit() {
-        guard dirty, !working else { return }
+    private func cancel() {
+        editing = false
+    }
+
+    private func submit() {
+        let wanted = field.trimmingCharacters(in: .whitespaces)
+        guard wanted != (name ?? "") else { return cancel() }
         Task {
-            working = true
-            let error = await save(field)
-            working = false
-            problem = error
-            guard error == nil else { return }
-            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { justSaved = true }
+            let ok = await commit(wanted)
+            guard ok else { focused = true; return }
+            editing = false
+            guard !wanted.isEmpty else { return }
+            withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) { saved = true }
             try? await Task.sleep(for: .seconds(1.6))
-            withAnimation(.easeOut(duration: 0.2)) { justSaved = false }
+            withAnimation(.easeOut(duration: 0.2)) { saved = false }
+        }
+    }
+}
+
+/// The keys that work inside the panel, for reference.
+private struct PanelKeys: View {
+    private var keys: [(String, String)] {
+        [
+            ("↵", L.t("Open the selected session", "打开选中的会话")),
+            ("⌘K", L.t("More actions", "更多操作")),
+            ("⌘N", L.t("New session", "新会话")),
+            ("⌘E", L.t("Send a message", "发消息")),
+            ("⇧⌘C", L.t("Copy its command", "复制命令")),
+            ("⌘R", L.t("Refresh", "刷新")),
+            ("⌘,", L.t("Settings", "设置")),
+        ]
+    }
+
+    var body: some View {
+        SettingsCard(title: L.t("In the panel", "面板里")) {
+            ForEach(Array(keys.enumerated()), id: \.offset) { i, item in
+                VStack(spacing: 0) {
+                    HStack {
+                        Text(item.1).font(.system(size: 13))
+                        Spacer()
+                        KeyCap(text: item.0)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(minHeight: 36)
+                    if i < keys.count - 1 {
+                        Rectangle().fill(Color.primary.opacity(0.05)).frame(height: 1).padding(.horizontal, 12)
+                    }
+                }
+            }
         }
     }
 }
