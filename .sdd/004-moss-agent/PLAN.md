@@ -159,7 +159,7 @@ R1 ◄── 全部
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟨 In Progress | in-progress/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
 | **T1.4** 桌面答题 | cc-moss | T1.3 | ⬜ Backlog | — | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
-| **T2.2** Moss 常驻 | cc-moss | T2.1 | 🟦 Ready | todo/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
+| **T2.2** Moss 常驻 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ⬜ Backlog | — | 面板发一句、看到回复 |
 | **T2.4** Doctor | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 体检报告正确、关闭先问 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
