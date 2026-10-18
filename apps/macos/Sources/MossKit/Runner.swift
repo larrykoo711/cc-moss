@@ -55,36 +55,71 @@ public struct ProcessRunner: CommandRunner {
         process.standardInput = FileHandle.nullDevice
 
         // Read both pipes while the process runs: a full pipe would block it.
-        let outData = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }
-        let errData = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-        let exited = AsyncStream<Void> { continuation in
-            process.terminationHandler = { _ in continuation.yield(); continuation.finish() }
-        }
+        // On threads of their own: a blocking read on Swift's few shared
+        // threads starves everything else, the timeout included (CI has three).
+        let outData = Once<Data>(), errData = Once<Data>()
+        Thread.detachNewThread { outData.fire(out.fileHandleForReading.readDataToEndOfFile()) }
+        Thread.detachNewThread { errData.fire(err.fileHandleForReading.readDataToEndOfFile()) }
+        let exited = Once<Void>(), timedOut = Once<Void>()
+        process.terminationHandler = { _ in exited.fire(()) }
         do {
             try process.run()
         } catch {
             throw RunError.launchFailed("\(error.localizedDescription)")
         }
-        let finished = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { for await _ in exited { return true }; return true }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
+        // Too slow, or nobody wants the answer any more: stop the command, then
+        // still wait for it to end. Asking a running process for its exit
+        // status raises an exception that takes the whole app down.
+        let child = Child(process: process)
+        let timer = DispatchWorkItem {
+            if !exited.isSet { timedOut.fire(()); child.stop() }
         }
-        if !finished {
-            process.terminate()
-            _ = await outData.value
-            _ = await errData.value
-            throw RunError.timedOut(seconds: timeout)
-        }
-        let stdout = await outData.value
-        let stderr = String(decoding: await errData.value, as: UTF8.self)
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
+        await withTaskCancellationHandler { await exited.value() } onCancel: { child.stop() }
+        timer.cancel()
+        let stdout = await outData.value()
+        let stderr = String(decoding: await errData.value(), as: UTF8.self)
+        if timedOut.isSet { throw RunError.timedOut(seconds: timeout) }
+        try Task.checkCancellation()
         return CommandResult(status: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
+}
+
+/// A value that arrives once, from whichever thread has it; any number of
+/// tasks can wait for it.
+private final class Once<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: Value?
+    private var waiters: [CheckedContinuation<Value, Never>] = []
+
+    var isSet: Bool { lock.withLock { stored != nil } }
+
+    /// The first value wins.
+    func fire(_ value: Value) {
+        let waiting: [CheckedContinuation<Value, Never>] = lock.withLock {
+            guard stored == nil else { return [] }
+            stored = value
+            defer { waiters = [] }
+            return waiters
+        }
+        waiting.forEach { $0.resume(returning: value) }
+    }
+
+    func value() async -> Value {
+        await withCheckedContinuation { (c: CheckedContinuation<Value, Never>) in
+            let ready: Value? = lock.withLock {
+                if stored == nil { waiters.append(c) }
+                return stored
+            }
+            if let ready { c.resume(returning: ready) }
+        }
+    }
+}
+
+/// The running process, handed to the timer and the cancel handler.
+private struct Child: @unchecked Sendable {
+    let process: Process
+    func stop() { if process.isRunning { process.terminate() } }
 }
 
 /// Answers every command with the same output. Used for demo screenshots

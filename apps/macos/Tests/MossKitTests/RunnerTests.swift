@@ -27,6 +27,38 @@ import Testing
         }
         #expect(Date().timeIntervalSince(started) < 5)
     }
+
+    /// Leaving a settings page cancels its load while the command still runs:
+    /// the child is stopped and the call ends with a cancellation, rather than
+    /// asking a running process for its exit status (which aborts the app).
+    @Test func cancellingStopsTheCommand() async {
+        let started = Date()
+        let run = Task { try await ProcessRunner().run("/bin/sleep", ["30"], timeout: 20) }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        run.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await run.value }
+        #expect(Date().timeIntervalSince(started) < 5)
+    }
+
+    /// More slow commands at once than the machine has cores (CI has three):
+    /// waiting on one must not hold a thread the others need to time out.
+    @Test func manySlowCommandsAllTimeOut() async {
+        let started = Date()
+        await withTaskGroup(of: Bool.self) { group in
+            for _ in 0..<(ProcessInfo.processInfo.activeProcessorCount + 2) {
+                group.addTask {
+                    do {
+                        _ = try await ProcessRunner().run("/bin/sleep", ["30"], timeout: 0.5)
+                        return false
+                    } catch {
+                        return error as? RunError == .timedOut(seconds: 0.5)
+                    }
+                }
+            }
+            for await timedOut in group { #expect(timedOut) }
+        }
+        #expect(Date().timeIntervalSince(started) < 5)
+    }
 }
 
 /// Answers `ls --json` with canned output.
