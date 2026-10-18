@@ -239,3 +239,30 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
 
 - `shasum ~/.claude/settings.json`：开工前后都是 `0b078f0d2c8a8e7815fca98cbb60caf2007dff66`。
 - `tmux -L cc-moss-probe2` / `cc-moss-probe3` 各自 `kill-server` 后 `ls` → `no server running on …`；两个探针 scratch 目录都已删除。
+
+## I5 实测（T1.3 评审修正，2026-10-18，Claude Code 2.1.302）：用户自己的 PermissionRequest hook 会不会被 cc-moss 拖住
+
+问题：cc-moss 的 PermissionRequest 用 matcher `*`、最多等 `wait_secs`；用户自己若也有一个 PermissionRequest hook（例如对 Bash 立刻 allow），
+Claude Code 会不会等所有匹配的 hook 都结束才采用决定？
+
+方法：真实 `claude --setting-sources project,local --permission-mode default --model haiku`，独立 tmux socket `tmux -L cc-moss-probe-i5`，
+启动环境带 `CC_MOSS_STATE_DIR=<scratch>/state`。hook 只写在 scratch 探针目录的项目级 `.claude/settings.json`：
+
+- PermissionRequest 组 1：matcher `*` → 包一层记时间的 `cc-moss hook permission-request`（本分支构建，`[ask] wait_secs = 40`，后台每 30 秒 `ask take` 一次保持有接手方），`timeout` 600
+- PermissionRequest 组 2：matcher `Bash` → 「用户的」hook：记时间，输出 `{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}`
+- PostToolUse：记时间（第二轮起也跑 `cc-moss hook post-tool-use`）
+
+| 轮次 | 用户的 hook | 时间线 | 结果 |
+|------|-------------|--------|------|
+| 1 | 立刻 allow | `18:54:22.2` 用户的 allow；`18:54:22.6` cc-moss 开始等；文件 `18:54:23` 建好；PostToolUse `18:54:24.2`；cc-moss 一直等到 `18:55:02.6`（40 秒超时，这一轮没装 cc-moss 的 PostToolUse） | 用户的决定立即生效，**没有等 cc-moss** |
+| 2 | 先 `sleep 3` 再 allow | `18:55:47.1` cc-moss 开始等；`18:55:50.5` 用户的 allow；`18:55:50.6` PostToolUse → cc-moss 撤回（`answered-in-session`，按 `input_hash` 对上同一次调用）；`18:55:50.7` cc-moss 退出；文件 `18:55:51` | 用户的决定在它给出时生效；cc-moss 随 PostToolUse 0.1 秒内放手 |
+
+结论：**Claude Code 2.1.302 采用第一个给出决定的 PermissionRequest hook，不等其余 hook 结束**，cc-moss 的等待不会拖住用户自己的 hook，
+因此没有加「该工具已有别的 PermissionRequest hook 就不等」的缓解。副作用只有一个：用户的 hook 先放行后，cc-moss 那道题要等 PostToolUse
+（或这一轮的 Stop）才撤回，期间 `ask list` 里还看得到；有 I3 的 `input_hash` 匹配后，这一步在工具跑完的同时发生。用户的 hook 若是拒绝，工具
+不跑、没有 PostToolUse，题目到这一轮的 Stop 才撤回（推断，未单独实测）。
+
+不留痕：`shasum ~/.claude/settings.json` 前后都是 `0b078f0d2c8a8e7815fca98cbb60caf2007dff66`；`tmux -L cc-moss-probe-i5 kill-server` 后
+`ls` → `no server running`；scratch 探针目录已删。**但是** hook 虽然都写进了临时状态目录，探针会话（session `d205ebc9…`）还是被收进了用户
+真实的会话列表：用户的 App 刷新时 reconcile 调 `claude agents --json`，把所有正在跑的 claude 会话都登记进去（`reconcile.rs` 的 `adopt`），
+跟 hook 无关。已报给 controller 清理；只设 `CC_MOSS_STATE_DIR` 加 `--setting-sources` 拦不住这条路。

@@ -16,7 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{bail, Result};
 use moss_core::agent::HookKind;
-use moss_core::ask::{self, Ask, NewAsk, Reason, Store};
+use moss_core::ask::{self, Ask, Moved, NewAsk, Poll, Reason, Store};
 use moss_core::config::Config;
 use moss_core::registry::Registry;
 use moss_core::slot::now_ms;
@@ -69,15 +69,22 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
     if !store.has_taker(SystemTime::now()) {
         return Ok(());
     }
+    // Someone else's or open to others: anyone could plant an answer.
+    if !store.is_private() {
+        bail!(
+            "{} is not private to this user; not taking questions",
+            store.dir().display()
+        );
+    }
     let p = Payload::parse(payload)?;
     let now = now_ms();
     let wait_secs = ask::clamp_wait(config.ask.wait_secs);
-    let fresh = || NewAsk {
+    let fresh = |session_name| NewAsk {
         id: ask::new_id(now, std::process::id()),
         session_id: &p.session_id,
         prompt_id: &p.prompt_id,
         tool_use_id: p.tool_use_id.as_deref(),
-        session_name: session_name(&p.session_id),
+        session_name,
         cwd: &p.cwd,
         now_ms: now,
         wait_secs,
@@ -86,9 +93,10 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
     match kind {
         HookKind::PreToolUse => {
             // Note the question; never wait here: the session's dialog only
-            // appears once this hook is done.
+            // appears once this hook is done. The session's name is filled
+            // in by PermissionRequest, so this stays off the registry.
             if let Some(ask) = is_question
-                .then(|| fresh().question(&p.tool_input))
+                .then(|| fresh(None).question(&p.tool_input))
                 .flatten()
             {
                 store.create(&ask)?;
@@ -96,15 +104,22 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
             Ok(())
         }
         HookKind::PermissionRequest => {
+            let name = session_name(&p.session_id);
             let ask = if is_question {
                 let Some(questions) = p.tool_input.get("questions").and_then(Value::as_array)
                 else {
                     return Ok(());
                 };
                 match store.recent_question(&p.session_id, &p.prompt_id, questions, now) {
-                    Some(seen) => seen,
+                    Some(mut seen) => {
+                        if seen.session_name.is_none() && name.is_some() {
+                            seen.session_name = name;
+                            store.create(&seen)?;
+                        }
+                        seen
+                    }
                     None => {
-                        let Some(ask) = fresh().question(&p.tool_input) else {
+                        let Some(ask) = fresh(name).question(&p.tool_input) else {
                             return Ok(());
                         };
                         store.create(&ask)?;
@@ -112,7 +127,7 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
                     }
                 }
             } else {
-                let ask = fresh().permission(&p.tool_name, &p.tool_input);
+                let ask = fresh(name).permission(&p.tool_name, &p.tool_input);
                 store.create(&ask)?;
                 ask
             };
@@ -124,26 +139,20 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
 }
 
 /// Wait for an answer, a withdrawal or the deadline, looking every
-/// [`ask::POLL`]. Prints the decision only for an answer that fits.
+/// [`ask::POLL`]. Prints the decision only for an answer that fits, and
+/// only after marking the question answered.
 fn wait(store: &Store, ask: &Ask, wait: Duration) -> Result<()> {
     let deadline = Instant::now() + wait;
     loop {
-        if let Some(out) = store
-            .read_answer(&ask.id)
-            .and_then(|a| ask::hook_output(ask, &a))
-        {
-            // Mark it answered first, so a PostToolUse right after finds
-            // nothing left to withdraw. Withdrawn meanwhile: the session has
-            // moved on and would drop the answer anyway.
-            if store.close(&ask.id, Reason::Answered)? {
+        match store.poll(ask, now_ms())? {
+            Poll::Deliver(out) => {
                 let mut stdout = std::io::stdout().lock();
                 writeln!(stdout, "{out}")?;
                 stdout.flush()?;
+                return Ok(());
             }
-            return Ok(());
-        }
-        if store.is_closed(&ask.id) {
-            return Ok(());
+            Poll::Gone => return Ok(()),
+            Poll::Wait => {}
         }
         if Instant::now() >= deadline {
             store.close(&ask.id, Reason::Timeout)?;
@@ -164,8 +173,8 @@ fn session_name(session_id: &str) -> Option<String> {
         .name
 }
 
-/// The session moved on: withdraw its open questions. Cheap when there is
-/// nothing on file, which is nearly always.
+/// The session moved on: withdraw its open questions. Cheap when none is
+/// standing, which is nearly always (closed ones are moved out of the way).
 pub fn withdraw(kind: HookKind, payload: &str) -> Result<()> {
     let reason = match kind {
         HookKind::PostToolUse | HookKind::UserPromptSubmit | HookKind::Stop => {
@@ -184,8 +193,16 @@ pub fn withdraw(kind: HookKind, payload: &str) -> Result<()> {
     }
     let v: Value = serde_json::from_str(payload)?;
     let field = |k: &str| v.get(k).and_then(Value::as_str).unwrap_or("");
-    // After a tool ran, only that tool's question is withdrawn.
-    let tool = (kind == HookKind::PostToolUse).then(|| field("tool_name"));
-    store.withdraw_session(field("session_id"), tool, reason, now_ms())?;
+    let null = Value::Null;
+    // After a tool ran, only the question or request for that call.
+    let moved = if kind == HookKind::PostToolUse {
+        Moved::Tool {
+            name: field("tool_name"),
+            input: v.get("tool_input").unwrap_or(&null),
+        }
+    } else {
+        Moved::All
+    };
+    store.withdraw_session(field("session_id"), moved, reason, now_ms())?;
     Ok(())
 }

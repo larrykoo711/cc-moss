@@ -19,6 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   takes questions (`cc-moss ask take`, which the app and Slack will do later), for at most 5 minutes
   (`[ask] wait_secs`); otherwise, or if anything goes wrong, nothing changes. Two new hooks, `PreToolUse` and
   `PermissionRequest`: run `cc-moss setup` after upgrading. Turn it off with `cc-moss config set ask.enabled false`.
+  Any program running as you can answer, permission requests included; previews hide things that look like keys. An
+  older `setup --uninstall` can't remove the two new hooks: uninstall with this version before downgrading.
 
 ### Changed
 

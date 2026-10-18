@@ -123,3 +123,82 @@ fn observing_hooks_p95() {
         "p95 is {worst_gap:?} above the baseline"
     );
 }
+
+/// Questions left behind by a busy day: [`WITHDRAWN`] noted by PreToolUse
+/// and withdrawn by Stop, the way sessions leave them.
+const WITHDRAWN: usize = 200;
+
+fn seed_withdrawn(exe: &Path, state: &Path) {
+    let template = common::bin();
+    let mut take = std::process::Command::new(exe);
+    for (k, v) in template.get_envs() {
+        match v {
+            Some(v) => take.env(k, v),
+            None => take.env_remove(k),
+        };
+    }
+    let out = take
+        .env("CC_MOSS_STATE_DIR", state)
+        .args(["ask", "take", "--name", "perf"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let question = serde_json::json!({ "questions": [{ "question": "Pick one?", "header": "Pick",
+        "options": [{ "label": "A", "description": "" }, { "label": "B", "description": "" }],
+        "multiSelect": false }] });
+    for i in 0..WITHDRAWN {
+        let session = format!("W{i}");
+        let pre = serde_json::json!({ "session_id": session, "cwd": "/work", "prompt_id": "p",
+            "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+            "tool_input": question, "tool_use_id": format!("toolu_{i}") })
+        .to_string();
+        timed(exe, state, "pre-tool-use", &pre);
+        let stop =
+            serde_json::json!({ "session_id": session, "hook_event_name": "Stop" }).to_string();
+        timed(exe, state, "stop", &stop);
+    }
+}
+
+/// PostToolUse runs after every tool call: [`WITHDRAWN`] closed questions
+/// on file must not slow it down (p95 under 1 ms above an empty dir).
+#[test]
+#[ignore]
+fn post_tool_use_with_withdrawn_questions() {
+    let mut exes = vec![("this", PathBuf::from(env!("CARGO_BIN_EXE_cc-moss")))];
+    if let Some(base) = std::env::var_os("CC_MOSS_BASELINE_BIN").filter(|b| !b.is_empty()) {
+        exes.push(("baseline", PathBuf::from(base)));
+    }
+    let tool = serde_json::json!({ "session_id": "P", "hook_event_name": "PostToolUse",
+        "tool_name": "Bash", "tool_input": { "command": "ls" },
+        "tool_response": { "stdout": "x".repeat(4000) } })
+    .to_string();
+    let start = start_json("P", "resume", Some("perf"));
+    let mut this_gap = Duration::ZERO;
+    for (label, exe) in &exes {
+        let empty = tempfile::tempdir().unwrap();
+        let seeded = tempfile::tempdir().unwrap();
+        for dir in [&empty, &seeded] {
+            timed(exe, dir.path(), "session-start", &start);
+        }
+        seed_withdrawn(exe, seeded.path());
+        let mut samples = [Vec::new(), Vec::new()];
+        for _ in 0..SAMPLES {
+            samples[0].push(timed(exe, empty.path(), "post-tool-use", &tool));
+            samples[1].push(timed(exe, seeded.path(), "post-tool-use", &tool));
+        }
+        let [e, s] = &mut samples;
+        let (e95, s95) = (p(e, 95), p(s, 95));
+        eprintln!(
+            "latency post-tool-use {label:<8} empty p50={:?} p95={e95:?}  {WITHDRAWN} withdrawn p50={:?} p95={s95:?}",
+            p(e, 50),
+            p(s, 50)
+        );
+        if *label == "this" {
+            this_gap = s95.saturating_sub(e95);
+        }
+    }
+    assert!(
+        this_gap < Duration::from_millis(1),
+        "{WITHDRAWN} withdrawn questions add {this_gap:?} to p95"
+    );
+}

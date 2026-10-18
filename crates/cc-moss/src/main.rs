@@ -231,9 +231,9 @@ enum AskCommand {
     /// Answer a question; the session carries on as if you answered in its terminal.
     #[command(group(clap::ArgGroup::new("reply").required(true).args(["choice", "text", "allow", "deny"])))]
     Answer {
-        /// The question's id from `cc-moss ask list` (a prefix is enough).
+        /// The question's id from `cc-moss ask list` (a prefix is enough; 12 characters for a permission).
         id: String,
-        /// The option to pick; repeat for several, in question order.
+        /// The option to pick; repeat for several, in question order, or as N:LABEL for question N.
         #[arg(long, value_name = "LABEL")]
         choice: Vec<String>,
         /// Your own answer instead of an option (one question only).

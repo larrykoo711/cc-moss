@@ -3,7 +3,11 @@
 //! commands are its reference client.
 
 use anyhow::{anyhow, bail, Result};
-use moss_core::ask::{self, Answer, AnswerError, Ask, Behavior, By, ChoiceError, Kind, Store};
+use std::time::{Duration, Instant};
+
+use moss_core::ask::{
+    self, Answer, AnswerError, Ask, Behavior, By, ChoiceError, Kind, Reason, Store,
+};
 use moss_core::slot::now_ms;
 use moss_core::store_dir;
 use serde_json::json;
@@ -174,9 +178,9 @@ fn choice_error(e: &ChoiceError, count: usize) -> String {
         ),
         ChoiceError::Unanswered(n) if count > 1 => tr!(
             format!(
-                "question {n} of {count} has no answer; give one --choice per question, in order"
+                "question {n} of {count} has no answer; give --choice per question, in order, or as N:LABEL (e.g. --choice {n}:yes)"
             ),
-            format!("第 {n} 题（共 {count} 题）还没答；每题给一个 --choice，按顺序")
+            format!("第 {n} 题（共 {count} 题）还没答；按题目顺序给 --choice，或者写成 题号:选项（比如 --choice {n}:是）")
         ),
         ChoiceError::Unanswered(_) => tr!(
             "give an answer with --choice or --text".to_string(),
@@ -193,9 +197,27 @@ fn choice_error(e: &ChoiceError, count: usize) -> String {
     }
 }
 
+/// A permission is only granted on an id typed out this far, so a stray
+/// prefix cannot approve the wrong command.
+const PERMISSION_ID_MIN: usize = 12;
+/// How long `ask answer` waits to hear whether the session took the answer.
+const CONFIRM: Duration = Duration::from_secs(2);
+
 fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
     let now = now_ms();
     let ask = store.find_open(id, now).map_err(|e| answer_error(&e, id))?;
+    if ask.kind == Kind::Permission && id != ask.id && id.len() < PERMISSION_ID_MIN {
+        bail!(tr!(
+            format!(
+                "to answer a permission request, give at least {PERMISSION_ID_MIN} characters of its id (or all of it: {})",
+                ask.id
+            ),
+            format!(
+                "回答权限请求时，id 至少写 {PERMISSION_ID_MIN} 位（或者写全：{}）",
+                ask.id
+            )
+        ));
+    }
     let answer = build(&ask, reply, by)?;
     store
         .answer(&ask.id, &answer)
@@ -204,14 +226,73 @@ fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
         .session_name
         .clone()
         .unwrap_or_else(|| ask.session_id.chars().take(8).collect());
-    println!(
-        "{}",
-        tr!(
+    match outcome(store, &ask.id) {
+        Some(Reason::Answered) => {
+            println!("{}", done_line(&ask, &answer, &who));
+            Ok(())
+        }
+        None => {
+            println!(
+                "{}",
+                tr!(
+                    format!(
+                        "Saved, but {who} isn't waiting on it right now (it may have been answered in its terminal). It's handed over if {who} asks again."
+                    ),
+                    format!("答案记下了，但 {who} 这会儿没在等（可能已经在终端里答了）。它再问时会交过去。")
+                )
+            );
+            Ok(())
+        }
+        Some(Reason::InvalidAnswer) => bail!(tr!(
+            "the session could not use that answer",
+            "会话用不了这个答案"
+        )),
+        Some(Reason::Timeout) => bail!(tr!(
+            format!("too late: {who} stopped waiting for an answer"),
+            format!("晚了一步：{who} 已经不等外面的答案了")
+        )),
+        Some(Reason::AnsweredInSession | Reason::SessionEnded) => bail!(tr!(
+            format!("too late: {who} already moved on"),
+            format!("晚了一步：{who} 已经往下走了")
+        )),
+    }
+}
+
+/// Why question `id` closed, once the hook waiting on it has looked; `None`
+/// when no hook picked the answer up within [`CONFIRM`].
+fn outcome(store: &Store, id: &str) -> Option<Reason> {
+    let deadline = Instant::now() + CONFIRM;
+    loop {
+        if let Some(closed) = store.closed(id) {
+            return Some(closed.reason);
+        }
+        if Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(ask::POLL);
+    }
+}
+
+/// What was handed over, said back: for a permission, which session, tool
+/// and command.
+fn done_line(ask: &Ask, answer: &Answer, who: &str) -> String {
+    let Some(tool) = ask.tool.as_ref().filter(|_| ask.kind == Kind::Permission) else {
+        return tr!(
             format!("Answered. {who} carries on with it."),
             format!("答好了，{who} 会接着往下做。")
-        )
-    );
-    Ok(())
+        );
+    };
+    let (name, preview) = (&tool.name, &tool.preview);
+    match answer.behavior {
+        Some(Behavior::Allow) => tr!(
+            format!("Allowed. {who} runs {name}: {preview}"),
+            format!("已同意，{who} 会运行 {name}：{preview}")
+        ),
+        _ => tr!(
+            format!("Denied. {who} won't run {name}: {preview}"),
+            format!("已拒绝，{who} 不会运行 {name}：{preview}")
+        ),
+    }
 }
 
 fn answer_error(e: &AnswerError, id: &str) -> anyhow::Error {
@@ -228,6 +309,10 @@ fn answer_error(e: &AnswerError, id: &str) -> anyhow::Error {
             format!("someone already answered question {id}"),
             format!("{id} 这道题已经有人答了")
         ),
+        AnswerError::Invalid => tr!(
+            format!("that answer doesn't fit question {id} (see `cc-moss ask list`)"),
+            format!("这个答案对不上 {id} 这道题（看看 `cc-moss ask list`）")
+        ),
         AnswerError::Io(err) => format!("{err}"),
     })
 }
@@ -240,5 +325,6 @@ fn take(store: &Store, name: &str) -> Result<()> {
         ));
     }
     store.take(name)?;
+    store.sweep(now_ms());
     Ok(())
 }

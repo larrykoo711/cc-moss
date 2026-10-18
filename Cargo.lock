@@ -623,6 +623,7 @@ name = "moss-core"
 version = "0.2.2"
 dependencies = [
  "anyhow",
+ "libc",
  "rusqlite",
  "serde",
  "serde_json",

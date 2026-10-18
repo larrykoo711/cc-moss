@@ -139,17 +139,25 @@ cc-moss ask take --name me          # 告诉会话「我在」：接下来 90 �
 cc-moss ask list                    # 看看谁在等你回答
 cc-moss ask answer 1a2b --choice B  # 选 B；id 写开头几位就行
 cc-moss ask answer 1a2b --choice 家人 --choice 同事   # 多选，或一次好几题：按题目顺序一个个给
+cc-moss ask answer 1a2b --choice 1:是 --choice 2:否   # 好几题选项一样时，用「题号:选项」说清是哪一题
 cc-moss ask answer 1a2b --text "都行，你定"           # 不选选项，自己写（只限一道题）
-cc-moss ask answer 9c8d --allow     # 权限请求：同意；--deny [--message 理由] 是不同意
+cc-moss ask answer 9c8d0e1f2a3b --allow   # 权限请求：同意；--deny [--message 理由] 是不同意。id 至少写 12 位
 ```
 
 - **默认开着，但没人接手就等于没开。** 只有最近 90 秒里有人 `ask take` 过（App 和守护进程以后会自己定时报到），会话才会等外面的答案；否则立刻照常问你，和以前一模一样。
 - **最多等 5 分钟**（`[ask] wait_secs`，最长 590 秒）。等的时候终端里照样能答；到点没人答，就当没这回事，题还在终端里等你。
 - **你在终端里先答了**，别处的这道题自动撤回，晚到的答案作废。按 Esc 取消也一样。
 - 出了任何错（配置读不到、状态目录写不了……）都当没开，绝不让会话卡住。
+- **答完会告诉你结果。** `ask answer` 会等一两秒，看会话有没有收下：收下了说「答好了」（权限请求还会复述是哪个会话、哪个工具、什么命令）；会话已经往下走了说「晚了一步」；会话这会儿没在等，就说答案记下了。
 - 想关掉：`cc-moss config set ask.enabled false`。
 
-`ask list --json` 输出 `{"schema":1,"asks":[…]}`，每道题带 `id`、`kind`（`question` 或 `permission`）、`session_id`、`session_name`、`cwd`、`created_at`、`expires_at`，以及 `questions`（原样的题目和选项）或 `tool`（`name` 和最多 300 字的 `preview`）。题目存在 `~/.local/state/cc-moss/asks/`，只有你自己能读。
+**谁能替你答。** 以你的身份运行的任何程序都能 `ask take`、`ask answer`，包括批准权限请求；`--by` 只是对方自报的名字，不是凭证。这和它们本来就能读写你的文件、往你的终端里打字是一回事，cc-moss 不另设门槛。别的用户进不来：题目目录不是你自己的、或者别人能进（权限不是 `0700`），钩子就不等外面的答案，文件也不跟随符号链接。眼下不能只关权限请求、留着选择题；不想让别处批准权限，就整个关掉：`cc-moss config set ask.enabled false`。
+
+**预览会遮住密钥。** 权限请求的 `preview` 里，看着像密钥或令牌的部分（`sk-…`、`xoxb-…`、`ghp_…`、`github_pat_…`、`AKIA…`、`Bearer …` 等）会换成 `***`，只留前缀。这只是挡住常见格式，不保证认得出所有秘密；题目文件本身也只有你能读。
+
+**退回旧版本时。** 0.2.2 及更早的 `cc-moss setup --uninstall` 不认识这两个新钩子，删不掉它们。要降级，先用新版本跑一次 `cc-moss setup --uninstall`，或者降级后手动从 `~/.claude/settings.json` 删掉 `PreToolUse`、`PermissionRequest` 里 cc-moss 那两条。留着也不碍事：旧版本收到这两个事件什么都不做。
+
+`ask list --json` 输出 `{"schema":1,"asks":[…]}`，每道题带 `id`、`kind`（`question` 或 `permission`）、`session_id`、`session_name`、`cwd`、`created_at`、`expires_at`，以及 `questions`（原样的题目和选项）或 `tool`（`name`、最多 300 字的 `preview`，以及 cc-moss 自己用来认出同一次调用的 `input_hash`）。题目存在 `~/.local/state/cc-moss/asks/`，只有你自己能读；结束了的题挪进 `asks/done/`。
 
 ### 别名
 

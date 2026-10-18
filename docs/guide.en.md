@@ -175,8 +175,9 @@ cc-moss ask take --name me          # tell sessions you're around: questions in 
 cc-moss ask list                    # see which sessions are waiting on an answer
 cc-moss ask answer 1a2b --choice B  # pick B; the first few characters of the id are enough
 cc-moss ask answer 1a2b --choice Family --choice Friends   # several picks, or several questions: one after another, in order
+cc-moss ask answer 1a2b --choice 1:Yes --choice 2:No       # questions with the same options: say which one with N:LABEL
 cc-moss ask answer 1a2b --text "Either is fine"            # your own answer instead of an option (one question only)
-cc-moss ask answer 9c8d --allow     # a permission request: allow it; --deny [--message WHY] says no
+cc-moss ask answer 9c8d0e1f2a3b --allow   # a permission request: allow it; --deny [--message WHY] says no. Give at least 12 characters of the id
 ```
 
 - **On by default, but it does nothing unless someone is taking questions.** A session only waits for an answer from
@@ -188,12 +189,33 @@ cc-moss ask answer 9c8d --allow     # a permission request: allow it; --deny [--
   Pressing Esc does the same.
 - If anything goes wrong (a config it can't read, a state folder it can't write to…), it counts as off. It never holds
   a session up.
+- **It tells you what happened.** `ask answer` waits a second or two to see whether the session took the answer:
+  "Answered" if it did (for a permission request, it also says which session, tool and command), "too late" if the
+  session had already moved on, and "saved" if the session isn't waiting on it right now.
 - To turn it off: `cc-moss config set ask.enabled false`.
+
+**Who can answer for you.** Any program running as you can run `ask take` and `ask answer`, and that includes allowing
+a permission request; `--by` is only a name the answerer gives, not proof of who it is. That's no more than those
+programs can do already, since they can read your files and type into your terminal, so cc-moss adds no gate of its
+own. Other users are kept out: if the questions folder isn't yours or others can get into it (anything but `0700`),
+the hooks don't wait for answers from elsewhere, and files are never opened through a symlink. You can't yet turn off
+permission requests alone and keep questions; if you don't want permissions allowed from elsewhere, turn the whole
+thing off with `cc-moss config set ask.enabled false`.
+
+**Previews hide keys.** In a permission request's `preview`, anything that looks like a key or token (`sk-…`,
+`xoxb-…`, `ghp_…`, `github_pat_…`, `AKIA…`, `Bearer …` and the like) becomes `***`, with only its prefix left. This
+catches the common formats, not every secret; the question files themselves are readable only by you.
+
+**Going back to an older version.** `cc-moss setup --uninstall` from 0.2.2 or earlier doesn't know the two new hooks
+and can't take them out. To downgrade, run `cc-moss setup --uninstall` with the newer version first, or afterwards
+delete cc-moss's entries under `PreToolUse` and `PermissionRequest` in `~/.claude/settings.json` by hand. Leaving them
+does no harm: older versions do nothing with those events.
 
 `ask list --json` prints `{"schema":1,"asks":[…]}`. Each question has `id`, `kind` (`question` or `permission`),
 `session_id`, `session_name`, `cwd`, `created_at`, `expires_at`, and either `questions` (the questions and options as
-the session sent them) or `tool` (`name` and a `preview` of at most 300 characters). Questions are kept in
-`~/.local/state/cc-moss/asks/`, readable only by you.
+the session sent them) or `tool` (`name`, a `preview` of at most 300 characters, and the `input_hash` cc-moss uses
+to recognise the same call). Questions are kept in `~/.local/state/cc-moss/asks/`, readable only by you; once a
+question is settled it moves to `asks/done/`.
 
 ### Aliases
 

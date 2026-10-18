@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{bin, wait_for, World};
+use common::{bin, start_json, wait_for, World};
 use serde_json::{json, Value};
 
 const QUESTION: &str = "Pick one?";
@@ -276,10 +276,8 @@ fn permission_is_answered_with_allow_or_deny() {
     let child = env.spawn_hook("permission-request", &bash);
     let ask = wait_for(|| env.asks().into_iter().next());
     assert_eq!(ask["kind"], "permission");
-    assert_eq!(
-        ask["tool"],
-        json!({ "name": "Bash", "preview": "touch probe.txt" })
-    );
+    assert_eq!(ask["tool"]["name"], "Bash");
+    assert_eq!(ask["tool"]["preview"], "touch probe.txt");
     let id = ask["id"].as_str().unwrap();
     let wrong = env.cc_moss(&["ask", "answer", id, "--choice", "A"]);
     assert!(!wrong.status.success());
@@ -322,6 +320,297 @@ fn pre_tool_use_only_takes_note() {
     assert_eq!(asks[0]["questions"], tool_input()["questions"]);
 }
 
+fn pre_tool_use(session: &str) -> String {
+    json!({ "session_id": session, "cwd": "/work", "prompt_id": "p1",
+        "hook_event_name": "PreToolUse", "tool_name": "AskUserQuestion",
+        "tool_input": tool_input(), "tool_use_id": "toolu_1" })
+    .to_string()
+}
+
+fn bash_request(session: &str, command: &str) -> String {
+    json!({ "session_id": session, "cwd": "/work", "prompt_id": "p1",
+        "hook_event_name": "PermissionRequest", "tool_name": "Bash",
+        "tool_input": { "command": command, "description": "Run it" } })
+    .to_string()
+}
+
+fn bash_done(session: &str, command: &str) -> String {
+    json!({ "session_id": session, "hook_event_name": "PostToolUse", "tool_name": "Bash",
+        "tool_input": { "description": "Run it", "command": command },
+        "tool_response": { "stdout": "" } })
+    .to_string()
+}
+
+fn standing_files(env: &Env) -> Vec<String> {
+    std::fs::read_dir(env.state().join("asks"))
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().into_string().unwrap())
+        .filter(|n| {
+            n.strip_suffix(".json")
+                .is_some_and(|id| id.bytes().all(|b| b.is_ascii_alphanumeric()))
+        })
+        .collect()
+}
+
+#[test]
+fn answer_before_permission_request_reaches_session() {
+    // A fast taker answers what PreToolUse noted before PermissionRequest
+    // has started: the answer must still reach the session.
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let (out, _) = env.hook("pre-tool-use", &pre_tool_use("S"));
+    assert!(out.status.success());
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap().to_string();
+    let answering = env
+        .cmd()
+        .args(["ask", "answer", &id, "--choice", "B"])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    wait_for(|| exists(&env.state().join(format!("asks/{id}.answer.json"))));
+    let (out, took) = env.hook("permission-request", &permission_request("S"));
+    assert!(took < Duration::from_secs(1), "waited {took:?}");
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        v["hookSpecificOutput"]["decision"]["updatedInput"]["answers"][QUESTION],
+        "B"
+    );
+    let cli = answering.wait_with_output().unwrap();
+    assert!(cli.status.success(), "{cli:?}");
+    assert!(
+        String::from_utf8_lossy(&cli.stdout).contains("Answered."),
+        "{cli:?}"
+    );
+}
+
+#[test]
+fn answer_tells_when_no_session_is_waiting() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    env.hook("pre-tool-use", &pre_tool_use("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let out = env.cc_moss(&[
+        "ask",
+        "answer",
+        ask["id"].as_str().unwrap(),
+        "--choice",
+        "A",
+    ]);
+    assert!(out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stdout).contains("isn't waiting on it right now"),
+        "{out:?}"
+    );
+}
+
+#[test]
+fn a_late_answer_is_reported_as_too_late() {
+    let env = Env::new("[ask]\nwait_secs = 1\n");
+    env.take();
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap().to_string();
+    // The hook times out between the answer and its next look.
+    let out = child.wait_with_output().unwrap();
+    assert!(out.stdout.is_empty());
+    let late = env.cc_moss(&["ask", "answer", &id, "--choice", "A"]);
+    assert!(!late.status.success());
+    assert!(
+        String::from_utf8_lossy(&late.stderr).contains("no longer needs an answer"),
+        "{late:?}"
+    );
+}
+
+#[test]
+fn a_tool_finishing_withdraws_only_its_own_request() {
+    // Two Bash calls of one session wait at once (parallel tool calls or a
+    // subagent); one finishing must not withdraw the other.
+    let env = Env::new("[ask]\nwait_secs = 30\n");
+    env.take();
+    let ls = env.spawn_hook("permission-request", &bash_request("S", "ls"));
+    let rm = env.spawn_hook("permission-request", &bash_request("S", "rm -rf build"));
+    wait_for(|| (env.asks().len() == 2).then_some(()));
+    let t = Instant::now();
+    env.hook("post-tool-use", &bash_done("S", "ls"));
+    let out = ls.wait_with_output().unwrap();
+    assert_quiet(&out, t.elapsed(), Some(Duration::from_secs(1)));
+    let left = env.asks();
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0]["tool"]["preview"], "rm -rf build");
+    env.hook("stop", &json!({ "session_id": "S" }).to_string());
+    let out = rm.wait_with_output().unwrap();
+    assert!(out.stdout.is_empty());
+}
+
+#[test]
+fn an_answer_that_does_not_fit_lets_go_at_once() {
+    let env = Env::new("[ask]\nwait_secs = 30\n");
+    env.take();
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap();
+    // An app writing the file itself, with allow for a question.
+    std::fs::write(
+        env.state().join(format!("asks/{id}.answer.json")),
+        r#"{"schema":1,"by":"desktop","behavior":"allow"}"#,
+    )
+    .unwrap();
+    let t = Instant::now();
+    let out = child.wait_with_output().unwrap();
+    assert_quiet(&out, t.elapsed(), Some(Duration::from_secs(1)));
+    assert_eq!(env.closed(id).unwrap()["reason"], "invalid-answer");
+}
+
+#[test]
+fn closed_questions_leave_nothing_standing() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    for i in 0..20 {
+        let session = format!("W{i}");
+        env.hook("pre-tool-use", &pre_tool_use(&session));
+        env.hook("stop", &json!({ "session_id": session }).to_string());
+    }
+    assert!(
+        standing_files(&env).is_empty(),
+        "{:?}",
+        standing_files(&env)
+    );
+    assert_eq!(
+        std::fs::read_dir(env.state().join("asks/done"))
+            .unwrap()
+            .count(),
+        20
+    );
+}
+
+#[test]
+fn wait_is_capped_below_the_hook_timeout() {
+    let env = Env::new("[ask]\nwait_secs = 10000\n");
+    env.take();
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let ms = |k: &str| moss_core::ask::parse_time(ask[k].as_str().unwrap()).unwrap();
+    assert_eq!(ms("expires_at") - ms("created_at"), 590_000, "{ask}");
+    env.hook("stop", &json!({ "session_id": "S" }).to_string());
+    child.wait_with_output().unwrap();
+}
+
+#[test]
+fn permission_request_sweeps_old_questions() {
+    let env = Env::new("[ask]\nwait_secs = 1\n");
+    env.take();
+    let done = env.state().join("asks/done");
+    std::fs::create_dir_all(&done).unwrap();
+    let old = json!({ "schema": 1, "id": "00000000001", "kind": "question", "session_id": "OLD",
+        "created_at": "2020-01-01T00:00:00Z", "expires_at": "2020-01-01T00:05:00Z",
+        "questions": tool_input()["questions"] });
+    std::fs::write(done.join("00000000001.json"), old.to_string()).unwrap();
+    std::fs::write(
+        env.state().join("asks/00000000001.closed.json"),
+        r#"{"reason":"timeout"}"#,
+    )
+    .unwrap();
+    env.hook("permission-request", &permission_request("S"));
+    assert!(!done.join("00000000001.json").exists());
+    assert!(!env.state().join("asks/00000000001.closed.json").exists());
+}
+
+#[test]
+fn non_interactive_sessions_never_wait() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let t = Instant::now();
+    let mut child = env
+        .cmd()
+        .env("CLAUDE_CODE_SESSION_ATTENDED", "0")
+        .args(["hook", "permission-request"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let _ = child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(permission_request("S").as_bytes());
+    let out = child.wait_with_output().unwrap();
+    assert_quiet(&out, t.elapsed(), Some(FAST));
+    assert!(env.asks().is_empty(), "nothing written for `claude -p`");
+}
+
+#[test]
+fn an_asks_dir_others_can_reach_is_not_used() {
+    use std::os::unix::fs::PermissionsExt;
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let asks = env.state().join("asks");
+    std::fs::set_permissions(&asks, std::fs::Permissions::from_mode(0o770)).unwrap();
+    let (out, took) = env.hook("permission-request", &permission_request("S"));
+    std::fs::set_permissions(&asks, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert_quiet(&out, took, Some(FAST));
+    assert!(standing_files(&env).is_empty());
+}
+
+#[test]
+fn a_permission_needs_a_longer_id_and_is_said_back() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let child = env.spawn_hook("permission-request", &bash_request("S", "touch probe.txt"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap();
+    let short = env.cc_moss(&["ask", "answer", &id[..6], "--allow"]);
+    assert!(!short.status.success());
+    assert!(
+        String::from_utf8_lossy(&short.stderr).contains("at least 12 characters"),
+        "{short:?}"
+    );
+    let out = env.cc_moss(&["ask", "answer", &id[..12], "--allow"]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        String::from_utf8_lossy(&out.stdout).trim(),
+        "Allowed. S runs Bash: touch probe.txt"
+    );
+    let out = child.wait_with_output().unwrap();
+    let v: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["hookSpecificOutput"]["decision"]["behavior"], "allow");
+}
+
+#[test]
+fn pre_tool_use_stays_off_the_registry() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let mut start = env.cmd();
+    start
+        .env("CLAUDE_PID", std::process::id().to_string())
+        .args(["hook", "session-start"])
+        .stdin(Stdio::piped());
+    let mut child = start.spawn().unwrap();
+    let _ = child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(start_json("S", "startup", Some("job")).as_bytes());
+    assert!(child.wait().unwrap().success());
+    env.hook("pre-tool-use", &pre_tool_use("S"));
+    let noted = wait_for(|| env.asks().into_iter().next());
+    assert!(noted.get("session_name").is_none(), "{noted}");
+    // PermissionRequest takes it over and fills in the name.
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let named = wait_for(|| {
+        env.asks()
+            .into_iter()
+            .find(|a| a["session_name"].is_string())
+    });
+    assert_eq!(named["id"], noted["id"]);
+    assert_eq!(named["session_name"], "job");
+    env.hook("stop", &json!({ "session_id": "S" }).to_string());
+    child.wait_with_output().unwrap();
+}
+
 fn world_with_taker(test: &str) -> World {
     let w = World::new(test);
     let out = w
@@ -360,7 +649,12 @@ fn answer_reaches_session() {
     w.new_session("job-a");
     let sid = w.session_id("job-a");
     w.send(&sid, "ask");
-    let ask = wait_for(|| world_asks(&w).into_iter().next());
+    // PreToolUse notes the question; PermissionRequest adds the name.
+    let ask = wait_for(|| {
+        world_asks(&w)
+            .into_iter()
+            .find(|a| a["session_name"].is_string())
+    });
     assert_eq!(ask["kind"], "question");
     assert_eq!(ask["session_id"], sid.as_str());
     assert_eq!(ask["session_name"], "job-a");
