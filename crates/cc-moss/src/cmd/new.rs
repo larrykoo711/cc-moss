@@ -7,7 +7,8 @@ use std::collections::HashSet;
 use std::path::Path;
 
 use anyhow::bail;
-use moss_core::config::Config;
+use moss_core::config::{Config, PermissionMode};
+use moss_core::launch_args::{sets_permissions, without_permissions};
 use moss_core::registry::Registry;
 use moss_core::restore::{plan, Verdict};
 use moss_core::slot::{now_ms, Slot, Status};
@@ -24,6 +25,9 @@ pub struct NewArgs {
     pub detach: bool,
     /// Restore an interrupted session of the same name without asking.
     pub yes: bool,
+    /// Start this one in Claude Code's normal mode, whatever the config says:
+    /// no bypass of ours, and none from `default_args` either.
+    pub safe: bool,
     pub claude_args: Vec<String>,
 }
 
@@ -71,7 +75,15 @@ pub fn run(args: NewArgs) -> Result<()> {
         "--session-id".into(),
         session_id,
     ];
-    argv.extend(config.claude.default_args.iter().cloned());
+    if wants_bypass(&config, args.safe, &args.claude_args) {
+        argv.push(BYPASS_FLAG.into());
+    }
+    // `--safe` means normal mode this once, also over bypass in `default_args`.
+    if args.safe {
+        argv.extend(without_permissions(&config.claude.default_args));
+    } else {
+        argv.extend(config.claude.default_args.iter().cloned());
+    }
     argv.extend(args.claude_args);
     let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
 
@@ -99,6 +111,19 @@ pub fn run(args: NewArgs) -> Result<()> {
         return Ok(());
     }
     super::attach::attach_tmux(&socket, &tmux_name)
+}
+
+const BYPASS_FLAG: &str = "--dangerously-skip-permissions";
+
+/// Whether `new` adds [`BYPASS_FLAG`]: the config asks for bypass (the
+/// default), this run is not `--safe`, no argument already picks a permission
+/// mode, and no Claude Code settings turn bypass off.
+fn wants_bypass(config: &Config, safe: bool, claude_args: &[String]) -> bool {
+    !safe
+        && config.claude.permission_mode == PermissionMode::Bypass
+        && !sets_permissions(&config.claude.default_args)
+        && !sets_permissions(claude_args)
+        && super::setup::bypass_blocked_by().is_none()
 }
 
 /// If an open session already has `name`, deal with it and return what `new`

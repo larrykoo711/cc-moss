@@ -36,6 +36,38 @@ fn invalid_toml_error_has_path() {
 }
 
 #[test]
+fn permission_mode_defaults_to_bypass() {
+    use moss_core::config::PermissionMode;
+    let dir = tempfile::tempdir().unwrap();
+    let c = Config::load_from(&dir.path().join("nope.toml")).unwrap();
+    assert_eq!(c.claude.permission_mode, PermissionMode::Bypass);
+    assert_eq!(
+        moss_core::config::get_setting(&c, "claude.permission_mode"),
+        Ok("bypass".into())
+    );
+}
+
+#[test]
+fn permission_mode_default_parses() {
+    use moss_core::config::PermissionMode;
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "[claude]\npermission_mode = \"default\"\n").unwrap();
+    let c = Config::load_from(&p).unwrap();
+    assert_eq!(c.claude.permission_mode, PermissionMode::Default);
+}
+
+#[test]
+fn permission_mode_rejects_unknown_value_by_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let p = dir.path().join("config.toml");
+    std::fs::write(&p, "[claude]\npermission_mode = \"yolo\"\n").unwrap();
+    let err = format!("{:#}", Config::load_from(&p).unwrap_err());
+    assert!(err.contains("permission_mode"), "{err}");
+    assert!(err.contains("bypass"), "{err}");
+}
+
+#[test]
 fn icons_follow_starship_unless_set() {
     use moss_core::config::Icons;
     let dir = tempfile::tempdir().unwrap();
@@ -72,7 +104,15 @@ mod setting {
             config::check_setting("ui.language", "fr"),
             Err(SettingError::BadValue(&["auto", "zh", "en"]))
         );
-        assert_eq!(config::KEYS, &["ui.language"]);
+        assert_eq!(config::KEYS, &["ui.language", "claude.permission_mode"]);
+        assert_eq!(
+            config::check_setting("claude.permission_mode", " Default "),
+            Ok("default".into())
+        );
+        assert_eq!(
+            config::check_setting("claude.permission_mode", "yolo"),
+            Err(SettingError::BadValue(&["bypass", "default"]))
+        );
     }
 
     #[test]

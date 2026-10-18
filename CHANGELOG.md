@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **New sessions start in bypass mode.** Sessions from `cc-moss new` and the app no longer stop to ask for each
+  permission. For normal mode once, use `cc-moss new NAME --safe`; to turn it off for good, run
+  `cc-moss config set claude.permission_mode default` or switch off "Let it work on its own" in Settings › General.
+  Install sets Claude Code's `skipDangerousModePermissionPrompt` only if you haven't set it, so sessions don't stall on
+  the bypass warning, and uninstall takes out only that. A policy that disables bypass is respected, and `doctor`
+  says so.
+
 ## [0.2.2] - 2026-10-18
 
 Each session carries its own actions, one place for permissions, and a crash fix.

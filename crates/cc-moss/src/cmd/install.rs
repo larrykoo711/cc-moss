@@ -480,7 +480,9 @@ pub fn run(opts: Options) -> Result<()> {
         for n in &notes {
             println!("{n}");
         }
-    } else if !files::apply(&changes, &notes, opts.dry_run, opts.yes, "install")? && !opts.dry_run {
+    } else if files::apply(&changes, &notes, opts.dry_run, opts.yes, "install")? {
+        setup::settle_owned(&changes, None)?;
+    } else if !opts.dry_run {
         return Ok(());
     }
 
@@ -588,7 +590,9 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         for n in &notes {
             println!("{n}");
         }
-    } else if !files::apply(&changes, &notes, opts.dry_run, opts.yes, "uninstall")? {
+    } else if files::apply(&changes, &notes, opts.dry_run, opts.yes, "uninstall")? {
+        setup::settle_owned(&changes, None)?;
+    } else {
         return Ok(());
     }
     // Our config dir, if that file was all it held. Not on a dry run.
