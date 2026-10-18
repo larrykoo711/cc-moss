@@ -156,8 +156,8 @@ R1 ◄── 全部
 |------|----|------|------|-----|----------|
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
-| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟨 In Progress | in-progress/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
-| **T1.4** 桌面答题 | cc-moss | T1.3 | ⬜ Backlog | — | 面板答完会话继续 |
+| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ✅ Done | done/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
+| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟦 Ready | — | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ⬜ Backlog | — | 面板发一句、看到回复 |
@@ -180,6 +180,8 @@ R1 ◄── 全部
 - 2026-10-18 教训补充：临时 `CC_MOSS_STATE_DIR` 只挡 hook；用户 App / `ls` 刷新时经 `claude agents --json` 收编所有正在跑的 claude，探针会话仍进真实 registry（T1.3 修复的 I5 探针）。更早 T1.1 的两个探针会话被 kill 后显示「断了」、被「找回」进用户默认 tmux 一直运行。经用户同意结束并 close。规避：探针 claude 一律 `/exit` 正常退出、`ps` 确认无残留、报告列出全部 session_id，controller 事后核对清理
 - T2.1 ✅ 2026-10-18：评审 I1–I4、M1–M12 已修（10 个回退必红变异全红）；合并树 CI Rust 599、Swift 303 全绿；M13 转 T2.2
 - T1.2 → main：PR #36（45d7ce4），CI 全绿，用户授权「T1.2 好了就合并」
+- T1.3 ✅ 2026-10-18：评审 I1–I4 + Minor 已修（变异全红），I5 探针：Claude Code 采用第一个给出决定的 PermissionRequest hook，不拖住用户的 hook；合并树 Rust 630 全绿
+- AMEND: T1.3 契约（asks/done、临时文件 + hard_link 落地、`invalid-answer`、`tool.input_hash`）reason=评审修复 approved-by=controller（派发时预先批准）date=2026-10-18
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
