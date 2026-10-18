@@ -206,9 +206,10 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "moss profile",
         "",
-        "用标准输入里的文字替换 Moss 的身份、性格或对你的了解（/moss-profile 用的就是它）",
+        "用新文字（标准输入或 --from 指定的文件）替换 Moss 的身份、性格或对你的了解（/moss-profile 用的就是它）",
     ),
     ("moss profile", "name", "identity | soul | user"),
+    ("moss profile", "from", "从这个文件读新文字，而不是标准输入"),
     ("ask", "", "会话在等你回答的问题：在这里看、在这里答"),
     ("ask list", "", "列出会话正在等你回答的问题"),
     ("ask list", "json", "机器可读的输出（schema 1）"),

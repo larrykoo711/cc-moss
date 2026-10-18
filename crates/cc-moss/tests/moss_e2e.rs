@@ -23,7 +23,10 @@ impl Drop for Daemon {
 }
 
 /// The world's own socket doubles as Moss's: never the real `cc-moss-moss`.
+/// Only debug builds read these switches; a release build would ignore them
+/// (and leave Moss alone), so these tests refuse to run there.
 fn moss_cmd(w: &World) -> std::process::Command {
+    common::debug_only();
     let mut cmd = w.cc_moss();
     cmd.env("CC_MOSS_MOSS_SOCKET", &w.socket)
         .env("CC_MOSS_MOSS_CHECK_MS", "200")
@@ -33,7 +36,11 @@ fn moss_cmd(w: &World) -> std::process::Command {
 }
 
 fn daemon(w: &World) -> Daemon {
-    let child = moss_cmd(w)
+    daemon_with(w, moss_cmd(w))
+}
+
+fn daemon_with(_w: &World, mut cmd: std::process::Command) -> Daemon {
+    let child = cmd
         .args(["daemon", "run"])
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -98,6 +105,38 @@ fn log(w: &World) -> String {
     std::fs::read_to_string(w.state().join("daemon/daemon.log")).unwrap_or_default()
 }
 
+fn moss_option(w: &World, args: &[&str]) -> String {
+    w.tmux(args).trim().to_string()
+}
+
+/// A claude that fails to start while `flag` exists, and is the fake claude
+/// otherwise.
+fn flaky_claude(w: &World) -> (std::path::PathBuf, std::path::PathBuf) {
+    let flag = w.path("claude-fails");
+    let script = w.path("flaky-claude");
+    std::fs::write(
+        &script,
+        format!(
+            "#!/bin/sh\n[ -e '{}' ] && {{ echo 'claude: broken' >&2; exit 1; }}\nexec '{}' \"$@\"\n",
+            flag.display(),
+            w.claude.display()
+        ),
+    )
+    .unwrap();
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    (script, flag)
+}
+
+fn record<'a>(all: &'a serde_json::Value, sid: &str) -> &'a serde_json::Value {
+    all["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["session_id"] == sid)
+        .unwrap_or_else(|| panic!("{sid} not in {all}"))
+}
+
 #[test]
 fn moss_comes_up_with_role() {
     let w = World::new("moss-up");
@@ -120,7 +159,8 @@ fn moss_comes_up_with_role() {
         assert!(home.join(f).is_file(), "{f}");
     }
     let settings = std::fs::read_to_string(home.join(".claude/settings.json")).unwrap();
-    assert!(settings.contains("hook moss-guard || exit 2"), "{settings}");
+    assert!(settings.contains("hook moss-guard --home"), "{settings}");
+    assert!(settings.contains("|| exit 2"), "{settings}");
     wait_until("SESSIONS.md", 10, || {
         home.join("SESSIONS.md").exists().then_some(())
     });
@@ -134,6 +174,143 @@ fn moss_comes_up_with_role() {
     // Other sessions carry no role.
     let tmux_name = s["tmux"]["session_name"].clone();
     assert_eq!(tmux_name, "moss", "never renamed after its Claude name");
+    // Known by its mark, kept when detached, gone (not a dead pane) on exit,
+    // whatever a tmux.conf says.
+    assert_eq!(
+        moss_option(&w, &["show-options", "-v", "-t", "=moss:", "@cc-moss-role"]),
+        "moss"
+    );
+    assert_eq!(
+        moss_option(
+            &w,
+            &["show-options", "-v", "-t", "=moss:", "destroy-unattached"]
+        ),
+        "off"
+    );
+    assert_eq!(
+        moss_option(
+            &w,
+            &["show-options", "-w", "-v", "-t", "=moss:", "remain-on-exit"]
+        ),
+        "off"
+    );
+    let st = status(&w);
+    assert_eq!(st["daemon_running"], true, "{st}");
+    assert!(st.get("last_error").is_none(), "{st}");
+}
+
+#[test]
+fn moss_keeps_its_tmux_name_after_a_prompt() {
+    let w = World::new("moss-name");
+    let _d = daemon(&w);
+    let sid = moss_up(&w);
+    // Its first prompt gives it a Claude name; an ordinary session's tmux
+    // session would be renamed after it.
+    w.send(&sid, "prompt Resident");
+    wait_until("the name to be recorded", 10, || {
+        (running_moss(&w, None)?["name"] == "Resident").then_some(())
+    });
+    std::thread::sleep(Duration::from_millis(300));
+    assert_eq!(w.session_names(), ["moss"], "{}", log(&w));
+}
+
+#[test]
+fn a_renamed_moss_is_still_moss() {
+    let w = World::new("moss-renamed");
+    let _d = daemon(&w);
+    let sid = moss_up(&w);
+    w.tmux(&["rename-session", "-t", "=moss", "by-hand"]);
+    // Several checks later: the same Moss, no second one.
+    std::thread::sleep(Duration::from_millis(1_500));
+    assert_eq!(w.session_names(), ["by-hand"], "{}", log(&w));
+    assert_eq!(running_moss(&w, None).unwrap()["session_id"], sid.as_str());
+    assert!(!log(&w).contains("it is gone"), "{}", log(&w));
+    assert_eq!(status(&w)["running"], true);
+}
+
+#[test]
+fn moss_with_a_dead_pane_counts_as_dead() {
+    let w = World::new("moss-dead-pane");
+    let _d = daemon(&w);
+    let first = moss_up(&w);
+    // A tmux.conf's remain-on-exit keeps the session after Claude Code
+    // exits: the session is there, its pane is dead.
+    w.tmux(&["set-option", "-w", "-t", "=moss:", "remain-on-exit", "on"]);
+    let pid = moss_option(
+        &w,
+        &["display-message", "-p", "-t", "=moss:", "#{pane_pid}"],
+    );
+    let out = std::process::Command::new("kill")
+        .args(["-9", &pid])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let back = wait_until("a fresh Moss", 15, || running_moss(&w, Some(&first)));
+    assert_ne!(back["session_id"], first.as_str());
+    assert_eq!(w.session_names(), ["moss"], "the dead one was cleared away");
+}
+
+#[test]
+fn moss_that_cannot_start_backs_off_and_keeps_its_old_record() {
+    let w = World::new("moss-flaky");
+    let (claude, flag) = flaky_claude(&w);
+    let mut cmd = moss_cmd(&w);
+    cmd.env("CC_MOSS_CLAUDE_BIN", &claude);
+    let _d = daemon_with(&w, cmd);
+    let first = moss_up(&w);
+    std::fs::write(&flag, "").unwrap();
+    w.tmux(&["kill-server"]);
+    wait_until("two failed starts", 15, || {
+        (log(&w).matches("could not start it").count() >= 2).then_some(())
+    });
+    let st = status(&w);
+    assert_eq!(
+        (st["enabled"].clone(), st["running"].clone()),
+        (true.into(), false.into())
+    );
+    assert!(
+        st["last_error"].as_str().is_some_and(|e| !e.is_empty()),
+        "the app can say why: {st}"
+    );
+    // Failed starts are not starts: Moss was gone once, not again and again.
+    assert_eq!(log(&w).matches("it is gone").count(), 1, "{}", log(&w));
+    // The old record stays as it was until a new Moss runs.
+    let old = ls_json(&w.state(), true);
+    assert_ne!(record(&old, &first)["status"], "closed", "{old}");
+
+    std::fs::remove_file(&flag).unwrap();
+    let back = wait_until("Moss to start once claude works", 15, || {
+        running_moss(&w, Some(&first))
+    });
+    let all = wait_until("the old record to be closed", 10, || {
+        let all = ls_json(&w.state(), true);
+        (record(&all, &first)["status"] == "closed").then_some(all)
+    });
+    assert_eq!(record(&all, &first)["end_reason"], "moss-restarted");
+    assert_eq!(
+        record(&all, back["session_id"].as_str().unwrap())["status"],
+        "running"
+    );
+    assert!(status(&w).get("last_error").is_none());
+}
+
+#[test]
+fn an_unreadable_config_starts_nothing() {
+    let w = World::new("moss-bad-config");
+    std::fs::write(
+        w.path("config.toml"),
+        "[moss]\nenabled = false\n[[[ broken\n",
+    )
+    .unwrap();
+    let _d = daemon(&w);
+    wait_until("the daemon to notice", 10, || {
+        log(&w).contains("cannot read config.toml").then_some(())
+    });
+    std::thread::sleep(Duration::from_millis(1_500));
+    assert!(!has_moss(&w), "{}", log(&w));
+    // Once it reads, the switch decides.
+    std::fs::write(w.path("config.toml"), "[moss]\nenabled = true\n").unwrap();
+    moss_up(&w);
 }
 
 #[test]
@@ -149,7 +326,11 @@ fn moss_comes_back_after_kill() {
     let back = wait_until("Moss to come back", 15, || running_moss(&w, Some(&first)));
     let second = back["session_id"].as_str().unwrap().to_string();
     assert_ne!(first, second, "a fresh session, not a resume");
-    // The old record is closed: never offered for restore.
+    // The old record is closed once the new one counts as started: never
+    // offered for restore.
+    wait_until("the restart to be logged", 10, || {
+        log(&w).contains("moss: started again").then_some(())
+    });
     let all = ls_json(&w.state(), true);
     let old = all["sessions"]
         .as_array()
@@ -157,7 +338,7 @@ fn moss_comes_back_after_kill() {
         .iter()
         .find(|s| s["session_id"] == first.as_str())
         .expect("the old Moss is still listed with --all");
-    assert_eq!(old["status"], "closed", "{old}");
+    assert_eq!(old["status"], "closed", "{old}\n{}", log(&w));
     assert_eq!(old["end_reason"], "moss-restarted", "{old}");
     let interrupted = ls_json(&w.state(), false)["sessions"]
         .as_array()

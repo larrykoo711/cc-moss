@@ -37,8 +37,9 @@ pub const GUARD_EVENT: &str = "moss-guard";
 /// How long tmux may take to answer.
 const TMUX_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Every file of Moss's home; `exe` is the cc-moss its guard hook runs.
-pub fn files(exe: &str) -> Vec<File> {
+/// Every file of Moss's home; `exe` is the cc-moss its guard hook runs and
+/// `state` the state directory the home is in.
+pub fn files(exe: &str, state: &Path) -> Vec<File> {
     let managed = |path, text: &str| File {
         path,
         text: text.to_string(),
@@ -52,7 +53,7 @@ pub fn files(exe: &str) -> Vec<File> {
     vec![
         managed("CLAUDE.md", CLAUDE_MD),
         managed("SECURITY.md", SECURITY_MD),
-        managed(".claude/settings.json", &settings_json(exe)),
+        managed(".claude/settings.json", &settings_json(exe, state)),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
         user("IDENTITY.md", IDENTITY_MD),
         user("SOUL.md", SOUL_MD),
@@ -60,17 +61,62 @@ pub fn files(exe: &str) -> Vec<File> {
     ]
 }
 
-/// Moss's project settings: the guard before every write and command. The
-/// `|| exit 2` blocks the tool also when cc-moss cannot run at all (missing,
-/// crashed): Claude Code lets a tool through on any other failure.
-fn settings_json(exe: &str) -> String {
-    let command = format!("{} hook {GUARD_EVENT} || exit 2", shell_quote(exe));
+/// The files of Moss's home the sandbox keeps shell commands from writing
+/// (cc-moss's, and the persona, which changes only through
+/// `cc-moss moss profile`).
+const SHELL_READ_ONLY: &[&str] = &[
+    "SECURITY.md",
+    "CLAUDE.md",
+    "SESSIONS.md",
+    "IDENTITY.md",
+    "SOUL.md",
+    "USER.md",
+];
+
+/// The one command Moss runs outside the sandbox: it writes the persona
+/// files the sandbox keeps read-only, and nothing else.
+const PROFILE_COMMAND: &str = "cc-moss moss profile *";
+
+/// Moss's project settings.
+///
+/// - The guard before every tool call (`*`). The `|| exit 2` blocks the
+///   tool also when cc-moss cannot run at all (missing, crashed): Claude
+///   Code lets a tool through on any other failure. The home is in the
+///   command, not taken from the environment.
+/// - The Bash sandbox, on and strict: shell commands write only in the home
+///   (the working directory), the per-user temp folder and the registry
+///   cc-moss's own commands update; no retry outside it; Claude Code
+///   refuses to start rather than run without it.
+fn settings_json(exe: &str, state: &Path) -> String {
+    let home = moss::home_dir(state);
+    let command = format!(
+        "{} hook {GUARD_EVENT} --home {} || exit 2",
+        shell_quote(exe),
+        shell_quote(&home.to_string_lossy())
+    );
+    let registry = state.join("registry.db").to_string_lossy().into_owned();
+    let allow_write: Vec<String> = ["", "-wal", "-shm", "-journal"]
+        .iter()
+        .map(|suffix| format!("{registry}{suffix}"))
+        .collect();
+    let deny_write: Vec<String> = SHELL_READ_ONLY.iter().map(|f| format!("./{f}")).collect();
     let value = serde_json::json!({
         "hooks": {
             "PreToolUse": [{
-                "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash",
+                "matcher": "*",
                 "hooks": [{ "type": "command", "command": command }]
             }]
+        },
+        "sandbox": {
+            "enabled": true,
+            "failIfUnavailable": true,
+            "allowUnsandboxedCommands": false,
+            "autoAllowBashIfSandboxed": true,
+            "excludedCommands": [PROFILE_COMMAND],
+            "filesystem": {
+                "allowWrite": allow_write,
+                "denyWrite": deny_write
+            }
         }
     });
     let mut text = serde_json::to_string_pretty(&value).unwrap_or_default();
@@ -88,38 +134,60 @@ fn state() -> PathBuf {
     daemon::state()
 }
 
-/// The tmux socket name for Moss. Debug builds take `CC_MOSS_MOSS_SOCKET`;
-/// a test that did not set it (`CC_MOSS_FORBID_LAUNCHCTL` is there) gets
-/// `None`, so no test ever reaches the real Moss.
+/// The tmux socket name for Moss. Debug builds take `CC_MOSS_MOSS_SOCKET`.
+/// A test that did not set it (`CC_MOSS_FORBID_LAUNCHCTL` is there) gets
+/// `None`, and so does every test of a release build, where the override is
+/// not read: no test ever reaches the real Moss.
 fn socket() -> Option<String> {
     if let Some(name) = app::test_override("CC_MOSS_MOSS_SOCKET") {
         return Some(name.to_string_lossy().into_owned()).filter(|n| !n.is_empty());
     }
-    if cfg!(debug_assertions) && std::env::var_os("CC_MOSS_FORBID_LAUNCHCTL").is_some() {
+    if std::env::var_os("CC_MOSS_FORBID_LAUNCHCTL").is_some() {
         return None;
     }
     Some(moss::SOCKET.to_string())
 }
 
-/// `tmux -L <socket> <args>`.
+/// `tmux -L <socket> -f /dev/null <args>`: Moss's server never reads the
+/// user's tmux.conf (no plugins, no `remain-on-exit` or `destroy-unattached`
+/// that would change how Moss lives and dies).
 fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
     run_with_timeout(
-        Command::new("tmux").arg("-L").arg(socket).args(args),
+        Command::new("tmux")
+            .arg("-L")
+            .arg(socket)
+            .arg("-f")
+            .arg("/dev/null")
+            .args(args),
         TMUX_TIMEOUT,
     )
 }
 
-/// Whether Moss's tmux session is there. Only tmux saying plainly that it
-/// is not counts as dead.
-fn liveness(socket: &str) -> Liveness {
-    let target = format!("={}", moss::SESSION);
-    match tmux(socket, &["has-session", "-t", &target]) {
-        Ok(out) => keeper::classify_has_session(
+/// What Moss's tmux server holds. A dead Moss kept on screen by
+/// `remain-on-exit` is cleared away here.
+fn look(socket: &str) -> keeper::Seen {
+    let seen = match tmux(socket, &["list-panes", "-a", "-F", keeper::PANES_FORMAT]) {
+        Ok(out) => keeper::classify_panes(
             out.status.success(),
+            &String::from_utf8_lossy(&out.stdout),
             &String::from_utf8_lossy(&out.stderr),
         ),
-        Err(_) => Liveness::Unknown,
+        Err(_) => keeper::Seen {
+            liveness: Liveness::Unknown,
+            live: vec![],
+            dead: vec![],
+        },
+    };
+    for id in &seen.dead {
+        let _ = tmux(socket, &["kill-session", "-t", id]);
     }
+    seen
+}
+
+/// Whether Moss runs. Only tmux saying plainly that it does not counts as
+/// dead.
+fn liveness(socket: &str) -> Liveness {
+    look(socket).liveness
 }
 
 /// What Moss is asked first after every start.
@@ -139,8 +207,14 @@ pub fn protected_hint() -> String {
     .to_string()
 }
 
+/// The config file the daemon reads (the one its LaunchAgent pins), so
+/// `moss stop` from a shell with its own `XDG_CONFIG_HOME` still reaches it.
+fn config_file() -> PathBuf {
+    daemon::pinned_config().unwrap_or_else(moss_core::config::config_path)
+}
+
 fn enabled() -> Result<bool> {
-    Ok(Config::load()?.moss.enabled)
+    Ok(Config::load_from(&config_file())?.moss.enabled)
 }
 
 // ---------------------------------------------------------------- start / stop / status
@@ -172,7 +246,17 @@ pub fn start() -> Result<()> {
 /// `moss start`, across logins too.
 pub fn stop() -> Result<()> {
     set_enabled(false)?;
-    let ended = end_moss(&state(), "moss-stopped")?;
+    let ended = end_moss(&state(), "moss-stopped").map_err(|e| {
+        anyhow::anyhow!(tr!(
+            format!(
+                "Moss is switched off, but cc-moss could not make sure it stopped: {e:#}. \
+                 The daemon keeps trying; see `cc-moss moss status`."
+            ),
+            format!(
+                "Moss 已关闭，但 cc-moss 没能确认它停下了：{e:#}。守护进程会继续尝试；可以看看 `cc-moss moss status`。"
+            )
+        ))
+    })?;
     println!(
         "{}",
         if ended {
@@ -190,33 +274,51 @@ pub fn stop() -> Result<()> {
     Ok(())
 }
 
-fn set_enabled(on: bool) -> Result<()> {
-    super::config::store("moss.enabled", if on { "true" } else { "false" })
+/// End Moss without touching the switch, for `daemon stop`: the daemon is
+/// going, so Moss goes with it, and `daemon start` brings both back.
+pub fn end_with_daemon() -> Result<bool> {
+    end_moss(&state(), "daemon-stopped")
 }
 
-/// End Moss's tmux session and close its records. True when one was running.
+fn set_enabled(on: bool) -> Result<()> {
+    super::config::store_at(
+        &config_file(),
+        "moss.enabled",
+        if on { "true" } else { "false" },
+    )
+}
+
+/// End Moss's tmux session and close its records. True when one was
+/// running. When tmux cannot say that it is gone (it does not answer, or the
+/// session survives), this is an error and the records stay as they are:
+/// the caller must not report a stop that may not have happened.
 fn end_moss(state: &Path, reason: &str) -> Result<bool> {
-    let mut ended = false;
-    if let Some(socket) = socket() {
-        if liveness(&socket) == Liveness::Alive {
-            let target = format!("={}", moss::SESSION);
-            let out = tmux(&socket, &["kill-session", "-t", &target])
-                .map_err(|e| anyhow::anyhow!("tmux kill-session: {e:?}"))?;
-            if !out.status.success() && liveness(&socket) == Liveness::Alive {
-                bail!(
-                    "tmux could not end Moss: {}",
-                    String::from_utf8_lossy(&out.stderr).trim()
-                );
-            }
-            ended = true;
+    let Some(socket) = socket() else {
+        return Ok(false);
+    };
+    let before = look(&socket);
+    if before.liveness != Liveness::Dead {
+        for id in &before.live {
+            let _ = tmux(&socket, &["kill-session", "-t", id]);
         }
+        if before.liveness == Liveness::Unknown {
+            // tmux did not say what runs: end it by the name it starts with.
+            let target = format!("={}", moss::SESSION);
+            let _ = tmux(&socket, &["kill-session", "-t", &target]);
+        }
+    }
+    match look(&socket).liveness {
+        Liveness::Dead => {}
+        Liveness::Alive => bail!("tmux could not end Moss's session"),
+        Liveness::Unknown => bail!("tmux did not say whether Moss's session is gone"),
     }
     let db = state.join("registry.db");
     if db.exists() {
-        Registry::open(&db)?.close_role(moss::ROLE, reason, now_ms())?;
+        Registry::open(&db)?.close_role(moss::ROLE, &socket, None, reason, now_ms())?;
     }
     moss::remove(&moss::status_path(state))?;
-    Ok(ended)
+    moss::clear_error(state);
+    Ok(before.liveness == Liveness::Alive)
 }
 
 /// What `moss status` reports.
@@ -224,13 +326,15 @@ pub fn report() -> moss::Report {
     let state = state();
     let on = enabled().unwrap_or(true);
     let stored = moss::read(&moss::status_path(&state));
+    let daemon_running = daemon::report().running;
     let running = match socket().map(|s| liveness(&s)) {
         Some(Liveness::Alive) => true,
         Some(Liveness::Dead) | None => false,
         // tmux did not say: believe the daemon's record while it runs.
-        Some(Liveness::Unknown) => stored.is_some() && daemon::report().running,
+        Some(Liveness::Unknown) => stored.is_some() && daemon_running,
     };
-    moss::Report::new(on, running, stored.as_ref())
+    let last_error = moss::read_error(&state);
+    moss::Report::new(on, running, stored.as_ref(), daemon_running, last_error)
 }
 
 /// `cc-moss moss status [--json]`.
@@ -284,7 +388,7 @@ pub fn describe(r: &moss::Report) -> String {
 
 /// `cc-moss moss profile <identity|soul|user>`: the new text on stdin. The
 /// one way to change Moss's persona; the old file is kept in `.snapshots/`.
-pub fn profile(name: &str) -> Result<()> {
+pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
     let file = match name.to_ascii_lowercase().as_str() {
         "identity" => "IDENTITY.md",
         "soul" => "SOUL.md",
@@ -295,9 +399,17 @@ pub fn profile(name: &str) -> Result<()> {
         )),
     };
     let mut text = String::new();
-    std::io::stdin()
-        .read_to_string(&mut text)
-        .context("cannot read the new text from standard input")?;
+    match from {
+        Some(path) => {
+            text = std::fs::read_to_string(path)
+                .with_context(|| format!("cannot read {}", path.display()))?
+        }
+        None => {
+            std::io::stdin()
+                .read_to_string(&mut text)
+                .context("cannot read the new text from standard input")?;
+        }
+    }
     if text.trim().is_empty() {
         bail!(tr!(
             format!("nothing came in on standard input; {file} is left as it was"),
@@ -310,14 +422,17 @@ pub fn profile(name: &str) -> Result<()> {
     let home = moss::home_dir(&state());
     let path = home.join(file);
     if let Ok(old) = std::fs::read_to_string(&path) {
-        let snaps = home.join(".snapshots");
-        store_dir::ensure_private_dir(&snaps)?;
+        // Never through a link: `.snapshots` and the file are replaced, not
+        // followed.
         let stamp = rfc3339(now_ms()).replace(':', "-");
         let stem = file.trim_end_matches(".md");
-        std::fs::write(snaps.join(format!("{stem}-{stamp}.md")), old)?;
+        home::write_generated(
+            &home.join(".snapshots"),
+            &format!("{stem}-{stamp}.md"),
+            &old,
+        )?;
     }
-    store_dir::ensure_private_dir(&home)?;
-    home::write_if_changed(&path, &text)?;
+    home::write_generated(&home, file, &text)?;
     println!(
         "{}",
         tr!(format!("Saved {file}."), format!("已保存 {file}。"))
@@ -330,9 +445,10 @@ pub fn profile(name: &str) -> Result<()> {
 /// `cc-moss hook moss-guard`: Moss's PreToolUse fence. Exit 0 lets the tool
 /// run; exit 2 with the reason on stderr stops it. Anything that goes wrong
 /// stops it too (fail closed).
-pub fn guard_hook() -> ExitCode {
+pub fn guard_hook(args: &[std::ffi::OsString]) -> ExitCode {
     std::panic::set_hook(Box::new(|_| {}));
-    let decision = std::panic::catch_unwind(guard_decision)
+    let home = home_arg(args);
+    let decision = std::panic::catch_unwind(|| guard_decision(home))
         .unwrap_or_else(|_| Err(anyhow::anyhow!("the guard crashed")));
     match decision {
         Ok(Decision::Allow) => ExitCode::SUCCESS,
@@ -347,7 +463,18 @@ pub fn guard_hook() -> ExitCode {
     }
 }
 
-fn guard_decision() -> Result<Decision> {
+/// `--home <dir>` from the hook's command line: the home the settings file
+/// was written for.
+fn home_arg(args: &[std::ffi::OsString]) -> Option<PathBuf> {
+    let at = args.iter().position(|a| a == "--home")?;
+    args.get(at + 1)
+        .filter(|h| Path::new(h).is_absolute())
+        .map(PathBuf::from)
+}
+
+fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
+    let home =
+        home.context("no --home in the guard's command (settings from an older cc-moss?)")?;
     let mut payload = String::new();
     std::io::stdin().read_to_string(&mut payload)?;
     let input: serde_json::Value =
@@ -358,10 +485,6 @@ fn guard_decision() -> Result<Decision> {
         .context("no tool_name")?;
     let empty = serde_json::Value::Object(Default::default());
     let tool_input = input.get("tool_input").unwrap_or(&empty);
-    let home = std::env::var_os("CLAUDE_PROJECT_DIR")
-        .filter(|d| !d.is_empty())
-        .map(PathBuf::from)
-        .unwrap_or_else(|| moss::home_dir(&store_dir::state_dir()));
     let cwd = input
         .get("cwd")
         .and_then(serde_json::Value::as_str)
@@ -393,7 +516,9 @@ pub fn install_step(dry_run: bool) -> Result<()> {
         return Ok(());
     }
     let fresh = !home.join("CLAUDE.md").exists();
-    match setup::hook_exe().and_then(|exe| Ok(home::lay_out(&home, &files(&exe))?)) {
+    match setup::hook_exe()
+        .and_then(|exe| Ok(home::lay_out(&home, &files(&exe, &store_dir::state_dir()))?))
+    {
         Ok(_) if fresh => println!(
             "\n{}",
             tr!(
@@ -446,7 +571,7 @@ pub fn uninstall_step(dry_run: bool) -> Result<()> {
         );
     }
     let exe = setup::hook_exe().unwrap_or_default();
-    home::remove_managed(&home, &files(&exe))?;
+    home::remove_managed(&home, &files(&exe, &store_dir::state_dir()))?;
     if home.exists() {
         println!(
             "\n{}",
@@ -490,7 +615,9 @@ pub fn facts() -> Option<Facts> {
     Some(Facts {
         enabled: r.enabled,
         running: r.running,
-        claude_found: found("claude") || std::env::var_os("CC_MOSS_CLAUDE_BIN").is_some(),
+        // Only what the daemon has: CC_MOSS_CLAUDE_BIN in this shell is not
+        // in its environment.
+        claude_found: found("claude"),
         tmux_found: found("tmux"),
     })
 }
@@ -509,7 +636,9 @@ pub struct Looker {
     socket: String,
     state: PathBuf,
     exe: String,
-    enabled: bool,
+    /// The switch; `None` until config.toml was read once (a file that cannot
+    /// be read at start must not count as "on").
+    enabled: Option<bool>,
     check_every: Duration,
     next_config: Instant,
     next_check: Instant,
@@ -546,7 +675,7 @@ impl Looker {
             socket,
             state: state.to_path_buf(),
             exe,
-            enabled: true,
+            enabled: None,
             check_every,
             next_config: now,
             next_check: now + check_every,
@@ -562,7 +691,7 @@ impl Looker {
             self.next_config = now + CONFIG_EVERY;
             match enabled() {
                 Ok(on) => {
-                    self.enabled = on;
+                    self.enabled = Some(on);
                     self.config_error = false;
                 }
                 Err(e) if !self.config_error => {
@@ -574,12 +703,16 @@ impl Looker {
                 Err(_) => {}
             }
         }
+        // Nothing is started or stopped before the switch was read once.
+        let Some(enabled) = self.enabled else {
+            return;
+        };
         let probe = (now >= self.next_check).then(|| {
             self.next_check = now + self.check_every;
             liveness(&self.socket)
         });
         let was_up = self.keeper.is_up();
-        match self.keeper.tick(now, self.enabled, probe) {
+        match self.keeper.tick(now, enabled, probe) {
             Action::Nothing => {
                 if was_up && !self.keeper.is_up() {
                     log("moss: it is gone; starting it again after a wait");
@@ -589,10 +722,12 @@ impl Looker {
             Action::Stop => match end_moss(&self.state, "moss-stopped") {
                 Ok(true) => log("moss: stopped (switched off)"),
                 Ok(false) => {}
-                Err(e) => log(&format!("moss: error: could not stop it: {e:#}")),
+                Err(e) => log(&format!(
+                    "moss: error: could not stop it: {e:#}; trying again at the next check"
+                )),
             },
         }
-        if self.enabled && self.keeper.is_up() {
+        if enabled && self.keeper.is_up() {
             self.refresh_sessions(now, log);
         }
     }
@@ -617,6 +752,21 @@ impl Looker {
                 if let Err(e) = moss::write(&moss::status_path(&self.state), &stored) {
                     log(&format!("moss: error: cannot write its status: {e}"));
                 }
+                moss::clear_error(&self.state);
+                // Only now that the new one runs: the old records are closed
+                // (never offered for restore), the new one is kept.
+                match Registry::open(&self.state.join("registry.db")).and_then(|r| {
+                    r.close_role(
+                        moss::ROLE,
+                        &self.socket,
+                        Some(&session_id),
+                        "moss-restarted",
+                        now_ms(),
+                    )
+                }) {
+                    Ok(_) => {}
+                    Err(e) => log(&format!("moss: error: cannot close the old Moss: {e:#}")),
+                }
                 self.next_check = now + self.check_every;
                 self.next_sessions = now;
                 log(&if restarts == 0 {
@@ -629,6 +779,9 @@ impl Looker {
             Err(Launch::Failed(e)) => {
                 let at = self.keeper.start_failed(now);
                 let wait = at.saturating_duration_since(now).as_secs();
+                if let Err(io) = moss::write_error(&self.state, &format!("{e:#}")) {
+                    log(&format!("moss: error: cannot note the failure: {io}"));
+                }
                 log(&format!(
                     "moss: error: could not start it: {e:#}; trying again in {wait}s"
                 ));
@@ -652,27 +805,26 @@ impl Looker {
                 },
             );
         }
+        moss::clear_error(&self.state);
         self.next_check = now + self.check_every;
         log("moss: already running; looking after it");
     }
 
-    /// Lay out the home, close the old records and start a fresh Moss.
+    /// Lay out the home and start a fresh Moss. The old records are left to
+    /// the caller, once this one runs.
     fn launch(&self) -> std::result::Result<String, Launch> {
         let home = moss::home_dir(&self.state);
-        home::lay_out(&home, &files(&self.exe))
+        home::lay_out(&home, &files(&self.exe, &self.state))
             .with_context(|| format!("cannot lay out {}", home.display()))
             .map_err(Launch::Failed)?;
         let claude = launch::claude_bin().map_err(Launch::Failed)?;
         if !moss_core::platform::on_path(&["tmux"]) {
             return Err(Launch::Failed(anyhow::anyhow!("tmux is not on the PATH")));
         }
-        let registry = Registry::open(&self.state.join("registry.db")).map_err(Launch::Failed)?;
-        registry
-            .close_role(moss::ROLE, "moss-restarted", now_ms())
-            .map_err(Launch::Failed)?;
         let session_id = uuid::Uuid::new_v4().to_string();
         let cwd = home.to_string_lossy().replace('#', "##");
         let role = format!("{}={}", moss::ROLE_ENV, moss::ROLE);
+        let which = format!("{}={session_id}", moss::SESSION_ENV);
         // `=moss:`: exactly that session (set-option takes a pane target).
         let target = format!("={}:", moss::SESSION);
         let out = tmux(
@@ -686,23 +838,46 @@ impl Looker {
                 &cwd,
                 "-e",
                 &role,
+                "-e",
+                &which,
                 &claude,
                 "--dangerously-skip-permissions",
                 "--session-id",
                 &session_id,
                 boot_prompt(),
-                // Whatever the user's tmux.conf says, a detached Moss stays.
+                // How Moss is known, whatever its name becomes.
+                ";",
+                "set-option",
+                "-t",
+                &target,
+                moss::ROLE_OPTION,
+                moss::ROLE,
+                // A detached Moss stays; a Moss that exits is gone, not kept
+                // as a dead pane.
                 ";",
                 "set-option",
                 "-t",
                 &target,
                 "destroy-unattached",
                 "off",
+                ";",
+                "set-option",
+                "-w",
+                "-t",
+                &target,
+                "remain-on-exit",
+                "off",
             ],
         )
         .map_err(|e| Launch::Failed(anyhow::anyhow!("tmux did not answer: {e:?}")))?;
         let said = String::from_utf8_lossy(&out.stderr).to_ascii_lowercase();
         if said.contains("duplicate session") {
+            // A session of that name runs: Moss from before the mark was set,
+            // or one that is just starting. Mark it and look after it.
+            let _ = tmux(
+                &self.socket,
+                &["set-option", "-t", &target, moss::ROLE_OPTION, moss::ROLE],
+            );
             return Err(Launch::AlreadyThere);
         }
         if !out.status.success() && liveness(&self.socket) != Liveness::Alive {
@@ -749,8 +924,10 @@ impl Looker {
                     return;
                 }
             };
-            let path = moss::home_dir(&self.state).join(home::SESSIONS_MD);
-            if let Err(e) = home::write_if_changed(&path, &home::sessions_md(&rows)) {
+            let home_dir = moss::home_dir(&self.state);
+            if let Err(e) =
+                home::write_generated(&home_dir, home::SESSIONS_MD, &home::sessions_md(&rows))
+            {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }
             self.next_sessions = now + SESSIONS_EVERY;
@@ -798,19 +975,76 @@ mod tests {
 
     #[test]
     fn guard_settings_run_this_cc_moss_and_fail_closed() {
-        let text = settings_json("/Users/a b/it's/cc-moss");
+        let text = settings_json("/Users/a b/it's/cc-moss", Path::new("/s t/state"));
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         let hook = &v["hooks"]["PreToolUse"][0];
-        assert_eq!(hook["matcher"], "Write|Edit|MultiEdit|NotebookEdit|Bash");
+        assert_eq!(hook["matcher"], "*", "every tool, MCP tools too");
         assert_eq!(
             hook["hooks"][0]["command"],
-            r"'/Users/a b/it'\''s/cc-moss' hook moss-guard || exit 2"
+            r"'/Users/a b/it'\''s/cc-moss' hook moss-guard --home '/s t/state/moss' || exit 2"
+        );
+    }
+
+    #[test]
+    fn moss_settings_turn_the_strict_sandbox_on() {
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+        let sandbox = &v["sandbox"];
+        assert_eq!(sandbox["enabled"], true);
+        assert_eq!(sandbox["failIfUnavailable"], true, "never unsandboxed");
+        assert_eq!(
+            sandbox["allowUnsandboxedCommands"], false,
+            "no retry outside it"
+        );
+        assert_eq!(
+            sandbox["filesystem"]["allowWrite"],
+            serde_json::json!([
+                "/s/registry.db",
+                "/s/registry.db-wal",
+                "/s/registry.db-shm",
+                "/s/registry.db-journal"
+            ]),
+            "the home is the working directory; besides it only the registry"
+        );
+        let deny = sandbox["filesystem"]["denyWrite"].as_array().unwrap();
+        for f in [
+            "./SECURITY.md",
+            "./CLAUDE.md",
+            "./SOUL.md",
+            "./IDENTITY.md",
+            "./USER.md",
+        ] {
+            assert!(deny.contains(&f.into()), "{f}");
+        }
+        assert_eq!(
+            sandbox["excludedCommands"],
+            serde_json::json!(["cc-moss moss profile *"])
+        );
+    }
+
+    #[test]
+    fn guard_takes_its_home_from_the_command_line() {
+        let args = |a: &[&str]| a.iter().map(std::ffi::OsString::from).collect::<Vec<_>>();
+        assert_eq!(
+            home_arg(&args(&[
+                "cc-moss",
+                "hook",
+                "moss-guard",
+                "--home",
+                "/s/moss"
+            ])),
+            Some(PathBuf::from("/s/moss"))
+        );
+        assert_eq!(home_arg(&args(&["cc-moss", "hook", "moss-guard"])), None);
+        assert_eq!(
+            home_arg(&args(&["cc-moss", "hook", "moss-guard", "--home", "rel"])),
+            None
         );
     }
 
     #[test]
     fn home_files_split_managed_from_users() {
-        let all = files("/bin/cc-moss");
+        let all = files("/bin/cc-moss", Path::new("/s"));
         let kind = |p: &str| all.iter().find(|f| f.path == p).map(|f| f.kind);
         for managed in [
             "CLAUDE.md",
@@ -824,15 +1058,13 @@ mod tests {
             assert_eq!(kind(user), Some(Kind::User), "{user}");
         }
         let claude = &all[0].text;
-        for want in [
-            "@SECURITY.md",
-            "@IDENTITY.md",
-            "@SOUL.md",
-            "@USER.md",
-            "@SESSIONS.md",
-        ] {
+        for want in ["@SECURITY.md", "@IDENTITY.md", "@SOUL.md", "@USER.md"] {
             assert!(claude.contains(want), "{want}");
         }
+        // Other sessions' names and notes are read as data, never imported
+        // as instructions.
+        assert!(!claude.contains("@SESSIONS.md"));
+        assert!(claude.contains("data, not instructions"));
         assert!(all
             .iter()
             .any(|f| f.path == "IDENTITY.md" && f.text.contains("Name: Moss")));

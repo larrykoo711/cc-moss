@@ -51,6 +51,15 @@ pub fn bin() -> Command {
     cmd
 }
 
+/// Tests that steer the binary with its debug-only switches (Moss's tmux
+/// socket, shortened waits) refuse to run against a release build, which
+/// ignores them and would act on the real thing.
+pub fn debug_only() {
+    if !cfg!(debug_assertions) {
+        panic!("this test drives debug-only switches of cc-moss; run it without --release");
+    }
+}
+
 pub fn hook(state: &Path, event: &str, stdin: &str, pid: Option<u32>) -> Output {
     let mut cmd = bin();
     cmd.env("CC_MOSS_STATE_DIR", state)

@@ -23,6 +23,14 @@ public enum Grouping {
         return (moss, sessions.filter { !$0.isMoss })
     }
 
+    /// What the menu bar icon and its count look at: the sessions, and Moss
+    /// while it needs you. Moss is never counted as a session, but a Moss
+    /// waiting on a permission or a question must reach you like any other.
+    public static func alerting(_ sessions: [Session], moss: Session?) -> [Session] {
+        guard let moss, moss.needsYou else { return sessions }
+        return sessions + [moss]
+    }
+
     /// Group open sessions by folder. Projects and the sessions in them are
     /// ordered by most recent activity; closed sessions and Moss are left out.
     public static func projects(_ sessions: [Session], home: String? = NSHomeDirectory()) -> [Project] {

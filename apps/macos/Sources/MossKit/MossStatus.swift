@@ -8,13 +8,21 @@ public struct MossStatus: Equatable, Sendable {
     public var since: Date?
     public var restarts: Int
     public var sessionId: String?
+    /// Whether the cc-moss daemon that starts Moss runs (true when an older
+    /// cc-moss does not say).
+    public var daemonRunning: Bool
+    /// Why the last start failed, while Moss is on and not running.
+    public var lastError: String?
 
-    public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil) {
+    public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
+                daemonRunning: Bool = true, lastError: String? = nil) {
         self.enabled = enabled
         self.running = running
         self.since = since
         self.restarts = restarts
         self.sessionId = sessionId
+        self.daemonRunning = daemonRunning
+        self.lastError = lastError
     }
 
     private struct Wire: Decodable {
@@ -24,6 +32,8 @@ public struct MossStatus: Equatable, Sendable {
         var since: String?
         var restarts: Int?
         var session_id: String?
+        var daemon_running: Bool?
+        var last_error: String?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -36,7 +46,9 @@ public struct MossStatus: Equatable, Sendable {
         guard wire.schema <= 1 else { throw MossClient.Failure.newerSchema(wire.schema) }
         return MossStatus(enabled: wire.enabled, running: wire.running,
                           since: wire.since.flatMap(parseTimestamp),
-                          restarts: wire.restarts ?? 0, sessionId: wire.session_id)
+                          restarts: wire.restarts ?? 0, sessionId: wire.session_id,
+                          daemonRunning: wire.daemon_running ?? true,
+                          lastError: wire.last_error.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the
@@ -44,7 +56,13 @@ public struct MossStatus: Equatable, Sendable {
     public func line(now: Date = L.clock(), lang: Lang = L.lang) -> String {
         let t = { (en: String, zh: String) in lang == .zh ? zh : en }
         guard enabled else { return t("Moss · off", "Moss · 已关闭") }
-        guard running else { return t("Moss · starting…", "Moss · 正在启动…") }
+        guard running else {
+            // On but not running: say what it is waiting for, not "starting"
+            // for ever.
+            if !daemonRunning { return t("Moss · waiting for the daemon", "Moss · 在等守护进程") }
+            if lastError != nil { return t("Moss · couldn't start", "Moss · 没能启动") }
+            return t("Moss · starting…", "Moss · 正在启动…")
+        }
         let base = if let since {
             t("Moss · running for \(DaemonStatus.span(from: since, to: now, lang: lang))",
               "Moss · 运行中 \(DaemonStatus.span(from: since, to: now, lang: lang))")
@@ -56,6 +74,21 @@ public struct MossStatus: Equatable, Sendable {
         case 1: base + t(" (restarted once)", "（重启过 1 次）")
         default: base + t(" (restarted \(restarts) times)", "（重启过 \(restarts) 次）")
         }
+    }
+}
+
+extension MossStatus {
+    /// The line under the Moss card's status, when there is something to
+    /// say about why it isn't running.
+    public func problem(lang: Lang = L.lang) -> String? {
+        let t = { (en: String, zh: String) in lang == .zh ? zh : en }
+        guard enabled, !running else { return nil }
+        if !daemonRunning {
+            return t("The cc-moss daemon starts Moss, and it isn't running. Start it below.",
+                     "Moss 由 cc-moss 守护进程启动，而它现在没在运行。在下面启动它。")
+        }
+        if let lastError { return t("Last try: \(lastError)", "上次尝试：\(lastError)") }
+        return nil
     }
 }
 

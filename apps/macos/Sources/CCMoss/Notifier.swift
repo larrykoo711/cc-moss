@@ -225,7 +225,7 @@ final class AlertCenter {
         // Negative ids never meet a real event's sequence number.
         let alerts = ids.enumerated().map { i, id in
             SessionAlert(id: -(Int(now.timeIntervalSince1970) * 100 + i), slotId: id, kind: .interrupted,
-                         name: model.sessions.first { $0.id == id }?.title, at: now)
+                         name: model.session(id)?.title, at: now)
         }
         let ctx = context()
         switch router.route(alerts[0], in: ctx) {
@@ -261,7 +261,7 @@ final class AlertCenter {
             showPanel()
             return
         }
-        let session = model.sessions.first { $0.id == slot }
+        let session = model.session(slot)
         if action == .open, let session, session.inTmux, session.state != .interrupted, model.open(session) { return }
         // Bring it back in one go (T1.3), and show the panel so its progress
         // and result are visible.
@@ -276,7 +276,7 @@ final class AlertCenter {
 
     /// The name the panel shows for the session.
     private func title(_ alert: SessionAlert) -> String {
-        if let s = model.sessions.first(where: { $0.id == alert.slotId }) { return s.title }
+        if let s = model.session(alert.slotId) { return s.title }
         if let name = alert.name, !name.isEmpty { return name }
         return String(alert.slotId.prefix(8))
     }

@@ -39,6 +39,64 @@ pub fn classify_has_session(success: bool, stderr: &str) -> Liveness {
     }
 }
 
+/// The `list-panes -a` format the daemon reads Moss's server with.
+pub const PANES_FORMAT: &str = "#{session_id}|#{@cc-moss-role}|#{pane_dead}";
+
+/// What Moss's tmux server holds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Seen {
+    pub liveness: Liveness,
+    /// Moss's sessions (marked with the role option) with a live pane.
+    pub live: Vec<String>,
+    /// Moss's sessions whose panes all died but stayed (`remain-on-exit`):
+    /// Claude Code is gone, so this is a dead Moss to clear away.
+    pub dead: Vec<String>,
+}
+
+/// What `tmux list-panes -a -F` [`PANES_FORMAT`] said. A session counts as
+/// Moss only by its role option, whatever its name; Moss is alive when one
+/// of them has a pane that has not died. A failure is read like
+/// [`classify_has_session`]: only a server that is plainly not there is
+/// dead.
+pub fn classify_panes(success: bool, stdout: &str, stderr: &str) -> Seen {
+    if !success {
+        return Seen {
+            liveness: classify_has_session(false, stderr),
+            live: vec![],
+            dead: vec![],
+        };
+    }
+    let mut live: Vec<String> = Vec::new();
+    let mut dead: Vec<String> = Vec::new();
+    for line in stdout.lines() {
+        let mut parts = line.splitn(3, '|');
+        let (Some(id), Some(role), Some(pane_dead)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        if role != super::ROLE || id.is_empty() {
+            continue;
+        }
+        if pane_dead.trim() == "1" {
+            if !dead.iter().any(|d| d == id) {
+                dead.push(id.to_string());
+            }
+        } else if !live.iter().any(|l| l == id) {
+            live.push(id.to_string());
+        }
+    }
+    dead.retain(|d| !live.contains(d));
+    Seen {
+        liveness: if live.is_empty() {
+            Liveness::Dead
+        } else {
+            Liveness::Alive
+        },
+        live,
+        dead,
+    }
+}
+
 /// What the daemon should do about Moss now.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Action {
@@ -46,7 +104,8 @@ pub enum Action {
     /// Start Moss (look once more first; it may be back by itself), then
     /// call [`Keeper::started`], [`Keeper::adopted`] or [`Keeper::start_failed`].
     Start,
-    /// It is switched off: end it if it runs.
+    /// It is switched off: end it if it runs. Also while off, whenever it is
+    /// seen running again (a stop that did not take, a Moss started by hand).
     Stop,
 }
 
@@ -88,7 +147,11 @@ impl Keeper {
     pub fn tick(&mut self, now: Instant, enabled: bool, probe: Option<Liveness>) -> Action {
         if !enabled {
             if self.mode == Mode::Off {
-                return Action::Nothing;
+                return if probe == Some(Liveness::Alive) {
+                    Action::Stop
+                } else {
+                    Action::Nothing
+                };
             }
             self.reset(Mode::Off);
             return Action::Stop;
@@ -273,10 +336,7 @@ mod tests {
         let mut k = running(t0);
         assert_eq!(k.tick(t0 + S, true, Some(Liveness::Dead)), Action::Nothing);
         assert_eq!(k.tick(t0 + 2 * S, false, None), Action::Stop);
-        assert_eq!(
-            k.tick(t0 + 3 * S, false, Some(Liveness::Alive)),
-            Action::Nothing
-        );
+        assert_eq!(k.tick(t0 + 3 * S, false, None), Action::Nothing);
         // On again: no wait left over from before, and no restart counted.
         assert_eq!(k.tick(t0 + 4 * S, true, None), Action::Start);
         k.started(t0 + 4 * S);
@@ -284,6 +344,63 @@ mod tests {
         // Off on the very first tick still ends one left running.
         let mut fresh = Keeper::new(vec![]);
         assert_eq!(fresh.tick(t0, false, None), Action::Stop);
+    }
+
+    #[test]
+    fn moss_seen_running_while_off_is_stopped_again() {
+        let t0 = Instant::now();
+        let mut k = running(t0);
+        assert_eq!(k.tick(t0 + S, false, None), Action::Stop);
+        // The stop did not take (tmux did not answer): the next look that
+        // finds it running ends it again; unclear answers do nothing.
+        assert_eq!(
+            k.tick(t0 + 2 * S, false, Some(Liveness::Unknown)),
+            Action::Nothing
+        );
+        assert_eq!(
+            k.tick(t0 + 3 * S, false, Some(Liveness::Alive)),
+            Action::Stop
+        );
+        assert_eq!(
+            k.tick(t0 + 4 * S, false, Some(Liveness::Dead)),
+            Action::Nothing
+        );
+        assert_eq!(
+            k.tick(t0 + 5 * S, false, Some(Liveness::Alive)),
+            Action::Stop
+        );
+    }
+
+    #[test]
+    fn panes_find_moss_by_its_mark_and_see_a_dead_pane() {
+        let seen = classify_panes(true, "$0|moss|0\n$1||0\n", "");
+        assert_eq!(seen.liveness, Liveness::Alive);
+        assert_eq!(seen.live, ["$0"]);
+        // Renamed by hand: still Moss, because of the mark.
+        // A session without the mark (the user's own, even named moss) is not.
+        let unmarked = classify_panes(true, "$3||0\n", "");
+        assert_eq!(unmarked.liveness, Liveness::Dead);
+        // remain-on-exit kept a dead pane: Moss is dead, and that session is
+        // to be cleared away.
+        let kept = classify_panes(true, "$0|moss|1\n", "");
+        assert_eq!(kept.liveness, Liveness::Dead);
+        assert_eq!(kept.dead, ["$0"]);
+        // One live pane in a session is enough.
+        let mixed = classify_panes(true, "$0|moss|1\n$0|moss|0\n$2|moss|1\n", "");
+        assert_eq!(mixed.liveness, Liveness::Alive);
+        assert_eq!(
+            (mixed.live, mixed.dead),
+            (vec!["$0".to_string()], vec!["$2".to_string()])
+        );
+        // Failures read as before.
+        assert_eq!(
+            classify_panes(false, "", "no server running on /tmp/tmux-501/x\n").liveness,
+            Liveness::Dead
+        );
+        assert_eq!(
+            classify_panes(false, "", "lost server").liveness,
+            Liveness::Unknown
+        );
     }
 
     #[test]

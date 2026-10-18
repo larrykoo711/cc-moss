@@ -14,8 +14,18 @@ use serde::{Deserialize, Serialize};
 /// The tmux server Moss has to itself (`tmux -L`). A protocol literal.
 pub const SOCKET: &str = "cc-moss-moss";
 
-/// Its tmux session's name on that server.
+/// Its tmux session's name on that server, when it is started. Moss is
+/// recognised by [`ROLE_OPTION`], not by this name: a session renamed by
+/// hand is still Moss.
 pub const SESSION: &str = "moss";
+
+/// The tmux user option set on Moss's session, to [`ROLE`].
+pub const ROLE_OPTION: &str = "@cc-moss-role";
+
+/// Set for Moss's Claude Code to the session id the daemon started it
+/// with: only the session with that id is recorded as Moss, whatever else
+/// inherits [`ROLE_ENV`].
+pub const SESSION_ENV: &str = "CC_MOSS_MOSS_SESSION";
 
 /// The registry role of Moss's sessions, and `ls --json`'s `role`.
 pub const ROLE: &str = "moss";
@@ -67,6 +77,34 @@ pub fn write(path: &Path, stored: &Stored) -> io::Result<()> {
     std::fs::rename(&tmp, path)
 }
 
+/// `<state>/daemon/moss-error.txt`: why the last start failed, until one
+/// succeeds or Moss is stopped.
+pub fn error_path(state: &Path) -> PathBuf {
+    crate::daemon::Paths::new(state).dir.join("moss-error.txt")
+}
+
+pub fn write_error(state: &Path, message: &str) -> io::Result<()> {
+    let text: String = message
+        .lines()
+        .next()
+        .unwrap_or("")
+        .chars()
+        .take(300)
+        .collect();
+    crate::moss::home::write_if_changed(&error_path(state), &format!("{text}\n")).map(|_| ())
+}
+
+pub fn read_error(state: &Path) -> Option<String> {
+    std::fs::read_to_string(error_path(state))
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+}
+
+pub fn clear_error(state: &Path) {
+    let _ = remove(&error_path(state));
+}
+
 pub fn remove(path: &Path) -> io::Result<()> {
     match std::fs::remove_file(path) {
         Err(e) if e.kind() != io::ErrorKind::NotFound => Err(e),
@@ -85,6 +123,11 @@ pub struct Report {
     pub restarts: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_id: Option<String>,
+    /// Whether the cc-moss daemon that starts Moss runs.
+    pub daemon_running: bool,
+    /// Why the last start failed, while Moss is on and not running.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_error: Option<String>,
     /// `since` in Unix milliseconds.
     #[serde(skip)]
     pub since_ms: Option<i64>,
@@ -92,9 +135,17 @@ pub struct Report {
 
 impl Report {
     /// From the switch, whether it runs and what the daemon recorded.
-    pub fn new(enabled: bool, running: bool, stored: Option<&Stored>) -> Report {
+    pub fn new(
+        enabled: bool,
+        running: bool,
+        stored: Option<&Stored>,
+        daemon_running: bool,
+        last_error: Option<String>,
+    ) -> Report {
         let stored = stored.filter(|_| running);
         Report {
+            daemon_running,
+            last_error: last_error.filter(|_| enabled && !running),
             schema: 1,
             enabled,
             running,
@@ -123,19 +174,40 @@ mod tests {
         };
         write(&path, &s).unwrap();
         assert_eq!(read(&path), Some(s.clone()));
-        let r = Report::new(true, true, Some(&s));
+        let r = Report::new(true, true, Some(&s), true, Some("old".into()));
         assert_eq!(
             serde_json::to_value(&r).unwrap(),
             serde_json::json!({"schema":1,"enabled":true,"running":true,
-                "since":"1970-01-01T00:00:01Z","restarts":2,"session_id":"abc"})
+                "since":"1970-01-01T00:00:01Z","restarts":2,"session_id":"abc",
+                "daemon_running":true})
         );
-        let down = Report::new(false, false, Some(&s));
+        let down = Report::new(false, false, Some(&s), false, Some("old".into()));
         assert_eq!(
             serde_json::to_value(&down).unwrap(),
-            serde_json::json!({"schema":1,"enabled":false,"running":false,"restarts":0})
+            serde_json::json!({"schema":1,"enabled":false,"running":false,"restarts":0,
+                "daemon_running":false})
+        );
+        let failing = Report::new(true, false, None, true, Some("no claude".into()));
+        assert_eq!(
+            serde_json::to_value(&failing).unwrap()["last_error"],
+            "no claude"
         );
         remove(&path).unwrap();
         remove(&path).unwrap();
+    }
+
+    #[test]
+    fn start_errors_are_kept_until_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("daemon")).unwrap();
+        assert_eq!(read_error(dir.path()), None);
+        write_error(dir.path(), "claude is not on the PATH\nmore").unwrap();
+        assert_eq!(
+            read_error(dir.path()).as_deref(),
+            Some("claude is not on the PATH")
+        );
+        clear_error(dir.path());
+        assert_eq!(read_error(dir.path()), None);
     }
 
     #[test]

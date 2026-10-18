@@ -9,9 +9,18 @@ use std::process::{Output, Stdio};
 
 use common::{bin, dead_pid, ls_json, start_json};
 
-/// A SessionStart from Moss's Claude Code (`CC_MOSS_ROLE=moss`), or from an
-/// ordinary session.
+/// A SessionStart from Moss's Claude Code (`CC_MOSS_ROLE=moss` and the
+/// session id the daemon gave it), or from an ordinary session.
 fn start(state: &Path, sid: &str, title: &str, moss: bool) {
+    let env: &[(&str, &str)] = if moss {
+        &[("CC_MOSS_ROLE", "moss"), ("CC_MOSS_MOSS_SESSION", sid)]
+    } else {
+        &[]
+    };
+    start_with(state, sid, title, env);
+}
+
+fn start_with(state: &Path, sid: &str, title: &str, env: &[(&str, &str)]) {
     let mut cmd = bin();
     cmd.env("CC_MOSS_STATE_DIR", state)
         .env("CLAUDE_PID", dead_pid().to_string())
@@ -19,8 +28,8 @@ fn start(state: &Path, sid: &str, title: &str, moss: bool) {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    if moss {
-        cmd.env("CC_MOSS_ROLE", "moss");
+    for (k, v) in env {
+        cmd.env(k, v);
     }
     let mut child = cmd.spawn().unwrap();
     child
@@ -47,9 +56,28 @@ fn hook_records_the_moss_role() {
     let state = dir.path().join("state");
     start(&state, "moss-0000-1111", "moss", true);
     start(&state, "work-0000-1111", "work", false);
+    // The role alone does not make a session Moss: a window opened in
+    // Moss's tmux, or `claude --resume` of Moss elsewhere, inherits it.
+    start_with(
+        &state,
+        "intruder-0000-1111",
+        "intruder",
+        &[
+            ("CC_MOSS_ROLE", "moss"),
+            ("CC_MOSS_MOSS_SESSION", "moss-0000-1111"),
+        ],
+    );
+    start_with(
+        &state,
+        "bare-0000-1111",
+        "bare",
+        &[("CC_MOSS_ROLE", "moss")],
+    );
     let ls = ls_json(&state, true);
     assert_eq!(session(&ls, "moss-0000-1111")["role"], "moss");
-    assert!(session(&ls, "work-0000-1111")["role"].is_null());
+    for other in ["work-0000-1111", "intruder-0000-1111", "bare-0000-1111"] {
+        assert!(session(&ls, other)["role"].is_null(), "{other}");
+    }
 }
 
 #[test]
@@ -79,8 +107,10 @@ fn close_refuses_moss() {
 
 fn guard(home: &Path, payload: &str) -> Output {
     let mut child = bin()
-        .env("CLAUDE_PROJECT_DIR", home)
-        .args(["hook", "moss-guard"])
+        // Claude Code's project folder is not where the guard looks.
+        .env("CLAUDE_PROJECT_DIR", "/")
+        .args(["hook", "moss-guard", "--home"])
+        .arg(home)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -114,6 +144,32 @@ fn guard_hook_blocks_with_exit_2_and_fails_closed() {
     let settings = guard(&home, &write(".claude/settings.json"));
     assert_eq!(settings.status.code(), Some(2));
 
+    // An MCP server's write tool never gets past it.
+    let mcp = serde_json::json!({
+        "tool_name": "mcp__fs__write_file",
+        "cwd": home,
+        "tool_input": { "path": "/etc/hosts", "content": "x" }
+    });
+    assert_eq!(guard(&home, &mcp.to_string()).status.code(), Some(2));
+
+    // Without --home (settings of an older cc-moss): no, even for a write
+    // inside the home the state directory would point to.
+    let mut child = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CLAUDE_PROJECT_DIR", &home)
+        .args(["hook", "moss-guard"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let _ = child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(write("journal/today.md").as_bytes());
+    assert_eq!(child.wait().unwrap().code(), Some(2));
+
     // Unreadable input: no.
     for junk in ["", "not json", "{\"tool_input\":{}}"] {
         let out = guard(&home, junk);
@@ -138,7 +194,8 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
         serde_json::from_slice(&run(&["moss", "status", "--json"]).stdout).unwrap();
     assert_eq!(
         st,
-        serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0})
+        serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0,
+            "daemon_running":false})
     );
     start(&state, "moss-0000-1111", "moss", true);
     let out = run(&["moss", "stop"]);
@@ -146,7 +203,8 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
     let st: serde_json::Value =
         serde_json::from_slice(&run(&["moss", "status", "--json"]).stdout).unwrap();
     assert_eq!(st["enabled"], false);
-    assert_eq!(
+    // Not on Moss's tmux server (this test has none): not Moss's to close.
+    assert_ne!(
         session(&ls_json(&state, true), "moss-0000-1111")["status"],
         "closed"
     );
@@ -156,4 +214,87 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
         String::from_utf8_lossy(&on.stdout).contains("daemon start"),
         "says the daemon is not running: {on:?}"
     );
+}
+
+/// A tmux server name whose "socket" is a plain file: tmux can neither
+/// connect nor say that nothing runs there, so whether Moss runs is unknown.
+struct UnclearTmux {
+    dir: tempfile::TempDir,
+    name: String,
+}
+
+impl UnclearTmux {
+    fn new() -> UnclearTmux {
+        common::debug_only();
+        let dir = tempfile::tempdir().unwrap();
+        let uid = String::from_utf8(
+            std::process::Command::new("id")
+                .arg("-u")
+                .output()
+                .unwrap()
+                .stdout,
+        )
+        .unwrap();
+        let sockets = dir.path().join(format!("tmux-{}", uid.trim()));
+        std::fs::create_dir_all(&sockets).unwrap();
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&sockets, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let name = format!("cc-moss-test-{}-unclear", std::process::id());
+        std::fs::write(sockets.join(&name), "not a socket").unwrap();
+        UnclearTmux { dir, name }
+    }
+}
+
+#[test]
+fn moss_stop_says_so_when_tmux_cannot_tell() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let config = dir.path().join("config.toml");
+    let tmux = UnclearTmux::new();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", &state)
+        .env("CC_MOSS_CONFIG", &config)
+        .env("TMUX_TMPDIR", tmux.dir.path())
+        .env("CC_MOSS_MOSS_SOCKET", &tmux.name)
+        .args(["moss", "stop"])
+        .output()
+        .unwrap();
+    assert!(
+        !out.status.success(),
+        "a stop that may not have happened: {out:?}"
+    );
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("could not make sure it stopped"), "{err}");
+    assert!(
+        !String::from_utf8_lossy(&out.stdout).contains("Stopped Moss"),
+        "{out:?}"
+    );
+    // The switch is off all the same, for the daemon to act on.
+    let text = std::fs::read_to_string(&config).unwrap();
+    assert!(text.contains("enabled = false"), "{text}");
+}
+
+#[test]
+fn moss_switch_lives_where_the_daemon_reads_it() {
+    // A shell with its own XDG_CONFIG_HOME: without a LaunchAgent pinning
+    // the path, CC_MOSS_CONFIG decides, and status reads the same file.
+    let dir = tempfile::tempdir().unwrap();
+    let config = dir.path().join("pinned.toml");
+    let run = |args: &[&str]| {
+        bin()
+            .env("CC_MOSS_STATE_DIR", dir.path().join("state"))
+            .env("CC_MOSS_CONFIG", &config)
+            .env("XDG_CONFIG_HOME", dir.path().join("elsewhere"))
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    assert!(run(&["moss", "stop"]).status.success());
+    assert!(std::fs::read_to_string(&config)
+        .unwrap()
+        .contains("enabled = false"));
+    assert!(!dir.path().join("elsewhere").exists());
+    let st: serde_json::Value =
+        serde_json::from_slice(&run(&["moss", "status", "--json"]).stdout).unwrap();
+    assert_eq!(st["enabled"], false);
 }

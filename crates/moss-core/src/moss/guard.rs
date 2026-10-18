@@ -1,8 +1,14 @@
 //! The fence around Moss: its project-level PreToolUse hook asks
-//! [`decide`] before every file write and shell command. Moss runs without
-//! permission prompts, so this is what keeps it to its own home: nothing
-//! outside it, not its own settings or hooks, not SECURITY.md, and its
-//! persona files only through `/moss-profile`.
+//! [`decide`] before every tool call (the matcher is `*`). Moss runs
+//! without permission prompts, so this is what keeps its file tools to its
+//! own home: nothing outside it, not its own settings or hooks, not
+//! SECURITY.md, and its persona files only through `/moss-profile`.
+//!
+//! Shell commands are fenced by Claude Code's Bash sandbox (set in the same
+//! settings file), which the operating system enforces; the check on the
+//! command text here only names the files Moss must not touch, so it can be
+//! told why. Tools this file does not know are refused: an MCP server's
+//! write tool or a new built-in tool would otherwise walk around the fence.
 //!
 //! Whoever calls this denies on any error of their own (fail closed): a
 //! guard that cannot tell must not let the write through.
@@ -33,19 +39,65 @@ const MANAGED: &[&str] = &["security.md", "claude.md", "sessions.md"];
 /// Moss's persona: changed only through `/moss-profile`.
 const PERSONA: &[&str] = &["identity.md", "soul.md", "user.md"];
 
+/// Built-in tools that change nothing on disk (or only the session's own
+/// state), so they run as they are. Anything not here and not a file or
+/// shell tool is refused.
+const HARMLESS: &[&str] = &[
+    "Read",
+    "Glob",
+    "Grep",
+    "LS",
+    "LSP",
+    "WebFetch",
+    "WebSearch",
+    "ToolSearch",
+    "Skill",
+    "Agent",
+    "Task",
+    "TodoWrite",
+    "TodoRead",
+    "TaskCreate",
+    "TaskGet",
+    "TaskList",
+    "TaskUpdate",
+    "TaskStop",
+    "TaskOutput",
+    "BashOutput",
+    "KillShell",
+    "KillBash",
+    "AskUserQuestion",
+    "EnterPlanMode",
+    "ExitPlanMode",
+    "CronCreate",
+    "CronDelete",
+    "CronList",
+    "ScheduleWakeup",
+    "PushNotification",
+    "EndConversation",
+];
+
 /// Whether `tool` may run with `input`. `home` is Moss's home and `cwd` the
 /// session's directory (relative paths are taken from there).
 pub fn decide(home: &Path, cwd: &Path, tool: &str, input: &Value) -> Decision {
     let key = match tool {
         "Write" | "Edit" | "MultiEdit" => "file_path",
         "NotebookEdit" => "notebook_path",
-        "Bash" => {
+        // Both run in the Bash sandbox.
+        "Bash" | "Monitor" => {
             return match input.get("command").and_then(Value::as_str) {
-                Some(command) => bash(command),
+                Some(command) => shell(command),
+                // Monitor's other form watches a WebSocket: nothing written.
+                None if tool == "Monitor" && input.get("url").is_some() => Decision::Allow,
                 None => Decision::deny("cc-moss could not read the command; not running it"),
-            }
+            };
         }
-        _ => return Decision::Allow,
+        t if HARMLESS.contains(&t) => return Decision::Allow,
+        t => {
+            return Decision::deny(format!(
+                "Moss does not use {t}: cc-moss only lets it read, search, write inside its home \
+                 and run shell commands in its sandbox"
+            ))
+        }
     };
     let Some(raw) = input
         .get(key)
@@ -94,49 +146,138 @@ fn write_to(home: &Path, cwd: &Path, path: &Path) -> Decision {
     }
 }
 
-/// A shell command: Bash is Moss's hands, so this cannot fence off every
-/// write outside the home. It stops the obvious ways of changing what the
-/// file tools may not: a protected file named next to something that writes.
-fn bash(command: &str) -> Decision {
-    let lower = command.to_lowercase();
-    let mentions = |names: &[&str]| names.iter().any(|n| lower.contains(n));
-    let own = [
-        ".claude/",
-        ".claude\\",
-        "security.md",
-        "claude.md",
-        "sessions.md",
+/// A shell command. The sandbox decides where it may write; this only says
+/// no, with the reason, when a word of the command names one of the files
+/// Moss must leave alone and the command writes something (a `>` redirect
+/// or a command that changes files). Heredoc bodies are text, not commands:
+/// `/moss-profile`'s new SOUL.md may mention anything.
+fn shell(command: &str) -> Decision {
+    let code = without_heredoc_bodies(command);
+    let words = words(&code);
+    let names_protected = words.iter().any(|w| protected_name(w));
+    if !names_protected {
+        return Decision::Allow;
+    }
+    const CHANGERS: &[&str] = &[
+        "tee", "mv", "cp", "rm", "ln", "truncate", "chmod", "chown", "dd", "install", "rsync",
+        "touch", "unlink", "ed", "ex", "vi", "vim", "nano",
     ];
-    let persona = PERSONA;
-    if !mentions(&own) && !mentions(persona) {
+    let first_words = command_starts(&code);
+    let changes = first_words.iter().any(|w| {
+        let base = w.rsplit('/').next().unwrap_or(w);
+        CHANGERS.contains(&base)
+    }) || words.windows(2).any(|p| {
+        let base = p[0].rsplit('/').next().unwrap_or(&p[0]);
+        matches!(base, "sed" | "perl" | "gsed") && p[1].starts_with("-i")
+    }) || writes_by_redirect(&code);
+    if !changes {
         return Decision::Allow;
     }
-    // Redirections that write nothing worth guarding.
-    let mut quiet = lower.clone();
-    for harmless in [
-        "2>&1",
-        "1>&2",
-        ">&2",
-        "2>/dev/null",
-        ">/dev/null",
-        "> /dev/null",
-    ] {
-        quiet = quiet.replace(harmless, " ");
-    }
-    let writes = [
-        ">", "tee ", "sed -i", "perl -i", "mv ", "cp ", "rm ", "ln ", "truncate", "chmod", "dd ",
-        "install ", "rsync", "touch ", "unlink",
-    ];
-    if !writes.iter().any(|w| quiet.contains(w)) {
-        return Decision::Allow;
-    }
-    if !mentions(&own) && lower.contains("cc-moss moss profile") {
-        return Decision::Allow;
+    if words.iter().any(|w| own_dir_name(w)) {
+        return Decision::deny(
+            "Moss's own settings, hooks and skills under .claude/ belong to cc-moss and stay as they are",
+        );
     }
     Decision::deny(
         "that command would change a file that belongs to cc-moss or Moss's persona; \
          the persona changes only through /moss-profile",
     )
+}
+
+/// `cmd <<'TAG'` … `TAG`: the lines in between dropped.
+fn without_heredoc_bodies(command: &str) -> String {
+    let mut out = String::new();
+    let mut until: Option<String> = None;
+    for line in command.lines() {
+        if let Some(tag) = &until {
+            if line.trim() == tag {
+                until = None;
+            }
+            continue;
+        }
+        out.push_str(line);
+        out.push('\n');
+        if let Some(at) = line.find("<<") {
+            let rest = line[at + 2..].trim_start_matches(['-', '~']).trim_start();
+            let tag: String = rest
+                .trim_start_matches(['\'', '"'])
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !tag.is_empty() {
+                until = Some(tag);
+            }
+        }
+    }
+    out
+}
+
+/// The command's words, split at blanks and shell operators, quotes taken
+/// off. Rough on purpose: it only has to find file names and command names.
+fn words(code: &str) -> Vec<String> {
+    code.split(|c: char| c.is_whitespace() || ";|&()<>`$".contains(c))
+        .map(|w| w.trim_matches(|c| c == '\'' || c == '"').to_string())
+        .filter(|w| !w.is_empty())
+        .collect()
+}
+
+/// Words that start a command: the first, and each one after `;`, `&`,
+/// `|`, `(` or a newline, skipping `sudo`, `env`, `xargs` and `VAR=value`.
+fn command_starts(code: &str) -> Vec<String> {
+    code.split(|c: char| ";&|(\n".contains(c))
+        .filter_map(|segment| {
+            words(segment).into_iter().find(|w| {
+                !matches!(
+                    w.as_str(),
+                    "sudo" | "env" | "command" | "exec" | "xargs" | "nohup" | "time"
+                ) && !(w.contains('=') && !w.starts_with('='))
+            })
+        })
+        .collect()
+}
+
+/// A `>` or `>>` redirect to a file (not `>&2`, not `/dev/null`).
+fn writes_by_redirect(code: &str) -> bool {
+    let bytes = code.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'>' {
+            let mut j = i + 1;
+            if j < bytes.len() && bytes[j] == b'>' {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'&' || bytes[j] == b'(') {
+                i = j + 1;
+                continue;
+            }
+            let rest = code[j..].trim_start();
+            if !rest.starts_with("/dev/null") && !rest.starts_with("/dev/std") {
+                return true;
+            }
+            i = j;
+            continue;
+        }
+        i += 1;
+    }
+    false
+}
+
+/// `SOUL.md`, `./SECURITY.md`, `journal/../claude.md`, `.claude/settings.json`.
+fn protected_name(word: &str) -> bool {
+    if own_dir_name(word) {
+        return true;
+    }
+    let last = word
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or(word)
+        .to_lowercase();
+    MANAGED.contains(&last.as_str()) || PERSONA.contains(&last.as_str())
+}
+
+fn own_dir_name(word: &str) -> bool {
+    word.to_lowercase().split('/').any(|part| part == ".claude")
 }
 
 /// `path` (absolute) with every symlink followed, also dangling ones and
@@ -359,10 +500,16 @@ mod tests {
         let bash = |c: &str| decide(&p.home, &p.home, "Bash", &json!({ "command": c }));
         for bad in [
             "echo '{}' > .claude/settings.json",
+            "cd .claude && echo '{}' > settings.json",
+            "rm -rf .claude && ln -s ~/.claude .claude",
             "sed -i '' 's/x/y/' SECURITY.md",
             "rm -rf .claude/hooks",
             "cat new.md > SOUL.md",
             "cp mine.md IDENTITY.md",
+            "printf x >> ./journal/../USER.md",
+            // The profile command next to a plain copy is still a copy.
+            "cc-moss moss profile soul < x; cp evil IDENTITY.md",
+            "sudo tee CLAUDE.md < x",
         ] {
             assert!(denied(&bash(bad)), "{bad}");
         }
@@ -370,10 +517,90 @@ mod tests {
             "cc-moss ls --json",
             "cat SECURITY.md",
             "cat SOUL.md 2>&1",
+            "cat SOUL.md > /dev/null",
             "echo hi >> journal/today.md",
             "cc-moss moss profile soul < /tmp/new-soul.md",
+            // Words that only contain a command name are not that command.
+            "grep platform CLAUDE.md",
+            "grep -n 'add the' SOUL.md",
+            "git log --format=%s -- SESSIONS.md",
         ] {
             assert_eq!(bash(fine), Decision::Allow, "{fine}");
         }
+    }
+
+    #[test]
+    fn moss_guard_reads_heredoc_bodies_as_text() {
+        let p = place();
+        let profile = "cc-moss moss profile soul <<'MOSS_PROFILE'\n\
+            # Soul\n\
+            Never touch SECURITY.md; add > notes to the journal, rm nothing.\n\
+            cp IDENTITY.md is not for you.\n\
+            MOSS_PROFILE\n";
+        assert_eq!(
+            decide(&p.home, &p.home, "Bash", &json!({ "command": profile })),
+            Decision::Allow
+        );
+        // After the body, commands count again.
+        let sneaky = format!("{profile}cp evil SOUL.md\n");
+        assert!(denied(&decide(
+            &p.home,
+            &p.home,
+            "Bash",
+            &json!({ "command": sneaky })
+        )));
+    }
+
+    #[test]
+    fn moss_guard_refuses_tools_it_does_not_know() {
+        let p = place();
+        for tool in [
+            "mcp__fs__write_file",
+            "mcp__github__create_issue",
+            "EnterWorktree",
+            "PowerShell",
+            "Workflow",
+            "SendMessage",
+            "ReadMcpResourceTool",
+            "SomeToolFromNextYear",
+            "",
+        ] {
+            match decide(&p.home, &p.home, tool, &json!({ "path": "/tmp/x" })) {
+                Decision::Deny(why) => assert!(why.contains("does not use"), "{tool}: {why}"),
+                Decision::Allow => panic!("{tool} was allowed"),
+            }
+        }
+        for tool in [
+            "Read",
+            "Grep",
+            "Glob",
+            "WebFetch",
+            "WebSearch",
+            "Agent",
+            "Skill",
+        ] {
+            assert_eq!(
+                decide(
+                    &p.home,
+                    &p.home,
+                    tool,
+                    &json!({ "file_path": "/etc/hosts" })
+                ),
+                Decision::Allow,
+                "{tool}"
+            );
+        }
+        // Monitor runs in the sandbox like Bash, and is checked the same way.
+        let monitor = |input: Value| decide(&p.home, &p.home, "Monitor", &input);
+        assert_eq!(
+            monitor(json!({ "command": "tail -f journal/today.md" })),
+            Decision::Allow
+        );
+        assert!(denied(&monitor(json!({ "command": "echo x > SOUL.md" }))));
+        assert_eq!(
+            monitor(json!({ "url": "wss://example.com" })),
+            Decision::Allow
+        );
+        assert!(denied(&monitor(json!({}))));
     }
 }

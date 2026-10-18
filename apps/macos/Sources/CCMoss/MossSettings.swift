@@ -17,8 +17,8 @@ struct MossSettings: View {
     private var detail: String {
         if let problem { return problem }
         if case .failed(let why) = shown { return why }
-        return L.t("It starts when you log in, and comes back on its own if it stops. Moss runs inside it.",
-                   "登录时自动启动，意外退出也会自己回来。Moss 就跑在它里面。")
+        return L.t("It starts when you log in, and comes back on its own if it stops. It starts Moss and keeps it running.",
+                   "登录时自动启动，意外退出也会自己回来。Moss 由它启动和照看。")
     }
 
     var body: some View {
@@ -30,8 +30,8 @@ struct MossSettings: View {
                 control
             }
         }
-        Text(L.t("To stop it, run cc-moss daemon stop in Terminal; it stays off until you start it again.",
-                 "要停掉它，在终端运行 cc-moss daemon stop；之后会一直停着，直到你再启动。"))
+        Text(L.t("To stop it, and Moss with it, run cc-moss daemon stop in Terminal; it stays off until you start it again.",
+                 "要停掉它（Moss 也会一起停下），在终端运行 cc-moss daemon stop；之后会一直停着，直到你再启动。"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -106,7 +106,7 @@ private struct MossCard: View {
     var body: some View {
         SettingsCard(title: "Moss") {
             CardRow(title: shown.line(),
-                    detail: problem ?? L.t("A Claude Code session cc-moss keeps running for you. It uses your Claude Code sign-in, and while it waits it uses none of your plan.",
+                    detail: problem ?? shown.status?.problem() ?? L.t("A Claude Code session cc-moss keeps running for you. It uses your Claude Code sign-in, and while it waits it uses none of your plan.",
                                            "cc-moss 替你一直开着的一个 Claude Code 会话。它用你的 Claude Code 登录；闲着等的时候，不耗你的额度。"),
                     divider: false) {
                 if busy {

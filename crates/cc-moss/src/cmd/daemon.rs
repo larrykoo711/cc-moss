@@ -168,22 +168,26 @@ pub fn state() -> PathBuf {
 
 /// The PATH the installed LaunchAgent gives the daemon.
 pub fn pinned_path() -> Option<String> {
+    pinned_value("PATH")
+}
+
+/// The config file the installed LaunchAgent pins.
+pub fn pinned_config() -> Option<PathBuf> {
+    pinned_value("CC_MOSS_CONFIG").map(PathBuf::from)
+}
+
+/// One of the installed LaunchAgent's environment variables.
+fn pinned_value(name: &str) -> Option<String> {
     if !applies() {
         return None;
     }
     let text = std::fs::read_to_string(Launchd::plist_path().ok()?).ok()?;
-    plist::environment_value(&text, "PATH").filter(|s| !s.is_empty())
+    plist::environment_value(&text, name).filter(|s| !s.is_empty())
 }
 
 /// The state directory the installed LaunchAgent pins.
 fn pinned_state() -> Option<PathBuf> {
-    if !applies() {
-        return None;
-    }
-    let text = std::fs::read_to_string(Launchd::plist_path().ok()?).ok()?;
-    plist::environment_value(&text, "CC_MOSS_STATE_DIR")
-        .filter(|s| !s.is_empty())
-        .map(PathBuf::from)
+    pinned_value("CC_MOSS_STATE_DIR").map(PathBuf::from)
 }
 
 /// `cc-moss daemon status [--json]`.
@@ -558,10 +562,17 @@ pub fn agent_plist() -> Result<String> {
             .as_deref(),
         Path::new(&exe).parent(),
     );
-    Ok(plist::render(&agent(&exe, &state, &path)))
+    let config = moss_core::config::config_path();
+    let config = Some(config).filter(|c| c.is_absolute());
+    Ok(plist::render(&agent(
+        &exe,
+        &state,
+        &path,
+        config.as_deref(),
+    )))
 }
 
-fn agent(exe: &str, state: &Path, path: &str) -> plist::Agent {
+fn agent(exe: &str, state: &Path, path: &str, config: Option<&Path>) -> plist::Agent {
     let paths = Paths::new(state);
     plist::Agent {
         label: LABEL.to_string(),
@@ -577,14 +588,26 @@ fn agent(exe: &str, state: &Path, path: &str) -> plist::Agent {
                 state.to_string_lossy().into_owned(),
             ),
             ("PATH".to_string(), path.to_string()),
-        ],
+        ]
+        .into_iter()
+        // And the config file, so the switch `moss stop` writes is the one
+        // the daemon reads, whatever XDG_CONFIG_HOME a shell has.
+        .chain(config.map(|c| {
+            (
+                "CC_MOSS_CONFIG".to_string(),
+                c.to_string_lossy().into_owned(),
+            )
+        }))
+        .collect(),
     }
 }
 
-/// The daemon's PATH: what the installed LaunchAgent already has first (so
-/// installing from another shell or the app does not reshuffle it), then
-/// this process's PATH, then cc-moss's own folder and where Homebrew and
-/// Claude Code's installers put programs. Each folder once.
+/// The daemon's PATH: this process's PATH, then cc-moss's own folder and
+/// where Homebrew and Claude Code's installers put programs, each folder
+/// once. Rebuilt on every install, so a folder that left the user's PATH
+/// (an old nvm) leaves the daemon's too. When the result holds the same
+/// folders as the installed LaunchAgent's, that one is kept as it is, so
+/// installing from another shell or the app does not reshuffle it.
 fn daemon_search_path(
     pinned: Option<&str>,
     current: Option<&str>,
@@ -598,10 +621,8 @@ fn daemon_search_path(
             dirs.push(d);
         }
     };
-    for list in [pinned, current].into_iter().flatten() {
-        for d in list.split(':') {
-            add(d.to_string());
-        }
+    for d in current.unwrap_or_default().split(':') {
+        add(d.to_string());
     }
     if let Some(dir) = exe_dir {
         add(dir.to_string_lossy().into_owned());
@@ -614,6 +635,15 @@ fn daemon_search_path(
     }
     for d in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
         add(d.into());
+    }
+    if let Some(pinned) = pinned {
+        let mut old: Vec<&str> = pinned.split(':').collect();
+        let mut new: Vec<&str> = dirs.iter().map(String::as_str).collect();
+        old.sort_unstable();
+        new.sort_unstable();
+        if old == new {
+            return pinned.to_string();
+        }
     }
     dirs.join(":")
 }
@@ -1025,6 +1055,21 @@ pub fn stop() -> Result<()> {
             "cc-moss 守护进程已停止；在你运行 `cc-moss daemon start` 之前不会再启动。"
         )
     );
+    // Moss runs on its own tmux server: without the daemon nobody looks
+    // after it, so it stops too (its switch stays as it is, and `daemon
+    // start` brings it back). An upgrade restarts the daemon with
+    // `kickstart -k` instead, which leaves Moss running.
+    match super::moss::end_with_daemon() {
+        Ok(true) => println!("{}", tr!("Moss stopped with it.", "Moss 也跟着停下了。")),
+        Ok(false) => {}
+        Err(e) => eprintln!(
+            "{}",
+            tr!(
+                format!("Could not stop Moss: {e:#}"),
+                format!("没能停掉 Moss：{e:#}")
+            )
+        ),
+    }
     Ok(())
 }
 
@@ -1050,6 +1095,7 @@ mod tests {
             "/Users/someone/My Tools/cc-moss",
             Path::new("/Users/someone/.local/state/cc-moss"),
             "/opt/homebrew/bin:/usr/bin:/bin",
+            Some(Path::new("/Users/someone/.config/cc-moss/config.toml")),
         ));
         for want in [
             "<key>Label</key>\n    <string>io.github.larrykoo711.cc-moss.daemon</string>",
@@ -1062,13 +1108,14 @@ mod tests {
             "<string>/Users/someone/.local/state/cc-moss/daemon/stdout.log</string>",
             "<string>/Users/someone/.local/state/cc-moss/daemon/stderr.log</string>",
             "<key>CC_MOSS_STATE_DIR</key>\n        <string>/Users/someone/.local/state/cc-moss</string>",
+            "<key>CC_MOSS_CONFIG</key>\n        <string>/Users/someone/.config/cc-moss/config.toml</string>",
         ] {
             assert!(text.contains(want), "missing {want:?} in\n{text}");
         }
     }
 
     #[test]
-    fn daemon_path_keeps_what_it_had_and_adds_the_usual_places() {
+    fn daemon_path_follows_the_current_path_and_stays_put_when_unchanged() {
         let path = daemon_search_path(
             Some("/custom/bin:/usr/bin"),
             Some("/usr/bin:/Users/a/.npm/bin::relative:/opt/homebrew/bin/"),
@@ -1077,9 +1124,23 @@ mod tests {
         );
         assert_eq!(
             path,
-            "/custom/bin:/usr/bin:/Users/a/.npm/bin:/opt/homebrew/bin:\
+            "/usr/bin:/Users/a/.npm/bin:/opt/homebrew/bin:\
              /opt/homebrew/Cellar/cc-moss/1/bin:/usr/local/bin:/Users/a/.local/bin:\
-             /Users/a/.claude/local:/bin:/usr/sbin:/sbin"
+             /Users/a/.claude/local:/bin:/usr/sbin:/sbin",
+            "a folder that left the PATH (/custom/bin) leaves the daemon's too"
+        );
+        // The same folders in another order: the installed one is kept.
+        let reordered = "/sbin:/usr/sbin:/bin:/Users/a/.claude/local:/Users/a/.local/bin:\
+                         /usr/local/bin:/opt/homebrew/Cellar/cc-moss/1/bin:/opt/homebrew/bin:\
+                         /Users/a/.npm/bin:/usr/bin";
+        assert_eq!(
+            daemon_search_path(
+                Some(reordered),
+                Some("/usr/bin:/Users/a/.npm/bin:/opt/homebrew/bin"),
+                Some(Path::new("/Users/a")),
+                Some(Path::new("/opt/homebrew/Cellar/cc-moss/1/bin")),
+            ),
+            reordered
         );
         let bare = daemon_search_path(None, None, None, None);
         assert_eq!(

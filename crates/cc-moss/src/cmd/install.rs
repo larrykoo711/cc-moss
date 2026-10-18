@@ -604,8 +604,10 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         }
     }
     app::remove(opts.dry_run, opts.yes)?;
-    super::moss::uninstall_step(opts.dry_run)?;
+    // The daemon first: while it runs it would lay Moss's home out again and
+    // start Moss within a minute.
     daemon::uninstall_step(opts.dry_run)?;
+    super::moss::uninstall_step(opts.dry_run)?;
 
     let state = moss_core::store_dir::state_dir();
     println!(

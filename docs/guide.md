@@ -205,7 +205,8 @@ cc-moss daemon start           # 重新启动（需要时会先把它设置好�
 - 文件都在状态目录的 `daemon/` 下：`status.json`（状态和每 30 秒一次的心跳）、`daemon.log`（超过 1 MiB 重新开始），以及 launchd 的 `stdout.log`、`stderr.log`。系统里登记的是 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`，以你自己的身份运行，不需要 root；用 sudo 运行 `cc-moss daemon run` 会直接拒绝。
 - LaunchAgent 记着 `cc-moss install` 当时用的状态目录（`CC_MOSS_STATE_DIR`、`XDG_STATE_HOME`），`daemon status`、`doctor` 和 App 都去那里看，不管当前终端怎么设。`daemon start` 也不会改它；要把守护进程换到别的目录，在设好新目录的终端里运行 `cc-moss install`。
 - launchd 托管着守护进程时，你也可以在终端里自己运行 `cc-moss daemon run`，但同一时间只有一个能跑起来：launchd 那份会每隔五分钟再试一次，你那份停掉后大约五分钟内它就接上。
-- LaunchAgent 里还记着一份 `PATH`（安装时终端里的 PATH，加上 Homebrew 和 Claude Code 常装的位置），守护进程靠它找到 `claude` 和 `tmux`。装到别处的话，装好后再运行一次 `cc-moss install`。
+- LaunchAgent 里还记着一份 `PATH`（安装时终端里的 PATH，加上 Homebrew 和 Claude Code 常装的位置），守护进程靠它找到 `claude` 和 `tmux`。每次 `cc-moss install` 都按当时的 PATH 重新生成；装到别处（或者删了旧的）的话，装好后再运行一次 `cc-moss install`。它也记着配置文件的位置（`CC_MOSS_CONFIG`），所以不管在哪个终端里运行 `cc-moss moss stop`，改的都是守护进程读的那个开关。
+- `cc-moss daemon stop` 会把 [Moss](#moss) 一起停下（它的开关不变，`daemon start` 后会再把它拉起来）。升级时守护进程会重启，但不会停掉 Moss，新的守护进程直接接着照看正在跑的那个。
 
 ### Moss
 
@@ -213,20 +214,29 @@ Moss 是 cc-moss 替你一直开着的一个 Claude Code 会话（macOS）。守
 
 ```sh
 cc-moss moss status          # 开没开、在不在运行、跑了多久、重启过几次
-cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…"}
+cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…","daemon_running":true}
 cc-moss moss stop            # 关掉并结束它；之后一直关着，重新登录也不会启动
 cc-moss moss start           # 重新打开，守护进程几秒内把它拉起来
 ```
 
+Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_running": false`（负责启动它的守护进程没开），或者 `"last_error"` 写着上次没能启动的原因。`moss stop` 如果没法确认 Moss 已经结束（tmux 没回应），会直说并以错误退出；开关照样已经关上，守护进程会继续去停。
+
 - **结束不了它，只能关掉它。** 会话列表、选择器、`cc-moss close` 都不提供结束 Moss；面板里它固定在最上面一行，没有「不再提醒」，也不会出现在「找回」里。要停，就在菜单栏 App 的设置 ›「Moss」里关掉开关，或者运行 `cc-moss moss stop`，或者在配置里写 `[moss] enabled = false`。三种都会一直关着，直到你再打开。
 - **它住在哪。** 状态目录下的 `moss/`（默认 `~/.local/state/cc-moss/moss/`），不在「文稿」这类受隐私保护的文件夹里：
-  - cc-moss 的文件，每次 `cc-moss install`（以及每次启动 Moss）都会换成新版：`CLAUDE.md`、`SECURITY.md`（最先读、最优先的规矩）、`.claude/settings.json`（防护钩子）、`.claude/skills/moss-profile/`。
+  - cc-moss 的文件，每次 `cc-moss install`（以及每次启动 Moss）都会换成新版：`CLAUDE.md`、`SECURITY.md`（最先读、最优先的规矩）、`.claude/settings.json`（防护钩子和沙箱设置）、`.claude/skills/moss-profile/`。
   - 你的（和它自己的）文件，只在缺的时候建一份，之后从不改动：`IDENTITY.md`（名字，默认 Moss）、`SOUL.md`（说话和做事的方式）、`USER.md`（它对你的了解）、`journal/`（每天一个日志）、`memory/`（长期记忆）。
-  - `SESSIONS.md`：守护进程按会话记录每分钟（或有变化时）写一份会话一览，给 Moss 读。
-- **它能碰什么。** Moss 不弹权限确认（bypass），所以它的项目设置里有一道防护钩子：只允许写自己家里的文件；不许改自己的设置、钩子、`SECURITY.md` 和 `CLAUDE.md`；`IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改（它会先把旧的存进 `.snapshots/`）。钩子判断不了的时候一律拒绝。
-- **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。想看看它，在面板里点它那一行就行。
+  - `SESSIONS.md`：守护进程按会话记录每分钟（或有变化时）写一份会话一览，Moss 需要时去读。你那些会话的名字和备注在里面只是资料：Moss 被告知它们从来不是指令，每次启动时也不会当作规矩一起读进去。
+  - 家里的东西从不顺着链接往外走：如果 `.claude`（或任何 cc-moss 要写的文件）变成了指向别处的链接，cc-moss 会换掉链接本身，不碰它指向的地方，卸载时也一样。`.claude/` 下不是 cc-moss 的东西，每次布置家目录时都会清掉。
+- **它能碰什么。** Moss 不弹权限确认（bypass），所以有两道围栏：
+  - 工具：项目设置里的防护钩子检查每一次工具调用。文件工具只能写它自己家里的文件，不许改自己的设置、钩子、`SECURITY.md` 和 `CLAUDE.md`。防护钩子不认识的工具（包括 MCP 工具）一律拒绝；判断不了的时候也拒绝。
+  - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它的家、一个临时文件夹和 cc-moss 的会话记录（这样 `cc-moss ls` 之类 cc-moss 自己的命令能用），不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
+  - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
+  - 围栏管不到的：和任何 Claude Code 会话一样，Moss 能读文件、能联网。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
+- **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 会话上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板里点它那一行就行。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
 - **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
-- `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 会结束它、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
+- Moss 需要你的时候（要权限、有问题要问），菜单栏图标和数字会像别的会话一样提醒你；但 Moss 本身从不算进你的会话数。
+- `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程（按它自己的 PATH）找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 先停掉守护进程，再结束 Moss、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
+- 退回到没有 Moss 的旧版 cc-moss：旧版认不出哪条记录是 Moss，旧的 Moss 可能会作为「断了的会话」出现在找回列表里。用 `cc-moss close` 关掉它就行（不管也行）。
 
 ## 状态栏 App
 

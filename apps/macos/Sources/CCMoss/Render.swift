@@ -12,7 +12,7 @@ import SwiftUI
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
-///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--waiting-input <session id>] [--bubble <id>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]]
@@ -161,12 +161,15 @@ enum Render {
                 case "unknown": .failed(AppModel.describe(MossClient.Failure.timedOut))
                 default: nil
                 }
-                // `--moss running|restarted|off`: the Moss card with that status.
+                // `--moss running|restarted|off|failing|nodaemon`: the Moss card with that status.
                 let since = Date().addingTimeInterval(-2 * 3600 - 300)
                 let mossDemo: MossCheck? = switch value("--moss") {
                 case "running": .known(MossStatus(enabled: true, running: true, since: since))
                 case "restarted": .known(MossStatus(enabled: true, running: true, since: since, restarts: 1))
                 case "off": .known(MossStatus(enabled: false, running: false))
+                case "failing": .known(MossStatus(enabled: true, running: false,
+                                                  lastError: "Claude Code exited right after it started"))
+                case "nodaemon": .known(MossStatus(enabled: true, running: false, daemonRunning: false))
                 default: nil
                 }
                 drawSettings(model: model, tab: page, aliasDemo: aliasDemo, daemonDemo: daemonDemo, mossDemo: mossDemo,

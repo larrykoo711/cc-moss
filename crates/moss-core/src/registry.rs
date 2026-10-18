@@ -503,15 +503,43 @@ impl Registry {
         Ok(())
     }
 
-    /// Close every open slot with `role` (an old Moss, before a new one
-    /// starts): they are never offered for restore. How many were closed.
-    pub fn close_role(&self, role: &str, reason: &str, now_ms: i64) -> Result<usize> {
-        Ok(self.write()?.execute(
-            "UPDATE slots SET status = 'closed', end_reason = ?2, ended_at = ?3,
-               attention = NULL, busy = 0
+    /// Close every open slot with `role` that ran on the tmux server named
+    /// `socket` (`tmux -L`), except the session `keep` (an old Moss, once a
+    /// new one runs): they are never offered for restore. A slot of that role
+    /// elsewhere is not Moss's to close. How many were closed.
+    pub fn close_role(
+        &self,
+        role: &str,
+        socket: &str,
+        keep: Option<&str>,
+        reason: &str,
+        now_ms: i64,
+    ) -> Result<usize> {
+        let conn = self.write()?;
+        let mut stmt = conn.prepare(
+            "SELECT slot_id, tmux_socket, session_id FROM slots
              WHERE role = ?1 AND status <> 'closed'",
-            params![role, reason, now_ms],
-        )?)
+        )?;
+        let open: Vec<(String, Option<String>, String)> = stmt
+            .query_map(params![role], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut closed = 0;
+        for (slot_id, tmux_socket, session_id) in open {
+            // `$TMUX` names the server by its socket path: …/tmux-501/<socket>.
+            let on_socket = tmux_socket.as_deref().is_some_and(|path| {
+                std::path::Path::new(path).file_name() == Some(std::ffi::OsStr::new(socket))
+            });
+            if !on_socket || keep == Some(session_id.as_str()) {
+                continue;
+            }
+            closed += conn.execute(
+                "UPDATE slots SET status = 'closed', end_reason = ?2, ended_at = ?3,
+                   attention = NULL, busy = 0
+                 WHERE slot_id = ?1 AND status <> 'closed'",
+                params![slot_id, reason, now_ms],
+            )?;
+        }
+        Ok(closed)
     }
 
     /// `cc-moss restore` launched this slot; SessionStart clears the mark.

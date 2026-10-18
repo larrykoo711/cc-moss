@@ -628,3 +628,99 @@ fn linux_gets_no_agent() {
     assert!(String::from_utf8_lossy(&out.stderr).contains("macOS only"));
     assert!(mac.calls().is_empty());
 }
+
+/// R-a: `daemon stop` is the user saying "stop", so Moss (on its own tmux
+/// server, which outlives the daemon) stops with it; its switch stays on,
+/// so `daemon start` brings it back.
+#[test]
+fn daemon_stop_ends_moss_too() {
+    common::debug_only();
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    // A world only for its test socket (killed and removed when dropped).
+    let world = common::World::new("daemon-stop-moss");
+    let socket = world.socket.clone();
+    let tmux = |args: &[&str]| {
+        Command::new("tmux")
+            .args(["-L", &socket, "-f", "/dev/null"])
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    let up = tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "moss",
+        "sleep 60",
+        ";",
+        "set-option",
+        "-t",
+        "=moss:",
+        "@cc-moss-role",
+        "moss",
+    ]);
+    assert!(up.status.success(), "{up:?}");
+    // tmux where this machine has it, on top of the test's bare PATH.
+    let path = format!(
+        "{}:/usr/bin:/bin",
+        String::from_utf8_lossy(
+            &Command::new("sh")
+                .args(["-c", "command -v tmux"])
+                .output()
+                .unwrap()
+                .stdout
+        )
+        .trim()
+        .trim_end_matches("/tmux")
+    );
+    let out = mac.run_with(
+        &["daemon", "stop"],
+        &[
+            ("CC_MOSS_MOSS_SOCKET", Path::new(&socket)),
+            ("PATH", Path::new(&path)),
+        ],
+    );
+    let said = String::from_utf8_lossy(&out.stdout);
+    let gone = !tmux(&["has-session", "-t", "=moss"]).status.success();
+    let _ = tmux(&["kill-server"]);
+    assert!(said.contains("Moss stopped with it"), "{out:?}");
+    assert!(gone, "Moss's session ended");
+    let config =
+        std::fs::read_to_string(mac.path(".config/cc-moss/config.toml")).unwrap_or_default();
+    assert!(
+        !config.contains("enabled = false"),
+        "the switch stays on: {config}"
+    );
+}
+
+/// I5: the LaunchAgent pins the config file, and `moss stop` from a shell
+/// with another XDG_CONFIG_HOME still switches off the Moss the daemon runs.
+#[test]
+fn moss_stop_writes_the_config_the_daemon_reads() {
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    let pinned = mac.path(".config/cc-moss/config.toml");
+    let plist = std::fs::read_to_string(mac.plist()).unwrap();
+    assert!(
+        plist.contains(&format!(
+            "<key>CC_MOSS_CONFIG</key>\n        <string>{}</string>",
+            pinned.display()
+        )),
+        "{plist}"
+    );
+    let elsewhere = mac.path("other-xdg");
+    mac.run_with(
+        &["moss", "stop"],
+        &[("XDG_CONFIG_HOME", elsewhere.as_path())],
+    );
+    let text = std::fs::read_to_string(&pinned).unwrap();
+    assert!(text.contains("[moss]\nenabled = false"), "{text}");
+    assert!(!elsewhere.join("cc-moss/config.toml").exists());
+    let out = mac.run_with(
+        &["moss", "status", "--json"],
+        &[("XDG_CONFIG_HOME", elsewhere.as_path())],
+    );
+    let st: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(st["enabled"], false, "{st}");
+}

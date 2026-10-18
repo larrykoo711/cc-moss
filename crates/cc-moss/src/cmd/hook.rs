@@ -120,11 +120,16 @@ fn handle(event: &str) -> Result<()> {
         return Ok(());
     }
     registry.apply_with(&event, &ctx, &proc::is_alive)?;
-    // Moss (started by the daemon) is recorded as such, and keeps the tmux
-    // name the daemon looks for: never renamed after its Claude name.
-    let moss = env(moss::ROLE_ENV).as_deref() == Some(moss::ROLE);
-    if moss && is_start {
-        if let Event::Start { session_id, .. } = &event {
+    // Moss (started by the daemon) is recorded as such: only the session
+    // the daemon started, by its id. Anything else that inherited the role
+    // (a window opened in Moss's tmux, a tmux server Moss's shell started,
+    // `claude --resume` of Moss's id elsewhere) stays an ordinary session.
+    if let Event::Start { session_id, .. } = &event {
+        if is_moss_start(
+            env(moss::ROLE_ENV).as_deref(),
+            env(moss::SESSION_ENV).as_deref(),
+            session_id,
+        ) {
             if let Some(slot) = registry.slot_for_event(session_id, &ctx)? {
                 registry.set_role(&slot.slot_id, moss::ROLE)?;
             }
@@ -143,10 +148,8 @@ fn handle(event: &str) -> Result<()> {
             if title.is_none() {
                 fill_name_from_transcript(&registry, session_id, &ctx, transcript_path.as_deref());
             }
-            if !moss {
-                if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
-                    log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
-                }
+            if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
+                log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
             let fresh = matches!(source, StartSource::Startup | StartSource::Resume);
             if fresh && ctx.tmux.is_none() {
@@ -156,10 +159,8 @@ fn handle(event: &str) -> Result<()> {
         Event::Prompt {
             session_id, title, ..
         } => {
-            if !moss {
-                if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
-                    log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
-                }
+            if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
+                log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
             if let Some(name) = title.as_deref().filter(|t| !t.is_empty()) {
                 warn_if_name_taken(&registry, session_id, &ctx, name)?;
@@ -168,6 +169,12 @@ fn handle(event: &str) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// A SessionStart from the Moss the daemon started: the role it was given,
+/// and the session id it was started with is this one.
+fn is_moss_start(role: Option<&str>, moss_session: Option<&str>, session_id: &str) -> bool {
+    role == Some(moss::ROLE) && moss_session.is_some_and(|id| !id.is_empty() && id == session_id)
 }
 
 /// After `--resume` Claude Code omits the name from the payload; the
@@ -199,6 +206,10 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };
+    // Moss keeps the tmux name it was started with.
+    if slot.is_moss() {
+        return Ok(());
+    }
     let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
         return Ok(());
     };

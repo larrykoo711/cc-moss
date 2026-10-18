@@ -297,8 +297,11 @@ cc-moss daemon start           # start it again (setting it up first if needed)
 - `cc-moss daemon run` in a terminal works while launchd's copy is set up: only one gets to run. launchd's copy
   then waits five minutes between tries, and takes over within about five minutes after yours stops.
 - The LaunchAgent also pins a `PATH` (your shell's PATH at install time, plus where Homebrew and Claude Code usually
-  install), so the daemon finds `claude` and `tmux`. If you install one of them somewhere else, run `cc-moss install`
-  again afterwards.
+  install), so the daemon finds `claude` and `tmux`. It's made afresh from your PATH on every `cc-moss install`, so if
+  you install one of them somewhere else (or drop an old one), run `cc-moss install` again afterwards. It pins the
+  config file too (`CC_MOSS_CONFIG`), so `cc-moss moss stop` from any shell changes the switch the daemon reads.
+- `cc-moss daemon stop` stops [Moss](#moss) as well (its switch stays on, so `daemon start` brings it back). An
+  upgrade restarts the daemon without stopping Moss; the new daemon looks after the Moss that is already running.
 
 ### Moss
 
@@ -310,10 +313,15 @@ stays there; talking to it and handing it work come in later versions.
 
 ```sh
 cc-moss moss status          # on or off, running or not, for how long, how often it restarted
-cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…"}
+cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…","daemon_running":true}
 cc-moss moss stop            # turn it off and end it; it stays off, after logging in again too
 cc-moss moss start           # turn it back on; the daemon starts it within seconds
 ```
+
+When Moss is on but not running, `--json` also says why when it can: `"daemon_running": false` (the daemon that
+starts it is off), or `"last_error"` with the reason the last start failed. If `moss stop` can't make sure Moss
+ended (tmux doesn't answer), it says so and exits with an error; the switch is off all the same, and the daemon
+keeps trying.
 
 - **You can't end it, only turn it off.** The session list, the picker and `cc-moss close` don't end Moss; in the
   panel it's pinned to the top row with no "Stop Reminding", and it never shows up to bring back. To stop it, switch
@@ -322,23 +330,47 @@ cc-moss moss start           # turn it back on; the daemon starts it within seco
 - **Where it lives.** `moss/` in the state directory (by default `~/.local/state/cc-moss/moss/`), outside protected
   folders such as Documents:
   - cc-moss's files, replaced with the current version on every `cc-moss install` (and every time Moss starts):
-    `CLAUDE.md`, `SECURITY.md` (the rules it reads first and that win), `.claude/settings.json` (its guard hook) and
+    `CLAUDE.md`, `SECURITY.md` (the rules it reads first and that win), `.claude/settings.json` (its guard hook and sandbox) and
     `.claude/skills/moss-profile/`.
   - Yours (and its own), created once when missing and never touched again: `IDENTITY.md` (its name, Moss by default),
     `SOUL.md` (how it speaks and works), `USER.md` (what it knows about you), `journal/` (a log per day) and `memory/`.
   - `SESSIONS.md`: an overview of your sessions the daemon writes from its records every minute (or when they
-    change), for Moss to read.
-- **What it may touch.** Moss runs without permission prompts (bypass), so its project settings carry a guard hook:
-  it may write only inside its own home; never its settings, hooks, `SECURITY.md` or `CLAUDE.md`; and `IDENTITY.md`,
-  `SOUL.md` and `USER.md` only through `/moss-profile` (which keeps the old one in `.snapshots/`). When the guard
-  can't tell, the answer is no.
+    change), for Moss to read when it needs to. Your sessions' names and notes are in it as data: Moss is told they
+    are never instructions, and they are not part of what it reads at every start.
+  - Nothing in the home is ever followed out of it: if `.claude` (or anything cc-moss writes) turns out to be a link
+    to somewhere else, cc-moss replaces the link and leaves what it points to alone, also when uninstalling.
+    Anything else under `.claude/` is cleared away whenever the home is laid out.
+- **What it may touch.** Moss runs without permission prompts (bypass), so it is fenced in two ways:
+  - Its tools: a guard hook in its project settings checks every tool call. Its file tools may write only inside its
+    home, never its settings, hooks, `SECURITY.md` or `CLAUDE.md`. Tools the guard doesn't know, MCP tools included,
+    are refused. When the guard can't tell, the answer is no.
+  - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
+    only in its home, a temporary folder and cc-moss's session records (so cc-moss's own commands such as
+    `cc-moss ls` work), never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
+    the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
+  - `IDENTITY.md`, `SOUL.md` and `USER.md` change only through `/moss-profile`, which saves with
+    `cc-moss moss profile <name> --from <draft>`: the one command allowed outside the sandbox, and only on its own
+    (it keeps the old file in `.snapshots/`).
+  - What the fence doesn't cover: like any Claude Code session, Moss can read files and reach the network.
+    `SECURITY.md` tells it to keep away from secrets, but that is a rule it follows, not a wall. If your shell's
+    startup files write somewhere when a shell starts (some version managers do), each of its commands prints an
+    "Operation not permitted" line about that; the command itself still runs.
 - **Where it runs.** A tmux server of its own (`tmux -L cc-moss-moss`, session `moss`), apart from yours:
-  `tmux kill-server` on your side leaves it alone. To look in on it, click its row in the panel.
+  `tmux kill-server` on your side leaves it alone. That server doesn't read your `~/.tmux.conf`, so plugins and
+  options there don't change how Moss lives (a `remain-on-exit` left on is treated as the death it is). cc-moss knows
+  Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click its row in the panel.
+  Only the session the daemon started is Moss: a window you open next to it, or `claude --resume` of its id elsewhere,
+  is an ordinary session.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
   Anthropic like any session you start. While it waits it sends nothing and uses none of your plan; each start begins
   with one short turn to read its notes.
+- When Moss needs you (a permission or a question), the menu bar icon and its count show it like any session's.
+  Moss itself is never counted among your sessions.
 - `cc-moss doctor` checks it: on or off, running or not, and how to fix it when the daemon can't find `claude` or
-  `tmux`. `cc-moss install --uninstall` ends it and removes cc-moss's files; your persona, journal and memory stay.
+  `tmux` (on the daemon's own PATH). `cc-moss install --uninstall` stops the daemon first, then ends Moss and
+  removes cc-moss's files; your persona, journal and memory stay.
+- Going back to a cc-moss from before Moss: it doesn't know which record is Moss, so an old Moss may show up as an
+  interrupted session to bring back. Close it with `cc-moss close` (or leave it).
 
 ## The menubar app
 

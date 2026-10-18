@@ -20,7 +20,12 @@ final class AppModel {
     var sessions: [Session] = [] { didSet { syncIcon() } }
     /// Moss, kept apart from `sessions`: pinned on top of the list, never
     /// counted, restored or dismissed.
-    var moss: Session?
+    var moss: Session? { didSet { if moss != oldValue { syncIcon() } } }
+
+    /// The session with this id, Moss included (alerts name and open it).
+    func session(_ id: String) -> Session? {
+        sessions.first { $0.id == id } ?? moss.flatMap { $0.id == id ? $0 : nil }
+    }
     /// The menu bar icon, following the sessions.
     @ObservationIgnored let icon = MenuBarIcon()
     var query = "" { didSet { if query != oldValue { selectFirst() } } }
@@ -191,7 +196,8 @@ final class AppModel {
 
     func syncIcon() {
         icon.syncMotion()
-        icon.update(sessions, showCount: UserDefaults.standard.bool(forKey: Self.showCountKey))
+        icon.update(Grouping.alerting(sessions, moss: moss),
+                    showCount: UserDefaults.standard.bool(forKey: Self.showCountKey))
     }
 
     func move(_ delta: Int) {

@@ -1387,12 +1387,14 @@ fn install_keeps_users_persona() {
         "a missing one comes back"
     );
 
-    // Uninstall takes cc-moss's files and leaves theirs.
+    // Uninstall takes cc-moss's files and leaves theirs, after the daemon
+    // is gone (it would lay them out again and start Moss).
     let out = install_mac(&h, &["install", "--uninstall", "--yes"]);
-    assert!(
-        out.contains("its persona, journal and memory stay"),
-        "{out}"
-    );
+    let moss = out
+        .find("its persona, journal and memory stay")
+        .unwrap_or_else(|| panic!("{out}"));
+    let daemon = out.find("daemon").unwrap_or_else(|| panic!("{out}"));
+    assert!(daemon < moss, "the daemon goes first: {out}");
     assert!(!h.path(&format!("{home}/CLAUDE.md")).exists());
     assert!(!h.path(&format!("{home}/.claude")).exists());
     assert_eq!(h.read(&format!("{home}/IDENTITY.md")), "- Name: Nova\n");
@@ -1433,9 +1435,11 @@ fn install_updates_managed_moss_files() {
     assert_eq!(
         command,
         format!(
-            "'{}' hook moss-guard || exit 2",
-            env!("CARGO_BIN_EXE_cc-moss")
+            "'{}' hook moss-guard --home '{}' || exit 2",
+            env!("CARGO_BIN_EXE_cc-moss"),
+            h.path(home).display()
         )
     );
+    assert_eq!(settings["sandbox"]["enabled"], true);
     assert_eq!(h.read(&format!("{home}/SOUL.md")), "my own soul\n");
 }

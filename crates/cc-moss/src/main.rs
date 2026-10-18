@@ -352,12 +352,15 @@ enum MossCommand {
         #[arg(long)]
         json: bool,
     },
-    /// Replace Moss's identity, soul or notes about you with the text on
-    /// standard input (what /moss-profile uses).
+    /// Replace Moss's identity, soul or notes about you with new text (from
+    /// standard input or --from; what /moss-profile uses).
     #[command(hide = true)]
     Profile {
         /// identity | soul | user
         name: String,
+        /// Read the new text from this file instead of standard input.
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
     },
 }
 
@@ -448,7 +451,7 @@ fn main() -> std::process::ExitCode {
             .unwrap_or_default();
         // Moss's fence decides, and fails closed; not a session event.
         if event == cmd::moss::GUARD_EVENT {
-            return cmd::moss::guard_hook();
+            return cmd::moss::guard_hook(&argv);
         }
         cmd::hook::run(&event);
         return std::process::ExitCode::SUCCESS;
@@ -554,7 +557,7 @@ fn main() -> std::process::ExitCode {
             MossCommand::Start => cmd::moss::start(),
             MossCommand::Stop => cmd::moss::stop(),
             MossCommand::Status { json } => cmd::moss::print_status(json),
-            MossCommand::Profile { name } => cmd::moss::profile(&name),
+            MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
         }),
         Command::Ask { action } => report(cmd::ask::run(match action {
             AskCommand::List { json } => cmd::ask::Action::List { json },
