@@ -175,6 +175,7 @@ R1 ◄── 全部
 - DESIGN-AMEND: A5 等待 90s→300s、A6 回填定为 PermissionRequest + updatedInput.answers、K1 改写 reason=T1.1 实测 approved-by=controller（不弱化任何验收，按探针事实修订）date=2026-10-18
 - AMEND: T1.2 `--safe` 同时去掉 default_args 里的权限参数（加强，不弱化）reason=「--safe = 这一次普通模式」 approved-by=controller date=2026-10-18
 - T1.2 ✅ 2026-10-18：CI 同款 522 通过、Swift 297 通过；controller 复跑 verify 9 项全绿
+- T2.1 合入档案分支 1020d6c（合并树 CI：Rust 553、Swift 302 全绿）；真机：独立 probe label + 临时状态目录，`kill -9` 后约 22 秒由 launchd 拉回、单实例第二份退出 1、已清理；发现 K7（TCC），程序在 `~/Documents` 下会被卡住
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程

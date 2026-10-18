@@ -129,4 +129,5 @@ cc-moss.app（界面客户端）   Moss 会话（tmux 里的 claude，<state>/mo
 | K4 | D1：频道成员都能派发 bypass 会话 | 允许频道白名单、审计日志、一键暂停（已向用户说明） |
 | K5 | 锁屏键无 Apple 文档 | 锁屏与睡眠多信号合并，实机在 macOS 14 / 15 / 26 验证 |
 | K6 | 一个 Slack App 多台 Mac 同时连会漏消息 | 一台 Mac 一个 App；检测到同一 App 另有连接时提示 |
+| K7 | macOS 隐私保护（TCC）：launchd 拉起的进程读 `~/Documents` 等受保护目录会卡住等授权（T2.1 真机探针：程序放在 `~/Documents` 下时卡在 dyld 打开自身）。Moss 与派发的会话常在 `~/Documents` 下的项目里干活 | 正式安装路径在 Homebrew 目录下不受影响；T2.2 / T3.1 spec 必须处理：tmux server 由谁拉起（继承谁的授权）、首次授权引导、doctor 检测；日志与状态一律放在受保护目录之外 |
 | Q1 | 版本号：P1 发 0.3.0，之后每个 Phase 一个小版本？ | 默认如此，S2 定 |
