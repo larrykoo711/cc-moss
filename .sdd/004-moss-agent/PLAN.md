@@ -177,6 +177,7 @@ R1 ◄── 全部
 - T1.2 ✅ 2026-10-18：CI 同款 522 通过、Swift 297 通过；controller 复跑 verify 9 项全绿
 - T2.1 合入档案分支 1020d6c（合并树 CI：Rust 553、Swift 302 全绿）；真机：独立 probe label + 临时状态目录，`kill -9` 后约 22 秒由 launchd 拉回、单实例第二份退出 1、已清理；发现 K7（TCC），程序在 `~/Documents` 下会被卡住
 - 2026-10-18 教训：T1.3 真机补测的两个 claude 会话加载了用户全局的 cc-moss hook，登记进用户真实 registry，探针结束后显示为「断了」，用户发现。已 `cc-moss close <session_id>` 清理。规避：探针启动真 claude 一律带临时 `CC_MOSS_STATE_DIR`（已写入派发纪律）。
+- 2026-10-18 教训补充：临时 `CC_MOSS_STATE_DIR` 只挡 hook；用户 App / `ls` 刷新时经 `claude agents --json` 收编所有正在跑的 claude，探针会话仍进真实 registry（T1.3 修复的 I5 探针）。更早 T1.1 的两个探针会话被 kill 后显示「断了」、被「找回」进用户默认 tmux 一直运行。经用户同意结束并 close。规避：探针 claude 一律 `/exit` 正常退出、`ps` 确认无残留、报告列出全部 session_id，controller 事后核对清理
 - T2.1 ✅ 2026-10-18：评审 I1–I4、M1–M12 已修（10 个回退必红变异全红）；合并树 CI Rust 599、Swift 303 全绿；M13 转 T2.2
 - T1.2 → main：PR #36（45d7ce4），CI 全绿，用户授权「T1.2 好了就合并」
 
