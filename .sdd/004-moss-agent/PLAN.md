@@ -156,7 +156,7 @@ R1 ◄── 全部
 |------|----|------|------|-----|----------|
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
-| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟦 Ready | todo/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
+| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟨 In Progress | in-progress/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
 | **T1.4** 桌面答题 | cc-moss | T1.3 | ⬜ Backlog | — | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | 🟨 In Progress | in-progress/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ⬜ Backlog | — | 杀掉后阶梯恢复、列表里结束不了 |
