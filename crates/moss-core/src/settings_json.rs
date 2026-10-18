@@ -1,7 +1,8 @@
 //! Edits Claude Code's user `settings.json` so it runs the cc-moss hooks.
 //!
 //! The file belongs to the user, so every function here touches only hook
-//! entries that [`is_ours`] recognises. Everything else, including key order,
+//! entries that [`is_ours`] recognises, and the one top-level key cc-moss
+//! may add ([`BYPASS_PROMPT_KEY`]) only while the user has not set it. Everything else, including key order,
 //! is carried through unchanged (serde_json is built with `preserve_order`).
 
 use std::path::{Path, PathBuf};
@@ -226,6 +227,65 @@ pub fn uninstall(doc: &Value) -> Result<Value> {
         root.shift_remove("hooks");
     }
     Ok(doc)
+}
+
+/// Claude Code's "don't warn me about bypass mode again". Without it, every
+/// session started with `--dangerously-skip-permissions` first stops on a
+/// warning that nobody sees in a detached tmux pane.
+pub const BYPASS_PROMPT_KEY: &str = "skipDangerousModePermissionPrompt";
+
+/// Top-level keys cc-moss may add, each with the value it writes.
+fn managed_keys() -> [(&'static str, Value); 1] {
+    [(BYPASS_PROMPT_KEY, Value::Bool(true))]
+}
+
+/// `doc` with [`BYPASS_PROMPT_KEY`] set to `true` when it is not there at
+/// all. A value the user set, `true` or `false`, is left alone.
+pub fn accept_bypass_prompt(doc: &Value) -> Result<Value> {
+    let mut doc = doc.clone();
+    let root = root_object(&mut doc)?;
+    if !root.contains_key(BYPASS_PROMPT_KEY) {
+        root.insert(BYPASS_PROMPT_KEY.into(), Value::Bool(true));
+    }
+    Ok(doc)
+}
+
+/// The managed keys `after` has and `before` lacks: the ones cc-moss wrote.
+pub fn added_keys(before: &Value, after: &Value) -> Vec<String> {
+    managed_keys()
+        .into_iter()
+        .filter(|(k, _)| before.get(k).is_none() && after.get(k).is_some())
+        .map(|(k, _)| k.to_string())
+        .collect()
+}
+
+/// The managed keys `before` has and `after` lacks: the ones cc-moss took out.
+pub fn removed_keys(before: &Value, after: &Value) -> Vec<String> {
+    added_keys(after, before)
+}
+
+/// `doc` without the managed keys listed in `owned` (the ones cc-moss wrote),
+/// as long as they still hold the value cc-moss wrote. A key the user has
+/// changed since is theirs now and stays.
+pub fn forget_owned(doc: &Value, owned: &[String]) -> Result<Value> {
+    let mut doc = doc.clone();
+    let root = root_object(&mut doc)?;
+    for (key, value) in managed_keys() {
+        if owned.iter().any(|k| k == key) && root.get(key) == Some(&value) {
+            root.shift_remove(key);
+        }
+    }
+    Ok(doc)
+}
+
+/// Whether `doc` (user or managed settings) has an administrator or user
+/// turning bypass mode off: `permissions.disableBypassPermissionsMode`
+/// is `"disable"`.
+pub fn disables_bypass(doc: &Value) -> bool {
+    doc.get("permissions")
+        .and_then(|p| p.get("disableBypassPermissionsMode"))
+        .and_then(Value::as_str)
+        == Some("disable")
 }
 
 /// Serialise the way Claude Code does: `JSON.stringify(x, null, 2) + "\n"`.

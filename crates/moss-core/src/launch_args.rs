@@ -55,10 +55,41 @@ pub fn whitelist(argv: &[&str]) -> Vec<String> {
     out
 }
 
+/// Whether `args` already choose a permission mode (`--permission-mode …`
+/// or `--dangerously-skip-permissions`), so `cc-moss new` adds none of its own.
+pub fn sets_permissions(args: &[String]) -> bool {
+    args.iter().any(|a| {
+        let flag = a.split_once('=').map_or(a.as_str(), |(f, _)| f);
+        BOOLEAN.contains(&flag) || flag == WITH_VALUE[0]
+    })
+}
+
+/// `args` without the flags that pick a permission mode: `--dangerously-skip-permissions`,
+/// `--permission-mode <value>` and `--permission-mode=<value>`. For `cc-moss new --safe`.
+pub fn without_permissions(args: &[String]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        i += 1;
+        if BOOLEAN.contains(&arg.as_str()) || arg.starts_with("--permission-mode=") {
+            continue;
+        }
+        if arg == WITH_VALUE[0] {
+            if i < args.len() && !args[i].starts_with('-') {
+                i += 1;
+            }
+            continue;
+        }
+        out.push(arg.clone());
+    }
+    out
+}
+
 /// `cc-moss new`'s own flags; everything else that looks like a flag is
 /// Claude Code's.
 const NEW_OWN_WITH_VALUE: [&str; 2] = ["-C", "--dir"];
-const NEW_OWN_BOOLEAN: [&str; 4] = ["--detach", "--yes", "-h", "--help"];
+const NEW_OWN_BOOLEAN: [&str; 5] = ["--detach", "--yes", "--safe", "-h", "--help"];
 
 /// Let `cc-moss new` take Claude Code's flags directly, anywhere on the line:
 /// `new --dangerously-skip-permissions login-page` becomes
