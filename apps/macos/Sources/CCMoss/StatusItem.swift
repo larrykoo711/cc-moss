@@ -176,17 +176,25 @@ final class PanelController {
     private func startWatching(_ panel: NSPanel) {
         // A click anywhere in another app.
         if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+            MainActor.assumeIsolated {
+                // A dropdown open over the panel closes on the same click;
+                // look again once it has.
+                guard PanelHold.active else { self?.hide(); return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    if !PanelHold.active { self?.hide() }
+                }
+            }
         }) {
             monitors.append(m)
         }
         let center = NotificationCenter.default
-        // Another window of ours (Settings) or another app took the keyboard.
+        // Another window of ours (Settings) or another app took the keyboard;
+        // not our own dropdown or folder picker over the panel (PanelHold).
         observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.hide() }
+            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
         })
     }
 
