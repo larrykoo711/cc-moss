@@ -16,6 +16,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **The app no longer quits when you leave Settings › Shortcuts too quickly.** Moving to another page while it was
+  still reading your names could close cc-moss.
 - **Choosing a folder for a new session.** The folder list opens right under its button and the panel stays open
   (it used to vanish, and the list could appear far away). Each folder reads as its name and where it lives, on one
   line; type a path such as `~/code` to use any folder; ↑↓ and Return work. "Another folder…" opens the system picker

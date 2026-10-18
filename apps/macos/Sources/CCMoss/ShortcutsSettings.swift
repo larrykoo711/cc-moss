@@ -142,6 +142,8 @@ struct ShortcutsSettings: View {
         do {
             list = try await client.aliases()
             loadError = nil
+        } catch is CancellationError {
+            // Left the page, or the program's location changed: a newer load answers.
         } catch MossClient.Failure.command {
             loadError = L.t("This cc-moss is too old for terminal names. Update it to use them here.",
                             "这个版本的 cc-moss 还不支持终端里的短名字，升级之后就能在这里用。")
