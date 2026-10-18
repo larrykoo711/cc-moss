@@ -104,8 +104,10 @@ struct PanelView: View {
             model.terminals.rescan()
             model.refresh()
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
-            searchFocused = true
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            // Only the panel's own window; back from a dropdown or the folder
+            // picker, an open form keeps the keyboard.
+            if note.object is KeyPanel, model.form == nil { searchFocused = true }
             model.refresh()
         }
     }

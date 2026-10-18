@@ -222,12 +222,17 @@ struct TerminalPicker: View {
     }
 }
 
-/// The trigger of every settings dropdown: label and a chevron in a soft
-/// capsule; opens a `DropdownWindow` right under itself.
+/// The trigger of every dropdown: label and a chevron in a soft capsule;
+/// opens a `DropdownWindow` right under itself.
 struct Dropdown<ID: Hashable, Label: View>: View {
     let options: () -> [DropdownOption<ID>]
     let selection: ID?
     let pick: (ID) -> Void
+    /// Wider for long things such as folders.
+    var listWidth: CGFloat = 260
+    var placeholder = L.t("Search…", "搜索…")
+    /// An extra first row made from what's typed (a folder path).
+    var typed: ((String) -> DropdownOption<ID>?)?
     @ViewBuilder let label: () -> Label
     @State private var hovering = false
     @State private var open = false
@@ -257,12 +262,14 @@ struct Dropdown<ID: Hashable, Label: View>: View {
         guard let view = anchor.view, let window = view.window else { return }
         let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
         open = true
-        DropdownWindow.show(below: rect, content: DropdownList(options: options(), selection: selection) { id in
-            pick(id)
+        let list = DropdownList(options: options(), selection: selection, width: listWidth,
+                                placeholder: placeholder, typed: typed) { id in
+            // Close first: a choice may open the system picker, and the list
+            // must not hang over it.
             DropdownWindow.close()
-        }) {
-            open = false
+            pick(id)
         }
+        DropdownWindow.show(below: rect, from: window, content: list) { open = false }
     }
 }
 
@@ -281,11 +288,14 @@ struct AnchorView: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) { box.view = nsView }
 }
 
-/// The floating list: a borderless glass panel with no arrow, under the
-/// trigger, closing on a click elsewhere, Esc, or a choice.
+/// The floating list: a borderless glass panel with no arrow, its top just
+/// under the trigger, closing on a click elsewhere, Esc, or a choice. The
+/// window it came from keeps its place (the menu bar panel stays open) and
+/// gets the keyboard back afterwards.
 @MainActor
 enum DropdownWindow {
     private static var panel: NSPanel?
+    private static weak var parent: NSWindow?
     private static var monitors: [Any] = []
     private static var onClose: (() -> Void)?
     /// The trigger, in screen points: a click there is the trigger's own
@@ -294,17 +304,20 @@ enum DropdownWindow {
     /// Room around the list for its shadow (radius 8, offset 3, ×2 + slack).
     private static let margin: CGFloat = 28
 
-    static func show<V: View>(below anchor: NSRect, content: V, onClose: @escaping () -> Void) {
+    static func show<V: View>(below anchor: NSRect, from window: NSWindow, content: V, onClose: @escaping () -> Void) {
         close()
         anchorRect = anchor
+        parent = window
         let host = NSHostingView(rootView: content
+            .fixedSize()
             .glassPanel(cornerRadius: 16)
             // A soft shadow that follows the rounded shape; the window's own
             // shadow would outline its rectangle.
             .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
             // The shadow must fit inside the window: one cut off at the
             // window's edge shows up as a hard-edged rectangle.
-            .padding(Self.margin))
+            .padding(Self.margin)
+            .fixedSize())
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let p = DropdownPanel(contentRect: NSRect(origin: .zero, size: size), styleMask: [.borderless, .nonactivatingPanel],
@@ -314,13 +327,15 @@ enum DropdownWindow {
         p.hasShadow = false
         p.level = .popUpMenu
         p.contentView = host
-        // Right edges line up, just below the trigger, kept on screen.
-        var origin = NSPoint(x: anchor.maxX - size.width + margin, y: anchor.minY - size.height + margin - 6)
+        // Right edges line up, the list's top just below the trigger, kept on screen.
+        var top = NSPoint(x: anchor.maxX - size.width + margin, y: anchor.minY + margin - 6)
         if let screen = NSScreen.screens.first(where: { $0.frame.contains(anchor.origin) }) ?? NSScreen.main {
-            origin.x = min(max(origin.x, screen.visibleFrame.minX), screen.visibleFrame.maxX - size.width)
-            origin.y = max(origin.y, screen.visibleFrame.minY)
+            let visible = screen.visibleFrame
+            top.x = min(max(top.x, visible.minX), visible.maxX - size.width)
+            top.y = max(top.y, visible.minY + size.height)
         }
-        p.setFrameOrigin(origin)
+        p.setFrameTopLeftPoint(top)
+        PanelHold.begin()
         p.makeKeyAndOrderFront(nil)
         panel = p
         self.onClose = onClose
@@ -329,7 +344,8 @@ enum DropdownWindow {
             return e
         } as Any)
         monitors.append(NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { _ in
-            Task { @MainActor in close() }
+            // Another app: the window we came from loses too, so don't hand it the keyboard.
+            Task { @MainActor in close(refocus: false) }
         } as Any)
         monitors.append(NSEvent.addLocalMonitorForEvents(matching: .keyDown) { e in
             if e.keyCode == 53 { close(); return nil } // Esc
@@ -337,11 +353,15 @@ enum DropdownWindow {
         } as Any)
     }
 
-    static func close() {
+    static func close(refocus: Bool = true) {
+        guard let open = panel else { return }
         monitors.forEach { NSEvent.removeMonitor($0) }
         monitors.removeAll()
-        panel?.orderOut(nil)
+        open.orderOut(nil)
         panel = nil
+        if refocus, let parent, parent.isVisible { parent.makeKeyAndOrderFront(nil) }
+        parent = nil
+        PanelHold.end()
         let done = onClose
         onClose = nil
         done?()
@@ -352,68 +372,64 @@ enum DropdownWindow {
 struct DropdownOption<ID: Hashable>: Identifiable {
     let id: ID
     let title: String
+    /// Quieter, after the title: where a folder lives.
+    var subtitle: String?
     var image: NSImage?
     var symbol: String?
     var badge: String?
 }
 
-/// The list a dropdown opens: a search field, then roomy rows with icons;
-/// the chosen one sits on a grey block (Raycast's look, no tick).
+/// The list a dropdown opens: a search field, then roomy one-line rows with
+/// icons; the chosen one sits on a grey block (Raycast's look, no tick).
+/// ↑↓ move, Return picks.
 struct DropdownList<ID: Hashable>: View {
     let options: [DropdownOption<ID>]
     let selection: ID?
+    var width: CGFloat = 260
+    var placeholder = L.t("Search…", "搜索…")
+    var typed: ((String) -> DropdownOption<ID>?)?
     let pick: (ID) -> Void
     @State private var hovered: ID?
-    @State private var query = ""
+    @State private var query: String
     @FocusState private var searching: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    init(options: [DropdownOption<ID>], selection: ID?, width: CGFloat = 260, placeholder: String = L.t("Search…", "搜索…"),
+         typed: ((String) -> DropdownOption<ID>?)? = nil, initialQuery: String = "", pick: @escaping (ID) -> Void) {
+        self.options = options
+        self.selection = selection
+        self.width = width
+        self.placeholder = placeholder
+        self.typed = typed
+        self.pick = pick
+        _query = State(initialValue: initialQuery)
+    }
 
     private var shown: [DropdownOption<ID>] {
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
-        return q.isEmpty ? options : options.filter { $0.title.lowercased().contains(q) }
+        if let extra = typed?(query) { return [extra] }
+        guard !q.isEmpty else { return options }
+        return options.filter { ($0.title + " " + ($0.subtitle ?? "")).lowercased().contains(q) }
     }
+
+    /// The row Return picks: the one under the keyboard, else the first.
+    private var active: ID? { hovered ?? shown.first?.id }
 
     var body: some View {
         VStack(spacing: 0) {
-            TextField(L.t("Search…", "搜索…"), text: $query)
+            TextField(placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 14))
                 .focused($searching)
-                .onSubmit { if let first = shown.first { pick(first.id) } }
+                .onSubmit { if let active { pick(active) } }
+                .onKeyPress(.downArrow) { move(1); return .handled }
+                .onKeyPress(.upArrow) { move(-1); return .handled }
+                .onChange(of: query) { _, _ in hovered = nil }
                 .padding(.horizontal, 16)
                 .frame(height: 44)
             Rectangle().fill(Color.primary.opacity(0.08)).frame(height: 1)
             VStack(spacing: 2) {
-                ForEach(shown) { option in
-                    Button { pick(option.id) } label: {
-                        HStack(spacing: 12) {
-                            if let image = option.image {
-                                Image(nsImage: image).resizable().interpolation(.high).frame(width: 20, height: 20)
-                            } else if let symbol = option.symbol {
-                                Image(systemName: symbol).font(.system(size: 14)).frame(width: 20)
-                            }
-                            Text(option.title).font(.system(size: 14))
-                            if let badge = option.badge {
-                                Text(badge)
-                                    .font(.system(size: 10, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                                    .padding(.horizontal, 6)
-                                    .frame(height: 17)
-                                    .background(Capsule().fill(Color.primary.opacity(0.07)))
-                            }
-                            Spacer(minLength: 24)
-                        }
-                        .padding(.horizontal, 12)
-                        .frame(height: 40)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.primary.opacity(option.id == selection ? 0.10 : (hovered == option.id ? 0.05 : 0)))
-                        )
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(PressStyle())
-                    .focusable(false)
-                    .onHover { inside in hovered = inside ? option.id : (hovered == option.id ? nil : hovered) }
-                }
+                ForEach(shown) { option in row(option) }
                 if shown.isEmpty {
                     Text(L.t("Nothing matches", "没有对得上的"))
                         .font(.system(size: 13))
@@ -423,9 +439,62 @@ struct DropdownList<ID: Hashable>: View {
             }
             .padding(8)
         }
-        .frame(width: 260)
+        .frame(width: width)
+        // Near-solid, like the panel: it often opens over a form, and the
+        // form's buttons showing through read as part of the list.
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Theme.surface(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline(scheme)))
         .focusEffectDisabled()
         .onAppear { searching = true }
+    }
+
+    private func row(_ option: DropdownOption<ID>) -> some View {
+        Button { pick(option.id) } label: {
+            HStack(spacing: 10) {
+                if let image = option.image {
+                    Image(nsImage: image).resizable().interpolation(.high).frame(width: 20, height: 20)
+                } else if let symbol = option.symbol {
+                    Image(systemName: symbol).font(.system(size: 13)).foregroundStyle(.secondary).frame(width: 20)
+                }
+                Text(option.title).font(.system(size: 14)).foregroundStyle(.primary).lineLimit(1).layoutPriority(1)
+                if let subtitle = option.subtitle {
+                    Text(subtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+                Spacer(minLength: 8)
+                if let badge = option.badge {
+                    Text(badge)
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .fixedSize()
+                        .padding(.horizontal, 6)
+                        .frame(height: 17)
+                        .background(Capsule().fill(Color.primary.opacity(0.07)))
+                }
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 38)
+            .background(
+                RoundedRectangle(cornerRadius: 10)
+                    .fill(Color.primary.opacity(option.id == selection ? 0.10 : (hovered == option.id ? 0.05 : 0)))
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in hovered = inside ? option.id : (hovered == option.id ? nil : hovered) }
+        .help(option.subtitle.map { "\($0)/\(option.title)" } ?? "")
+    }
+
+    private func move(_ step: Int) {
+        let ids = shown.map(\.id)
+        guard !ids.isEmpty else { return }
+        let at = active.flatMap { ids.firstIndex(of: $0) } ?? -1
+        hovered = ids[max(0, min(ids.count - 1, at + step))]
     }
 }
 

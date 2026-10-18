@@ -415,6 +415,11 @@ struct FilledField: View {
                     DispatchQueue.main.async { NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil) }
                 }
             }
+            // The panel getting the keyboard back (after a dropdown or the
+            // folder picker) hands it to the form's field again.
+            .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+                if autofocus, note.object is KeyPanel { focused = true }
+            }
     }
 }
 
@@ -568,12 +573,9 @@ struct ProgramRow: View {
     }
 
     private func choose() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = true
-        panel.canChooseDirectories = false
-        panel.allowsMultipleSelection = false
-        panel.message = L.t("Choose the cc-moss program", "选择 cc-moss 程序")
-        if panel.runModal() == .OK, let url = panel.url { set(url.path) }
+        FilePicker.choose(.program, from: NSApp.keyWindow, startingAt: model.cliPath.map { ($0 as NSString).deletingLastPathComponent },
+                          message: L.t("Choose the cc-moss program", "选择 cc-moss 程序"),
+                          prompt: L.t("Choose", "选择")) { set($0) }
     }
 }
 

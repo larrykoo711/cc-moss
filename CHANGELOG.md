@@ -14,6 +14,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Told when an update takes Accessibility away.** The panel says "Allow Accessibility again" at the top, with Allow,
   instead of the shortcut going quiet without a word.
 
+### Fixed
+
+- **Choosing a folder for a new session.** The folder list opens right under its button and the panel stays open
+  (it used to vanish, and the list could appear far away). Each folder reads as its name and where it lives, on one
+  line; type a path such as `~/code` to use any folder; ↑↓ and Return work. "Another folder…" opens the system picker
+  above the panel, and you come back to the form as you left it.
+- Every "Choose…" in Settings and the welcome opens as a sheet on its own window instead of a separate dialog in the
+  middle of the screen.
+
 ## [0.2.1] - 2026-10-17
 
 Tabs instead of piles of windows, and every shortcut on one settings page.

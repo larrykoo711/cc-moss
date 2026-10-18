@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
-///          [--access-lost]
+///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|about [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
@@ -87,6 +87,21 @@ enum Render {
             case "denied": model.openProblem = OpenProblem(kind: .denied, terminalName: "Ghostty", command: command)
             case "failed": model.openProblem = OpenProblem(kind: .failed("Connection is invalid (-609)"), terminalName: "Ghostty", command: command)
             default: break
+            }
+            // `--folders [query]`: the new-session form's folder list, open.
+            if let i = args.firstIndex(of: "--folders") {
+                let query = i + 1 < args.count && !args[i + 1].hasPrefix("--") ? args[i + 1] : ""
+                let workspace = model.sessions.first?.cwd
+                var options = NewSession.recentProjects(model.sessions).map { dir in
+                    dir == workspace ? FolderChoice.option(dir, symbol: "star", badge: L.t("Workspace", "工作区"))
+                                     : FolderChoice.option(dir, symbol: Icons.project)
+                }
+                options.append(DropdownOption(id: "", title: L.t("Another folder…", "其他文件夹…"), symbol: Icons.chooseFolder))
+                let list = DropdownList(options: options, selection: workspace, width: 380,
+                                        placeholder: L.t("Search, or type a path…", "搜索，或输入路径…"),
+                                        typed: { FolderChoice.typedOption($0) }, initialQuery: query) { _ in }
+                drawView(list.fixedSize().glassPanel(cornerRadius: 16).padding(20), dark: args.contains("--dark"), out: out)
+                exit(0)
             }
             if let tab = value("--settings") {
                 // `--aliases <alias ls --json file>` for the shortcuts page.
@@ -327,6 +342,21 @@ enum Render {
             host.layoutSubtreeIfNeeded()
             RunLoop.main.run(until: Date().addingTimeInterval(0.3))
         }
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
+    }
+
+    @MainActor private static func drawView<V: View>(_ view: V, dark: Bool, out: String) {
+        let host = NSHostingView(rootView: view
+            .background(dark ? Color(red: 0.16, green: 0.22, blue: 0.30) : Color(red: 0.55, green: 0.66, blue: 0.75))
+            .environment(\.colorScheme, dark ? .dark : .light))
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))

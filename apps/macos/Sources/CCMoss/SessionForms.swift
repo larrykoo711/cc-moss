@@ -39,17 +39,12 @@ extension AppModel {
         if !newDraft.nameEdited { newDraft.name = NewSession.defaultName(for: dir) }
     }
 
-    /// "Choose…": the system folder picker, starting at the current folder.
-    func chooseDirectory() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        panel.canCreateDirectories = true
-        panel.directoryURL = URL(fileURLWithPath: newDraft.directory)
-        panel.message = L.t("Where should the new session work?", "新会话在哪个目录里干活？")
-        panel.prompt = L.t("Choose", "选择")
-        if panel.runModal() == .OK, let url = panel.url { pickDirectory(url.path) }
+    /// "Another folder…": the system folder picker over the panel, starting
+    /// at the current folder; the panel and the form stay as they were.
+    func chooseDirectory(from window: NSWindow?) {
+        FilePicker.choose(.folder, from: window, startingAt: newDraft.directory,
+                          message: L.t("Where should the new session work?", "新会话在哪个目录里干活？"),
+                          prompt: L.t("Choose", "选择")) { [weak self] path in self?.pickDirectory(path) }
     }
 
     /// Create (or bring back) the session in the form. Returns the session
@@ -255,25 +250,33 @@ struct NewSessionForm: View {
                 FormRow(title: L.t("Folder", "目录")) {
                     Dropdown(options: folderOptions, selection: draft.directory, pick: { id in
                         if id == Self.chooseID {
-                            model.chooseDirectory()
+                            model.chooseDirectory(from: NSApp.keyWindow)
                         } else {
                             model.pickDirectory(id)
                         }
-                    }) {
+                    }, listWidth: 380, placeholder: L.t("Search, or type a path…", "搜索，或输入路径…"),
+                       typed: { FolderChoice.typedOption($0) }) {
+                        let label = FolderChoice.label(draft.directory, home: NSHomeDirectory())
                         HStack(spacing: 6) {
                             Image(systemName: Icons.project).font(.system(size: 11)).foregroundStyle(.secondary)
-                            Text(Grouping.tilde(draft.directory, home: NSHomeDirectory()))
-                                .truncationMode(.head)
-                                .frame(maxWidth: 230, alignment: .leading)
+                            Text(label.name).layoutPriority(1)
+                            if let parent = label.parent {
+                                Text(parent).foregroundStyle(.secondary).truncationMode(.middle)
+                            }
                         }
+                        .frame(maxWidth: 240, alignment: .leading)
                     }
                     .tip(draft.directory)
                     Spacer(minLength: 0)
                 }
                 FormRow(title: L.t("Name", "名字"), divider: false) {
                     FilledField(placeholder: L.t("e.g. login-page", "比如 登录页"),
+                                // Only a real change counts as editing: the field writes its
+                                // value back when it takes the keyboard again.
                                 text: Binding(get: { model.newDraft.name },
-                                              set: { model.newDraft.name = $0; model.newDraft.nameEdited = true
+                                              set: { new in
+                                                  guard new != model.newDraft.name else { return }
+                                                  model.newDraft.name = new; model.newDraft.nameEdited = true
                                                   model.newDraft.restoring = nil; model.newDraft.error = nil }),
                                 autofocus: true,
                                 onSubmit: submit)
@@ -293,11 +296,12 @@ struct NewSessionForm: View {
         var folders = NewSession.recentProjects(model.sessions)
         if let workspace { folders = [workspace] + folders.filter { $0 != workspace } }
         if !draft.directory.isEmpty, !folders.contains(draft.directory) { folders.insert(draft.directory, at: 0) }
-        let home = NSHomeDirectory()
         var options = folders.map { dir in
-            DropdownOption(id: dir, title: Grouping.tilde(dir, home: home), symbol: dir == workspace ? "star" : Icons.project)
+            dir == workspace
+                ? FolderChoice.option(dir, symbol: "star", badge: L.t("Workspace", "工作区"))
+                : FolderChoice.option(dir, symbol: Icons.project)
         }
-        options.append(DropdownOption(id: Self.chooseID, title: L.t("Choose…", "选择…"), symbol: Icons.chooseFolder))
+        options.append(DropdownOption(id: Self.chooseID, title: L.t("Another folder…", "其他文件夹…"), symbol: Icons.chooseFolder))
         return options
     }
 
