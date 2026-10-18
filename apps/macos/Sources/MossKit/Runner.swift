@@ -57,34 +57,64 @@ public struct ProcessRunner: CommandRunner {
         // Read both pipes while the process runs: a full pipe would block it.
         let outData = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }
         let errData = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-        let exited = AsyncStream<Void> { continuation in
-            process.terminationHandler = { _ in continuation.yield(); continuation.finish() }
-        }
+        let exit = Exit()
+        process.terminationHandler = { _ in exit.fire() }
         do {
             try process.run()
         } catch {
             throw RunError.launchFailed("\(error.localizedDescription)")
         }
-        let finished = await withTaskGroup(of: Bool.self) { group in
-            group.addTask { for await _ in exited { return true }; return true }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
-                return false
-            }
-            let first = await group.next() ?? false
-            group.cancelAll()
-            return first
-        }
-        if !finished {
-            process.terminate()
-            _ = await outData.value
-            _ = await errData.value
-            throw RunError.timedOut(seconds: timeout)
-        }
+        // Too slow, or nobody wants the answer any more: stop the command, then
+        // still wait for it to end. Asking a running process for its exit
+        // status raises an exception that takes the whole app down.
+        let child = Child(process: process)
+        let timer = DispatchWorkItem { exit.timeOut(); child.stop() }
+        DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
+        await withTaskCancellationHandler { await exit.wait() } onCancel: { child.stop() }
+        timer.cancel()
         let stdout = await outData.value
         let stderr = String(decoding: await errData.value, as: UTF8.self)
+        if exit.timedOut { throw RunError.timedOut(seconds: timeout) }
+        try Task.checkCancellation()
         return CommandResult(status: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
+}
+
+/// The command's end, told once from whichever thread sees it.
+private final class Exit: @unchecked Sendable {
+    private let lock = NSLock()
+    private var done = false
+    private var timedOutFlag = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    var timedOut: Bool { lock.withLock { timedOutFlag } }
+
+    func timeOut() { lock.withLock { if !done { timedOutFlag = true } } }
+
+    func fire() {
+        let w: CheckedContinuation<Void, Never>? = lock.withLock {
+            done = true
+            defer { waiter = nil }
+            return waiter
+        }
+        w?.resume()
+    }
+
+    func wait() async {
+        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
+            let ended = lock.withLock {
+                if !done { waiter = c }
+                return done
+            }
+            if ended { c.resume() }
+        }
+    }
+}
+
+/// The running process, handed to the timer and the cancel handler.
+private struct Child: @unchecked Sendable {
+    let process: Process
+    func stop() { if process.isRunning { process.terminate() } }
 }
 
 /// Answers every command with the same output. Used for demo screenshots

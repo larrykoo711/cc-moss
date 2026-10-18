@@ -27,6 +27,18 @@ import Testing
         }
         #expect(Date().timeIntervalSince(started) < 5)
     }
+
+    /// Leaving a settings page cancels its load while the command still runs:
+    /// the child is stopped and the call ends with a cancellation, rather than
+    /// asking a running process for its exit status (which aborts the app).
+    @Test func cancellingStopsTheCommand() async {
+        let started = Date()
+        let run = Task { try await ProcessRunner().run("/bin/sleep", ["30"], timeout: 20) }
+        try? await Task.sleep(nanoseconds: 200_000_000)
+        run.cancel()
+        await #expect(throws: CancellationError.self) { _ = try await run.value }
+        #expect(Date().timeIntervalSince(started) < 5)
+    }
 }
 
 /// Answers `ls --json` with canned output.
