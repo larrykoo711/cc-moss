@@ -55,10 +55,13 @@ public struct ProcessRunner: CommandRunner {
         process.standardInput = FileHandle.nullDevice
 
         // Read both pipes while the process runs: a full pipe would block it.
-        let outData = Task.detached { out.fileHandleForReading.readDataToEndOfFile() }
-        let errData = Task.detached { err.fileHandleForReading.readDataToEndOfFile() }
-        let exit = Exit()
-        process.terminationHandler = { _ in exit.fire() }
+        // On threads of their own: a blocking read on Swift's few shared
+        // threads starves everything else, the timeout included (CI has three).
+        let outData = Once<Data>(), errData = Once<Data>()
+        Thread.detachNewThread { outData.fire(out.fileHandleForReading.readDataToEndOfFile()) }
+        Thread.detachNewThread { errData.fire(err.fileHandleForReading.readDataToEndOfFile()) }
+        let exited = Once<Void>(), timedOut = Once<Void>()
+        process.terminationHandler = { _ in exited.fire(()) }
         do {
             try process.run()
         } catch {
@@ -68,45 +71,47 @@ public struct ProcessRunner: CommandRunner {
         // still wait for it to end. Asking a running process for its exit
         // status raises an exception that takes the whole app down.
         let child = Child(process: process)
-        let timer = DispatchWorkItem { exit.timeOut(); child.stop() }
+        let timer = DispatchWorkItem {
+            if !exited.isSet { timedOut.fire(()); child.stop() }
+        }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: timer)
-        await withTaskCancellationHandler { await exit.wait() } onCancel: { child.stop() }
+        await withTaskCancellationHandler { await exited.value() } onCancel: { child.stop() }
         timer.cancel()
-        let stdout = await outData.value
-        let stderr = String(decoding: await errData.value, as: UTF8.self)
-        if exit.timedOut { throw RunError.timedOut(seconds: timeout) }
+        let stdout = await outData.value()
+        let stderr = String(decoding: await errData.value(), as: UTF8.self)
+        if timedOut.isSet { throw RunError.timedOut(seconds: timeout) }
         try Task.checkCancellation()
         return CommandResult(status: process.terminationStatus, stdout: stdout, stderr: stderr)
     }
 }
 
-/// The command's end, told once from whichever thread sees it.
-private final class Exit: @unchecked Sendable {
+/// A value that arrives once, from whichever thread has it; any number of
+/// tasks can wait for it.
+private final class Once<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
-    private var done = false
-    private var timedOutFlag = false
-    private var waiter: CheckedContinuation<Void, Never>?
+    private var stored: Value?
+    private var waiters: [CheckedContinuation<Value, Never>] = []
 
-    var timedOut: Bool { lock.withLock { timedOutFlag } }
+    var isSet: Bool { lock.withLock { stored != nil } }
 
-    func timeOut() { lock.withLock { if !done { timedOutFlag = true } } }
-
-    func fire() {
-        let w: CheckedContinuation<Void, Never>? = lock.withLock {
-            done = true
-            defer { waiter = nil }
-            return waiter
+    /// The first value wins.
+    func fire(_ value: Value) {
+        let waiting: [CheckedContinuation<Value, Never>] = lock.withLock {
+            guard stored == nil else { return [] }
+            stored = value
+            defer { waiters = [] }
+            return waiters
         }
-        w?.resume()
+        waiting.forEach { $0.resume(returning: value) }
     }
 
-    func wait() async {
-        await withCheckedContinuation { (c: CheckedContinuation<Void, Never>) in
-            let ended = lock.withLock {
-                if !done { waiter = c }
-                return done
+    func value() async -> Value {
+        await withCheckedContinuation { (c: CheckedContinuation<Value, Never>) in
+            let ready: Value? = lock.withLock {
+                if stored == nil { waiters.append(c) }
+                return stored
             }
-            if ended { c.resume() }
+            if let ready { c.resume(returning: ready) }
         }
     }
 }
