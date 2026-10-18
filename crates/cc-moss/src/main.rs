@@ -256,6 +256,9 @@ enum AskCommand {
         /// Who is answering (for the app, the daemon and Slack).
         #[arg(long, value_enum, default_value = "cli", hide = true)]
         by: AnswerBy,
+        /// Say how it went as one line of JSON (schema 1): `result` is answered, too-late or not-waiting.
+        #[arg(long)]
+        json: bool,
     },
     /// Say you are here to take questions, so sessions wait for you a while (90 seconds per call).
     Take {
@@ -563,6 +566,7 @@ fn main() -> std::process::ExitCode {
                 deny,
                 message,
                 by,
+                json,
             } => cmd::ask::Action::Answer {
                 id,
                 choices: choice,
@@ -571,6 +575,7 @@ fn main() -> std::process::ExitCode {
                 deny,
                 message,
                 by: by.into(),
+                json,
             },
             AskCommand::Take { name } => cmd::ask::Action::Take { name },
         })),

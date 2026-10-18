@@ -1,0 +1,158 @@
+{
+  "schema": 1,
+  "asks": [
+    {
+      "schema": 1,
+      "id": "3f2a9c4e81d07b55",
+      "kind": "question",
+      "session_id": "01b0c1d2e-0000-4000-8000-000000000000",
+      "prompt_id": "p-3f2a",
+      "session_name": "接口评审",
+      "cwd": "/Users/demo/projects/acme-web",
+      "created_at": "2026-10-16T10:01:00Z",
+      "expires_at": "2026-10-16T10:11:00Z",
+      "questions": [
+        {
+          "question": "新接口的版本号放在哪里？",
+          "header": "版本号",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "放在路径里",
+              "description": "比如 /v2/orders，最直观"
+            },
+            {
+              "label": "放在请求头里",
+              "description": "Accept-Version: 2，路径不变"
+            },
+            {
+              "label": "先不加版本号",
+              "description": "等真有第二版再说"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "schema": 1,
+      "id": "7b1e44d0a9c35f12",
+      "kind": "question",
+      "session_id": "01d0c1d2e-0000-4000-8000-000000000000",
+      "prompt_id": "p-7b1e",
+      "session_name": "发版说明",
+      "cwd": "/Users/demo/projects/acme-web",
+      "created_at": "2026-10-16T10:02:00Z",
+      "expires_at": "2026-10-16T10:12:00Z",
+      "questions": [
+        {
+          "question": "这次发版说明要写进哪些内容？",
+          "header": "内容",
+          "multiSelect": true,
+          "options": [
+            {
+              "label": "新功能",
+              "description": "桌面答题、Moss"
+            },
+            {
+              "label": "修复的问题",
+              "description": "列出修好的 6 个问题"
+            },
+            {
+              "label": "升级注意事项",
+              "description": "需要重新运行 cc-moss install"
+            },
+            {
+              "label": "致谢",
+              "description": "感谢提 issue 的人"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "schema": 1,
+      "id": "c40d8e2f6b1a9375",
+      "kind": "question",
+      "session_id": "01a0c1d2e-0000-4000-8000-000000000000",
+      "prompt_id": "p-c40d",
+      "session_name": "登录页",
+      "cwd": "/Users/demo/projects/acme-web",
+      "created_at": "2026-10-16T10:03:00Z",
+      "expires_at": "2026-10-16T10:13:00Z",
+      "questions": [
+        {
+          "question": "登录失败时，提示语用哪一句？",
+          "header": "提示语",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "用户名或密码不对"
+            },
+            {
+              "label": "登录失败，请重试"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "schema": 1,
+      "id": "e9a51b7c3d2f8064",
+      "kind": "permission",
+      "session_id": "01f0c1d2e-0000-4000-8000-000000000000",
+      "prompt_id": "p-e9a5",
+      "session_name": "草稿",
+      "cwd": "/Users/demo/projects/acme-web",
+      "created_at": "2026-10-16T10:04:00Z",
+      "expires_at": "2026-10-16T10:14:00Z",
+      "tool": {
+        "name": "Bash",
+        "preview": "rm -rf build/ && pnpm build",
+        "input_hash": "5c1f0a9d2e7b3c48"
+      }
+    },
+    {
+      "schema": 1,
+      "id": "52c7e0b9f4a1d683",
+      "kind": "question",
+      "session_id": "9d0c1d2e-0000-4000-8000-00000000abcd",
+      "prompt_id": "p-52c7",
+      "session_name": "数据迁移",
+      "cwd": "/Users/demo/projects/acme-web",
+      "created_at": "2026-10-16T10:05:00Z",
+      "expires_at": "2026-10-16T10:15:00Z",
+      "questions": [
+        {
+          "question": "旧表怎么处理？",
+          "header": "旧表",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "保留 30 天",
+              "description": "确认没问题再删"
+            },
+            {
+              "label": "直接删掉",
+              "description": "省空间"
+            }
+          ]
+        },
+        {
+          "question": "迁移放在什么时候跑？",
+          "header": "时间",
+          "multiSelect": false,
+          "options": [
+            {
+              "label": "今晚低峰时",
+              "description": "22:00 以后"
+            },
+            {
+              "label": "现在就跑",
+              "description": "会有几分钟变慢"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

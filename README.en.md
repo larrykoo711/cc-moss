@@ -55,6 +55,8 @@ opening a terminal.
   a quick message to a session live here too.
 - **It speaks up only when it matters.** A session needs your OK, or one just stopped? You'll hear about it, from
   Notification Center or from Mo, never both.
+- **Answer without the terminal.** A session asks you to pick an option, or wants your OK? Click your answer in the
+  panel or in Mo's bubble, and the session carries on.
 - **Mo.** A little pebble on your desktop whose face tells you how your sessions are doing. Pick quiet, everyday or
   active, and if you like, it can chime or read the message out loud.
 - **Calm after a restart.** Your Mac rebooted? The app tells you "3 sessions stopped" straight away, and one click

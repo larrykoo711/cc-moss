@@ -264,6 +264,7 @@ final class PetController {
     private func observeModel(_ generation: Int) {
         withObservationTracking {
             _ = model.sessions
+            _ = model.askDesk.cards.map(\.id)
         } onChange: { [weak self] in
             Task { @MainActor in
                 guard let self, self.watching == generation, self.window != nil else { return }
@@ -308,7 +309,8 @@ final class PetController {
         director.doNotDisturb = dnd != nil
         let sessions = model.sessions
         let clock = Date()
-        director.keep { Self.stillTrue($0, in: sessions, now: clock) }
+        let cards = Set(model.askDesk.cards.map(\.id))
+        director.keep { Self.stillTrue($0, in: sessions, cards: cards, now: clock) }
         if let dnd { after("dnd", dnd.timeIntervalSinceNow) { $0.update() } } else { cancel("dnd") }
         show()
     }
@@ -423,8 +425,12 @@ final class PetController {
         case let .puff(id, text):
             bubbles.puff(text, id: id, anchor: anchor, parent: window, reduceMotion: reduceMotion)
         case let .box(message):
-            bubbles.box(message, text: message.text(names: names(message)), anchor: anchor, parent: window,
-                        reduceMotion: reduceMotion,
+            let askId = askId(for: message)
+            let detail = askId.map { AnyView(AskBubbleDetail(model: model, askId: $0)) }
+            let words = message.text(names: names(message))
+            let text = detail == nil ? words : words.answeringHere()
+            bubbles.box(message, text: text, detail: detail, detailKey: askId ?? "",
+                        anchor: anchor, parent: window, reduceMotion: reduceMotion,
                         primary: { [weak self] in self?.perform(message) },
                         later: { [weak self] in self?.later() })
         }
@@ -451,8 +457,14 @@ final class PetController {
     /// notification's (A23). One session: open it, or show it in the panel
     /// to bring it back. Several: the panel, on them.
     private func perform(_ message: PetMessage) {
+        let ask = askId(for: message)
         director.dismiss()
         show()
+        if let ask {
+            model.focusAsk(ask)
+            showPanel()
+            return
+        }
         if message.alerts.count == 1, let slot = message.slots.first {
             AlertCenter.perform(message.action, slot: slot, model: model, showPanel: showPanel)
             return
@@ -465,6 +477,14 @@ final class PetController {
         }
         if let first = message.slots.first, model.sessions.contains(where: { $0.id == first }) { model.selectedID = first }
         showPanel()
+    }
+
+    /// The question a one-session "needs you" message can answer right in
+    /// the bubble: the alert's own, or the one that session has open.
+    private func askId(for message: PetMessage) -> String? {
+        guard message.kind == .needsYou, message.alerts.count == 1, let alert = message.alerts.first else { return nil }
+        if let id = alert.askId, model.askDesk.card(id) != nil { return id }
+        return model.openAsk(forSlot: alert.slotId)?.id
     }
 
     /// "Later", "Not now", "Got it", or the close button.
@@ -484,7 +504,10 @@ final class PetController {
 
     /// Whether an alert still says something true. An alert can arrive a
     /// moment before the snapshot that shows it, so a fresh one is kept.
-    static func stillTrue(_ alert: SessionAlert, in sessions: [Session], now: Date) -> Bool {
+    static func stillTrue(_ alert: SessionAlert, in sessions: [Session], cards: Set<String> = [], now: Date) -> Bool {
+        // A question's message lasts as long as its card: until it's
+        // answered (here or in the terminal) and the card has said how it went.
+        if let askId = alert.askId { return cards.contains(askId) }
         if now.timeIntervalSince(alert.at) < 5 { return true }
         guard let session = sessions.first(where: { $0.id == alert.slotId }) else { return false }
         switch alert.kind {

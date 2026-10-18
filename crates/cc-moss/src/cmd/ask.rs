@@ -26,6 +26,7 @@ pub enum Action {
         deny: bool,
         message: Option<String>,
         by: By,
+        json: bool,
     },
     Take {
         name: String,
@@ -44,6 +45,7 @@ pub fn run(action: Action) -> Result<()> {
             deny,
             message,
             by,
+            json,
         } => {
             let reply = Reply {
                 choices,
@@ -52,7 +54,7 @@ pub fn run(action: Action) -> Result<()> {
                 deny,
                 message,
             };
-            answer(&store, &id, &reply, by)
+            answer(&store, &id, &reply, by, json)
         }
         Action::Take { name } => take(&store, &name),
     }
@@ -203,9 +205,30 @@ const PERMISSION_ID_MIN: usize = 12;
 /// How long `ask answer` waits to hear whether the session took the answer.
 const CONFIRM: Duration = Duration::from_secs(2);
 
-fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
+/// `ask answer --json`: one line saying how it went (schema 1, T1.4).
+/// `result` is `answered`, `too-late` or `not-waiting`; `session` is the
+/// session's name, or the start of its id.
+fn print_result(result: &str, who: &str) {
+    println!(
+        "{}",
+        json!({ "schema": JSON_SCHEMA, "result": result, "session": who })
+    );
+}
+
+fn answer(store: &Store, id: &str, reply: &Reply, by: By, as_json: bool) -> Result<()> {
     let now = now_ms();
-    let ask = store.find_open(id, now).map_err(|e| answer_error(&e, id))?;
+    let ask = match store.find_open(id, now) {
+        Ok(ask) => ask,
+        Err(e) => {
+            // Answered or closed already: as late as an answer can be.
+            if as_json && matches!(e, AnswerError::Closed | AnswerError::AlreadyAnswered) {
+                if let Some(ask) = store.get(id) {
+                    print_result("too-late", &who_of(&ask));
+                }
+            }
+            return Err(answer_error(&e, id));
+        }
+    };
     if ask.kind == Kind::Permission && id != ask.id && id.len() < PERMISSION_ID_MIN {
         bail!(tr!(
             format!(
@@ -219,18 +242,32 @@ fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
         ));
     }
     let answer = build(&ask, reply, by)?;
-    store
-        .answer(&ask.id, &answer)
-        .map_err(|e| answer_error(&e, id))?;
-    let who = ask
-        .session_name
-        .clone()
-        .unwrap_or_else(|| ask.session_id.chars().take(8).collect());
-    match outcome(store, &ask.id) {
+    if let Err(e) = store.answer(&ask.id, &answer) {
+        if as_json && matches!(e, AnswerError::Closed | AnswerError::AlreadyAnswered) {
+            print_result("too-late", &who_of(&ask));
+        }
+        return Err(answer_error(&e, id));
+    }
+    let who = who_of(&ask);
+    let reason = outcome(store, &ask.id);
+    if as_json {
+        match reason {
+            Some(Reason::Answered) => print_result("answered", &who),
+            None => print_result("not-waiting", &who),
+            Some(Reason::Timeout | Reason::AnsweredInSession | Reason::SessionEnded) => {
+                print_result("too-late", &who)
+            }
+            Some(Reason::InvalidAnswer) => {}
+        }
+    }
+    match reason {
         Some(Reason::Answered) => {
-            println!("{}", done_line(&ask, &answer, &who));
+            if !as_json {
+                println!("{}", done_line(&ask, &answer, &who));
+            }
             Ok(())
         }
+        None if as_json => Ok(()),
         None => {
             println!(
                 "{}",
@@ -256,6 +293,12 @@ fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
             format!("晚了一步：{who} 已经往下走了")
         )),
     }
+}
+
+fn who_of(ask: &Ask) -> String {
+    ask.session_name
+        .clone()
+        .unwrap_or_else(|| ask.session_id.chars().take(8).collect())
 }
 
 /// Why question `id` closed, once the hook waiting on it has looked; `None`

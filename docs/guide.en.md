@@ -126,7 +126,7 @@ In the picker:
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
-| `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT \| --allow \| --deny [--message WHY])` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
+| `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT \| --allow \| --deny [--message WHY]) [--json]` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
 | `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
@@ -166,8 +166,8 @@ what cc-moss wrote.
 ### Answering a session's questions from elsewhere
 
 When a session asks you a multiple-choice question (Claude's AskUserQuestion), or a `--safe` session wants your OK
-for something, cc-moss writes the whole question down so it can be answered from somewhere else: the command line
-today, and later the menubar app, Slack and Mo. Whoever answers first wins. The dialog in the terminal stays up the
+for something, cc-moss writes the whole question down so it can be answered from somewhere else: the menubar app's
+panel, Mo or the command line, and later Slack. Whoever answers first wins. The dialog in the terminal stays up the
 whole time, so you can still answer there.
 
 ```sh
@@ -181,7 +181,8 @@ cc-moss ask answer 9c8d0e1f2a3b --allow   # a permission request: allow it; --de
 ```
 
 - **On by default, but it does nothing unless someone is taking questions.** A session only waits for an answer from
-  elsewhere if someone ran `ask take` in the last 90 seconds (the app and the daemon will check in on their own).
+  elsewhere if someone ran `ask take` in the last 90 seconds (the menubar app checks in every minute while it's open;
+  the daemon will too, later).
   Otherwise it asks you right away, just as before.
 - **It waits up to 5 minutes** (`[ask] wait_secs`, at most 590 seconds). You can answer in the terminal meanwhile; if
   nobody answers in time, nothing happens and the question is still waiting in the terminal.
@@ -191,8 +192,34 @@ cc-moss ask answer 9c8d0e1f2a3b --allow   # a permission request: allow it; --de
   a session up.
 - **It tells you what happened.** `ask answer` waits a second or two to see whether the session took the answer:
   "Answered" if it did (for a permission request, it also says which session, tool and command), "too late" if the
-  session had already moved on, and "saved" if the session isn't waiting on it right now.
-- To turn it off: `cc-moss config set ask.enabled false`.
+  session had already moved on, and "saved" if the session isn't waiting on it right now. With `--json` it prints one
+  line instead, `{"schema":1,"result":"answered"|"too-late"|"not-waiting","session":"NAME"}`, with the same exit status
+  (non-zero when too late).
+- To turn it off: switch off "Answer questions here" in Settings › Notifications, or run
+  `cc-moss config set ask.enabled false`.
+
+**Answering from the desktop.** While the menubar app is open, a session waiting on an answer puts "N questions are
+waiting for you" at the very top of the panel, above Moss's row, with a card for each. A card says which session is
+asking, then shows the whole question, with the options exactly as the session wrote them.
+
+- **One choice**: click an option and that's your answer.
+- **Several choices**: tick the ones you want, then click Done.
+- **Several questions at once**: answer them one at a time, check your answers, then click Send. Back takes you to
+  the one before.
+- **Your own words**: with a single question, click "Write my own…", type, and press Return.
+- **A permission request** (`--safe` sessions): the card says which tool Claude wants to use and what it would run
+  (keys hidden as above). Click Allow or Don't Allow.
+- Once it's sent, the card says how it went: answered, too late (it was answered in the terminal, or the session
+  stopped waiting), or the session isn't waiting right now and the answer is saved for when it asks again. If you
+  answer in the terminal first, the question times out or the session ends, the card goes away by itself.
+- When a session is waiting for you to type (not a question), the same spot shows "It's waiting for you" with a box
+  to reply in. Your reply goes into the session, just like Send a Message in the panel.
+
+A new question is told once, in one place, by the rules in [Notifications and Mo](#notifications-and-mo). If Mo is
+on your desktop, its message box lists the question and its options, so a click answers it; Open Panel takes you to
+the card. Otherwise you get a notification, and clicking it opens the panel on that question. Once the question is
+answered or withdrawn, the notification and Mo's message go too. Nothing extra pops up while the panel is open. The
+app answers with the same commands as you would: `cc-moss ask list --json` and `cc-moss ask answer … --by desktop --json`.
 
 **Who can answer for you.** Any program running as you can run `ask take` and `ask answer`, and that includes allowing
 a permission request; `--by` is only a name the answerer gives, not proof of who it is. That's no more than those
@@ -448,7 +475,7 @@ Mo can make a sound too, under Settings › Mo › Voice:
 | Shortcuts | The shortcut for the panel; short names to type in a terminal (open the session list, start a session, bring stopped ones back…): click the keycap, type, Return saves, and it plays what the name does. Your own commands sit under the folded Your own; the same names as `cc-moss alias` (see [Aliases](#aliases)). The keys inside the panel |
 | Menu Bar | How the icon shows, motion |
 | Mo | On or off, size, interaction, voice |
-| Notifications | Who tells you, what to tell you; a word when notifications are turned off |
+| Notifications | Who tells you, answering questions here, what to tell you; a word when notifications are turned off |
 | Permissions | Everything cc-moss asks macOS for, on one page: Accessibility, notifications, control of your terminal (Automation). Each says where it stands and what it's for, with Allow when one is missing. When one is off and something uses it, a small dot shows beside the page |
 | Moss | Moss's switch and status (how long it has run, how often it restarted; see [Moss](#moss)), and whether the daemon is running, with Start when it isn't (see [The daemon](#the-daemon)) |
 | About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |

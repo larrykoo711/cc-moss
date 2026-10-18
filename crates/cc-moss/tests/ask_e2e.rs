@@ -722,3 +722,129 @@ fn answered_in_session_closes_ask() {
     assert!(!late.status.success());
     assert!(String::from_utf8_lossy(&late.stderr).contains("no longer needs an answer"));
 }
+
+/// The menu bar app answering (T1.4): it says it's here with `ask take
+/// --name desktop`, reads `ask list --json`, and answers with exactly the
+/// arguments MossKit builds (`AskReply.arguments`: the full id, `--by
+/// desktop`, `--json`). The session gets the answer and the answer says who gave it.
+#[test]
+fn answer_from_desktop_client() {
+    let w = World::new("ask-desktop");
+    let take = w
+        .cc_moss()
+        .args(["ask", "take", "--name", "desktop"])
+        .output()
+        .unwrap();
+    assert!(take.status.success(), "{take:?}");
+    assert!(w.state().join("asks/takers/desktop.alive").exists());
+    w.new_session("job-d");
+    let sid = w.session_id("job-d");
+    w.send(&sid, "ask");
+    let ask = wait_for(|| {
+        world_asks(&w)
+            .into_iter()
+            .find(|a| a["session_name"].is_string())
+    });
+    // What a card shows: the session, the whole question, the options as written.
+    assert_eq!(ask["session_name"], "job-d");
+    assert_eq!(ask["questions"][0]["question"], QUESTION);
+    assert_eq!(ask["questions"][0]["options"][1]["label"], "B");
+
+    let id = ask["id"].as_str().unwrap();
+    let out = w
+        .cc_moss()
+        .args([
+            "ask", "answer", id, "--choice", "B", "--by", "desktop", "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    // What MossKit reads.
+    assert_eq!(
+        json_result(&out),
+        json!({ "schema": 1, "result": "answered", "session": "job-d" })
+    );
+    let (out, done) = ask_files(&w, &sid);
+    wait_for(|| exists(&done));
+    let v: Value = serde_json::from_slice(&std::fs::read(out).unwrap()).unwrap();
+    assert_eq!(
+        v["hookSpecificOutput"]["decision"]["updatedInput"]["answers"],
+        json!({ QUESTION: "B" })
+    );
+    let answer: Value = serde_json::from_slice(
+        &std::fs::read(w.state().join(format!("asks/{id}.answer.json"))).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(answer["by"], "desktop");
+    // The card goes: the question is no longer listed.
+    assert!(world_asks(&w).is_empty());
+
+    // Answering again, as a second click would: "too late", not an error.
+    let again = w
+        .cc_moss()
+        .args([
+            "ask", "answer", id, "--choice", "A", "--by", "desktop", "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(!again.status.success());
+    assert_eq!(json_result(&again)["result"], "too-late");
+}
+
+/// `ask answer --json`: the one line the app reads instead of the words.
+fn json_result(out: &Output) -> Value {
+    let line = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(line.lines().count(), 1, "{out:?}");
+    serde_json::from_str(line.trim()).unwrap()
+}
+
+#[test]
+fn answer_json_answered() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap();
+    let out = env.cc_moss(&["ask", "answer", id, "--choice", "B", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        json_result(&out),
+        json!({ "schema": 1, "result": "answered", "session": "S" })
+    );
+    child.wait_with_output().unwrap();
+}
+
+#[test]
+fn answer_json_not_waiting() {
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    env.hook("pre-tool-use", &pre_tool_use("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap();
+    let out = env.cc_moss(&["ask", "answer", id, "--choice", "A", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        json_result(&out),
+        json!({ "schema": 1, "result": "not-waiting", "session": "S" })
+    );
+}
+
+#[test]
+fn answer_json_too_late() {
+    let env = Env::new("[ask]\nwait_secs = 1\n");
+    env.take();
+    let child = env.spawn_hook("permission-request", &permission_request("S"));
+    let ask = wait_for(|| env.asks().into_iter().next());
+    let id = ask["id"].as_str().unwrap().to_string();
+    child.wait_with_output().unwrap(); // timed out
+    let late = env.cc_moss(&["ask", "answer", &id, "--choice", "A", "--json"]);
+    assert!(!late.status.success(), "too late keeps its exit status");
+    assert_eq!(
+        json_result(&late),
+        json!({ "schema": 1, "result": "too-late", "session": "S" })
+    );
+    // Without --json the words are unchanged.
+    let plain = env.cc_moss(&["ask", "answer", &id, "--choice", "A"]);
+    assert!(plain.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&plain.stderr).contains("no longer needs an answer"));
+}

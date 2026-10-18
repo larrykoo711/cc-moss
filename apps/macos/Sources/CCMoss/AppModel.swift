@@ -59,6 +59,17 @@ final class AppModel {
     /// "Stop reminding" waits for a second, deliberate click.
     var closeGate = Confirmation<[Session]>()
 
+    /// Questions sessions are waiting on (T1.4), from `cc-moss ask list`,
+    /// and the cards that answer them.
+    var asks: [Ask] = []
+    var askDesk = AskDesk()
+    /// Settings › Notifications › "Answer questions here" (`ask.enabled`).
+    var askEnabled = true
+    /// What changed in the question list, for the alerts.
+    @ObservationIgnored var onAsks: ((AskDesk.Change) -> Void)?
+    /// "The app is here": sessions wait a while for an answer from it.
+    @ObservationIgnored var taker: AskTaker?
+
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
     init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
         self.terminals = terminals ?? TerminalPrefs()
@@ -111,6 +122,7 @@ final class AppModel {
         var env = ProcessInfo.processInfo.environment
         env["CC_MOSS_LANG"] = L.lang == .zh ? "zh" : "en"
         client = MossClient(executable: path, runner: ProcessRunner(environment: env))
+        startTaking()
         if timer == nil {
             // Hooks wake us through the watcher; this sweep finds sessions
             // whose process died without telling anyone.
@@ -151,6 +163,7 @@ final class AppModel {
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }
             if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) { selectFirst() }
+            await loadAsks()
         } catch MossClient.Failure.newerSchema {
             phase = .needsUpgrade
         } catch MossClient.Failure.command(let message) {

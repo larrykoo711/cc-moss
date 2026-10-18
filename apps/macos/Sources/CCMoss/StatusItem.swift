@@ -293,6 +293,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             AlertCenter.perform(action, slot: slot, model: self.model) { self.panel?.show() }
         }
+        notifier?.onAsk = { [weak self] id in
+            guard let self else { return }
+            self.model.focusAsk(id)
+            self.panel?.show()
+        }
         let alerts = AlertCenter(model: model, notifier: notifier, context: { [weak self] in
             AlertContext(
                 mode: AlertMode(defaults: .standard),
@@ -308,6 +313,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alerts.handle(events)
         }
         feed.start()
+        model.onAsks = { alerts.handleAsks($0) }
         self.alerts = alerts
         self.events = feed
         let startup = StartupReminder(model: model) { alerts.remindMissed($0) }

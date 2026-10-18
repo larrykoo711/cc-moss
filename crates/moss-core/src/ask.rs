@@ -361,12 +361,18 @@ impl Store {
     }
 
     fn tmp_path(&self, id: &str, what: &str) -> PathBuf {
+        // Unique within the process too: the clock alone repeats for
+        // threads writing in the same microsecond.
+        static SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let seq = SEQ.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let nanos = SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .unwrap_or_default()
             .subsec_nanos();
-        self.dir
-            .join(format!(".{id}.{what}.{}.{nanos}.tmp", std::process::id()))
+        self.dir.join(format!(
+            ".{id}.{what}.{}.{nanos}.{seq}.tmp",
+            std::process::id()
+        ))
     }
 
     /// Whether `asks/` is a real directory of this user's that nobody else

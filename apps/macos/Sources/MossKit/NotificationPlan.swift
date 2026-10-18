@@ -65,14 +65,19 @@ public struct SessionAlert: Equatable, Sendable {
     /// For `needsYou`: `permission`, `question` or `input`.
     public var reason: String?
     public var at: Date
+    /// The question this is about (T1.4), which can be answered right where
+    /// the alert shows; nil for alerts made from events.
+    public var askId: String?
 
-    public init(id: Int, slotId: String, kind: AlertKind, name: String? = nil, reason: String? = nil, at: Date) {
+    public init(id: Int, slotId: String, kind: AlertKind, name: String? = nil, reason: String? = nil, at: Date,
+                askId: String? = nil) {
         self.id = id
         self.slotId = slotId
         self.kind = kind
         self.name = name
         self.reason = reason
         self.at = at
+        self.askId = askId
     }
 }
 
@@ -86,6 +91,9 @@ public struct AlertNote: Equatable, Sendable {
     public var slotId: String
     /// Notifications of one session stack together.
     public var thread: String
+    /// A question's notification: clicking it opens the panel on that
+    /// question, and it is taken back once the question is gone.
+    public var askId: String? = nil
 }
 
 /// Turns new events into alerts: drops the kinds you switched off and folds
@@ -129,6 +137,21 @@ public struct NotificationPlan: Sendable {
                             "电脑重启了？对话都还在，点开就能全部找回。"),
                   action: .restore, slotId: allInterrupted, thread: allInterrupted)
     }
+
+    /// The notification for a question the panel can answer. Our own words,
+    /// as for any alert: the question itself is on the card it opens.
+    public static func askNote(for alert: SessionAlert, title: String) -> AlertNote {
+        let askId = alert.askId ?? ""
+        let (heading, body) = alert.reason == "permission"
+            ? (L.t("\(title) needs your OK", "\(title) 需要你点头"),
+               L.t("It wants to do something. Click to allow or deny it.", "它想做一件事，点开就能同意或拒绝。"))
+            : (L.t("\(title) has a question", "\(title) 有个问题"),
+               L.t("Click to answer it, no terminal needed.", "点开就能直接答，不用进终端。"))
+        return AlertNote(id: askNoteID(askId), title: heading, body: body, action: .open,
+                         slotId: alert.slotId, thread: alert.slotId, askId: askId)
+    }
+
+    public static func askNoteID(_ askId: String) -> String { "cc-moss.ask.\(askId)" }
 
     /// The notification for `alert`; `title` is the session's display name.
     /// The wording never promises "right now": a permission prompt reaches
@@ -185,6 +208,12 @@ public enum NotificationAuth: Equatable, Sendable {
     func requestAuthorization() async -> NotificationAuth
     /// True when the system took it.
     func post(_ note: AlertNote) async -> Bool
+    /// Take notifications back (their question was answered elsewhere).
+    func withdraw(_ ids: [String])
+}
+
+extension Notifier {
+    public func withdraw(_ ids: [String]) {}
 }
 
 /// Asks for permission the first time a notification is due (not at
@@ -211,6 +240,11 @@ public enum NotificationAuth: Equatable, Sendable {
     public func requestNow() async {
         asked = true
         auth = await notifier.requestAuthorization()
+    }
+
+    public func withdraw(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        notifier.withdraw(ids)
     }
 
     /// Post `note` if macOS allows it, asking first if it never has. False

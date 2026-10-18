@@ -24,11 +24,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
   `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`) hands the answer back, and the session
   carries on. The terminal dialog stays up meanwhile, and whoever answers first wins. Sessions only wait while someone
-  takes questions (`cc-moss ask take`, which the app and Slack will do later), for at most 5 minutes
+  takes questions (`cc-moss ask take`; the menubar app does it while it's open, Slack will later), for at most 5 minutes
   (`[ask] wait_secs`); otherwise, or if anything goes wrong, nothing changes. Two new hooks, `PreToolUse` and
   `PermissionRequest`: run `cc-moss setup` after upgrading. Turn it off with `cc-moss config set ask.enabled false`.
   Any program running as you can answer, permission requests included; previews hide things that look like keys. An
   older `setup --uninstall` can't remove the two new hooks: uninstall with this version before downgrading.
+- **Answer from the panel or Mo (macOS).** While the menubar app is open, sessions wait for it: a question shows as a
+  card at the top of the panel, above Moss, with the session's name, the whole question and its options as written.
+  Click an option, tick several and click Done, write your own, or Allow / Don't Allow a `--safe` session's request;
+  several questions are answered one by one and sent together. The card says whether it was answered, too late, or
+  saved for later, and disappears by itself when the question is answered in the terminal, times out or the session
+  ends. Mo's message box lists the options so a click answers there; otherwise a notification opens the panel on the
+  question, and both are taken back once it's gone. A session waiting for you to type gets a reply box. `cc-moss ask answer --json` says how an answer went in one line (`answered`, `too-late`, `not-waiting`). Switch it off
+  in Settings › Notifications › Answer questions here (`ask.enabled`).
 
 ### Changed
 

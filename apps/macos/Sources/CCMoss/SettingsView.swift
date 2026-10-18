@@ -131,7 +131,7 @@ struct SettingsView: View {
                         case .general: GeneralSettings(model: model)
                         case .menuBar: MenuBarSettings(model: model)
                         case .mo: PetSettings()
-                        case .notifications: NotificationSettings()
+                        case .notifications: NotificationSettings(model: model)
                         case .shortcuts: ShortcutsSettings(model: model, demo: aliasDemo)
                         case .permissions: PermissionsSettings(model: model)
                         case .moss: MossSettings(model: model, demo: daemonDemo, mossDemo: mossDemo)

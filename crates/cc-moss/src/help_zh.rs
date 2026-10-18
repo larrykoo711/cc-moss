@@ -223,6 +223,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("ask answer", "allow", "同意，让它用这个工具"),
     ("ask answer", "deny", "不同意"),
     ("ask answer", "message", "配合 --deny：改为告诉 Claude 的话"),
+    (
+        "ask answer",
+        "json",
+        "用一行 JSON 说结果（schema 1）：answered、too-late 或 not-waiting",
+    ),
     ("ask answer", "by", "谁在答（给 App、守护进程和 Slack 用）"),
     (
         "ask take",

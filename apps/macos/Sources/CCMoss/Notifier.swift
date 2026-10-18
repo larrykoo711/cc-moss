@@ -9,20 +9,31 @@ import UserNotifications
 final class SystemNotifier: NSObject, Notifier, UNUserNotificationCenterDelegate {
     /// You clicked a notification or one of its buttons.
     var onAction: ((AlertAction, String) -> Void)?
+    /// You clicked a question's notification: its id.
+    var onAsk: ((String) -> Void)?
 
     private let center = UNUserNotificationCenter.current()
     private nonisolated static let slotKey = "slot"
+    private nonisolated static let askKey = "ask"
+    private nonisolated static let askCategory = "cc-moss.ask"
 
     override init() {
         super.init()
         center.delegate = self
-        center.setNotificationCategories(Set([AlertAction.open, .restore].map { action in
+        var categories = Set([AlertAction.open, .restore].map { action in
             UNNotificationCategory(
                 identifier: Self.category(action),
                 actions: [UNNotificationAction(identifier: action.rawValue, title: action.title)],
                 intentIdentifiers: []
             )
-        }))
+        })
+        // A question opens the panel on its card; the answers are there.
+        categories.insert(UNNotificationCategory(
+            identifier: Self.askCategory,
+            actions: [UNNotificationAction(identifier: "answer", title: L.t("Answer", "去回答"))],
+            intentIdentifiers: []
+        ))
+        center.setNotificationCategories(categories)
     }
 
     static func category(_ action: AlertAction) -> String { "cc-moss.\(action.rawValue)" }
@@ -56,14 +67,19 @@ final class SystemNotifier: NSObject, Notifier, UNUserNotificationCenterDelegate
         content.body = note.body
         content.sound = .default
         content.threadIdentifier = note.thread
-        content.categoryIdentifier = Self.category(note.action)
-        content.userInfo = [Self.slotKey: note.slotId]
+        content.categoryIdentifier = note.askId == nil ? Self.category(note.action) : Self.askCategory
+        content.userInfo = [Self.slotKey: note.slotId, Self.askKey: note.askId ?? ""]
         do {
             try await center.add(UNNotificationRequest(identifier: note.id, content: content, trigger: nil))
             return true
         } catch {
             return false
         }
+    }
+
+    func withdraw(_ ids: [String]) {
+        center.removeDeliveredNotifications(withIdentifiers: ids)
+        center.removePendingNotificationRequests(withIdentifiers: ids)
     }
 
     // A menu bar app counts as frontmost while its settings window is open;
@@ -77,11 +93,16 @@ final class SystemNotifier: NSObject, Notifier, UNUserNotificationCenterDelegate
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let content = response.notification.request.content
         let slot = content.userInfo[Self.slotKey] as? String
+        let ask = (content.userInfo[Self.askKey] as? String).flatMap { $0.isEmpty ? nil : $0 }
         let category = content.categoryIdentifier
         let button = response.actionIdentifier
         Task { @MainActor in
             defer { completionHandler() }
             guard let slot, button != UNNotificationDismissActionIdentifier else { return }
+            if let ask {
+                self.onAsk?(ask)
+                return
+            }
             // A click on the notification itself does what its button does.
             let action = AlertAction(rawValue: button) ?? (category == Self.category(.restore) ? .restore : .open)
             self.onAction?(action, slot)
@@ -119,6 +140,7 @@ final class AlertCenter {
     private let toPet: (SessionAlert) -> Void
     private var plan = NotificationPlan()
     private var router = AlertRouter()
+    private var askAlerts = AskAlerts()
 
     /// `notifier` is nil where Notification Center can't be used; alerts
     /// due there are then dropped (the panel and the icon still show them).
@@ -142,10 +164,12 @@ final class AlertCenter {
     }
 
     func handle(_ events: [SessionEvent]) {
-        let alerts = plan.alerts(from: events, toggles: AlertToggles(defaults: defaults), now: Date())
+        let now = Date()
+        let alerts = plan.alerts(from: events, toggles: AlertToggles(defaults: defaults), now: now)
         guard !alerts.isEmpty else { return }
         let ctx = context()
-        for alert in alerts {
+        // A question already told you about this session: no second alert.
+        for alert in alerts where askAlerts.allows(alert, now: now) {
             switch router.route(alert, in: ctx) {
             case .pet:
                 toPet(alert)
@@ -155,6 +179,33 @@ final class AlertCenter {
             case .none:
                 break
             }
+        }
+    }
+
+    /// Questions came and went (T1.4). New ones are told once, in one
+    /// place, under the "Waiting for you" switch; gone ones are taken back,
+    /// wherever they went (Mo lets go of its message by itself once the
+    /// card is gone).
+    func handleAsks(_ change: AskDesk.Change) {
+        let now = Date()
+        if AlertToggles(defaults: defaults).isOn(.needsYou), !change.arrived.isEmpty {
+            let told = askAlerts.arrived(change.arrived, slot: { [model] in model.askSlot($0) },
+                                         title: { [model] in model.askTitle($0) }, in: context(), now: now)
+            for t in told {
+                switch t.destination {
+                case .pet:
+                    toPet(t.alert)
+                case .notification:
+                    let note = NotificationPlan.askNote(for: t.alert, title: t.alert.name ?? "")
+                    if let gate { Task { await gate.deliver(note) } }
+                case .none:
+                    break
+                }
+            }
+        }
+        let back = askAlerts.gone(change.gone).filter { $0.destination == .notification }
+        if let gate, !back.isEmpty {
+            gate.withdraw(back.compactMap { $0.alert.askId.map(NotificationPlan.askNoteID) })
         }
     }
 
@@ -200,6 +251,13 @@ final class AlertCenter {
         if slot == NotificationPlan.allInterrupted {
             model.query = ""
             model.stateFilter = .interrupted
+            showPanel()
+            return
+        }
+        // It has a question open: the panel, on that question, where it can be
+        // answered without the terminal (T1.4).
+        if action == .open, let card = model.openAsk(forSlot: slot) {
+            model.focusAsk(card.id)
             showPanel()
             return
         }

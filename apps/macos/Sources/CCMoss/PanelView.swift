@@ -39,6 +39,15 @@ struct PanelView: View {
                     .padding(.top, 10)
                     .transition(.opacity.combined(with: .move(edge: .top)))
             }
+            // Questions first: a session stuck on you beats everything below,
+            // Moss's row included (T1.4).
+            if AskArea.shows(model) {
+                AskArea(model: model)
+                    .padding(.horizontal, 10)
+                    .padding(.top, 10)
+                    .layoutPriority(1)
+                    .transition(.opacity.combined(with: .move(edge: .top)))
+            }
             if model.phase == .ready && !model.sessions.isEmpty {
                 StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
                     .padding(.horizontal, 10)
@@ -111,6 +120,7 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
+        .animation(.easeOut(duration: 0.2), value: model.askDesk)
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true

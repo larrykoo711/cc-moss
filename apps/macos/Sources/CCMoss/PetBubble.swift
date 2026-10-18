@@ -182,12 +182,15 @@ struct PetPuff: View {
 
 /// The four parts of §6.3: the title row (kind tile, what happened, close),
 /// the body (at most two lines, never session content), the detail area
-/// (004's approve / deny, not here yet) and the actions (the main one in colour).
+/// (a question's options and allow / deny, T1.4: the one place Mo shows what
+/// the session wrote, since you can't answer without it) and the actions
+/// (the main one in colour).
 struct PetMessageBox: View {
     let message: PetMessage
     let text: PetMessageText
     var tail = BubbleTail()
     var animate = true
+    var detail: AnyView?
     var primary: () -> Void = {}
     var later: () -> Void = {}
     @State private var shown: Bool
@@ -197,11 +200,12 @@ struct PetMessageBox: View {
     static let width: CGFloat = 280
 
     init(message: PetMessage, text: PetMessageText, tail: BubbleTail = BubbleTail(), animate: Bool = true,
-         primary: @escaping () -> Void = {}, later: @escaping () -> Void = {}) {
+         detail: AnyView? = nil, primary: @escaping () -> Void = {}, later: @escaping () -> Void = {}) {
         self.message = message
         self.text = text
         self.tail = tail
         self.animate = animate
+        self.detail = detail
         self.primary = primary
         self.later = later
         _shown = State(initialValue: !animate)
@@ -239,6 +243,12 @@ struct PetMessageBox: View {
                 .onTapGesture(perform: primary)
                 .handCursor()
                 .padding(.leading, 30)
+            if let detail {
+                detail
+                    .frame(width: Self.width - 24 - 30, alignment: .leading)
+                    .padding(.top, 2)
+                    .padding(.leading, 30)
+            }
             HStack(spacing: 6) {
                 SoftButton(title: text.primary, icon: BubbleStyle.primaryIcon(message), prominent: true, action: primary)
                     .focusable(false)
@@ -422,13 +432,15 @@ final class BubbleStage {
     enum Content {
         case none
         case puff(serial: Int, text: String)
-        case box(serial: Int, message: PetMessage, text: PetMessageText, primary: () -> Void, later: () -> Void)
+        case box(serial: Int, message: PetMessage, text: PetMessageText, detail: AnyView?, primary: () -> Void, later: () -> Void)
         case menu(serial: Int, greeting: String, groups: [[PetMenuChoice]])
     }
 
     var content: Content = .none
     var tail = BubbleTail()
     var animate = true
+    /// The bubble changed size by itself (a question's next step).
+    @ObservationIgnored var resized: (() -> Void)?
 }
 
 struct PetBubbleRoot: View {
@@ -441,15 +453,18 @@ struct PetBubbleRoot: View {
                 Color.clear.frame(width: 1, height: 1)
             case let .puff(serial, text):
                 PetPuff(text: text, tail: stage.tail, animate: stage.animate).id(serial)
-            case let .box(serial, message, text, primary, later):
+            case let .box(serial, message, text, detail, primary, later):
                 PetMessageBox(message: message, text: text, tail: stage.tail, animate: stage.animate,
-                              primary: primary, later: later).id(serial)
+                              detail: detail, primary: primary, later: later).id(serial)
             case let .menu(serial, greeting, groups):
                 PetMenuBubble(greeting: greeting, groups: groups, tail: stage.tail, animate: stage.animate).id(serial)
             }
         }
         .padding(PetBubbles.margin)
         .fixedSize()
+        .background(GeometryReader { g in
+            Color.clear.onChange(of: g.size) { _, _ in stage.resized?() }
+        })
         .tooltipLayer()
         .followsLanguage()
     }
@@ -588,6 +603,10 @@ final class PetBubbles {
         host = BubbleHost(rootView: PetBubbleRoot(stage: stage))
         panel.contentView = host
         host.onPointer = { [weak self] inside in self?.onPointer?(inside) }
+        stage.resized = { [weak self] in
+            // After this layout pass, not inside it.
+            DispatchQueue.main.async { self?.relayout() }
+        }
     }
 
     var isShown: Bool { key != nil }
@@ -598,12 +617,24 @@ final class PetBubbles {
         }
     }
 
-    func box(_ message: PetMessage, text: PetMessageText, anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool,
+    /// `detailKey` names what `detail` shows (a question's id), so a box that
+    /// gains one is drawn afresh.
+    func box(_ message: PetMessage, text: PetMessageText, detail: AnyView? = nil, detailKey: String = "",
+             anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool,
              primary: @escaping () -> Void, later: @escaping () -> Void) {
-        let key = "box-\(message.kind.rawValue)-\(message.slots.joined(separator: ","))-\(text.title)-\(text.body)"
+        let key = "box-\(message.kind.rawValue)-\(message.slots.joined(separator: ","))-\(text.title)-\(text.body)-\(detailKey)"
         present(key: key, anchor: anchor, parent: parent, reduceMotion: reduceMotion, clickable: true) {
-            .box(serial: $0, message: message, text: text, primary: primary, later: later)
+            .box(serial: $0, message: message, text: text, detail: detail, primary: primary, later: later)
         }
+    }
+
+    /// Fit the window to the bubble again where it is.
+    private func relayout() {
+        guard key != nil, let anchor, panel.isVisible else { return }
+        let before = panel.frame.size
+        host.layoutSubtreeIfNeeded()
+        guard host.fittingSize != before else { return }
+        layout(anchor, puff: false)
     }
 
     func menu(greeting: String, groups: [[PetMenuChoice]], anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool) {

@@ -13,6 +13,13 @@ import SwiftUI
 ///          [--form new|note|close|message|rename [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
+///                  [--waiting-input <session id>] [--bubble <id>] [--answer answered|late|not-waiting|refused]
+///                  [--click x,y]]
+///
+/// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
+/// rendered panel at that point (points from its top-left corner) before the picture is taken, and
+/// prints every `cc-moss ask answer` the click caused; nothing runs, the commands are only printed.
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -44,10 +51,22 @@ enum Render {
         }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
-        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)), terminals: terminals(args))
+        var askData = value("--asks").flatMap { FileManager.default.contents(atPath: $0) }
+        if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
+        let runner = DemoRunner(sessions: data, asks: askData, answer: value("--answer"))
+        ClickTargets.shared.enabled = args.contains("--click")
+        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             await model.loadNow()
+            if let id = value("--waiting-input"), let i = model.sessions.firstIndex(where: { $0.id == id }) {
+                model.sessions[i].attention = "input"
+            }
+            prepareAsks(model, args: args)
+            if let id = value("--bubble") {
+                drawBubble(model: model, askId: id, dark: args.contains("--dark"), out: out)
+                exit(0)
+            }
             model.query = value("--query") ?? ""
             switch value("--filter") {
             case "working": model.stateFilter = .working
@@ -164,7 +183,8 @@ enum Render {
                 default: nil
                 }
                 let hover = args.contains("--hover") || value("--menu") == "more" ? id : nil
-                draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, out: out)
+                let click = value("--click").flatMap(Self.point)
+                await draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, click: click, out: out)
             }
             done.signal()
             exit(0)
@@ -370,7 +390,7 @@ enum Render {
             // The settings window fits itself to its usual size once shown; stretch it back.
             window.setContentSize(size)
             host.layoutSubtreeIfNeeded()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            settle(0.3)
         }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -392,7 +412,57 @@ enum Render {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
     }
 
-    @MainActor private static func draw(model: AppModel, dark: Bool, menu: PanelMenu?, hover: String?, out: String) {
+    /// `--choose`, `--write`, `--focus`: a card part-way through, as you'd see it.
+    @MainActor private static func prepareAsks(_ model: AppModel, args: [String]) {
+        for (i, arg) in args.enumerated() where i + 1 < args.count {
+            guard let card = model.askDesk.open.first else { break }
+            switch arg {
+            case "--choose":
+                // Picks without sending: a multiple choice, or a step of several.
+                let label = args[i + 1]
+                if card.question?.multiSelect == true || card.several {
+                    model.act(on: card.id) { $0.choose(label) }
+                }
+            case "--focus":
+                model.focusAsk(args[i + 1])
+            default:
+                break
+            }
+        }
+        if let i = args.firstIndex(of: "--write"), let card = model.askDesk.open.first {
+            let text = i + 1 < args.count && !args[i + 1].hasPrefix("--") ? args[i + 1] : ""
+            model.act(on: card.id) { $0.writing = true; $0.draft = text; return nil }
+        }
+    }
+
+    /// Run the main run loop for a moment (SwiftUI lays out and draws).
+    @MainActor private static func settle(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// "120,340" in points.
+    static func point(_ raw: String) -> CGPoint? {
+        let parts = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+    }
+
+    /// Mo's message box for a question, with the question in its detail area.
+    @MainActor private static func drawBubble(model: AppModel, askId: String, dark: Bool, out: String) {
+        guard let card = model.askDesk.card(askId) else {
+            FileHandle.standardError.write(Data("--bubble: no question \(askId) in --asks\n".utf8))
+            exit(2)
+        }
+        let alert = SessionAlert(id: 1, slotId: model.askSlot(card.ask) ?? card.ask.sessionId, kind: .needsYou,
+                                 name: model.askTitle(card.ask), reason: card.ask.kind == .permission ? "permission" : "question",
+                                 at: Date(), askId: askId)
+        let message = PetMessage(alert)
+        let box = PetMessageBox(message: message, text: message.text(names: [model.askTitle(card.ask)]).answeringHere(),
+                                animate: false, detail: AnyView(AskBubbleDetail(model: model, askId: askId)))
+        drawView(box.padding(28).fixedSize(), dark: dark, out: out)
+    }
+
+    @MainActor private static func draw(model: AppModel, dark: Bool, menu: PanelMenu?, hover: String?, click: CGPoint? = nil,
+                                        out: String) async {
         let root = PanelView(model: model, menu: menu, hoveredID: hover)
             // Stand-in for the desktop behind the frosted glass.
             .background(dark ? Color(red: 0.16, green: 0.22, blue: 0.30) : Color(red: 0.55, green: 0.66, blue: 0.75))
@@ -404,10 +474,71 @@ enum Render {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         // Let SwiftUI settle (fonts, lazy rows) before taking the picture.
-        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        settle(0.6)
+        if let click {
+            // No mouse event at all: the answer control drawn under that point
+            // runs its own action, inside this process. Nothing on the real
+            // screen moves and no other app sees anything.
+            if let target = ClickTargets.shared.target(at: click) {
+                FileHandle.standardError.write(Data("--click: pressed \"\(target.name)\"\n".utf8))
+                target.action()
+            } else {
+                FileHandle.standardError.write(Data("--click: nothing to press at \(click.x),\(click.y)\n".utf8))
+            }
+            // Let go of the main actor so the answer goes out and comes back.
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            // Draw again with the card as the click left it.
+            host.layoutSubtreeIfNeeded()
+            settle(0.3)
+        }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
         try? png.write(to: URL(fileURLWithPath: out))
+    }
+}
+
+/// cc-moss as the demo files say it would answer: `ls --json` from the
+/// sessions file, `ask list --json` from the questions file. `ask answer` is
+/// printed, not run, and answers as `--answer` says (answered by default).
+struct DemoRunner: CommandRunner {
+    var sessions: Data
+    var asks: Data?
+    var answer: String?
+
+    func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
+        func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
+        switch Array(arguments.prefix(2)) {
+        case ["ask", "list"]:
+            return CommandResult(status: 0, stdout: asks ?? Data(#"{"schema":1,"asks":[]}"#.utf8), stderr: "")
+        case ["ask", "take"]:
+            return ok("")
+        case ["ask", "answer"]:
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            func line(_ result: String) -> Data { Data(#"{"schema":1,"result":"\#(result)","session":"demo"}"#.utf8) }
+            switch answer {
+            case "late": return CommandResult(status: 1, stdout: line("too-late"), stderr: "cc-moss: too late: it already moved on\n")
+            case "not-waiting": return CommandResult(status: 0, stdout: line("not-waiting"), stderr: "")
+            case "refused": return CommandResult(status: 1, stdout: Data(), stderr: "cc-moss: the session could not use that answer\n")
+            default: return CommandResult(status: 0, stdout: line("answered"), stderr: "")
+            }
+        default:
+            return CommandResult(status: 0, stdout: sessions, stderr: "")
+        }
+    }
+
+    /// Only question `id` of an `ask list --json` file.
+    static func keep(_ id: String, in data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = top["asks"] as? [[String: Any]] else { return data }
+        top["asks"] = list.filter { ($0["id"] as? String) == id }
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
+    }
+
+    /// As a shell would need it.
+    static func quoted(_ arg: String) -> String {
+        let plain = arg.allSatisfy { $0.isLetter || $0.isNumber || "-_./:=,".contains($0) }
+        return plain && !arg.isEmpty ? arg : "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 }
