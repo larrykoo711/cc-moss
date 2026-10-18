@@ -26,8 +26,8 @@ D1 的风险已向用户说明一次：频道成员都能让这台 Mac 跑 bypas
 | A2 | 首次 bypass 的警告框会让 tmux 里的会话卡住，所以 `cc-moss install`（含升级时的自动 install）在 `~/.claude/settings.json` 写 `skipDangerousModePermissionPrompt: true`（受管块，可撤销）。管理策略禁用 bypass 时退回普通模式，`doctor` 和新会话表单说明原因 | claude-code-facts §1 |
 | A3 | bypass 下没有权限询问，代答主要对象是 **AskUserQuestion（选择题）** 和 **等你输入（idle）**；权限询问只出现在 `--safe` 会话，走 PermissionRequest | claude-code-facts §2 |
 | A4 | 代答是**新的、可等待的 hook**（`cc-moss hook ask`），与现有「永不失败、30ms」的观察型 hook 分开立契约：出错或超时一律「不表态」，让会话照常显示自己的提示（fail-open 到原生交互） | `cmd/hook.rs:1-5` |
-| A5 | 代答等待默认 90 秒，可设；超时后会话显示自己的提示，Moss 那边的问题标「已转回会话」，之后的回答不再生效 | hook 最长 600 秒 |
-| A6 | AskUserQuestion 的答案怎么回填：**P1 第一个任务先做探针**，候选两条：①PreToolUse `updatedInput` 带答案（文档未证实）；②PreToolUse `deny` + 理由「用户已在 cc-moss 回答：…」，Claude 把理由当答案继续（不依赖未文档化行为）。探针定夺 | claude-code-facts §2 |
+| A5 | 代答等待默认 300 秒（上限 600），可设。**等待期间终端里的对话框照常能答**，谁先答算谁的；超时即自然回落到会话自己的提示，Moss 那边标「已转回会话」 | `notes/ask-probe.md` Q3、F |
+| A6 | 回填用 **PermissionRequest `allow` + `updatedInput.answers`**（`{问题原文: 选中的 label}`），界面显示正常的「User answered」；普通与 bypass 会话都触发。PreToolUse 只用来提早拿题目、立刻退出，不在里面等（它运行时会挡住对话框）。退路：PreToolUse 短等 + `updatedInput` → `deny` 带理由 → 只提醒（K1） | `notes/ask-probe.md`（Claude Code 2.1.302 实测） |
 | A7 | 「等你输入」不是阻塞提示，不用 hook 拦：Moss 显示「它在等你」+ 输入框，回复经现有 `cc-moss send` 敲进会话 | baseline R3 |
 | A8 | 系统级守护 = **`cc-moss daemon`**（Rust），launchd **用户级** LaunchAgent（`KeepAlive`、`RunAtLoad`，登录后运行）。不用 root：Claude Code 拒绝 root 下 bypass | claude-code-facts §1 |
 | A9 | 守护进程是**唯一**拉起 Moss 会话、连 Slack、跑在场检测、做路由的进程；App 降为界面客户端（读状态、写回答），避免两边重复拉起 | reference-study §4 |
@@ -123,7 +123,7 @@ cc-moss.app（界面客户端）   Moss 会话（tmux 里的 claude，<state>/mo
 ## 10. 风险与开放问题
 | # | 风险 / 问题 | 处置 |
 |---|-------------|------|
-| K1 | AskUserQuestion 回填两条路都不行 | 退到「通知 + 一键打开会话」，C3 仍显示完整问题；探针结论决定 P1 范围 |
+| K1 | AskUserQuestion 回填方式随 Claude Code 升级失效 | T1.1 已实测可行（2.1.302）；T1.3 加版本探测与退路链，全部失效时退到「通知 + 一键打开会话」 |
 | K2 | 对话记录格式无官方文档，Claude Code 升级可能破坏认领回复 | 认领逻辑单独封装 + 版本探测 + 降级为「已收到」 |
 | K3 | 常驻 Moss 与派发会话耗额度 | 摘要批处理、L0 静默、派发有频率上限与总开关 |
 | K4 | D1：频道成员都能派发 bypass 会话 | 允许频道白名单、审计日志、一键暂停（已向用户说明） |

@@ -5206,11 +5206,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <rect x="223.33333333333331" y="200" width="10" height="520" rx="3" class="c-backend" stroke-width="1"/>
 
         <!-- Messages -->
-        <g data-edge-from="claude" data-edge-to="hook" data-edge-label="AskUserQuestion" data-edge-key="0">
+        <g data-edge-from="claude" data-edge-to="hook" data-edge-label="PermissionRequest" data-edge-key="0">
           <path data-composition-edge-from="claude" data-composition-edge-to="hook" data-composition-points="114,200;221.33333333333331,200" d="M 114 200 L 221.33333333333331 200" class="a-emphasis" data-animate="edge" style="--step:0" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <g data-detail="context">
-          <rect x="122.66666666666666" y="180" width="90" height="16" rx="3" class="c-mask"/>
-          <text x="167.66666666666666" y="190" class="t-edge-emphasis" font-size="9" text-anchor="middle">AskUserQuestion</text>
+          <rect x="117.46666666666665" y="180" width="100.4" height="16" rx="3" class="c-mask"/>
+          <text x="167.66666666666666" y="190" class="t-edge-emphasis" font-size="9" text-anchor="middle">PermissionRequest</text>
         </g>
         </g>
 
@@ -5313,15 +5313,15 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-detail="context" x="107" y="122" class="t-muted" font-size="7" text-anchor="middle">session</text>
         </g>
 
-        <g id="node-hook" data-node-id="hook" data-node-label="hook ask" tabindex="0" role="button" aria-label="Focus hook ask, waits &lt;= 90s, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="waits &lt;= 90s" data-node-context="Sequence participant">
-          <title>hook ask · waits &lt;= 90s · Sequence participant</title>
+        <g id="node-hook" data-node-id="hook" data-node-label="hook ask" tabindex="0" role="button" aria-label="Focus hook ask, waits &lt;= 300s, Sequence participant" aria-pressed="false" data-node-kind="backend" data-node-sublabel="waits &lt;= 300s" data-node-context="Sequence participant">
+          <title>hook ask · waits &lt;= 300s · Sequence participant</title>
           <rect x="183.33333333333331" y="72" width="90" height="60" rx="6" class="c-mask"/>
           <rect x="183.33333333333331" y="72" width="90" height="60" rx="6" class="c-backend" data-animate="node" style="--step:1" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(189.33333333333331 78) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
           <text data-node-label="" data-detail-anchor="" x="228.33333333333331" y="108" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">hook ask</text>
-          <text data-detail="context" x="228.33333333333331" y="122" class="t-muted" font-size="7" text-anchor="middle">waits &lt;= 90s</text>
+          <text data-detail="context" x="228.33333333333331" y="122" class="t-muted" font-size="7" text-anchor="middle">waits &lt;= 300s</text>
         </g>
 
         <g id="node-state" data-node-id="state" data-node-label="asks/" tabindex="0" role="button" aria-label="Focus asks/, state dir, Sequence participant" aria-pressed="false" data-node-kind="database" data-node-sublabel="state dir" data-node-context="Sequence participant">
@@ -5579,12 +5579,12 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
       <div class="card">
         <div class="card-header">
           <div class="card-dot amber"></div>
-          <h3>Probe first</h3>
+          <h3>Probed</h3>
         </div>
         <ul>
-          <li>Fill answers via updatedInput</li>
-          <li>or deny with the answer as reason</li>
-          <li>P1 task one decides</li>
+          <li>Allow with updatedInput.answers</li>
+          <li>terminal stays answerable meanwhile</li>
+          <li>probed on Claude Code 2.1.302</li>
         </ul>
       </div>
     </div>

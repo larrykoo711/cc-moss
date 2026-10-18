@@ -154,9 +154,9 @@ R1 ◄── 全部
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
-| **T1.1** 代答探针 | cc-moss | — | 🟨 In Progress | in-progress/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
+| **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | 🟨 In Progress | in-progress/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
-| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ⬜ Backlog | — | 假 claude 问答闭环、超时走原生 |
+| **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟦 Ready | todo/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
 | **T1.4** 桌面答题 | cc-moss | T1.3 | ⬜ Backlog | — | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | 🟨 In Progress | in-progress/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ⬜ Backlog | — | 杀掉后阶梯恢复、列表里结束不了 |
@@ -171,6 +171,8 @@ R1 ◄── 全部
 - G1：设计批准 approved-by=user date=2026-10-18
 - G2：编排确认 approved-by=user date=2026-10-18（「确认，开始第一波」）
 - G3：T1.1、T1.2、T2.1 spec 过 `sdd-gate.sh`（2026-10-18）
+- T1.1 ✅ 2026-10-18：探针结论 `notes/ask-probe.md`（f150399），controller 抽查 verify 全绿
+- DESIGN-AMEND: A5 等待 90s→300s、A6 回填定为 PermissionRequest + updatedInput.answers、K1 改写 reason=T1.1 实测 approved-by=controller（不弱化任何验收，按探针事实修订）date=2026-10-18
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
@@ -180,7 +182,7 @@ R1 ◄── 全部
 ## 开放问题
 - Q1 版本号：每个 Phase 一个小版本（0.3.0 起），P4 后是否直接 1.0？P4 收尾时定
 - Q2 Moss 默认名字与头像：默认「Moss」，头像沿用 ∞ 标志的变体？T2.2 spec 时给方案
-- Q3 代答默认等待 90 秒是否合适：T1.1 探针后按实测调整
+- ~~Q3 代答默认等待时长~~：T1.1 实测后定为 300 秒（A5）
 
 ## 已定调（防翻案）
 - D1 Slack 只在频道、不接私聊，频道内人人权限一样（兜底：允许频道、审计、暂停）
