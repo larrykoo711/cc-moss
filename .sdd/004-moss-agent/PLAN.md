@@ -182,6 +182,8 @@ R1 ◄── 全部
 - T1.2 → main：PR #36（45d7ce4），CI 全绿，用户授权「T1.2 好了就合并」
 - T1.3 ✅ 2026-10-18：评审 I1–I4 + Minor 已修（变异全红），I5 探针：Claude Code 采用第一个给出决定的 PermissionRequest hook，不拖住用户的 hook；合并树 Rust 630 全绿
 - AMEND: T1.3 契约（asks/done、临时文件 + hard_link 落地、`invalid-answer`、`tool.input_hash`）reason=评审修复 approved-by=controller（派发时预先批准）date=2026-10-18
+- T2.2 合入档案分支 c7aaaab（合并树 Rust 666、Swift 309 全绿），独立评审中。真机：全新目录以 bypass 启动 Claude Code 2.1.302 不出现「信任此文件夹」与 bypass 警告框，直接可输入（Moss 首次启动不会卡）；探针按规则 `/exit`，被 reconcile 收编的一条已 close
+- 裁决（T2.2）：`daemon stop` 由 CLI 一侧顺带停掉 Moss（升级的 kickstart 不停）；网站 FAQ「联网」一条补上 Moss 用你的 Claude Code 登录（与 guide 一致），T2.2 修正轮做
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
