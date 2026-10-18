@@ -33,13 +33,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `PermissionRequest`: run `cc-moss setup` after upgrading. Turn it off with `cc-moss config set ask.enabled false`.
   Any program running as you can answer, permission requests included; previews hide things that look like keys. An
   older `setup --uninstall` can't remove the two new hooks: uninstall with this version before downgrading.
-- **Answer from the panel or Mo (macOS).** While the menubar app is open, sessions wait for it: a question shows as a
-  card at the top of the panel, above Moss, with the session's name, the whole question and its options as written.
+- **Answer from the panel or Mo (macOS).** While the menubar app is open, sessions wait for it. The panel has a side
+  rail: Sessions, and To Do with everything waiting on you, oldest first, one item open at a time with the session's
+  name, the whole question and its options as written; answer one and the next opens. A line at the bottom of
+  Sessions says when something new is waiting.
   Click an option, tick several and click Done, write your own, or Allow / Don't Allow a `--safe` session's request;
   several questions are answered one by one and sent together. The card says whether it was answered, too late, or
   saved for later, and disappears by itself when the question is answered in the terminal, times out or the session
   ends. Mo's message box lists the options so a click answers there; otherwise a notification opens the panel on the
-  question, and both are taken back once it's gone. A session waiting for you to type gets a reply box. `cc-moss ask answer --json` says how an answer went in one line (`answered`, `too-late`, `not-waiting`). Switch it off
+  question, and both are taken back once it's gone. A question that arrived while the panel was open goes to Mo or a
+  notification when you close it unanswered. A session waiting for you to type gets a reply box in To Do. `cc-moss ask answer --json` says how an answer went in one line (`answered`, `too-late`, `not-waiting`). Switch it off
   in Settings › Notifications › Answer questions here (`ask.enabled`).
 
 ### Changed

@@ -5,7 +5,10 @@ enum Theme {
     static let brand = Color(red: 1.0, green: 0.353, blue: 0.235) // #FF5A3C, the icon's colour
     static let amber = Color(red: 0.90, green: 0.68, blue: 0.30)
     static let red = Color(red: 0.93, green: 0.30, blue: 0.30)
-    static let panelWidth: CGFloat = 420
+    /// The panel: its side rail, then the page.
+    static let railWidth: CGFloat = 56
+    static let pageWidth: CGFloat = 420
+    static let panelWidth: CGFloat = railWidth + pageWidth
     static let panelHeight: CGFloat = 540
 
     /// Raycast-like surfaces: a near-opaque layer over the frosted glass, so

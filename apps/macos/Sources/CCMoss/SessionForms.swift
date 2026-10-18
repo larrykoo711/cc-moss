@@ -189,7 +189,7 @@ struct FormCard<Content: View>: View {
             content()
         }
         .padding(12)
-        .frame(width: Theme.panelWidth - 28)
+        .frame(width: Theme.pageWidth - 28)
         .background(Theme.raised(scheme), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline(scheme)))
         .shadow(color: .black.opacity(0.18), radius: 16, y: 6)

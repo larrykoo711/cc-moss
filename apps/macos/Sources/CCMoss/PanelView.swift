@@ -30,41 +30,58 @@ struct PanelView: View {
     @State private var hoverGate = HoverGate()
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchBar
-            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
-            if AccessLostBanner.shows() {
-                AccessLostBanner()
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            // Questions first: a session stuck on you beats everything below,
-            // Moss's row included (T1.4).
-            if AskArea.shows(model) {
-                AskArea(model: model)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .layoutPriority(1)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            if model.phase == .ready && !model.sessions.isEmpty {
-                StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .padding(.bottom, 2)
-                if RestoreBanner.shows(model) {
-                    RestoreBanner(model: model)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            actionBar
+        HStack(spacing: 0) {
+            NavRail(model: model, settings: showSettings)
+            page
         }
         .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        .background(Theme.surface(scheme))
+        .onChange(of: model.queueItems.isEmpty) { _, empty in if empty { model.askQueue.emptied() } }
+        .onChange(of: model.page) { _, page in if page == .sessions { searchFocused = true } }
+    }
+
+    private var page: some View {
+        VStack(spacing: 0) {
+            if model.page == .queue {
+                QueuePage(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                searchBar
+                Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+                if AccessLostBanner.shows() {
+                    AccessLostBanner()
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if model.phase == .ready && !model.sessions.isEmpty {
+                    StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, 2)
+                    if RestoreBanner.shows(model) {
+                        RestoreBanner(model: model)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Room under the last row for the nudge floating over it.
+                    .safeAreaPadding(.bottom, QueueNudge.shows(model) ? 56 : 0)
+                    .overlay(alignment: .bottom) {
+                        if QueueNudge.shows(model) {
+                            QueueNudge(model: model)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 8)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+                    }
+            }
+            actionBar
+        }
+        .frame(width: Theme.pageWidth, height: Theme.panelHeight)
         // Keyboard focus lives in the search field; buttons never take it,
         // so no focus ring lands on the filter or the action pill.
         .focusEffectDisabled()
@@ -122,6 +139,8 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
         .animation(.easeOut(duration: 0.2), value: model.askDesk)
+        .animation(.easeOut(duration: 0.15), value: model.page)
+        .animation(.easeOut(duration: 0.2), value: QueueNudge.shows(model))
         .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
         .onAppear {
             searchFocused = true
@@ -354,7 +373,7 @@ struct PanelView: View {
             Spacer()
             // Raycast's floating pill with the main action; the rest live on
             // each session's row (user 2026-10-18).
-            if let primary = primaryAction {
+            if model.page == .sessions, let primary = primaryAction {
                 PillButton(action: { perform(primary) }) {
                     HStack(spacing: 6) {
                         ActionIcon(action: primary, symbolSize: 11)
@@ -603,6 +622,8 @@ struct PanelView: View {
             if let s = model.selected, model.phase == .ready {
                 Message.allowed(s) ? model.writeMessage(s) : model.editNote(s)
             }
+        case "1": model.page = .sessions
+        case "2": model.showQueue()
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):

@@ -5,123 +5,6 @@ import SwiftUI
 // session the wrong way, so a card always says which session is asking and
 // shows the whole question; options read exactly as the session wrote them.
 
-/// The panel's top block: "2 questions are waiting for you", a card each,
-/// then sessions waiting for you to type. Above everything else in the
-/// list, Moss included: a session that is stuck on you is the most urgent thing.
-struct AskArea: View {
-    @Bindable var model: AppModel
-    @Environment(\.colorScheme) private var scheme
-
-    static func shows(_ model: AppModel) -> Bool {
-        model.phase == .ready && (!model.askDesk.cards.isEmpty || !model.waitingForInput.isEmpty)
-    }
-
-    /// The cards' own height; past `maxHeight` they scroll, so the session
-    /// list below always keeps some room.
-    @State private var height: CGFloat = 0
-    static let maxHeight: CGFloat = 360
-
-    var body: some View {
-        ScrollView {
-            content.background(GeometryReader { g in
-                Color.clear.preference(key: AskAreaHeight.self, value: g.size.height)
-            })
-        }
-        .scrollIndicators(height > Self.maxHeight ? .automatic : .never)
-        .scrollDisabled(height <= Self.maxHeight)
-        .frame(height: min(max(height, 1), Self.maxHeight))
-        .onPreferenceChange(AskAreaHeight.self) { height = $0 }
-    }
-
-    private var content: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            if !model.askDesk.open.isEmpty {
-                header
-            }
-            ForEach(model.openAskCards, id: \.id) { card in
-                AskCardView(card: card, title: model.askTitle(card.ask), focused: model.askDesk.focused == card.id) { body in
-                    model.act(on: card.id, body)
-                }
-            }
-            ForEach(model.waitingForInput) { s in
-                ReplyCard(model: model, session: s)
-            }
-        }
-        .fixedSize(horizontal: false, vertical: true)
-    }
-
-    private var header: some View {
-        let n = model.askDesk.open.count
-        return Text(n == 1 ? L.t("A question is waiting for you", "有个问题在等你")
-                           : L.t("\(n) questions are waiting for you", "有 \(n) 个问题在等你"))
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 4)
-            .accessibilityAddTraits(.isHeader)
-    }
-}
-
-private struct AskAreaHeight: PreferenceKey {
-    static let defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
-}
-
-/// The frame every card in the answer area shares: the needs-you tint,
-/// rounded like the banners above it.
-private struct CardFrame: ViewModifier {
-    var focused = false
-    @Environment(\.colorScheme) private var scheme
-
-    func body(content: Content) -> some View {
-        content
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .fill(Theme.brand.opacity(scheme == .dark ? 0.10 : 0.05)))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(Theme.brand.opacity(focused ? 0.55 : 0.18), lineWidth: focused ? 1.5 : 1))
-    }
-}
-
-/// One question in the panel: who is asking, then the question itself.
-struct AskCardView: View {
-    let card: AskCard
-    let title: String
-    var focused = false
-    let act: ((inout AskCard) -> AskReply?) -> Void
-    @Environment(\.colorScheme) private var scheme
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                AskTile(kind: card.ask.kind)
-                Text(heading)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer(minLength: 6)
-                if card.several, !card.reviewing, card.phase == .choosing {
-                    Text(L.t("\(card.step + 1) of \(card.count)", "第 \(card.step + 1) / \(card.count) 题"))
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                }
-            }
-            AskCardBody(card: card, sessionTitle: title, canWrite: true, act: act)
-                .padding(.leading, 30)
-        }
-        .modifier(CardFrame(focused: focused))
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(heading)
-    }
-
-    private var heading: String {
-        switch card.ask.kind {
-        case .question: L.t("\(title) asks", "\(title) 问你")
-        case .permission: L.t("\(title) wants your OK", "\(title) 想征得你同意")
-        }
-    }
-}
-
 /// The kind's tile, as on a session row that needs you.
 struct AskTile: View {
     let kind: Ask.Kind
@@ -442,49 +325,29 @@ struct OutcomeLine: View {
 
 /// A session waiting for you to type: say something back without opening
 /// its terminal (sent the way the panel's "Send a Message" does).
-struct ReplyCard: View {
+struct ReplyBox: View {
     @Bindable var model: AppModel
     let session: Session
     @State private var text = ""
+    @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6).fill(Theme.brand.opacity(scheme == .dark ? 0.22 : 0.14))
-                    Image(systemName: Icons.message)
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(Theme.brand)
-                }
-                .frame(width: 22, height: 22)
-                .accessibilityHidden(true)
-                Text(L.t("\(session.title) is waiting for you", "\(session.title) 在等你"))
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-            VStack(alignment: .leading, spacing: 6) {
-                Text(L.t("It's waiting for your reply.", "它在等你回话。"))
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 6) {
-                    TextField(L.t("Reply…", "回它一句…"), text: $text)
-                        .textFieldStyle(.plain)
-                        .font(.system(size: 13))
-                        .onSubmit(send)
-                        .padding(.horizontal, 8)
-                        .frame(height: 28)
-                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.raised(scheme)))
-                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline(scheme)))
-                    SoftButton(title: L.t("Send", "发送"), icon: "paperplane", prominent: true, shortcut: "↵", action: send)
-                        .disabled(empty)
-                        .focusable(false)
-                }
-            }
-            .padding(.leading, 30)
+        HStack(spacing: 6) {
+            TextField(L.t("Reply…", "回它一句…"), text: $text)
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .focused($focused)
+                .onSubmit(send)
+                .padding(.horizontal, 8)
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.surface(scheme)))
+                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+            SoftButton(title: L.t("Send", "发送"), icon: "paperplane", prominent: true, shortcut: "↵", action: send)
+                .disabled(empty)
+                .focusable(false)
         }
-        .modifier(CardFrame())
+        .onAppear { focused = true }
     }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }

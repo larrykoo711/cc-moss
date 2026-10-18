@@ -198,9 +198,13 @@ cc-moss ask answer 9c8d0e1f2a3b --allow   # a permission request: allow it; --de
 - To turn it off: switch off "Answer questions here" in Settings › Notifications, or run
   `cc-moss config set ask.enabled false`.
 
-**Answering from the desktop.** While the menubar app is open, a session waiting on an answer puts "N questions are
-waiting for you" at the very top of the panel, above Moss's row, with a card for each. A card says which session is
-asking, then shows the whole question, with the options exactly as the session wrote them.
+**Answering from the desktop.** The panel has a side rail: Sessions is the session list, and To Do is everything
+waiting on you, with a count of what's left (⌘1 and ⌘2 switch). While the menubar app is open, questions from
+sessions and sessions waiting for your reply line up in To Do, oldest first. Closed, each is one line: which session
+and what it wants. Open, it shows the whole question, with the options exactly as the session wrote them. One is open
+at a time; answer it and the next one opens. Switch to Sessions to work on anything else, and the queue is where you
+left it when you come back. When something new arrives while you're on Sessions, a line floats up at the bottom;
+Handle takes you to it.
 
 - **One choice**: click an option and that's your answer.
 - **Several choices**: tick the ones you want, then click Done.
@@ -212,13 +216,14 @@ asking, then shows the whole question, with the options exactly as the session w
 - Once it's sent, the card says how it went: answered, too late (it was answered in the terminal, or the session
   stopped waiting), or the session isn't waiting right now and the answer is saved for when it asks again. If you
   answer in the terminal first, the question times out or the session ends, the card goes away by itself.
-- When a session is waiting for you to type (not a question), the same spot shows "It's waiting for you" with a box
-  to reply in. Your reply goes into the session, just like Send a Message in the panel.
+- When a session is waiting for you to type (not a question), To Do lists it too, with a box to reply in when you
+  open it. Your reply goes into the session, just like Send a Message in the panel.
 
 A new question is told once, in one place, by the rules in [Notifications and Mo](#notifications-and-mo). If Mo is
 on your desktop, its message box lists the question and its options, so a click answers it; Open Panel takes you to
-the card. Otherwise you get a notification, and clicking it opens the panel on that question. Once the question is
-answered or withdrawn, the notification and Mo's message go too. Nothing extra pops up while the panel is open. The
+it in To Do. Otherwise you get a notification, and clicking it opens the panel on that question. Once the question is
+answered or withdrawn, the notification and Mo's message go too. While the panel is open, it tells you there and only
+there; close it with a question still unanswered and it goes to Mo or a notification by the rules above. The
 app answers with the same commands as you would: `cc-moss ask list --json` and `cc-moss ask answer … --by desktop --json`.
 
 **Who can answer for you.** Any program running as you can run `ask take` and `ask answer`, and that includes allowing

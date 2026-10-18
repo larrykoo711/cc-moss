@@ -24,11 +24,6 @@ extension AppModel {
         if !change.isEmpty { onAsks?(change) }
     }
 
-    /// The questions still waiting on you, oldest first (the focused one first).
-    var openAskCards: [AskCard] {
-        askDesk.ordered
-    }
-
     /// Sessions waiting for you to type something, with no question open.
     var waitingForInput: [Session] {
         AskDesk.waitingForInput(sessions, asks: asks)
@@ -75,6 +70,12 @@ extension AppModel {
         askDesk.focused = id
         page = .queue
         askQueue.show(.ask(id), in: queueItems)
+    }
+
+    /// The rail's "To Do": open on the next thing waiting.
+    func showQueue() {
+        page = .queue
+        if !queueItems.isEmpty { askQueue.expanded = true }
     }
 
     /// The "To Do" page's items, in order.
