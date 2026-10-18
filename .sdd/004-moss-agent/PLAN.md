@@ -155,7 +155,7 @@ R1 ◄── 全部
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
 |------|----|------|------|-----|----------|
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
-| **T1.2** 新会话默认 bypass | cc-moss | — | 🟨 In Progress | in-progress/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
+| **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | 🟦 Ready | todo/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
 | **T1.4** 桌面答题 | cc-moss | T1.3 | ⬜ Backlog | — | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | 🟨 In Progress | in-progress/T2.1-daemon.spec.md | kill -9 后自动回来 |
@@ -173,6 +173,8 @@ R1 ◄── 全部
 - G3：T1.1、T1.2、T2.1 spec 过 `sdd-gate.sh`（2026-10-18）
 - T1.1 ✅ 2026-10-18：探针结论 `notes/ask-probe.md`（f150399），controller 抽查 verify 全绿
 - DESIGN-AMEND: A5 等待 90s→300s、A6 回填定为 PermissionRequest + updatedInput.answers、K1 改写 reason=T1.1 实测 approved-by=controller（不弱化任何验收，按探针事实修订）date=2026-10-18
+- AMEND: T1.2 `--safe` 同时去掉 default_args 里的权限参数（加强，不弱化）reason=「--safe = 这一次普通模式」 approved-by=controller date=2026-10-18
+- T1.2 ✅ 2026-10-18：CI 同款 522 通过、Swift 297 通过；controller 复跑 verify 9 项全绿
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
