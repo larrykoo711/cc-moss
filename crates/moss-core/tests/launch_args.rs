@@ -96,3 +96,49 @@ mod new_args {
         assert_eq!(n(&["job-a", "--detach"]), ["job-a", "--detach"]);
     }
 }
+
+mod permissions {
+    use moss_core::launch_args::{normalize_new, sets_permissions, without_permissions};
+
+    fn s(args: &[&str]) -> Vec<String> {
+        args.iter().map(|a| a.to_string()).collect()
+    }
+
+    #[test]
+    fn recognises_both_permission_flags() {
+        assert!(sets_permissions(&s(&["--dangerously-skip-permissions"])));
+        assert!(sets_permissions(&s(&[
+            "--model",
+            "opus",
+            "--permission-mode",
+            "plan"
+        ])));
+        assert!(sets_permissions(&s(&["--permission-mode=acceptEdits"])));
+        assert!(!sets_permissions(&s(&["--model", "opus"])));
+        assert!(!sets_permissions(&[]));
+    }
+
+    #[test]
+    fn strips_every_permission_flag() {
+        assert_eq!(
+            without_permissions(&s(&[
+                "--dangerously-skip-permissions",
+                "--model",
+                "opus",
+                "--permission-mode",
+                "plan",
+                "--permission-mode=acceptEdits",
+                "--effort=high",
+            ])),
+            ["--model", "opus", "--effort=high"]
+        );
+    }
+
+    #[test]
+    fn safe_stays_with_new() {
+        assert_eq!(
+            normalize_new(&s(&["x", "--safe", "--model", "opus"])),
+            ["x", "--safe", "--", "--model", "opus"]
+        );
+    }
+}

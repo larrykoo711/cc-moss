@@ -91,6 +91,7 @@ pub fn run(query: &str) -> Result<()> {
             dir: None,
             detach: false,
             yes: false,
+            safe: false,
             claude_args: Vec::new(),
         }),
         Action::Restore(r) => match &r.name {
@@ -100,6 +101,7 @@ pub fn run(query: &str) -> Result<()> {
                 dir: None,
                 detach: false,
                 yes: true,
+                safe: false,
                 claude_args: Vec::new(),
             }),
             None => cmd::restore::run(cmd::restore::RestoreArgs {

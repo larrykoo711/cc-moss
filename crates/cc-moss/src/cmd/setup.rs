@@ -61,17 +61,25 @@ pub fn run(opts: Options) -> Result<()> {
             println!("{n}");
         }
     }
-    files::apply(&changes, &notes, opts.dry_run, opts.yes, "setup").map(drop)
+    if files::apply(&changes, &notes, opts.dry_run, opts.yes, "setup")? {
+        settle_owned(&changes, opts.settings.as_deref())?;
+    }
+    Ok(())
 }
 
-pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
-    let path = match &opts.settings {
-        Some(p) => p.clone(),
+/// The settings.json at `settings` (default: Claude Code's), through any symlink.
+fn settings_path(settings: Option<&std::path::Path>) -> Result<PathBuf> {
+    let path = match settings {
+        Some(p) => p.to_path_buf(),
         None => default_settings_path()?,
     };
     // Dotfile managers often symlink settings.json; write through the link
     // instead of replacing it with a regular file.
-    let path = fs::canonicalize(&path).unwrap_or(path);
+    Ok(fs::canonicalize(&path).unwrap_or(path))
+}
+
+pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
+    let path = settings_path(opts.settings.as_deref())?;
     let original = read_optional(&path)?;
     let old_doc: Value = match &original {
         Some(text) => serde_json::from_str(text).with_context(|| {
@@ -82,11 +90,19 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
         })?,
         None => json!({}),
     };
-    let new_doc = if opts.uninstall {
+    let with_hooks = if opts.uninstall {
         settings_json::uninstall(&old_doc)?
     } else {
         settings_json::install(&old_doc, &hook_exe()?)?
     };
+    // New sessions start in bypass mode (T1.2): without this key each one
+    // would first stop on Claude Code's bypass warning, unseen in tmux.
+    let new_doc = if opts.uninstall {
+        settings_json::forget_owned(&with_hooks, &read_owned())?
+    } else {
+        settings_json::accept_bypass_prompt(&with_hooks)?
+    };
+    let only_prompt = with_hooks == old_doc;
     // Compare documents, not text: a file the user formatted differently
     // should not be rewritten when nothing changes semantically.
     if new_doc == old_doc && (original.is_some() || opts.uninstall) {
@@ -120,10 +136,26 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
         link: None,
         original,
         new_text: to_claude_string(&new_doc),
-        done: if opts.uninstall {
+        done: if opts.uninstall && only_prompt {
+            tr!(
+                format!("Took cc-moss's bypass setting out of {}.", path.display()),
+                format!("已从 {} 拿掉 cc-moss 加的 bypass 设置。", path.display())
+            )
+        } else if opts.uninstall {
             tr!(
                 format!("Removed the cc-moss hooks from {}.", path.display()),
                 format!("已从 {} 移除 cc-moss 钩子。", path.display())
+            )
+        } else if only_prompt {
+            tr!(
+                format!(
+                    "Updated {}: new sessions no longer stop on Claude Code's bypass warning.",
+                    path.display()
+                ),
+                format!(
+                    "已更新 {}：新会话不会再卡在 Claude Code 的 bypass 警告上。",
+                    path.display()
+                )
             )
         } else {
             tr!(
@@ -139,6 +171,85 @@ pub(super) fn settings_change(opts: &Options) -> Result<Option<Change>> {
         },
         path,
     }))
+}
+
+/// The settings.json keys cc-moss added, from the state dir. A missing or
+/// unreadable record counts as none: uninstall then leaves the keys alone,
+/// which is the safe way to be wrong about a file that belongs to the user.
+fn read_owned() -> Vec<String> {
+    std::fs::read_to_string(moss_core::store_dir::claude_settings_owned_path())
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default()
+}
+
+/// After `changes` were written: note in the state dir which settings.json
+/// keys cc-moss added, and forget the ones it took out again.
+pub(super) fn settle_owned(changes: &[Change], settings: Option<&std::path::Path>) -> Result<()> {
+    let path = settings_path(settings)?;
+    let Some(c) = changes
+        .iter()
+        .find(|c| c.path == path && c.link.is_none() && c.remove == Removal::No)
+    else {
+        return Ok(());
+    };
+    let parse = |text: &str| serde_json::from_str::<Value>(text).unwrap_or_else(|_| json!({}));
+    let before = c.original.as_deref().map_or_else(|| json!({}), parse);
+    let after = parse(&c.new_text);
+    let added = settings_json::added_keys(&before, &after);
+    let removed = settings_json::removed_keys(&before, &after);
+    if added.is_empty() && removed.is_empty() {
+        return Ok(());
+    }
+    let mut owned = read_owned();
+    owned.retain(|k| !removed.contains(k));
+    for k in added {
+        if !owned.contains(&k) {
+            owned.push(k);
+        }
+    }
+    let record = moss_core::store_dir::claude_settings_owned_path();
+    if owned.is_empty() {
+        return match fs::remove_file(&record) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+                Err(e).with_context(|| format!("cannot delete {}", record.display()))
+            }
+            _ => Ok(()),
+        };
+    }
+    moss_core::store_dir::ensure_private_dir(&moss_core::store_dir::state_dir())
+        .context("cannot create the cc-moss state directory")?;
+    let text = serde_json::to_string_pretty(&owned)? + "\n";
+    files::write_atomically(&record, text.as_bytes())
+}
+
+/// The first Claude Code settings file that turns bypass mode off
+/// (`permissions.disableBypassPermissionsMode = "disable"`): the user's own
+/// settings, then the managed settings an administrator installs. Only read.
+pub(crate) fn bypass_blocked_by() -> Option<PathBuf> {
+    let user = default_settings_path().ok();
+    [user, Some(managed_settings_path())]
+        .into_iter()
+        .flatten()
+        .find(|p| {
+            fs::read_to_string(p)
+                .ok()
+                .and_then(|t| serde_json::from_str::<Value>(&t).ok())
+                .is_some_and(|doc| settings_json::disables_bypass(&doc))
+        })
+}
+
+/// Where Claude Code reads managed (administrator) settings. Tests point
+/// `$CC_MOSS_CLAUDE_MANAGED_SETTINGS` elsewhere.
+fn managed_settings_path() -> PathBuf {
+    if let Some(p) = std::env::var_os("CC_MOSS_CLAUDE_MANAGED_SETTINGS").filter(|p| !p.is_empty()) {
+        return PathBuf::from(p);
+    }
+    if cfg!(target_os = "macos") {
+        PathBuf::from("/Library/Application Support/ClaudeCode/managed-settings.json")
+    } else {
+        PathBuf::from("/etc/claude-code/managed-settings.json")
+    }
 }
 
 /// Add the `cc-moss: path` block to `~/.zshenv` (it puts `~/.local/bin`

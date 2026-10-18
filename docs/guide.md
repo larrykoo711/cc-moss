@@ -25,7 +25,7 @@ cc-moss doctor                           # 检查是否都装好了
 
 | 部分 | 做什么 |
 |---|---|
-| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；加上 `t` 别名（`~/.local/bin/t`，见[别名](#别名)） |
+| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；你没设过 `skipDangerousModePermissionPrompt` 时把它设为 `true`，新会话就不会卡在 bypass 警告上（见[新会话的权限](#新会话的权限)）；加上 `t` 别名（`~/.local/bin/t`，见[别名](#别名)） |
 | `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
 | `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
 | `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
@@ -98,7 +98,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | 命令 | 做什么 |
 |---|---|
 | `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
-| `cc-moss new [名字] [-C 目录] [--detach] [--yes] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用 |
+| `cc-moss new [名字] [-C 目录] [--detach] [--yes] [--safe] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用。默认 bypass，`--safe` 这一次按普通模式开，连配置里额外加的 bypass 也不用（见[新会话的权限](#新会话的权限)） |
 | `cc-moss ls [--all] [--json]` | 列出会话（`--json` 给脚本用；1.0 之前格式仍可能调整） |
 | `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
@@ -108,12 +108,25 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
-| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前只有 `ui.language`（`auto`、`zh`、`en`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）和 `claude.permission_mode`（`bypass`、`default`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |
 | `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 别名 |
 
 `名字` 可以是 Claude Code 里的会话名、tmux 会话名，或会话 id 的开头几位。
+
+### 新会话的权限
+
+`cc-moss new` 和 App 里开的新会话默认是 bypass 模式（带上 `--dangerously-skip-permissions`）：Claude 不再逐条问你权限，直接动手。你写的 deny 规则和 Claude Code 自带的关键路径保护照样生效。已经在跑的会话、找回的会话不受影响，它们沿用当初的启动参数。
+
+想要普通模式（每一步都先问你）：
+
+- 只这一次：`cc-moss new 名字 --safe`。这一次不用 bypass，连配置里 `default_args` 额外加的（`--dangerously-skip-permissions`、`--permission-mode`）也不用；配置本身不改
+- 以后都这样：`cc-moss config set claude.permission_mode default`，或者在 App 的 设置 ›「通用」›「新会话」关掉「直接放手干」。改回来就设成 `bypass`
+
+`default_args` 或命令行里已经带了 `--dangerously-skip-permissions` 或 `--permission-mode` 时，cc-moss 不再重复加。`~/.claude/settings.json` 或管理员下发的设置（macOS 上是 `/Library/Application Support/ClaudeCode/managed-settings.json`）里 `permissions.disableBypassPermissionsMode` 是 `"disable"` 时，新会话按普通模式开，`cc-moss doctor` 会说明原因。
+
+Claude Code 第一次用 bypass 时会弹一个警告，在后台的 tmux 窗格里没人看得见，会话就卡在那里。所以 `cc-moss install` 会在你没设过的情况下把 `~/.claude/settings.json` 的 `skipDangerousModePermissionPrompt` 设为 `true`，并在 `~/.local/state/cc-moss/claude-settings-owned.json` 记下这是 cc-moss 写的。你自己设过（不管 `true` 还是 `false`）就不动；`cc-moss install --uninstall` 只撤掉 cc-moss 写的那一项。
 
 ### 别名
 
@@ -235,7 +248,7 @@ Homebrew 和 macOS 的 Releases 下载包里都带着 App；从源码装（`carg
 
 | 页 | 有什么 |
 |---|---|
-| 通用 | 开机自动打开、界面语言、工作区、会话在哪个终端打开、新标签页还是新窗口 |
+| 通用 | 开机自动打开、界面语言、新会话要不要直接放手干（bypass）、工作区、会话在哪个终端打开、新标签页还是新窗口 |
 | 快捷键 | 唤出面板的快捷键；在终端里敲的短名字（打开会话列表、开新会话、找回断了的会话等），点一下键帽输入、回车保存，保存后会演示敲下去的效果，自己写的命令收在「自己写的」里，和 `cc-moss alias` 是同一份（见[别名](#别名)）；面板里的按键一览 |
 | 菜单栏 | 图标显示方式、动态效果 |
 | 小莫 | 开关、大小、互动方式、声音 |
@@ -337,7 +350,8 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 
 ```toml
 [claude]
-default_args = ["--dangerously-skip-permissions"]   # 每次 `cc-moss new` 都会带上
+permission_mode = "bypass"   # 新会话默认 bypass；"default" 改回每一步都先问你
+default_args = ["--model", "opus"]   # 每次 `cc-moss new` 都会带上
 
 [naming]
 host_prefix = true        # 默认开启：tmux 会话名为 <主机名>_<名字>，在多台机器间 ssh 时更好区分

@@ -107,6 +107,54 @@ pub fn run(fix: bool) -> Result<bool> {
     Ok(broken == 0)
 }
 
+/// How `cc-moss new` starts sessions: bypass by default, normal mode when
+/// the config says so or a Claude Code setting turns bypass off.
+fn permission_check() -> Check {
+    use moss_core::config::{Config, PermissionMode};
+    let what = tr!("new sessions", "新会话");
+    let config = match Config::load() {
+        Ok(c) => c,
+        Err(e) => return check(Mark::Fail, what, format!("{e:#}"), None),
+    };
+    if config.claude.permission_mode == PermissionMode::Default {
+        return check(
+            Mark::Ok,
+            what,
+            tr!(
+                "normal mode: Claude Code asks before it acts",
+                "普通模式：Claude Code 动手前会先问你"
+            ),
+            None,
+        );
+    }
+    if let Some(path) = setup::bypass_blocked_by() {
+        return check(
+            Mark::Note,
+            what,
+            tr!(
+                format!(
+                    "bypass is turned off by a policy in {}; new sessions start in normal mode",
+                    path.display()
+                ),
+                format!(
+                    "{} 里的管理策略禁用了 bypass，新会话按普通模式开",
+                    path.display()
+                )
+            ),
+            None,
+        );
+    }
+    check(
+        Mark::Ok,
+        what,
+        tr!(
+            "bypass: they don't stop to ask for permission",
+            "bypass：不再逐条问你权限"
+        ),
+        None,
+    )
+}
+
 /// How to install `tools`: the commands for this system, else in words.
 fn install_hint(tools: &[Tool]) -> Option<String> {
     let cmds = install::commands_for(tools);
@@ -202,6 +250,7 @@ fn checks() -> Result<Vec<Check>> {
         ),
         Err(e) => check(Mark::Fail, tr!("hooks", "钩子"), format!("{e:#}"), None),
     });
+    out.push(permission_check());
     if let Some(n) = sessions_without_pid().filter(|n| *n > 0) {
         out.push(check(
             Mark::Warn,
