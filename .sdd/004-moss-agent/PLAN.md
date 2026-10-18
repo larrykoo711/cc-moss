@@ -176,6 +176,7 @@ R1 ◄── 全部
 - AMEND: T1.2 `--safe` 同时去掉 default_args 里的权限参数（加强，不弱化）reason=「--safe = 这一次普通模式」 approved-by=controller date=2026-10-18
 - T1.2 ✅ 2026-10-18：CI 同款 522 通过、Swift 297 通过；controller 复跑 verify 9 项全绿
 - T2.1 合入档案分支 1020d6c（合并树 CI：Rust 553、Swift 302 全绿）；真机：独立 probe label + 临时状态目录，`kill -9` 后约 22 秒由 launchd 拉回、单实例第二份退出 1、已清理；发现 K7（TCC），程序在 `~/Documents` 下会被卡住
+- 2026-10-18 教训：T1.3 真机补测的两个 claude 会话加载了用户全局的 cc-moss hook，登记进用户真实 registry，探针结束后显示为「断了」，用户发现。已 `cc-moss close <session_id>` 清理。规避：探针启动真 claude 一律带临时 `CC_MOSS_STATE_DIR`（已写入派发纪律）。
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
