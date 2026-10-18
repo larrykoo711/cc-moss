@@ -157,7 +157,7 @@ R1 ◄── 全部
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ✅ Done | done/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
-| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟨 In Progress | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续 |
+| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟩 Review | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ⬜ Backlog | — | 面板发一句、看到回复 |
@@ -184,6 +184,7 @@ R1 ◄── 全部
 - AMEND: T1.3 契约（asks/done、临时文件 + hard_link 落地、`invalid-answer`、`tool.input_hash`）reason=评审修复 approved-by=controller（派发时预先批准）date=2026-10-18
 - T2.2 合入档案分支 c7aaaab（合并树 Rust 666、Swift 309 全绿），独立评审中。真机：全新目录以 bypass 启动 Claude Code 2.1.302 不出现「信任此文件夹」与 bypass 警告框，直接可输入（Moss 首次启动不会卡）；探针按规则 `/exit`，被 reconcile 收编的一条已 close
 - 裁决（T2.2）：`daemon stop` 由 CLI 一侧顺带停掉 Moss（升级的 kickstart 不停）；网站 FAQ「联网」一条补上 Moss 用你的 Claude Code 登录（与 guide 一致），T2.2 修正轮做
+- T1.4 合入档案分支（合并树 Rust 670、Swift 362 全绿；高负载下两次全量各有带时限用例超时，单独与负载降后全量均绿）；裁决：`ask answer --json`（契约加项）；顺带修 T1.3 临时文件名在线程间撞名导致 `first_answer_wins` 偶发失败。待真机验收（真 Claude Code 在面板答一道题）
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
