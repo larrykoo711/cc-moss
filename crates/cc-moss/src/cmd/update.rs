@@ -13,7 +13,7 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use moss_core::update::{self, Version};
 
-use super::{app, confirm};
+use super::{app, confirm, daemon};
 
 /// `cc-moss update` asks for the latest version with this much patience.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(15);
@@ -243,6 +243,7 @@ pub fn run(args: UpdateArgs) -> Result<()> {
             app::follow_update(new_app.as_deref());
         }
     }
+    daemon::follow_update();
     println!(
         "{}",
         tr!(

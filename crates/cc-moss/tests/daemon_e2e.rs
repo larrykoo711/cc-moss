@@ -13,6 +13,13 @@ use common::{bin, dead_pid, FakeProcess};
 
 const LABEL: &str = "io.github.larrykoo711.cc-moss.daemon";
 
+fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64
+}
+
 /// A `cc-moss daemon run` child, killed when dropped.
 struct Daemon(Child);
 
@@ -274,8 +281,19 @@ impl Mac {
     }
 
     fn run(&self, args: &[&str]) -> Output {
-        let out = bin()
-            .stdin(Stdio::null())
+        self.run_with(args, &[])
+    }
+
+    /// `run` with more variables (or, with an empty value, fewer).
+    fn run_with(&self, args: &[&str], env: &[(&str, &Path)]) -> Output {
+        let out = self.command(args, env).output().unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        out
+    }
+
+    fn command(&self, args: &[&str], env: &[(&str, &Path)]) -> Command {
+        let mut cmd = bin();
+        cmd.stdin(Stdio::null())
             .env("HOME", self.dir.path())
             .env("PATH", "/usr/bin:/bin")
             .env("SHELL", "/bin/zsh")
@@ -288,22 +306,31 @@ impl Mac {
             )
             .env("CC_MOSS_LAUNCHD_DIR", self.agents())
             .env_remove("STARSHIP_CONFIG")
-            .args(args)
-            .output()
-            .unwrap();
-        assert!(out.status.success(), "{args:?}: {out:?}");
-        out
+            .args(args);
+        for (k, v) in env {
+            if v.as_os_str().is_empty() {
+                cmd.env_remove(k);
+            } else {
+                cmd.env(k, v);
+            }
+        }
+        cmd
     }
 
-    /// The daemon as the status file has it, running `version` in a live process.
+    /// The daemon as the status file has it, running `version` in a live
+    /// process with a fresh heartbeat.
     fn pretend_running(&self, version: &str) -> FakeProcess {
+        self.pretend_running_in(&self.path("state"), version)
+    }
+
+    fn pretend_running_in(&self, state: &Path, version: &str) -> FakeProcess {
         let p = FakeProcess::spawn();
-        std::fs::create_dir_all(self.path("state/daemon")).unwrap();
+        std::fs::create_dir_all(state.join("daemon")).unwrap();
         std::fs::write(
-            self.path("state/daemon/status.json"),
+            state.join("daemon/status.json"),
             serde_json::json!({
                 "schema": 1, "pid": p.pid().unwrap(), "pid_start": null, "version": version,
-                "started_ms": 0, "heartbeat_ms": 0
+                "started_ms": now_ms(), "heartbeat_ms": now_ms()
             })
             .to_string(),
         )
@@ -398,6 +425,179 @@ fn uninstall_removes_daemon_agent() {
     let n = mac.calls().len();
     mac.run(&["install", "--uninstall", "--yes"]);
     assert_eq!(mac.calls().len(), n);
+}
+
+fn stdout(out: &Output) -> String {
+    String::from_utf8_lossy(&out.stdout).into_owned()
+}
+
+/// A shell with its own CC_MOSS_STATE_DIR sees the daemon where its
+/// LaunchAgent puts it, and `start` there does not move it.
+#[test]
+fn status_and_start_follow_the_installed_agent() {
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    let _d = mac.pretend_running(env!("CARGO_PKG_VERSION"));
+    let elsewhere = mac.path("elsewhere");
+    let env = [("CC_MOSS_STATE_DIR", elsewhere.as_path())];
+    let out = mac.run_with(&["daemon", "status", "--json"], &env);
+    let r: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(r["running"], true, "{r}");
+
+    let plist = std::fs::read_to_string(mac.plist()).unwrap();
+    let n = mac.calls().len();
+    let out = mac.run_with(&["daemon", "start"], &env);
+    assert!(
+        stdout(&out).contains("Kept it that way"),
+        "{}",
+        stdout(&out)
+    );
+    assert_eq!(std::fs::read_to_string(mac.plist()).unwrap(), plist);
+    assert!(
+        !mac.calls()[n..].iter().any(|c| c == "bootout"),
+        "{:?}",
+        mac.calls()
+    );
+}
+
+#[test]
+fn daemon_run_refuses_root() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let mut child = daemon_cmd(&state)
+        .env("SUDO_USER", "someone")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let until = Instant::now() + Duration::from_secs(5);
+    while child.try_wait().unwrap().is_none() {
+        if Instant::now() > until {
+            let _ = child.kill();
+            let _ = child.wait();
+            panic!("the daemon kept running under sudo");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    let out = child.wait_with_output().unwrap();
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("without sudo"),
+        "{out:?}"
+    );
+    assert!(!state.join("daemon").exists(), "root left files behind");
+}
+
+/// A home that is not this account's (every test's) gets the plist but no
+/// launchd, and install and uninstall say so.
+#[test]
+fn a_home_launchd_never_reads_is_told() {
+    let mac = Mac::new();
+    let none = [("CC_MOSS_LAUNCHD_DIR", Path::new(""))];
+    let out = mac.run_with(&["install", "--yes"], &none);
+    let plist = mac
+        .path("Library/LaunchAgents")
+        .join(format!("{LABEL}.plist"));
+    assert!(plist.exists());
+    assert!(
+        stdout(&out).contains("did not start the cc-moss daemon"),
+        "{}",
+        stdout(&out)
+    );
+    let out = mac.run_with(&["install", "--uninstall", "--yes"], &none);
+    assert!(!plist.exists());
+    assert!(
+        stdout(&out).contains("launchd was not asked to stop the daemon"),
+        "{}",
+        stdout(&out)
+    );
+}
+
+#[test]
+fn uninstall_under_sudo_leaves_the_daemon_alone() {
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    let n = mac.calls().len();
+    let out = mac.run_with(
+        &["install", "--uninstall", "--yes"],
+        &[("SUDO_USER", Path::new("someone"))],
+    );
+    assert!(stdout(&out).contains("Running as root"), "{}", stdout(&out));
+    assert!(mac.plist().exists());
+    assert_eq!(mac.calls().len(), n);
+}
+
+#[test]
+fn install_goes_on_when_the_daemon_cannot_be_set_up() {
+    let mac = Mac::new();
+    // A state directory that is not absolute: the LaunchAgent cannot pin it.
+    let out = mac.run_with(
+        &["install", "--yes"],
+        &[("CC_MOSS_STATE_DIR", Path::new("relative/state"))],
+    );
+    let said = stdout(&out);
+    assert!(said.contains("Left the cc-moss daemon out"), "{said}");
+    assert!(
+        said.contains("All set") || said.contains("Almost there"),
+        "the rest of install ran: {said}"
+    );
+    assert!(!mac.plist().exists());
+}
+
+#[test]
+fn uninstall_goes_on_when_launchd_will_not_stop_it() {
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    let out = mac
+        .command(&["install", "--uninstall", "--yes"], &[])
+        .env("CC_MOSS_LAUNCHCTL_FAIL", "bootout")
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let said = stdout(&out);
+    assert!(said.contains("Could not stop the cc-moss daemon"), "{said}");
+    assert!(!mac.plist().exists(), "the plist goes anyway");
+    assert!(
+        said.contains("Your session records stay"),
+        "later steps ran: {said}"
+    );
+}
+
+#[test]
+fn uninstall_forgets_a_stop() {
+    let mac = Mac::new();
+    mac.run(&["install", "--yes"]);
+    mac.run(&["daemon", "stop"]);
+    mac.run(&["install", "--uninstall", "--yes"]);
+    assert_eq!(mac.calls().last().unwrap(), "enable");
+    let out = mac.run(&["install", "--yes"]);
+    assert!(!stdout(&out).contains("stays stopped"), "{}", stdout(&out));
+    assert_eq!(
+        mac.calls().last().unwrap(),
+        &format!("bootstrap {}", mac.plist().display())
+    );
+}
+
+/// What launchd's copy does while a `daemon run` in a terminal holds the
+/// lock: wait before exiting (launchd starts it again right after), and
+/// write to daemon.log only, not to launchd's stderr.log.
+#[test]
+fn a_launchd_copy_waits_quietly_while_another_runs() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let first = spawn(&state, None);
+    wait_running(&state, first.pid());
+    let started = Instant::now();
+    let out = daemon_cmd(&state)
+        .env("XPC_SERVICE_NAME", LABEL)
+        .env("CC_MOSS_DAEMON_BUSY_WAIT_MS", "400")
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{out:?}");
+    assert!(started.elapsed() >= Duration::from_millis(400), "it waited");
+    assert!(out.stderr.is_empty(), "{out:?}");
+    let log = std::fs::read_to_string(state.join("daemon/daemon.log")).unwrap();
+    assert!(log.contains("another daemon is running"), "{log}");
 }
 
 #[test]

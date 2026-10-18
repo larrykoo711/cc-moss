@@ -704,8 +704,6 @@ fn version_check() -> Check {
     }
 }
 
-/// The menubar app (macOS only): in an Applications folder, where its
-/// notifications work, and the same version as this cc-moss.
 /// The resident daemon (macOS): running, on this version.
 fn daemon_check() -> Option<Check> {
     if !daemon::applies() || app::as_root() {
@@ -752,6 +750,8 @@ fn daemon_check() -> Option<Check> {
     })
 }
 
+/// The menubar app (macOS only): in an Applications folder, where its
+/// notifications work, and the same version as this cc-moss.
 fn app_check() -> Option<Check> {
     if !app::applies() {
         return None;

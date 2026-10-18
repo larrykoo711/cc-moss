@@ -26,6 +26,8 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
 /// `cc-moss daemon run`, in the foreground. False when another daemon
 /// already holds the lock (exit 1).
 pub fn run() -> Result<bool> {
+    // Files root made here would lock the user's own daemon out for good.
+    not_as_root()?;
     let paths = Paths::current();
     moss_core::store_dir::ensure_private_dir(&paths.dir)
         .with_context(|| format!("{}", paths.dir.display()))?;
@@ -38,6 +40,16 @@ pub fn run() -> Result<bool> {
             None => "another daemon is running; exiting".to_string(),
         };
         let _ = daemon::append_log(&paths.log, &stamp(&line));
+        if under_launchd() {
+            // launchd starts this copy again 30 seconds after each exit for
+            // as long as another daemon (one run in a terminal) holds the
+            // lock: wait between tries, and keep its stderr.log small.
+            for out in [&paths.stdout, &paths.stderr] {
+                let _ = daemon::truncate_if_large(out);
+            }
+            std::thread::sleep(busy_wait());
+            return Ok(false);
+        }
         eprintln!(
             "{}",
             match pid {
@@ -71,7 +83,9 @@ pub fn run() -> Result<bool> {
     let mut stored = status::Stored {
         schema: 1,
         pid,
-        pid_start: proc::start_time(pid),
+        // `ps` may be slow right after login; without a start time the
+        // status leans on the heartbeat alone.
+        pid_start: (0..3).find_map(|_| proc::start_time(pid)),
         version: VERSION.to_string(),
         started_ms,
         heartbeat_ms: started_ms,
@@ -98,12 +112,24 @@ pub fn run() -> Result<bool> {
 
 /// Every 30 seconds; debug builds (the tests) may say otherwise.
 fn heartbeat() -> Duration {
-    std::env::var("CC_MOSS_DAEMON_HEARTBEAT_MS")
-        .ok()
-        .filter(|_| cfg!(debug_assertions))
-        .and_then(|v| v.parse().ok())
+    test_millis("CC_MOSS_DAEMON_HEARTBEAT_MS").unwrap_or(daemon::HEARTBEAT)
+}
+
+/// How long a copy launchd started waits when another daemon has the lock.
+fn busy_wait() -> Duration {
+    test_millis("CC_MOSS_DAEMON_BUSY_WAIT_MS").unwrap_or(Duration::from_secs(5 * 60))
+}
+
+/// A duration in milliseconds that only debug builds read from `var`.
+fn test_millis(var: &str) -> Option<Duration> {
+    app::test_override(var)
+        .and_then(|v| v.to_str()?.parse().ok())
         .map(Duration::from_millis)
-        .unwrap_or(daemon::HEARTBEAT)
+}
+
+/// launchd names the job it started in `XPC_SERVICE_NAME`.
+fn under_launchd() -> bool {
+    std::env::var("XPC_SERVICE_NAME").as_deref() == Ok(LABEL)
 }
 
 fn stamp(line: &str) -> String {
@@ -119,8 +145,26 @@ fn log(paths: &Paths, line: &str) {
 /// What `status` says, from the status file and whether its pid is still
 /// that process.
 pub fn report() -> status::Report {
-    let stored = status::read(&Paths::current().status);
-    status::report(stored.as_ref(), proc::liveness)
+    let stored = status::read(&daemon_paths().status);
+    status::report(stored.as_ref(), now_ms(), proc::liveness)
+}
+
+/// The daemon's files. Where its LaunchAgent says when there is one: the
+/// app (started from the Dock) and a shell with its own CC_MOSS_STATE_DIR
+/// or XDG_STATE_HOME then still look where the daemon writes.
+fn daemon_paths() -> Paths {
+    Paths::new(&pinned_state().unwrap_or_else(moss_core::store_dir::state_dir))
+}
+
+/// The state directory the installed LaunchAgent pins.
+fn pinned_state() -> Option<PathBuf> {
+    if !applies() {
+        return None;
+    }
+    let text = std::fs::read_to_string(Launchd::plist_path().ok()?).ok()?;
+    plist::environment_value(&text, "CC_MOSS_STATE_DIR")
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
 }
 
 /// `cc-moss daemon status [--json]`.
@@ -204,19 +248,23 @@ struct RealLaunchctl {
     domain: String,
 }
 
+/// Tests set `CC_MOSS_FORBID_LAUNCHCTL` for every run of the binary: in a
+/// debug build, reaching the real launchctl then panics, so a test that would
+/// touch the developer's own launchd fails loudly instead.
+fn forbid_in_tests() {
+    if cfg!(debug_assertions) && std::env::var_os("CC_MOSS_FORBID_LAUNCHCTL").is_some() {
+        panic!("a test reached the real /bin/launchctl (CC_MOSS_FORBID_LAUNCHCTL is set)");
+    }
+}
+
 impl RealLaunchctl {
-    fn new() -> Result<Self> {
-        let out = std::process::Command::new("id")
-            .arg("-u")
-            .output()
-            .context("cannot run `id -u`")?;
-        let uid = String::from_utf8_lossy(&out.stdout).trim().to_string();
-        if uid.is_empty() {
-            bail!("cannot tell the user id (`id -u` said nothing)");
-        }
-        Ok(RealLaunchctl {
+    fn new() -> Self {
+        forbid_in_tests();
+        // SAFETY: getuid has no preconditions and cannot fail.
+        let uid = unsafe { libc::getuid() };
+        RealLaunchctl {
             domain: format!("gui/{uid}"),
-        })
+        }
     }
 
     fn service(&self) -> String {
@@ -224,6 +272,7 @@ impl RealLaunchctl {
     }
 
     fn call(&self, args: &[&str]) -> Result<()> {
+        forbid_in_tests();
         let out = std::process::Command::new("/bin/launchctl")
             .args(args)
             .output()
@@ -277,6 +326,7 @@ impl Launchctl for RealLaunchctl {
         self.call(&["disable", &self.service()])
     }
     fn is_loaded(&self) -> bool {
+        forbid_in_tests();
         std::process::Command::new("/bin/launchctl")
             .args(["print", &self.service()])
             .stdout(std::process::Stdio::null())
@@ -285,6 +335,7 @@ impl Launchctl for RealLaunchctl {
             .is_ok_and(|s| s.success())
     }
     fn is_disabled(&self) -> bool {
+        forbid_in_tests();
         std::process::Command::new("/bin/launchctl")
             .args(["print-disabled", &self.domain])
             .output()
@@ -306,14 +357,33 @@ fn disabled_in(listing: &str, label: &str) -> bool {
 }
 
 /// Writes each call to a file and runs nothing. What is loaded or disabled
-/// follows from the calls written so far.
+/// follows from the calls written so far. The calls named in
+/// `CC_MOSS_LAUNCHCTL_FAIL` (comma separated) fail instead, unwritten.
 struct RecordingLaunchctl {
     log: PathBuf,
+    fail: Vec<String>,
 }
 
 impl RecordingLaunchctl {
+    fn new(log: PathBuf) -> Self {
+        let fail = app::test_override("CC_MOSS_LAUNCHCTL_FAIL")
+            .map(|v| {
+                v.to_string_lossy()
+                    .split(',')
+                    .map(|c| c.trim().to_string())
+                    .filter(|c| !c.is_empty())
+                    .collect()
+            })
+            .unwrap_or_default();
+        RecordingLaunchctl { log, fail }
+    }
+
     fn record(&self, call: &str) -> Result<()> {
         use std::io::Write;
+        let verb = call.split_whitespace().next().unwrap_or_default();
+        if self.fail.iter().any(|f| f == verb) {
+            bail!("launchctl {verb} failed (as the test asked)");
+        }
         std::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -372,62 +442,80 @@ impl Launchd {
     /// of making them. Otherwise `~/Library/LaunchAgents`, and the real
     /// launchctl only when `HOME` is this account's home.
     pub fn detect() -> Result<Launchd> {
-        let file = format!("{LABEL}.plist");
-        if let Some(dir) = std::env::var_os("CC_MOSS_LAUNCHD_DIR")
-            .filter(|d| !d.is_empty() && cfg!(debug_assertions))
-            .map(PathBuf::from)
-        {
+        let plist = Self::plist_path()?;
+        if let Some(dir) = launchd_dir() {
             return Ok(Launchd {
-                plist: dir.join(file),
-                ctl: Some(Box::new(RecordingLaunchctl {
-                    log: dir.join("launchctl.log"),
-                })),
+                plist,
+                ctl: Some(Box::new(RecordingLaunchctl::new(dir.join("launchctl.log")))),
             });
         }
-        let home = std::env::var_os("HOME")
-            .filter(|h| !h.is_empty())
-            .map(PathBuf::from)
-            .context("HOME is not set")?;
-        let ctl: Option<Box<dyn Launchctl>> = if cfg!(target_os = "macos") && is_own_home(&home) {
-            Some(Box::new(RealLaunchctl::new()?))
+        let ctl: Option<Box<dyn Launchctl>> = if cfg!(target_os = "macos") && is_own_home(&home()?)
+        {
+            Some(Box::new(RealLaunchctl::new()))
         } else {
             None
         };
-        Ok(Launchd {
-            plist: home.join("Library/LaunchAgents").join(file),
-            ctl,
+        Ok(Launchd { plist, ctl })
+    }
+
+    /// Where the LaunchAgent goes, without asking anything of launchd.
+    fn plist_path() -> Result<PathBuf> {
+        let file = format!("{LABEL}.plist");
+        Ok(match launchd_dir() {
+            Some(dir) => dir.join(file),
+            None => home()?.join("Library/LaunchAgents").join(file),
         })
     }
 }
 
-/// Whether `home` is this account's home directory, as the directory
-/// service has it. Unsure means no: then cc-moss never registers anything.
+fn launchd_dir() -> Option<PathBuf> {
+    app::test_override("CC_MOSS_LAUNCHD_DIR").filter(|d| !d.as_os_str().is_empty())
+}
+
+fn home() -> Result<PathBuf> {
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
+        .context("HOME is not set")
+}
+
+/// Whether `home` is this account's home directory. Unsure means no: then
+/// cc-moss never registers anything.
 fn is_own_home(home: &Path) -> bool {
-    let Some(user) = std::process::Command::new("id")
-        .arg("-un")
-        .output()
-        .ok()
-        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        .filter(|u| !u.is_empty())
-    else {
-        return false;
-    };
-    let Ok(out) = std::process::Command::new("/usr/bin/dscl")
-        .args([".", "-read", &format!("/Users/{user}"), "NFSHomeDirectory"])
-        .output()
-    else {
-        return false;
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    let Some(real) = text
-        .split_once("NFSHomeDirectory:")
-        .map(|(_, rest)| rest.trim())
-        .filter(|r| !r.is_empty())
-    else {
-        return false;
-    };
-    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
-    canon(Path::new(real)) == canon(home)
+    account_home().is_some_and(|real| same_dir(&real, home))
+}
+
+/// This account's home directory as the user database has it (network and
+/// mobile accounts included), whatever `HOME` says.
+fn account_home() -> Option<PathBuf> {
+    use std::os::unix::ffi::OsStrExt;
+    // SAFETY: getpwuid_r writes into `pwd` and `buf`, both ours and alive
+    // for the call; `pw_dir` points into `buf` and is read before it goes.
+    unsafe {
+        let uid = libc::getuid();
+        let mut buf = vec![0 as libc::c_char; 4096];
+        loop {
+            let mut pwd: libc::passwd = std::mem::zeroed();
+            let mut found: *mut libc::passwd = std::ptr::null_mut();
+            let rc = libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut found);
+            if rc == libc::ERANGE && buf.len() < 1 << 20 {
+                buf.resize(buf.len() * 2, 0);
+                continue;
+            }
+            if rc != 0 || found.is_null() || pwd.pw_dir.is_null() {
+                return None;
+            }
+            let dir = std::ffi::CStr::from_ptr(pwd.pw_dir).to_bytes();
+            return (!dir.is_empty()).then(|| PathBuf::from(std::ffi::OsStr::from_bytes(dir)));
+        }
+    }
+}
+
+/// Whether two paths name the same folder: through symlinks, and with or
+/// without a trailing slash.
+fn same_dir(a: &Path, b: &Path) -> bool {
+    let canon = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.components().collect());
+    canon(a) == canon(b)
 }
 
 /// launchd manages the daemon on macOS only, and never for root.
@@ -476,14 +564,22 @@ fn place_plist(launchd: &Launchd, text: &str) -> Result<bool> {
 /// run it; after an upgrade, swap in the new binary. Problems are told and
 /// never stop the rest of install.
 pub fn install_step(dry_run: bool) -> Result<()> {
-    if !applies() {
+    if !applies() || app::as_root() {
         return Ok(());
     }
-    if app::as_root() {
-        return Ok(());
-    }
-    let launchd = Launchd::detect()?;
-    let text = agent_plist()?;
+    let (launchd, text) = match Launchd::detect().and_then(|l| Ok((l, agent_plist()?))) {
+        Ok(ready) => ready,
+        Err(e) => {
+            println!(
+                "\n{}",
+                tr!(
+                    format!("Left the cc-moss daemon out: {e:#}."),
+                    format!("没有设置 cc-moss 守护进程：{e:#}。")
+                )
+            );
+            return Ok(());
+        }
+    };
     if dry_run {
         if std::fs::read_to_string(&launchd.plist).ok().as_deref() != Some(text.as_str()) {
             println!(
@@ -512,9 +608,29 @@ pub fn install_step(dry_run: bool) -> Result<()> {
 }
 
 fn bring_up(launchd: &Launchd, text: &str) -> Result<()> {
-    moss_core::store_dir::ensure_private_dir(&Paths::current().dir)?;
+    let state = moss_core::store_dir::state_dir();
+    let before = pinned_state();
+    moss_core::store_dir::ensure_private_dir(&Paths::new(&state).dir)?;
     let changed = place_plist(launchd, text)?;
+    if let Some(old) = before.filter(|old| changed && !same_dir(old, &state)) {
+        println!(
+            "\n{}",
+            tr!(
+                format!(
+                    "The cc-moss daemon now keeps its files in {} (before: {}).",
+                    state.display(),
+                    old.display()
+                ),
+                format!(
+                    "cc-moss 守护进程的文件现在放在 {}（之前在 {}）。",
+                    state.display(),
+                    old.display()
+                )
+            )
+        );
+    }
     let Some(ctl) = &launchd.ctl else {
+        println!("\n{}", not_own_home_note(&launchd.plist));
         return Ok(());
     };
     if ctl.is_disabled() {
@@ -565,14 +681,46 @@ fn bring_up(launchd: &Launchd, text: &str) -> Result<()> {
     Ok(())
 }
 
-/// `cc-moss install --uninstall`'s daemon step: stop it and remove the plist.
+/// Why launchd was left out: a plist under a home that is not this
+/// account's is never read.
+fn not_own_home_note(plist: &Path) -> String {
+    tr!(
+        format!(
+            "Wrote {} but did not start the cc-moss daemon: HOME is not your account's home folder, so launchd never looks there.",
+            plist.display()
+        ),
+        format!(
+            "已写好 {}，但没有启动 cc-moss 守护进程：HOME 不是你这个账户的家目录，launchd 不会去那里找。",
+            plist.display()
+        )
+    )
+}
+
+/// `cc-moss install --uninstall`'s daemon step: stop it, forget a `daemon
+/// stop`, and remove the plist. A step that fails is told and the rest
+/// still happens.
 pub fn uninstall_step(dry_run: bool) -> Result<()> {
     if !applies() {
         return Ok(());
     }
+    if app::as_root() {
+        if Launchd::plist_path().is_ok_and(|p| p.exists()) {
+            println!(
+                "\n{}",
+                tr!(
+                    "Running as root, so the cc-moss daemon was left alone: run `cc-moss install --uninstall` without sudo to remove it.",
+                    "正在以 root 身份运行，所以没有动 cc-moss 守护进程：不加 sudo 运行 `cc-moss install --uninstall` 就能移除它。"
+                )
+            );
+        }
+        return Ok(());
+    }
     let launchd = Launchd::detect()?;
-    let loaded = launchd.ctl.as_ref().is_some_and(|c| c.is_loaded());
-    if !launchd.plist.exists() && !loaded {
+    let ctl = launchd.ctl.as_ref();
+    let loaded = ctl.is_some_and(|c| c.is_loaded());
+    let disabled = ctl.is_some_and(|c| c.is_disabled());
+    let present = launchd.plist.exists();
+    if !present && !loaded && !disabled {
         return Ok(());
     }
     if dry_run {
@@ -591,33 +739,100 @@ pub fn uninstall_step(dry_run: bool) -> Result<()> {
         );
         return Ok(());
     }
-    if let Some(ctl) = launchd.ctl.as_ref().filter(|_| loaded) {
-        ctl.bootout()?;
-    }
-    match std::fs::remove_file(&launchd.plist) {
-        Ok(()) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e).with_context(|| format!("{}", launchd.plist.display())),
-    }
-    println!(
-        "{}",
-        tr!(
-            format!(
-                "Stopped the cc-moss daemon and deleted {}.",
-                launchd.plist.display()
-            ),
-            format!(
-                "已停掉 cc-moss 守护进程，并删除 {}。",
-                launchd.plist.display()
+    let warn = |e: anyhow::Error| {
+        println!(
+            "\n{}",
+            tr!(
+                format!("Could not stop the cc-moss daemon: {e:#}. It won't start again after you log out."),
+                format!("没能停掉 cc-moss 守护进程：{e:#}。注销重新登录后它就不会再启动了。")
             )
         )
-    );
+    };
+    let mut stopped = false;
+    if let Some(ctl) = ctl {
+        if loaded {
+            match ctl.bootout() {
+                Ok(()) => stopped = true,
+                Err(e) => warn(e),
+            }
+        }
+        // A `daemon stop` is remembered by launchd past the plist: forget
+        // it, so installing again starts the daemon again.
+        if disabled {
+            let _ = ctl.enable();
+        }
+    }
+    let mut deleted = false;
+    if present {
+        match std::fs::remove_file(&launchd.plist) {
+            Ok(()) => deleted = true,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => println!(
+                "\n{}",
+                tr!(
+                    format!("Could not delete {}: {e}.", launchd.plist.display()),
+                    format!("没能删除 {}：{e}。", launchd.plist.display())
+                )
+            ),
+        }
+    }
+    let plist = launchd.plist.display();
+    let said = match (stopped, deleted) {
+        (true, true) => tr!(
+            format!("Stopped the cc-moss daemon and deleted {plist}."),
+            format!("已停掉 cc-moss 守护进程，并删除 {plist}。")
+        ),
+        (true, false) => tr!(
+            "Stopped the cc-moss daemon.".to_string(),
+            "已停掉 cc-moss 守护进程。".to_string()
+        ),
+        (false, true) if ctl.is_none() => tr!(
+            format!("Deleted {plist}. launchd was not asked to stop the daemon: HOME is not your account's home folder."),
+            format!("已删除 {plist}。没有让 launchd 停掉守护进程：HOME 不是你这个账户的家目录。")
+        ),
+        (false, true) => tr!(format!("Deleted {plist}."), format!("已删除 {plist}。")),
+        (false, false) => return Ok(()),
+    };
+    println!("{said}");
     Ok(())
+}
+
+/// After `cc-moss update` put a new binary in place: have launchd restart
+/// a running daemon on it. One you stopped stays stopped.
+pub fn follow_update() {
+    if !applies() || app::as_root() {
+        return;
+    }
+    let Ok(launchd) = Launchd::detect() else {
+        return;
+    };
+    let Some(ctl) = &launchd.ctl else {
+        return;
+    };
+    if !launchd.plist.exists() || ctl.is_disabled() || !ctl.is_loaded() {
+        return;
+    }
+    match ctl.kickstart(true) {
+        Ok(()) => println!(
+            "{}",
+            tr!(
+                "Restarted the cc-moss daemon on the new version.",
+                "已用新版本重启 cc-moss 守护进程。"
+            )
+        ),
+        Err(e) => println!(
+            "{}",
+            tr!(
+                format!("Could not restart the cc-moss daemon: {e:#}. `cc-moss install` swaps in the new version."),
+                format!("没能重启 cc-moss 守护进程：{e:#}。运行 `cc-moss install` 换上新版本。")
+            )
+        ),
+    }
 }
 
 /// Whether the LaunchAgent is in place (for doctor).
 pub fn plist_present() -> bool {
-    Launchd::detect().is_ok_and(|l| l.plist.exists())
+    Launchd::plist_path().is_ok_and(|p| p.exists())
 }
 
 // ---------------------------------------------------------------- start / stop
@@ -625,13 +840,7 @@ pub fn plist_present() -> bool {
 const NOT_OWN_HOME: &str =
     "HOME is not this account's home directory, so launchd would never see the daemon";
 
-fn need_launchd() -> Result<()> {
-    if !applies() {
-        bail!(tr!(
-            "launchd runs the daemon on macOS only; elsewhere run `cc-moss daemon run` yourself",
-            "只有 macOS 上由 launchd 托管守护进程；其他系统请自己运行 `cc-moss daemon run`"
-        ));
-    }
+fn not_as_root() -> Result<()> {
     if app::as_root() {
         bail!(tr!(
             "the daemon runs as you, not as root: run this without sudo",
@@ -641,25 +850,65 @@ fn need_launchd() -> Result<()> {
     Ok(())
 }
 
+fn need_launchd() -> Result<()> {
+    if !applies() {
+        bail!(tr!(
+            "launchd runs the daemon on macOS only; elsewhere run `cc-moss daemon run` yourself",
+            "只有 macOS 上由 launchd 托管守护进程；其他系统请自己运行 `cc-moss daemon run`"
+        ));
+    }
+    not_as_root()
+}
+
 /// `cc-moss daemon start`: set it up if needed and have launchd run it.
 pub fn start() -> Result<()> {
     need_launchd()?;
     let launchd = Launchd::detect()?;
-    moss_core::store_dir::ensure_private_dir(&Paths::current().dir)?;
-    let changed = place_plist(&launchd, &agent_plist()?)?;
     let ctl = launchd.ctl.as_ref().context(NOT_OWN_HOME)?;
+    let state = moss_core::store_dir::state_dir();
+    // A LaunchAgent pinning another state directory was set up from a shell
+    // that had its own: keep it rather than move the daemon behind its back
+    // (the app, started from the Dock, has neither variable).
+    let changed = match pinned_state().filter(|p| !same_dir(p, &state)) {
+        Some(pinned) => {
+            println!(
+                "{}",
+                tr!(
+                    format!(
+                        "The daemon uses {}, not {} as this terminal would. Kept it that way; to switch, run `cc-moss install` here.",
+                        pinned.display(),
+                        state.display()
+                    ),
+                    format!(
+                        "守护进程用的是 {}，不是这个终端会用的 {}。先保持不变；要换过来，在这里运行 `cc-moss install`。",
+                        pinned.display(),
+                        state.display()
+                    )
+                )
+            );
+            false
+        }
+        None => place_plist(&launchd, &agent_plist()?)?,
+    };
+    moss_core::store_dir::ensure_private_dir(&daemon_paths().dir)?;
     if ctl.is_disabled() {
         ctl.enable()?;
     }
+    // launchd may be starting it right now and refuse a kickstart: then
+    // what the daemon does next decides.
+    let mut refused = None;
     if !ctl.is_loaded() {
         ctl.bootstrap(&launchd.plist)?;
     } else if changed {
         ctl.bootout()?;
         ctl.bootstrap(&launchd.plist)?;
     } else if !report().running {
-        ctl.kickstart(false)?;
+        refused = ctl.kickstart(false).err();
     }
     if !ctl.is_real() {
+        if let Some(e) = refused {
+            return Err(e);
+        }
         println!(
             "{}",
             tr!(
@@ -672,19 +921,16 @@ pub fn start() -> Result<()> {
     let r = wait_for(true);
     if r.running {
         println!("{}", describe(&r));
-        Ok(())
-    } else {
-        bail!(tr!(
-            format!(
-                "launchd did not bring the daemon up; see {}",
-                Paths::current().log.display()
-            ),
-            format!(
-                "launchd 没能把守护进程拉起来；看看 {}",
-                Paths::current().log.display()
-            )
-        ))
+        return Ok(());
     }
+    if let Some(e) = refused {
+        return Err(e);
+    }
+    let log = daemon_paths().log;
+    bail!(tr!(
+        format!("launchd did not bring the daemon up; see {}", log.display()),
+        format!("launchd 没能把守护进程拉起来；看看 {}", log.display())
+    ))
 }
 
 /// `cc-moss daemon stop`: stop it until `daemon start`, across logins too.
@@ -766,6 +1012,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ctl = RecordingLaunchctl {
             log: dir.path().join("launchctl.log"),
+            fail: vec![],
         };
         assert!(!ctl.is_loaded() && !ctl.is_disabled());
         ctl.bootstrap(Path::new("/x.plist")).unwrap();
@@ -786,5 +1033,35 @@ mod tests {
         assert_eq!(span(60_000), "1 minute");
         assert_eq!(span(3 * 3_600_000 + 10), "3 hours");
         assert_eq!(span(2 * 86_400_000), "2 days");
+    }
+
+    #[test]
+    fn same_dir_sees_through_symlinks_and_slashes() {
+        let dir = tempfile::tempdir().unwrap();
+        let home = dir.path().join("home");
+        std::fs::create_dir(&home).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&home, &link).unwrap();
+        let slash = PathBuf::from(format!("{}/", home.display()));
+        assert!(same_dir(&home, &home));
+        assert!(same_dir(&home, &link), "a symlink to it");
+        assert!(same_dir(&home, &slash), "a trailing slash");
+        assert!(!same_dir(&home, dir.path()), "its parent");
+        assert!(
+            !same_dir(&home, &dir.path().join("other")),
+            "a missing folder"
+        );
+        let gone = Path::new("/nonexistent/cc-moss-home");
+        assert!(same_dir(gone, Path::new("/nonexistent/cc-moss-home/")));
+    }
+
+    #[test]
+    fn a_temporary_home_is_not_this_accounts() {
+        // A container may run as a uid with no entry in the user database.
+        let Some(real) = account_home() else { return };
+        assert!(real.is_absolute(), "{}", real.display());
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_own_home(dir.path()));
+        assert!(is_own_home(&real));
     }
 }

@@ -71,6 +71,29 @@ public struct DaemonStatus: Equatable, Sendable {
     }
 }
 
+/// What the Moss page knows about the daemon: not asked yet, the answer,
+/// or why there is none. "Couldn't check" is never shown as "not running".
+public enum DaemonCheck: Equatable, Sendable {
+    case checking
+    case known(DaemonStatus)
+    /// cc-moss could not be asked, or did not answer; the reason, for people.
+    case failed(String)
+
+    public var status: DaemonStatus? {
+        if case .known(let s) = self { s } else { nil }
+    }
+
+    /// The page's status line.
+    public func line(now: Date = L.clock(), lang: Lang = L.lang) -> String {
+        let t = { (en: String, zh: String) in lang == .zh ? zh : en }
+        return switch self {
+        case .checking: t("Daemon · checking…", "守护进程 · 正在查看…")
+        case .known(let s): s.line(now: now, lang: lang)
+        case .failed: t("Daemon · couldn't check", "守护进程 · 查不到状态")
+        }
+    }
+}
+
 extension MossClient {
     /// `cc-moss daemon status --json`.
     public func daemonStatus() async throws -> DaemonStatus {

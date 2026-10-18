@@ -90,14 +90,31 @@ pub fn remove_if_ours(path: &Path, pid: u32) -> io::Result<()> {
     }
 }
 
-/// The report for `stored`. A pid that is gone (or now belongs to another
-/// process) is not running; one whose liveness cannot be told counts as
-/// running: calling a live daemon dead would start a second one.
-pub fn report(stored: Option<&Stored>, liveness: impl Fn(u32, Option<&str>) -> Liveness) -> Report {
+/// A heartbeat older than this many periods means the daemon is gone.
+pub const STALE_BEATS: i64 = 3;
+
+/// The report for `stored` at `now_ms`. A pid that is gone (or now belongs
+/// to another process) is not running. When the pid cannot be told apart
+/// from a reused one (its liveness is unknown, or no start time was
+/// recorded), the heartbeat decides: fresh within [`STALE_BEATS`] periods is
+/// running, older is not, so a stranger's process is never taken for it.
+pub fn report(
+    stored: Option<&Stored>,
+    now_ms: i64,
+    liveness: impl Fn(u32, Option<&str>) -> Liveness,
+) -> Report {
     let Some(s) = stored else {
         return Report::not_running();
     };
-    if liveness(s.pid, s.pid_start.as_deref()) == Liveness::Dead {
+    let running = match liveness(s.pid, s.pid_start.as_deref()) {
+        Liveness::Dead => false,
+        Liveness::Alive if s.pid_start.is_some() => true,
+        Liveness::Alive | Liveness::Unknown => {
+            let period = super::HEARTBEAT.as_millis() as i64;
+            now_ms - s.heartbeat_ms <= STALE_BEATS * period
+        }
+    };
+    if !running {
         return Report::not_running();
     }
     Report {
@@ -126,9 +143,12 @@ mod tests {
         }
     }
 
+    /// Just after the stored heartbeat.
+    const NOW: i64 = 1_792_310_431_000;
+
     #[test]
     fn report_running_carries_the_details() {
-        let r = report(Some(&stored()), |_, _| Liveness::Alive);
+        let r = report(Some(&stored()), NOW, |_, _| Liveness::Alive);
         let json = serde_json::to_value(&r).unwrap();
         assert_eq!(json["schema"], 1);
         assert_eq!(json["running"], true);
@@ -140,25 +160,48 @@ mod tests {
 
     #[test]
     fn report_without_a_file_is_not_running() {
-        let json = serde_json::to_value(report(None, |_, _| Liveness::Alive)).unwrap();
+        let json = serde_json::to_value(report(None, NOW, |_, _| Liveness::Alive)).unwrap();
         assert_eq!(json, serde_json::json!({"schema": 1, "running": false}));
     }
 
     #[test]
     fn report_for_a_gone_pid_is_not_running() {
-        let r = report(Some(&stored()), |_, _| Liveness::Dead);
+        let r = report(Some(&stored()), NOW, |_, _| Liveness::Dead);
         assert_eq!(r, Report::not_running());
     }
 
     #[test]
-    fn report_for_an_unknown_pid_counts_as_running() {
-        assert!(report(Some(&stored()), |_, _| Liveness::Unknown).running);
+    fn report_for_an_unknown_pid_follows_the_heartbeat() {
+        let beat = stored().heartbeat_ms;
+        let period = crate::daemon::HEARTBEAT.as_millis() as i64;
+        let unknown = |now| report(Some(&stored()), now, |_, _| Liveness::Unknown).running;
+        assert!(unknown(beat + period), "a fresh heartbeat");
+        assert!(unknown(beat + STALE_BEATS * period));
+        assert!(
+            !unknown(beat + STALE_BEATS * period + 1),
+            "three beats missed"
+        );
+    }
+
+    #[test]
+    fn report_without_a_start_time_follows_the_heartbeat() {
+        // Without a recorded start time any process on that pid compares
+        // alive, so the heartbeat has the last word.
+        let mut s = stored();
+        s.pid_start = None;
+        let period = crate::daemon::HEARTBEAT.as_millis() as i64;
+        let alive = |now| report(Some(&s), now, |_, _| Liveness::Alive).running;
+        assert!(alive(s.heartbeat_ms + period));
+        assert!(!alive(s.heartbeat_ms + 10 * period), "a reused pid");
+        // With a start time, an alive pid is the daemon however old the beat.
+        let r = report(Some(&stored()), NOW + 10 * period, |_, _| Liveness::Alive);
+        assert!(r.running);
     }
 
     #[test]
     fn report_checks_the_recorded_start_time() {
         let seen = std::cell::RefCell::new(None);
-        report(Some(&stored()), |pid, start| {
+        report(Some(&stored()), NOW, |pid, start| {
             *seen.borrow_mut() = Some((pid, start.map(str::to_string)));
             Liveness::Alive
         });

@@ -181,8 +181,10 @@ cc-moss daemon start           # 重新启动（需要时会先把它设置好�
 ```
 
 - 菜单栏 App 的设置 ›「Moss」页也能看到它在不在运行，没在运行时点「启动」就行。`cc-moss doctor` 也会检查它，并告诉你该运行哪条命令。
-- 升级后运行一次 `cc-moss install`，守护进程就会换成新版本。`cc-moss install --uninstall` 会停掉它并删掉它的配置。
-- 文件都在状态目录的 `daemon/` 下：`status.json`（状态和每 30 秒一次的心跳）、`daemon.log`（超过 1 MiB 重新开始），以及 launchd 的 `stdout.log`、`stderr.log`。系统里登记的是 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`，以你自己的身份运行，不需要 root。
+- `cc-moss update` 升级后会让守护进程换成新版本；用别的方式升级（比如 `brew upgrade`）后，运行一次 `cc-moss install` 就行。你停掉的守护进程两种情况下都保持停止。`cc-moss install --uninstall` 会停掉它、忘掉你停过它这件事，并删掉它的配置。
+- 文件都在状态目录的 `daemon/` 下：`status.json`（状态和每 30 秒一次的心跳）、`daemon.log`（超过 1 MiB 重新开始），以及 launchd 的 `stdout.log`、`stderr.log`。系统里登记的是 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`，以你自己的身份运行，不需要 root；用 sudo 运行 `cc-moss daemon run` 会直接拒绝。
+- LaunchAgent 记着 `cc-moss install` 当时用的状态目录（`CC_MOSS_STATE_DIR`、`XDG_STATE_HOME`），`daemon status`、`doctor` 和 App 都去那里看，不管当前终端怎么设。`daemon start` 也不会改它；要把守护进程换到别的目录，在设好新目录的终端里运行 `cc-moss install`。
+- launchd 托管着守护进程时，你也可以在终端里自己运行 `cc-moss daemon run`，但同一时间只有一个能跑起来：launchd 那份会每隔五分钟再试一次，你那份停掉后大约五分钟内它就接上。
 
 ## 状态栏 App
 

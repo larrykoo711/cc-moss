@@ -6,19 +6,25 @@ import SwiftUI
 /// otherwise: launchd keeps it going, `cc-moss daemon stop` stops it.
 struct MossSettings: View {
     let model: AppModel
-    /// Screenshots pass a fixed status and nothing is asked of cc-moss.
-    var demo: DaemonStatus?
-    @State private var status: DaemonStatus?
+    /// Screenshots pass a fixed check and nothing is asked of cc-moss.
+    var demo: DaemonCheck?
+    @State private var check: DaemonCheck = .checking
     @State private var starting = false
     @State private var problem: String?
 
-    private var shown: DaemonStatus? { demo ?? status }
+    private var shown: DaemonCheck { demo ?? check }
+
+    private var detail: String {
+        if let problem { return problem }
+        if case .failed(let why) = shown { return why }
+        return L.t("It starts when you log in, and comes back on its own if it stops. Moss will run inside it.",
+                   "登录时自动启动，意外退出也会自己回来。以后 Moss 就跑在它里面。")
+    }
 
     var body: some View {
         SettingsCard(title: L.t("In the Background", "后台")) {
-            CardRow(title: shown?.line() ?? L.t("Daemon · checking…", "守护进程 · 正在查看…"),
-                    detail: problem ?? L.t("It starts when you log in, and comes back on its own if it stops. Moss will run inside it.",
-                                           "登录时自动启动，意外退出也会自己回来。以后 Moss 就跑在它里面。"),
+            CardRow(title: shown.line(),
+                    detail: detail,
                     divider: false) {
                 control
             }
@@ -41,26 +47,30 @@ struct MossSettings: View {
     @ViewBuilder private var control: some View {
         if starting {
             ProgressView().controlSize(.small)
-        } else if let shown, shown.running {
+        } else if let status = shown.status, status.running {
             HStack(spacing: 4) {
                 Image(systemName: "checkmark.circle.fill").font(.system(size: 12, weight: .semibold)).foregroundStyle(.green)
                 Text(L.t("Running", "运行中")).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             .fixedSize()
             .accessibilityElement(children: .combine)
-        } else if shown != nil {
+        } else if shown.status != nil {
             SoftButton(title: L.t("Start", "启动"), icon: "play.fill", prominent: true) { start() }
                 .disabled(model.client == nil || demo != nil)
         }
     }
 
     private func refresh() async {
-        guard let client = model.client else { return }
+        guard let client = model.client else {
+            check = .failed(L.t("The app can't find the cc-moss command.", "App 找不到 cc-moss 命令。"))
+            return
+        }
         do {
-            status = try await client.daemonStatus()
-            if status?.running == true { problem = nil }
+            let status = try await client.daemonStatus()
+            check = .known(status)
+            if status.running { problem = nil }
         } catch {
-            status = .stopped
+            check = .failed(AppModel.describe(error))
         }
     }
 

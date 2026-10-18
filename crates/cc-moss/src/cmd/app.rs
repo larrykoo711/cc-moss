@@ -46,7 +46,7 @@ fn home() -> Option<PathBuf> {
 
 /// A path that only debug builds (the tests) let an environment variable
 /// replace, so a release build is never talked into some other folder.
-fn test_override(var: &str) -> Option<PathBuf> {
+pub(super) fn test_override(var: &str) -> Option<PathBuf> {
     std::env::var_os(var)
         .filter(|_| cfg!(debug_assertions))
         .map(PathBuf::from)

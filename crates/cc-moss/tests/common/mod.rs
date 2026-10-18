@@ -40,6 +40,8 @@ pub fn bin() -> Command {
         // No test reaches the network; update tests turn checking back on
         // with a stub curl on PATH.
         .env("CC_MOSS_NO_UPDATE_CHECK", "1")
+        // Never the real launchctl: a debug build panics if it gets there.
+        .env("CC_MOSS_FORBID_LAUNCHCTL", "1")
         // Not root unless a test says so, and never the real /Applications.
         .env_remove("SUDO_USER")
         .env(

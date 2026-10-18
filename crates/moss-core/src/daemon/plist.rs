@@ -61,6 +61,28 @@ pub fn render(agent: &Agent) -> String {
     out
 }
 
+/// The value a plist written by [`render`] gives the environment variable
+/// `name`, or `None` when it sets none (or the text is not one of ours).
+pub fn environment_value(text: &str, name: &str) -> Option<String> {
+    let key = format!("<key>{}</key>", escape(name));
+    let mut lines = text.lines().map(str::trim);
+    lines.find(|l| *l == key)?;
+    let value = lines
+        .next()?
+        .strip_prefix("<string>")?
+        .strip_suffix("</string>")?;
+    Some(unescape(value))
+}
+
+/// The reverse of [`escape`].
+fn unescape(text: &str) -> String {
+    text.replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&amp;", "&")
+}
+
 /// XML text escaping.
 fn escape(text: &str) -> String {
     let mut out = String::with_capacity(text.len());
@@ -114,5 +136,21 @@ mod tests {
         let text = render(&agent("/Users/a b/R&D <x>/cc-moss"));
         assert!(text.contains("<string>/Users/a b/R&amp;D &lt;x&gt;/cc-moss</string>"));
         assert!(!text.contains("R&D"));
+    }
+
+    #[test]
+    fn environment_values_read_back() {
+        let mut a = agent("/opt/homebrew/bin/cc-moss");
+        a.environment = vec![(
+            "CC_MOSS_STATE_DIR".into(),
+            "/Users/a b/R&D <x>/state".into(),
+        )];
+        let text = render(&a);
+        assert_eq!(
+            environment_value(&text, "CC_MOSS_STATE_DIR").as_deref(),
+            Some("/Users/a b/R&D <x>/state")
+        );
+        assert_eq!(environment_value(&text, "OTHER"), None);
+        assert_eq!(environment_value("old", "CC_MOSS_STATE_DIR"), None);
     }
 }

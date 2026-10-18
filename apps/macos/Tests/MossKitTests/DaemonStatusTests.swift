@@ -35,6 +35,16 @@ import Testing
         #expect(DaemonStatus.stopped.line(lang: .zh) == "守护进程 · 没在运行")
     }
 
+    @Test func aFailedCheckIsNotNotRunning() {
+        let failed = DaemonCheck.failed("cc-moss didn't answer")
+        #expect(failed.line(lang: .en) == "Daemon · couldn't check")
+        #expect(failed.line(lang: .zh) == "守护进程 · 查不到状态")
+        #expect(failed.status == nil)
+        #expect(DaemonCheck.checking.line(lang: .en) == "Daemon · checking…")
+        #expect(DaemonCheck.known(.stopped).line(lang: .en) == "Daemon · not running")
+        #expect(DaemonCheck.known(.stopped).status == .stopped)
+    }
+
     @Test func clientAsksTheCLI() async throws {
         let client = MossClient(executable: "/x/cc-moss",
                                 runner: CannedRunner(stdout: Data(#"{"schema":1,"running":false}"#.utf8)))

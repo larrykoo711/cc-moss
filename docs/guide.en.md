@@ -235,11 +235,18 @@ cc-moss daemon start           # start it again (setting it up first if needed)
 
 - The menubar app's Settings › Moss page shows whether it's running, with Start when it isn't. `cc-moss doctor`
   checks it too and tells you which command fixes it.
-- After an update, run `cc-moss install` once and the daemon moves to the new version. `cc-moss install --uninstall`
-  stops it and removes its setup.
+- `cc-moss update` restarts the daemon on the new version; after updating some other way (`brew upgrade`), run
+  `cc-moss install` once. A daemon you stopped stays stopped either way. `cc-moss install --uninstall` stops it,
+  forgets that you stopped it, and removes its setup.
 - Its files are under `daemon/` in the state directory: `status.json` (its status, with a heartbeat every 30 seconds),
   `daemon.log` (started afresh past 1 MiB), and launchd's `stdout.log` and `stderr.log`. What macOS knows about is
-  `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`; it runs as you, never as root.
+  `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`; it runs as you, never as root, and
+  `cc-moss daemon run` under sudo refuses to start.
+- The LaunchAgent remembers the state directory `cc-moss install` saw (`CC_MOSS_STATE_DIR`, `XDG_STATE_HOME`), and
+  `daemon status`, `doctor` and the app look there, whatever the current shell says. `daemon start` keeps it too;
+  to move the daemon to another directory, run `cc-moss install` from a shell that has the new one.
+- `cc-moss daemon run` in a terminal works while launchd's copy is set up: only one gets to run. launchd's copy
+  then waits five minutes between tries, and takes over within about five minutes after yours stops.
 
 ## The menubar app
 

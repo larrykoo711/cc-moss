@@ -66,7 +66,7 @@ pub enum Step {
     /// Down: start it again at this time.
     WaitUntil(Instant),
     /// Down and its wait is over (or it never ran): start it, then call
-    /// [`Watchdog::started`].
+    /// [`Watchdog::started`], or [`Watchdog::start_failed`] if it would not start.
     StartNow,
 }
 
@@ -101,6 +101,14 @@ impl Watchdog {
     pub fn started(&mut self, now: Instant) {
         self.ladder.started(now);
         self.state = State::Up;
+    }
+
+    /// Starting it failed at `now` (the program is missing, say): wait as
+    /// after a death, so a start that keeps failing is not tried in a loop.
+    pub fn start_failed(&mut self, now: Instant) -> Instant {
+        let at = now + self.ladder.failed(now);
+        self.state = State::Down { retry_at: Some(at) };
+        at
     }
 
     /// `liveness` is only read while the child is up.
@@ -200,5 +208,21 @@ mod tests {
             dog.check(again, Liveness::Dead),
             Step::WaitUntil(again + 120 * S)
         );
+    }
+
+    #[test]
+    fn a_start_that_fails_waits_its_turn() {
+        let t0 = Instant::now();
+        let mut dog = Watchdog::new();
+        assert_eq!(dog.check(t0, Liveness::Dead), Step::StartNow);
+        assert_eq!(dog.start_failed(t0), t0 + 30 * S);
+        assert_eq!(
+            dog.check(t0 + S, Liveness::Dead),
+            Step::WaitUntil(t0 + 30 * S)
+        );
+        assert_eq!(dog.check(t0 + 30 * S, Liveness::Dead), Step::StartNow);
+        let again = t0 + 30 * S;
+        assert_eq!(dog.start_failed(again), again + 120 * S);
+        assert_eq!(dog.ladder().failures(), 2);
     }
 }

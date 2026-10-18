@@ -56,7 +56,11 @@ impl Paths {
 /// once it is past [`LOG_MAX_BYTES`].
 pub fn append_log(path: &Path, line: &str) -> std::io::Result<()> {
     if std::fs::metadata(path).is_ok_and(|m| m.len() > LOG_MAX_BYTES) {
-        std::fs::remove_file(path)?;
+        // Another writer may have started it afresh a moment ago.
+        match std::fs::remove_file(path) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
+            _ => {}
+        }
     }
     let mut text = line.trim_end_matches('\n').to_string();
     text.push('\n');

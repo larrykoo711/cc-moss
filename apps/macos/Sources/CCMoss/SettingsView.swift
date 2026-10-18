@@ -15,8 +15,8 @@ struct SettingsView: View {
     @State var tab: Tab = .general
     /// Canned `alias ls --json` for screenshots.
     var aliasDemo: AliasList?
-    /// Canned `daemon status --json` for screenshots.
-    var daemonDemo: DaemonStatus?
+    /// A canned daemon check for screenshots.
+    var daemonDemo: DaemonCheck?
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     @State private var back: [Tab] = []
