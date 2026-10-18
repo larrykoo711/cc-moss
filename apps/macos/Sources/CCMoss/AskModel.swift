@@ -73,9 +73,18 @@ extension AppModel {
     func focusAsk(_ id: String) {
         guard askDesk.card(id) != nil else { return }
         askDesk.focused = id
-        query = ""
-        stateFilter = nil
+        page = .queue
+        askQueue.show(.ask(id), in: queueItems)
     }
+
+    /// The "To Do" page's items, in order.
+    var queueItems: [AskQueue.Item] {
+        AskQueue.items(cards: askDesk.cards, replies: waitingForInput)
+    }
+
+    /// How many still wait on you (the rail's badge): sent and answered
+    /// cards don't count.
+    var queueCount: Int { askDesk.open.count + waitingForInput.count }
 
     // MARK: - "The app is here"
 

@@ -68,6 +68,10 @@ final class AppModel {
     /// and the cards that answer them.
     var asks: [Ask] = []
     var askDesk = AskDesk()
+    /// Everything waiting on you, worked through on the panel's "To Do" page.
+    var askQueue = AskQueue()
+    /// The panel page the side rail has picked.
+    var page: PanelPage = .sessions
     /// Settings › Notifications › "Answer questions here" (`ask.enabled`).
     var askEnabled = true
     /// What changed in the question list, for the alerts.
@@ -232,4 +236,11 @@ final class AppModel {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
     }
+}
+
+/// The panel's pages, picked in its side rail.
+enum PanelPage: Equatable {
+    case sessions
+    /// Questions and replies waiting on you (user 2026-10-18).
+    case queue
 }
