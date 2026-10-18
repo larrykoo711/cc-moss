@@ -52,6 +52,17 @@ public enum NewSession {
         return last.isEmpty || last == "/" ? "session" : last
     }
 
+    /// `name`, or the first of `name-2`, `name-3`… no open session holds
+    /// (a closed one gives its name up), like Finder's "untitled 2".
+    public static func freeName(_ name: String, sessions: [Session]) -> String {
+        let base = name.trimmingCharacters(in: .whitespaces)
+        let taken = Set(sessions.filter { $0.state != .closed }.compactMap(\.name))
+        guard taken.contains(base) else { return base }
+        var n = 2
+        while taken.contains("\(base)-\(n)") { n += 1 }
+        return "\(base)-\(n)"
+    }
+
     /// The arguments for cc-moss. `restore` adds `--yes`: the name belongs
     /// to an interrupted session and the user said bring it back (T1.5).
     public static func arguments(name: String, directory: String, restore: Bool = false) -> [String] {

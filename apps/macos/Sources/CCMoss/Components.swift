@@ -169,6 +169,8 @@ struct SectionHeader: View {
 struct SessionRow: View {
     let session: Session
     let selected: Bool
+    /// Under the pointer: a lighter wash than the selection.
+    var hovered = false
     /// Buttons shown while the row is hovered, the main one last; empty
     /// otherwise.
     var actions: [PanelAction] = []
@@ -249,7 +251,7 @@ struct SessionRow: View {
         .frame(height: 48)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? Theme.selection(scheme) : .clear)
+                .fill(selected ? Theme.selection(scheme) : hovered ? Theme.selection(scheme).opacity(0.5) : .clear)
         )
     }
 

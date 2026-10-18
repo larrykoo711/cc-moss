@@ -107,7 +107,8 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
-        .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
+        // A form takes the keyboard from the search field, and gives it back when it closes.
+        .onChange(of: model.form) { _, form in searchFocused = form == nil }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
@@ -258,7 +259,7 @@ struct PanelView: View {
             }
             .scrollIndicators(.never)
             .onChange(of: model.selectedID) { _, id in
-                guard let id, hoverGate.shouldScrollToSelection() else { return }
+                guard let id else { return }
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(id) }
             }
         }
@@ -272,33 +273,38 @@ struct PanelView: View {
         let menuOpen = menuRow == s.id
         let shown = s.id == hoveredID || menuOpen
         let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
-        return SessionRow(session: s, selected: s.id == model.selected?.id,
-                          actions: shown ? actions.inline.map { action($0, for: s) } : [],
-                          more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
-                          menuOpen: menuOpen,
-                          perform: { perform($0) },
-                          problem: model.restoreProblem(s),
-                          restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
-            .id(s.id)
-            .contentShape(Rectangle())
-            .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
-            .onContinuousHover { phase in
-                switch phase {
-                case .active:
-                    // Rows under an open menu stay put, and rows sliding
-                    // under a still pointer during a scroll aren't hovered.
-                    guard menu == nil, hoveredID != s.id, hoverGate.allowsHover(pointer: NSEvent.mouseLocation) else { return }
-                    hoveredID = s.id
-                    if model.selectedID != s.id {
-                        hoverGate.selectingByHover()
-                        model.selectedID = s.id
-                    }
-                case .ended:
-                    if hoveredID == s.id { hoveredID = nil }
-                }
+        // A button, not a tap gesture: inside the scrolling list a tap
+        // gesture never fired once the panel had the keyboard, so a click
+        // selected nothing (user 2026-10-18). Its own buttons still win.
+        return Button { model.selectedID = s.id } label: {
+            SessionRow(session: s, selected: s.id == model.selected?.id, hovered: shown,
+                       actions: shown ? actions.inline.map { action($0, for: s) } : [],
+                       more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
+                       menuOpen: menuOpen,
+                       perform: { perform($0) },
+                       problem: model.restoreProblem(s),
+                       restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .id(s.id)
+        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                // Rows under an open menu stay put, and rows sliding
+                // under a still pointer during a scroll aren't hovered.
+                // Hover only shows the row's buttons; a click or the
+                // keyboard selects (user 2026-10-18: passing over rows on
+                // the way to a button changed what it would open).
+                guard menu == nil, hoveredID != s.id, hoverGate.allowsHover(pointer: NSEvent.mouseLocation) else { return }
+                hoveredID = s.id
+            case .ended:
+                if hoveredID == s.id { hoveredID = nil }
             }
-            .onTapGesture { model.selectedID = s.id }
-            .handCursor()
+        }
+        .handCursor()
     }
 
     // MARK: Action bar
@@ -609,7 +615,9 @@ struct MenuAnchorKey: PreferenceKey {
 }
 
 struct PanelAction: Identifiable {
-    let id = UUID()
+    /// Stable across redraws: a fresh id on every refresh made the row's
+    /// buttons drop and reappear (a blink every few seconds).
+    var id: String { "\(icon)|\(title)" }
     let title: String
     var icon: String = Icons.copy
     let shortcut: String
