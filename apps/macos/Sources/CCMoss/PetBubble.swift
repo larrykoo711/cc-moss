@@ -19,6 +19,10 @@ struct BubbleTail: Equatable {
 
     /// Room the tail takes outside the bubble's body.
     static let height: CGFloat = 10
+
+    /// The window's corner the bubble keeps to: the tail's edge, measured
+    /// from the leading side like `x`.
+    var anchorAlignment: Alignment { onTop ? .topLeading : .bottomLeading }
 }
 
 /// The colour and symbol of a message's kind, as in the panel (A21).
@@ -198,6 +202,10 @@ struct PetMessageBox: View {
     @Environment(\.colorScheme) private var scheme
 
     static let width: CGFloat = 280
+    /// A question needs room for its own words and options.
+    static let questionWidth: CGFloat = 360
+
+    private var width: CGFloat { detail == nil ? Self.width : Self.questionWidth }
 
     init(message: PetMessage, text: PetMessageText, tail: BubbleTail = BubbleTail(), animate: Bool = true,
          detail: AnyView? = nil, primary: @escaping () -> Void = {}, later: @escaping () -> Void = {}) {
@@ -214,54 +222,14 @@ struct PetMessageBox: View {
     private var tint: Color { BubbleStyle.tint(message.kind) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(spacing: 8) {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.opacity(scheme == .dark ? 0.22 : 0.14))
-                    Image(systemName: BubbleStyle.symbol(message.kind))
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(tint)
-                }
-                .frame(width: 22, height: 22)
-                .accessibilityHidden(true)
-                Text(text.title)
-                    .font(.system(size: 13, weight: .semibold))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .onTapGesture(perform: primary)
-                    .handCursor()
-                Spacer(minLength: 6)
-                closeButton
-            }
-            Text(text.body)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(width: Self.width - 24 - 30, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture(perform: primary)
-                .handCursor()
-                .padding(.leading, 30)
+        Group {
             if let detail {
-                detail
-                    .frame(width: Self.width - 24 - 30, alignment: .leading)
-                    .padding(.top, 2)
-                    .padding(.leading, 30)
+                questionBox(detail)
+            } else {
+                messageBox
             }
-            HStack(spacing: 6) {
-                SoftButton(title: text.primary, icon: BubbleStyle.primaryIcon(message), prominent: true, action: primary)
-                    .focusable(false)
-                SoftButton(title: text.secondary, icon: BubbleStyle.secondaryIcon(message.kind), action: later)
-                    .focusable(false)
-            }
-            .padding(.top, 3)
-            .padding(.leading, 30)
         }
-        .padding(.horizontal, 12)
-        .padding(.top, 11)
-        .padding(.bottom, 12)
-        .frame(width: Self.width, alignment: .leading)
+        .frame(width: width, alignment: .leading)
         .padding(tail.onTop ? .top : .bottom, BubbleTail.height)
         .background(PetBubbleShape(tail: tail).fill(Theme.raised(scheme)))
         .overlay(PetBubbleShape(tail: tail).stroke(Theme.hairline(scheme), lineWidth: 1))
@@ -276,9 +244,88 @@ struct PetMessageBox: View {
         .accessibilityLabel(text.title + ". " + text.body)
     }
 
+    private var titleRow: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6, style: .continuous).fill(tint.opacity(scheme == .dark ? 0.22 : 0.14))
+                Image(systemName: BubbleStyle.symbol(message.kind))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(tint)
+            }
+            .frame(width: 22, height: 22)
+            .accessibilityHidden(true)
+            Text(text.title)
+                .font(.system(size: 13, weight: .semibold))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .onTapGesture(perform: primary)
+                .handCursor()
+            Spacer(minLength: 6)
+            closeButton
+        }
+    }
+
+    /// Something happened: what, in two lines, and what to do about it.
+    private var messageBox: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            titleRow
+            Text(text.body)
+                .font(.system(size: 13))
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(width: Self.width - 24 - 30, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture(perform: primary)
+                .handCursor()
+                .padding(.leading, 30)
+            HStack(spacing: 6) {
+                SoftButton(title: text.primary, icon: BubbleStyle.primaryIcon(message), prominent: true, action: primary)
+                    .focusable(false)
+                SoftButton(title: text.secondary, icon: BubbleStyle.secondaryIcon(message.kind), action: later)
+                    .focusable(false)
+            }
+            .padding(.top, 3)
+            .padding(.leading, 30)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 11)
+        .padding(.bottom, 12)
+    }
+
+    /// A question answered right here: the title, then the question and its
+    /// options on one left edge with the room they need, then a quiet footer.
+    /// Picking an option is the main action, so nothing in the footer is
+    /// coloured to compete with it.
+    private func questionBox(_ detail: AnyView) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            titleRow
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+            detail
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 14)
+                .padding(.bottom, 12)
+            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+            HStack(spacing: 4) {
+                Text(L.t("Or answer in its terminal", "也可以回终端里答"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                    .lineLimit(1)
+                Spacer(minLength: 8)
+                FooterButton(title: text.secondary, action: later)
+                FooterButton(title: text.primary, icon: "arrow.up.right", action: primary)
+            }
+            .padding(.leading, 14)
+            .padding(.trailing, 8)
+            .frame(height: 36)
+        }
+    }
+
     /// Grow out of the tail, toward Mo.
     private var tipAnchor: UnitPoint {
-        UnitPoint(x: tail.x / Self.width, y: tail.onTop ? 0 : 1)
+        UnitPoint(x: tail.x / width, y: tail.onTop ? 0 : 1)
     }
 
     private var closeButton: some View {
@@ -295,6 +342,37 @@ struct PetMessageBox: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { closeHover = inside } }
         .tip(text.secondary)
         .accessibilityLabel(L.t("Close", "关闭"))
+    }
+}
+
+/// A footer action in the question box: plain text that lights up under
+/// the pointer, so the options above stay the thing to click.
+private struct FooterButton: View {
+    let title: String
+    var icon: String?
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Text(title).font(.system(size: 12, weight: .medium)).lineLimit(1).fixedSize()
+                if let icon {
+                    Image(systemName: icon).font(.system(size: 9, weight: .bold))
+                }
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(.primary) : AnyShapeStyle(.secondary))
+            .padding(.horizontal, 8)
+            .frame(height: 24)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(hovering ? Theme.selection(scheme) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+        .handCursor()
     }
 }
 
@@ -465,6 +543,9 @@ struct PetBubbleRoot: View {
         .background(GeometryReader { g in
             Color.clear.onChange(of: g.size) { _, _ in stage.resized?() }
         })
+        // Until the window is fitted again, a bubble that got shorter stays
+        // on Mo's side of it instead of floating off to the middle.
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: stage.tail.anchorAlignment)
         .tooltipLayer()
         .followsLanguage()
     }

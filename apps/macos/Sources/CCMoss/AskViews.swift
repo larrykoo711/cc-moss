@@ -148,6 +148,7 @@ struct AskCardBody: View {
     var canWrite = true
     let act: ((inout AskCard) -> AskReply?) -> Void
     @FocusState private var fieldFocused: Bool
+    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -186,19 +187,23 @@ struct AskCardBody: View {
     @ViewBuilder private func question(_ q: Ask.Question) -> some View {
         if let header = q.header {
             Text(header)
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(Theme.brand)
+                .padding(.horizontal, 6)
+                .frame(height: 18)
+                .background(Capsule().fill(Theme.brand.opacity(scheme == .dark ? 0.18 : 0.10)))
         }
         Text(q.text)
-            .font(.system(size: 13))
+            .font(.system(size: 13.5, weight: .medium))
             .fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
+            .padding(.bottom, 2)
         if q.multiSelect {
             Text(L.t("Pick any, then Done.", "可以多选，选好点「答好了」。"))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
         }
-        VStack(spacing: 3) {
+        VStack(spacing: 6) {
             ForEach(Array(q.options.enumerated()), id: \.offset) { _, option in
                 OptionButton(option: option, multi: q.multiSelect, on: card.picked(option.label)) {
                     act { $0.choose(option.label) }
@@ -206,6 +211,17 @@ struct AskCardBody: View {
                 .clickTarget(option.label) { act { $0.choose(option.label) } }
             }
         }
+        if q.multiSelect || card.step > 0 || (canWrite && card.canWrite && !card.writing) {
+            questionButtons(q)
+        }
+        if canWrite, card.canWrite, card.writing {
+            OwnWordsField(text: card.draft, focused: $fieldFocused,
+                          change: { text in act { $0.draft = text; return nil } },
+                          send: { act { $0.sendText() } })
+        }
+    }
+
+    private func questionButtons(_ q: Ask.Question) -> some View {
         HStack(spacing: 6) {
             if q.multiSelect {
                 SoftButton(title: L.t("Done", "答好了"), icon: "checkmark", prominent: true) { act { $0.confirm() } }
@@ -224,11 +240,6 @@ struct AskCardBody: View {
                 }
                 .focusable(false)
             }
-        }
-        if canWrite, card.canWrite, card.writing {
-            OwnWordsField(text: card.draft, focused: $fieldFocused,
-                          change: { text in act { $0.draft = text; return nil } },
-                          send: { act { $0.sendText() } })
         }
     }
 
@@ -287,7 +298,9 @@ struct AskCardBody: View {
     }
 }
 
-/// One answer: the session's label, its description underneath.
+/// One answer: the session's label, its description underneath. A mark on
+/// the left says how it picks (a ring for one, a box for several); under the
+/// pointer the row takes the brand tint, so it's clear what a click will do.
 struct OptionButton: View {
     let option: Ask.Option
     var multi = false
@@ -297,45 +310,79 @@ struct OptionButton: View {
     @Environment(\.colorScheme) private var scheme
     @Environment(\.isEnabled) private var enabled
 
+    /// `--render … --hover-option <label>`: draw that option under the pointer.
+    @MainActor static var renderHovered: String?
+
+    private var lit: Bool { (hovering || Self.renderHovered == option.label) && enabled }
+
     var body: some View {
         Button(action: action) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                if multi {
-                    Image(systemName: on ? "checkmark.square.fill" : "square")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(on ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
-                }
-                VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .top, spacing: 10) {
+                mark.padding(.top, 1)
+                VStack(alignment: .leading, spacing: 2) {
                     Text(option.label)
                         .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                     if let d = option.description {
                         Text(d)
-                            .font(.system(size: 11))
+                            .font(.system(size: 11.5))
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
                 Spacer(minLength: 0)
+                if !multi {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(Theme.brand)
+                        .opacity(lit ? 1 : 0)
+                        .offset(x: lit ? 0 : -4)
+                        .padding(.top, 3)
+                        .accessibilityHidden(true)
+                }
             }
             .multilineTextAlignment(.leading)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .fill(on ? Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10)
-                         : Theme.raised(scheme).opacity(hovering && enabled ? 1 : 0.7)))
-            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(on ? Theme.brand.opacity(0.45) : Theme.hairline(scheme).opacity(hovering ? 2 : 1)))
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(fill))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(border))
             .contentShape(Rectangle())
             .opacity(enabled ? 1 : 0.55)
         }
         .buttonStyle(PressStyle())
         .focusable(false)
-        .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
         .handCursor()
         .accessibilityLabel(option.label)
         .accessibilityAddTraits(on ? .isSelected : [])
+    }
+
+    private var fill: Color {
+        if on { return Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10) }
+        if lit { return Theme.brand.opacity(scheme == .dark ? 0.14 : 0.07) }
+        return Color.primary.opacity(scheme == .dark ? 0.04 : 0.025)
+    }
+
+    private var border: Color {
+        if on { return Theme.brand.opacity(0.55) }
+        if lit { return Theme.brand.opacity(0.40) }
+        return Theme.hairline(scheme)
+    }
+
+    @ViewBuilder private var mark: some View {
+        if multi {
+            Image(systemName: on ? "checkmark.square.fill" : "square")
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(on || lit ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.tertiary))
+                .frame(width: 14, height: 14)
+        } else {
+            Circle()
+                .strokeBorder(lit ? Theme.brand : Color.secondary.opacity(0.45), lineWidth: 1.5)
+                .background(Circle().fill(Theme.brand).padding(3.5).opacity(lit ? 1 : 0))
+                .frame(width: 14, height: 14)
+        }
     }
 }
 
