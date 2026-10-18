@@ -35,7 +35,7 @@ D1 的风险已向用户说明一次：频道成员都能让这台 Mac 跑 bypas
 | A11 | Moss 会话 = tmux 里的交互式 `claude`（bypass），工作目录 `<state>/moss/`，带自己的 CLAUDE.md 人设矩阵、`.claude/settings.json` 防护 hook、skills；每次重启**全新开**，注入「读台账接着干」，身份和进度都在文件里 | reference-study §2、§6 |
 | A12 | 往 Moss 送消息用 tmux 粘贴 + 回读确认（复用 `send` 的做法）；取回复用 Stop hook 写完成标记 + 读对话记录认领。对话记录格式无官方文档 → 单独封装、有降级（拿不到就只回「已收到」） | reference-study §2.2 |
 | A13 | Moss 不逐条接收所有会话事件：守护进程把「需要你 / 断了 / 做完了」攒成摘要，最快每 30 秒注入一次，省额度 | D3 |
-| A14 | Moss 的手只有 cc-moss 命令：派发、体检、改名、写便条、发消息、关闭都经 CLI 执行，CLI 负责策略（bypass、审计、频率、总开关）。Moss 自己的防护 hook 禁止它改自己的 settings / hooks、禁止写工作目录以外的文件 | reference-study §3、§4 |
+| A14 | Moss 的手只有 cc-moss 命令（2026-10-18 修订：Moss 的 Bash 在沙箱里、连不上 tmux，需要 tmux 的动作——派发、发消息——由守护进程代办：Moss 写请求，守护进程校验、执行、审计）：派发、体检、改名、写便条、发消息、关闭都经 CLI 执行，CLI 负责策略（bypass、审计、频率、总开关）。Moss 自己的防护 hook 禁止它改自己的 settings / hooks、禁止写工作目录以外的文件 | reference-study §3、§4 |
 | A15 | Slack：守护进程用 Socket Mode 直连（无公网地址），token（`xapp-` / `xoxb-`）存钥匙串；设置页给预填好的 manifest 链接一键建 App。一台 Mac 对应一个 Slack App | slack-presence-facts (a) |
 | A16 | 在场检测在守护进程里做（LaunchAgent 在登录会话里，能读空闲秒数与锁屏状态，无需授权）：在场 <2 分钟无输入；短暂离开 2–10 分钟；离开 ≥10 分钟或熄屏；锁定 = 锁屏或睡眠。回到在场需解锁或连续输入 3 秒 | slack-presence-facts (b) |
 | A17 | 隐私：Slack 只看到问题、选项、Moss 的回复，不转发会话的对话内容。Moss 用本机 Claude Code 登录，不需要 API key | — |

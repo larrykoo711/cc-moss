@@ -159,8 +159,8 @@ R1 ◄── 全部
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ✅ Done | done/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
 | **T1.4** 桌面答题 | cc-moss | T1.3 | 🟩 Review | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续 |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
-| **T2.2** Moss 常驻 | cc-moss | T2.1 | 🟨 In Progress | in-progress/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
-| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ⬜ Backlog | — | 面板发一句、看到回复 |
+| **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
+| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | 🟦 Ready | — | 面板发一句、看到回复 |
 | **T2.4** Doctor | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 体检报告正确、关闭先问 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
@@ -185,6 +185,8 @@ R1 ◄── 全部
 - T2.2 合入档案分支 c7aaaab（合并树 Rust 666、Swift 309 全绿），独立评审中。真机：全新目录以 bypass 启动 Claude Code 2.1.302 不出现「信任此文件夹」与 bypass 警告框，直接可输入（Moss 首次启动不会卡）；探针按规则 `/exit`，被 reconcile 收编的一条已 close
 - 裁决（T2.2）：`daemon stop` 由 CLI 一侧顺带停掉 Moss（升级的 kickstart 不停）；网站 FAQ「联网」一条补上 Moss 用你的 Claude Code 登录（与 guide 一致），T2.2 修正轮做
 - T1.4 合入档案分支（合并树 Rust 670、Swift 362 全绿；高负载下两次全量各有带时限用例超时，单独与负载降后全量均绿）；裁决：`ask answer --json`（契约加项）；顺带修 T1.3 临时文件名在线程间撞名导致 `first_answer_wins` 偶发失败。待真机验收（真 Claude Code 在面板答一道题）
+- T2.2 ✅ 2026-10-18：评审 I1–I10、M1–M10 已修（变异全红），Moss 的 Bash 进 Claude Code 沙箱并经真机探针确认；合并树 Rust 692、Swift 364 全绿；探针 4 个 claude 会话已在用户 registry 里 close，遗留测试 tmux 已关
+- 裁决（T2.2 → T3.1）：沙箱里的 Moss 连不上 tmux；派发、发消息等需要 tmux 的动作**由守护进程代办**（Moss 写请求，守护进程校验、执行、审计），不把命令放出沙箱 approved-by=controller date=2026-10-18
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
