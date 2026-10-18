@@ -55,6 +55,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Install sets Claude Code's `skipDangerousModePermissionPrompt` only if you haven't set it, so sessions don't stall on
   the bypass warning, and uninstall takes out only that. A policy that disables bypass is respected, and `doctor`
   says so.
+- **A new session starts with a free name.** When a session already has the folder's name, the form suggests the next
+  one (`docs-2`). Typing a taken name outlines the field and says what Return will do (open it, or offer to bring a
+  stopped one back), with a free name one click away.
+
+### Fixed
+
+- **Clicking a session selects it.** Hovering no longer moves the selection, so passing over other rows on the way to
+  a button doesn't change what it acts on.
+- The buttons at the end of a row no longer blink every few seconds as the list refreshes.
+- A new session's name field has the keyboard as soon as the form opens.
 
 ## [0.2.2] - 2026-10-18
 

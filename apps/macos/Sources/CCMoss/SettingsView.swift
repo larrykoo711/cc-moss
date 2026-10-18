@@ -399,6 +399,8 @@ struct FilledField: View {
     /// The form's one field: taller, larger type, text selected on arrival
     /// so typing replaces it.
     var large = false
+    /// Outline colour for a value that needs a second look (a taken name).
+    var tint: Color?
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -414,12 +416,15 @@ struct FilledField: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.selection(scheme).opacity(0.8)))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
+                    .strokeBorder(tint?.opacity(0.8) ?? (focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme)),
+                                  lineWidth: focused || tint != nil ? 1.5 : 1)
             )
             .animation(.easeOut(duration: 0.12), value: focused)
             .onAppear {
                 guard autofocus else { return }
-                focused = true
+                // A moment later: on appearing the field isn't in the window
+                // yet (the form is still fading in), so focus set now is lost.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focused = true }
                 if large {
                     DispatchQueue.main.async { NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil) }
                 }

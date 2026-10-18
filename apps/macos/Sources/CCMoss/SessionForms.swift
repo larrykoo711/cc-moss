@@ -28,7 +28,8 @@ extension AppModel {
     func startNewSession() {
         let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey)
         let dir = NewSession.defaultDirectory(sessions, workspace: workspace) ?? NSHomeDirectory()
-        newDraft = NewDraft(directory: dir, name: NewSession.defaultName(for: dir))
+        // A name no open session has, so the form doesn't start on a clash.
+        newDraft = NewDraft(directory: dir, name: NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions))
         closeGate.cancel()
         form = .newSession
     }
@@ -36,7 +37,7 @@ extension AppModel {
     func pickDirectory(_ dir: String) {
         newDraft.directory = dir
         newDraft.error = nil
-        if !newDraft.nameEdited { newDraft.name = NewSession.defaultName(for: dir) }
+        if !newDraft.nameEdited { newDraft.name = NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions) }
     }
 
     /// "Another folder…": the system folder picker over the panel, starting
@@ -279,6 +280,7 @@ struct NewSessionForm: View {
                                                   model.newDraft.name = new; model.newDraft.nameEdited = true
                                                   model.newDraft.restoring = nil; model.newDraft.error = nil }),
                                 autofocus: true,
+                                tint: nameClash,
                                 onSubmit: submit)
                 }
             }
@@ -317,15 +319,39 @@ struct NewSessionForm: View {
             case .free:
                 FormHint(text: L.t("Starts in tmux and opens in your terminal.", "在 tmux 里开起来，再在你的终端里打开。"))
             case .running(let s):
-                FormHint(text: L.t("“\(s.title)” is already running: Return opens it.", "「\(s.title)」已经在运行了，回车直接打开它。"),
-                         icon: Icons.open, tint: Theme.brand)
+                clash(L.t("“\(s.title)” is already running, so Return opens it. For a new session, pick another name:",
+                          "「\(s.title)」已经在运行，回车会打开它。想新开一个，换个名字："),
+                      icon: Icons.open, tint: Theme.brand)
             case .interrupted(let s):
-                FormHint(text: L.t("A stopped session is called “\(s.title)”; you'll be asked to bring it back.",
-                                   "有个断了的会话也叫「\(s.title)」，确认时会问你要不要找回。"),
-                         icon: Icons.restore, tint: Theme.red)
+                clash(L.t("A stopped session is called “\(s.title)”, so Return offers to bring it back. For a new one, pick another name:",
+                          "有个断了的会话也叫「\(s.title)」，回车会问你要不要找回它。想新开一个，换个名字："),
+                      icon: Icons.restore, tint: Theme.red)
             case .invalid(let why):
                 FormHint(text: why, icon: Icons.warning, tint: Theme.amber)
             }
+        }
+    }
+
+    /// The name is taken: say what Return does now, and offer a free name in one click.
+    private func clash(_ text: String, icon: String, tint: Color) -> some View {
+        let free = NewSession.freeName(draft.name, sessions: model.sessions)
+        return VStack(alignment: .leading, spacing: 6) {
+            FormHint(text: text, icon: icon, tint: tint)
+            SuggestionChip(text: free, chosen: false) {
+                model.newDraft.name = free
+                model.newDraft.nameEdited = true
+            }
+            .padding(.leading, 19)
+        }
+    }
+
+    /// The field's outline while the name belongs to another session.
+    private var nameClash: Color? {
+        if draft.restoring != nil { return Theme.red }
+        switch NewSession.hint(name: draft.name, sessions: model.sessions) {
+        case .running: return Theme.brand
+        case .interrupted: return Theme.red
+        case .free, .invalid: return nil
         }
     }
 

@@ -6,7 +6,7 @@ import SwiftUI
 ///
 ///   CCMoss --render out.png --demo sessions.json [--dark] [--query q]
 ///          [--filter working|waiting|interrupted] [--select <id>] [--hover]
-///          [--menu full|more|app]
+///          [--menu full|more|app] [--click x,y [--command key]]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
@@ -15,7 +15,7 @@ import SwiftUI
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
-///                  [--click x,y]]
+///                  [--click x,y]] [--press x,y [--command k]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -473,7 +473,7 @@ enum Render {
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         host.frame = NSRect(x: 0, y: 0, width: Theme.panelWidth, height: Theme.panelHeight)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        let window = ProbeWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
@@ -494,6 +494,40 @@ enum Render {
             // Draw again with the card as the click left it.
             host.layoutSubtreeIfNeeded()
             settle(0.3)
+        }
+        // `--press x,y` (points from the top left): a real click on the panel, and
+        // which session is selected after it.
+        if let i = CommandLine.arguments.firstIndex(of: "--press"), i + 1 < CommandLine.arguments.count {
+            let xy = CommandLine.arguments[i + 1].split(separator: ",").compactMap { Double($0) }
+            let at = NSPoint(x: xy[0], y: Theme.panelHeight - xy[1])
+            // A window takes clicks only once it is on screen: put it far off to the side.
+            window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+            window.makeKeyAndOrderFront(nil)
+            settle(0.3)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                if let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                    window.sendEvent(e)
+                }
+                settle(0.1)
+            }
+            settle(0.3)
+            // `--command n`: then press ⌘ and that key, as you would.
+            if let j = CommandLine.arguments.firstIndex(of: "--command"), j + 1 < CommandLine.arguments.count {
+                let key = CommandLine.arguments[j + 1]
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
+                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                                windowNumber: window.windowNumber, context: nil, characters: key,
+                                                charactersIgnoringModifiers: key, isARepeat: false, keyCode: 45) {
+                        window.sendEvent(e)
+                    }
+                }
+                settle(0.6)
+            }
+            let editor = window.firstResponder as? NSTextView
+            let field = (editor?.delegate as? NSTextField)?.placeholderString ?? "none"
+            // Work queued on the main queue (a deferred focus) doesn't run here.
+            FileHandle.standardError.write(Data("selected: \(model.selected?.id ?? "none"), keyboard: \(field)\n".utf8))
         }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -545,4 +579,9 @@ struct DemoRunner: CommandRunner {
         let plain = arg.allSatisfy { $0.isLetter || $0.isNumber || "-_./:=,".contains($0) }
         return plain && !arg.isEmpty ? arg : "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
+}
+
+/// Takes the keyboard like the real panel, so a probe's clicks and keys land.
+private final class ProbeWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
 }
