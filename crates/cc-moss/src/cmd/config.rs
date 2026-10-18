@@ -142,3 +142,19 @@ fn set(key: &str, value: &str, as_json: bool) -> Result<(), Failure> {
     }
     Ok(())
 }
+
+/// Set `key` to `value` in config.toml for another command (`moss stop`),
+/// the same way `config set` does.
+pub fn store(key: &str, value: &str) -> anyhow::Result<()> {
+    let value = config::check_setting(key, value)
+        .map_err(|_| anyhow::anyhow!("bad setting {key}={value}"))?;
+    let path = config_path();
+    let path = std::fs::canonicalize(&path).unwrap_or(path);
+    let original = read_optional(&path)?;
+    let text = config::set_in_text(original.as_deref().unwrap_or(""), key, &value)
+        .map_err(|e| anyhow::anyhow!("{}: {e:#}", path.display()))?;
+    if original.as_deref() != Some(text.as_str()) {
+        files::write_atomically(&path, text.as_bytes())?;
+    }
+    Ok(())
+}

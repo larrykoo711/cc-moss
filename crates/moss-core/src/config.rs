@@ -15,6 +15,7 @@ pub struct Config {
     pub ui: UiConfig,
     pub update: UpdateConfig,
     pub ask: AskConfig,
+    pub moss: MossConfig,
     /// Native aliases: `name = "subcommand args…"` (see [`crate::aliases`]).
     /// An entry that is not a string is skipped (doctor names it) instead of
     /// making the whole file unreadable for every command.
@@ -114,6 +115,20 @@ impl Default for AskConfig {
     }
 }
 
+/// `[moss]`: the resident session the daemon looks after.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct MossConfig {
+    /// On by default; off means the daemon ends Moss and leaves it off.
+    pub enabled: bool,
+}
+
+impl Default for MossConfig {
+    fn default() -> Self {
+        MossConfig { enabled: true }
+    }
+}
+
 /// Whether to draw Nerd Font icons.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -175,7 +190,12 @@ where
 
 /// The keys `cc-moss config get|set` may touch. Everything else in the file
 /// is the user's to edit by hand.
-pub const KEYS: &[&str] = &["ui.language", "claude.permission_mode", "ask.enabled"];
+pub const KEYS: &[&str] = &[
+    "ui.language",
+    "claude.permission_mode",
+    "ask.enabled",
+    "moss.enabled",
+];
 
 /// What `ui.language` may be set to.
 pub const LANGUAGES: &[&str] = &["auto", "zh", "en"];
@@ -187,7 +207,7 @@ pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
 pub const BOOLS: &[&str] = &["true", "false"];
 
 /// Keys stored as TOML booleans rather than strings.
-const BOOL_KEYS: &[&str] = &["ask.enabled"];
+const BOOL_KEYS: &[&str] = &["ask.enabled", "moss.enabled"];
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -203,7 +223,7 @@ pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
-        "ask.enabled" => BOOLS,
+        "ask.enabled" | "moss.enabled" => BOOLS,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -226,6 +246,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
             .unwrap_or_else(|| "auto".into())),
         "claude.permission_mode" => Ok(config.claude.permission_mode.as_str().into()),
         "ask.enabled" => Ok(config.ask.enabled.to_string()),
+        "moss.enabled" => Ok(config.moss.enabled.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }

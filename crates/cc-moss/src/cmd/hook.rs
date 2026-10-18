@@ -19,7 +19,7 @@ use moss_core::event::{Context, Event, StartSource};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339};
 use moss_core::tmux::{Socket, Tmux};
-use moss_core::{launch_args, naming, proc, store_dir, tmux};
+use moss_core::{launch_args, moss, naming, proc, store_dir, tmux};
 
 const LOG_MAX_BYTES: u64 = 1 << 20;
 
@@ -120,6 +120,16 @@ fn handle(event: &str) -> Result<()> {
         return Ok(());
     }
     registry.apply_with(&event, &ctx, &proc::is_alive)?;
+    // Moss (started by the daemon) is recorded as such, and keeps the tmux
+    // name the daemon looks for: never renamed after its Claude name.
+    let moss = env(moss::ROLE_ENV).as_deref() == Some(moss::ROLE);
+    if moss && is_start {
+        if let Event::Start { session_id, .. } = &event {
+            if let Some(slot) = registry.slot_for_event(session_id, &ctx)? {
+                registry.set_role(&slot.slot_id, moss::ROLE)?;
+            }
+        }
+    }
 
     // Side effects after the registry is committed; failures are only logged.
     match &event {
@@ -133,8 +143,10 @@ fn handle(event: &str) -> Result<()> {
             if title.is_none() {
                 fill_name_from_transcript(&registry, session_id, &ctx, transcript_path.as_deref());
             }
-            if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
-                log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
+            if !moss {
+                if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
+                    log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
+                }
             }
             let fresh = matches!(source, StartSource::Startup | StartSource::Resume);
             if fresh && ctx.tmux.is_none() {
@@ -144,8 +156,10 @@ fn handle(event: &str) -> Result<()> {
         Event::Prompt {
             session_id, title, ..
         } => {
-            if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
-                log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
+            if !moss {
+                if let Err(e) = sync_tmux_name(&registry, session_id, &ctx) {
+                    log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
+                }
             }
             if let Some(name) = title.as_deref().filter(|t| !t.is_empty()) {
                 warn_if_name_taken(&registry, session_id, &ctx, name)?;

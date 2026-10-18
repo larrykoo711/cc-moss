@@ -1332,3 +1332,110 @@ fn json_needs_dry_run() {
     let h = Home::with_all();
     assert!(!h.run(&["install", "--json"]).status.success());
 }
+
+/// `run_mac` with launchctl calls recorded in the home instead of made.
+fn install_mac(h: &Home, args: &[&str]) -> String {
+    let agents = h.path("agents").display().to_string();
+    ok(h.run_mac_with(args, None, &[("CC_MOSS_LAUNCHD_DIR", agents.as_str())]))
+}
+
+fn template(rel: &str) -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("templates/moss")
+            .join(rel),
+    )
+    .unwrap()
+}
+
+#[test]
+fn install_keeps_users_persona() {
+    let h = Home::with_all();
+    let out = install_mac(&h, &["install", "--yes", "--skip", "app"]);
+    assert!(out.contains("Set up Moss's home"), "{out}");
+    let home = "state/moss";
+    for f in ["IDENTITY.md", "SOUL.md", "USER.md"] {
+        assert_eq!(h.read(&format!("{home}/{f}")), template(f), "{f}");
+    }
+    assert!(h.path(&format!("{home}/journal")).is_dir());
+    assert!(h.path(&format!("{home}/memory")).is_dir());
+
+    // The user (or Moss, through /moss-profile) makes them their own.
+    h.write(&format!("{home}/IDENTITY.md"), "- Name: Nova\n");
+    h.write(&format!("{home}/SOUL.md"), "");
+    h.write(&format!("{home}/journal/2026-10-18.md"), "did things\n");
+    h.write(&format!("{home}/memory/people.md"), "Ann likes tea\n");
+    fs::remove_file(h.path(&format!("{home}/USER.md"))).unwrap();
+    install_mac(&h, &["install", "--yes", "--skip", "app"]);
+    assert_eq!(h.read(&format!("{home}/IDENTITY.md")), "- Name: Nova\n");
+    assert_eq!(
+        h.read(&format!("{home}/SOUL.md")),
+        "",
+        "an emptied file stays empty"
+    );
+    assert_eq!(
+        h.read(&format!("{home}/journal/2026-10-18.md")),
+        "did things\n"
+    );
+    assert_eq!(
+        h.read(&format!("{home}/memory/people.md")),
+        "Ann likes tea\n"
+    );
+    assert_eq!(
+        h.read(&format!("{home}/USER.md")),
+        template("USER.md"),
+        "a missing one comes back"
+    );
+
+    // Uninstall takes cc-moss's files and leaves theirs.
+    let out = install_mac(&h, &["install", "--uninstall", "--yes"]);
+    assert!(
+        out.contains("its persona, journal and memory stay"),
+        "{out}"
+    );
+    assert!(!h.path(&format!("{home}/CLAUDE.md")).exists());
+    assert!(!h.path(&format!("{home}/.claude")).exists());
+    assert_eq!(h.read(&format!("{home}/IDENTITY.md")), "- Name: Nova\n");
+    assert_eq!(
+        h.read(&format!("{home}/journal/2026-10-18.md")),
+        "did things\n"
+    );
+}
+
+#[test]
+fn install_updates_managed_moss_files() {
+    let h = Home::with_all();
+    let home = "state/moss";
+    // What an older cc-moss (or a hand edit) left behind.
+    h.write(&format!("{home}/CLAUDE.md"), "old\n");
+    h.write(&format!("{home}/.claude/settings.json"), "{}\n");
+    h.write(
+        &format!("{home}/.claude/skills/moss-profile/SKILL.md"),
+        "old\n",
+    );
+    h.write(&format!("{home}/SOUL.md"), "my own soul\n");
+    install_mac(&h, &["install", "--yes", "--skip", "app"]);
+    assert_eq!(h.read(&format!("{home}/CLAUDE.md")), template("CLAUDE.md"));
+    assert_eq!(
+        h.read(&format!("{home}/SECURITY.md")),
+        template("SECURITY.md")
+    );
+    assert_eq!(
+        h.read(&format!("{home}/.claude/skills/moss-profile/SKILL.md")),
+        template("skills/moss-profile/SKILL.md")
+    );
+    let settings: serde_json::Value =
+        serde_json::from_str(&h.read(&format!("{home}/.claude/settings.json"))).unwrap();
+    let command = settings["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert_eq!(
+        command,
+        format!(
+            "'{}' hook moss-guard || exit 2",
+            env!("CARGO_BIN_EXE_cc-moss")
+        )
+    );
+    assert_eq!(h.read(&format!("{home}/SOUL.md")), "my own soul\n");
+}

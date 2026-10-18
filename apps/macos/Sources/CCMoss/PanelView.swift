@@ -216,7 +216,7 @@ struct PanelView: View {
                 command: "cc-moss update",
                 copy: copy
             )
-        case .ready where model.sessions.isEmpty:
+        case .ready where model.sessions.isEmpty && model.moss == nil:
             GuideCard(
                 symbol: "sparkles",
                 title: L.t("No sessions yet", "还没有会话"),
@@ -225,7 +225,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty && model.olderShown.isEmpty:
+        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedMoss == nil:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -242,6 +242,10 @@ struct PanelView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
+                    if let moss = model.pinnedMoss {
+                        MossHeader()
+                        row(moss)
+                    }
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
                         ForEach(project.sessions) { s in row(s) }
@@ -452,7 +456,7 @@ struct PanelView: View {
         case .app:
             return appSections
         case let .session(id, full):
-            guard let s = model.sessions.first(where: { $0.id == id }) else { return [] }
+            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
             let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
             return (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
         }

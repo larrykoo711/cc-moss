@@ -17,7 +17,8 @@ pub struct Agent {
 /// Seconds launchd waits before starting the daemon again after it exits.
 pub const THROTTLE_SECONDS: u32 = 30;
 
-/// The plist text: started at login, kept alive, throttled, low priority.
+/// The plist text: started at login, kept alive, throttled, normal priority
+/// (`Background` would slow Moss and every program it starts).
 pub fn render(agent: &Agent) -> String {
     let mut out = String::from(
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -52,7 +53,7 @@ pub fn render(agent: &Agent) -> String {
     key(&mut out, "ThrottleInterval");
     out.push_str(&format!("    <integer>{THROTTLE_SECONDS}</integer>\n"));
     key(&mut out, "ProcessType");
-    string(&mut out, "    ", "Background");
+    string(&mut out, "    ", "Standard");
     key(&mut out, "StandardOutPath");
     string(&mut out, "    ", &agent.stdout.to_string_lossy());
     key(&mut out, "StandardErrorPath");
@@ -122,7 +123,7 @@ mod tests {
             "<key>RunAtLoad</key>\n    <true/>",
             "<key>KeepAlive</key>\n    <true/>",
             "<key>ThrottleInterval</key>\n    <integer>30</integer>",
-            "<key>ProcessType</key>\n    <string>Background</string>",
+            "<key>ProcessType</key>\n    <string>Standard</string>",
             "<key>StandardOutPath</key>\n    <string>/s/daemon/stdout.log</string>",
             "<key>StandardErrorPath</key>\n    <string>/s/daemon/stderr.log</string>",
             "<key>CC_MOSS_STATE_DIR</key>\n        <string>/s</string>",

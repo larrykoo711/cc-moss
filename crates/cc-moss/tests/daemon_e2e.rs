@@ -542,6 +542,10 @@ fn install_goes_on_when_the_daemon_cannot_be_set_up() {
         "the rest of install ran: {said}"
     );
     assert!(!mac.plist().exists());
+    assert!(
+        !Path::new("relative").exists(),
+        "nothing was laid out relative to where install ran (Moss's home)"
+    );
 }
 
 #[test]

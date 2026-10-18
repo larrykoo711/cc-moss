@@ -18,6 +18,9 @@ final class AppModel {
 
     var phase: Phase = .loading
     var sessions: [Session] = [] { didSet { syncIcon() } }
+    /// Moss, kept apart from `sessions`: pinned on top of the list, never
+    /// counted, restored or dismissed.
+    var moss: Session?
     /// The menu bar icon, following the sessions.
     @ObservationIgnored let icon = MenuBarIcon()
     var query = "" { didSet { if query != oldValue { selectFirst() } } }
@@ -77,9 +80,17 @@ final class AppModel {
         Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups.listed(sessions)))
     }
 
-    /// Sessions in the order the arrow keys walk them (the folded group
-    /// only while it is open).
-    var visible: [Session] { projects.flatMap(\.sessions) + (olderExpanded ? olderShown : []) }
+    /// Moss's pinned row, unless the search or the state filter hides it.
+    var pinnedMoss: Session? {
+        guard let moss, Filter.keeps(moss, label: "Moss", query: query, state: stateFilter) else { return nil }
+        return moss
+    }
+
+    /// Sessions in the order the arrow keys walk them (Moss first, the
+    /// folded group only while it is open).
+    var visible: [Session] {
+        (pinnedMoss.map { [$0] } ?? []) + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+    }
 
     var selected: Session? {
         visible.first { $0.id == selectedID } ?? visible.first
@@ -133,7 +144,9 @@ final class AppModel {
         defer { refreshing = false }
         do {
             let snap = try await client.snapshot()
-            sessions = snap.sessions
+            let split = Grouping.splitMoss(snap.sessions)
+            moss = split.moss
+            sessions = split.others
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }

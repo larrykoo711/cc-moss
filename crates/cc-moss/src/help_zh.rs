@@ -198,6 +198,17 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("daemon status", "", "守护进程在不在运行、跑了多久、是哪个版本"),
     ("daemon status", "json", "机器可读的输出（schema 1）"),
+    ("moss", "", "Moss：cc-moss 替你一直开着的那个会话，在这里打开或关掉"),
+    ("moss start", "", "打开 Moss；守护进程会把它拉起来并一直看着"),
+    ("moss stop", "", "关掉 Moss 并结束它；在你再次 start 之前不会启动"),
+    ("moss status", "", "Moss 开没开、在不在运行、跑了多久、重启过几次"),
+    ("moss status", "json", "机器可读的输出（schema 1）"),
+    (
+        "moss profile",
+        "",
+        "用标准输入里的文字替换 Moss 的身份、性格或对你的了解（/moss-profile 用的就是它）",
+    ),
+    ("moss profile", "name", "identity | soul | user"),
     ("ask", "", "会话在等你回答的问题：在这里看、在这里答"),
     ("ask list", "", "列出会话正在等你回答的问题"),
     ("ask list", "json", "机器可读的输出（schema 1）"),
@@ -270,6 +281,7 @@ pub fn localize(cmd: Command) -> Command {
         .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("config", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("daemon", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("moss", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("ask", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 

@@ -11,7 +11,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **A cc-moss daemon that stays in the background (macOS).** `cc-moss install` sets it up: it starts when you log in,
   comes back if it's killed, and only one ever runs. `cc-moss daemon status` says whether it's up, for how long and
   which version; `daemon stop` and `daemon start` turn it off and on. Settings has a new Moss page showing the same,
-  with Start when it's not running, and `cc-moss doctor` checks it. Moss will live in it later.
+  with Start when it's not running, and `cc-moss doctor` checks it.
+- **Moss, a Claude Code session cc-moss keeps running (macOS).** The daemon starts it at login and brings it back,
+  fresh, if it's killed or crashes (after 30 s, 2 min, 10 min, then hourly), on a tmux server of its own. It lives in
+  `moss/` under the state directory with its own persona (`IDENTITY.md`, `SOUL.md`, `USER.md`), journal and memory;
+  install refreshes cc-moss's files there and never touches those. A guard hook keeps it writing only inside its home,
+  away from its own settings and rules. The list, the picker and `cc-moss close` can't end it, and the panel pins it to
+  the top; turn it off in Settings › Moss, with `cc-moss moss stop`, or with `[moss] enabled = false`.
+  `cc-moss moss status [--json]` says how long it has run and how often it restarted; `ls --json` marks it
+  `"role": "moss"`. It uses your Claude Code sign-in and nothing while it waits.
 - **Answer a session's question from elsewhere.** When a session asks a multiple-choice question, or a `--safe`
   session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
   `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`) hands the answer back, and the session
@@ -23,6 +31,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   older `setup --uninstall` can't remove the two new hooks: uninstall with this version before downgrading.
 
 ### Changed
+
+- **The daemon runs at normal priority and with a PATH.** Its LaunchAgent now says `ProcessType` `Standard` (not
+  `Background`, which slowed Moss and everything it starts) and pins a `PATH` with your shell's folders plus where
+  Homebrew and Claude Code install, so it finds `claude` and `tmux`. Run `cc-moss install` after upgrading.
 
 - **New sessions start in bypass mode.** Sessions from `cc-moss new` and the app no longer stop to ask for each
   permission. For normal mode once, use `cc-moss new NAME --safe`; to turn it off for good, run

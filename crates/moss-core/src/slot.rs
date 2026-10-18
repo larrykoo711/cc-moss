@@ -61,12 +61,19 @@ pub struct Slot {
     pub last_prompt: Option<String>,
     /// When `cc-moss restore` last started this slot; cleared by SessionStart.
     pub restore_started_at_ms: Option<i64>,
+    /// What cc-moss runs this session as: `moss` for Moss, else none.
+    pub role: Option<String>,
     pub created_at_ms: i64,
     pub last_active_at_ms: i64,
     pub ended_at_ms: Option<i64>,
 }
 
 impl Slot {
+    /// Whether this is Moss, the session cc-moss looks after itself.
+    pub fn is_moss(&self) -> bool {
+        self.role.as_deref() == Some(crate::moss::ROLE)
+    }
+
     /// The status to show: a slot whose process is gone (SIGKILL, power loss)
     /// is an interruption, and one whose process still runs is running. Without a pid we cannot prove
     /// the process died, so it stays running: restoring a live session would

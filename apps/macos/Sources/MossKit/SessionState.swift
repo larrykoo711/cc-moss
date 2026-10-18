@@ -43,6 +43,7 @@ extension Session {
     /// tmux session name without its host prefix, else the start of the id.
     public var title: String {
         if let name, !name.isEmpty { return name }
+        if isMoss { return "Moss" }
         if let tmuxName = tmux?.sessionName, !tmuxName.isEmpty {
             if let cut = tmuxName.firstIndex(of: "_") {
                 let rest = tmuxName[tmuxName.index(after: cut)...]

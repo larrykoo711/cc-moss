@@ -106,7 +106,12 @@ mod setting {
         );
         assert_eq!(
             config::KEYS,
-            &["ui.language", "claude.permission_mode", "ask.enabled"]
+            &[
+                "ui.language",
+                "claude.permission_mode",
+                "ask.enabled",
+                "moss.enabled"
+            ]
         );
         assert_eq!(
             config::check_setting("claude.permission_mode", " Default "),
@@ -176,5 +181,18 @@ mod setting {
         let c = Config::load_from(&path).unwrap();
         assert!(!c.ask.enabled);
         assert_eq!(c.ask.wait_secs, 30);
+    }
+
+    #[test]
+    fn moss_defaults_on_and_turns_off_as_a_boolean() {
+        let c = Config::default();
+        assert!(c.moss.enabled);
+        assert_eq!(config::get_setting(&c, "moss.enabled"), Ok("true".into()));
+        let text = config::set_in_text("", "moss.enabled", "false").unwrap();
+        assert_eq!(text, "[moss]\nenabled = false\n");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, &text).unwrap();
+        assert!(!Config::load_from(&path).unwrap().moss.enabled);
     }
 }

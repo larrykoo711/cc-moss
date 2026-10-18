@@ -32,15 +32,19 @@ public struct RowActions: Equatable, Sendable {
     public let all: [[RowAction]]
 
     public init(_ s: Session, hopeless: Bool) {
-        let primary: RowAction = if s.state == .interrupted {
+        // cc-moss brings Moss back itself: nothing to bring back or dismiss.
+        let primary: RowAction = if s.isMoss {
+            s.inTmux ? .open : .copyPath
+        } else if s.state == .interrupted {
             hopeless ? .stopReminding : .bringBack
         } else if !s.inTmux {
             .copyPath
         } else {
             .open
         }
-        // Renaming is a message too (`/rename`), so both need a running session.
-        let talk: [RowAction] = Message.allowed(s) ? [.rename, .message] : []
+        // Renaming is a message too (`/rename`), so both need a running
+        // session. Moss's name lives in its own files, not in /rename.
+        let talk: [RowAction] = !Message.allowed(s) ? [] : s.isMoss ? [.message] : [.rename, .message]
         let copies: [RowAction] = if s.state == .interrupted {
             [.copyRestoreCommand, .copyPath]
         } else if s.inTmux {
@@ -48,7 +52,8 @@ public struct RowActions: Equatable, Sendable {
         } else {
             [.copyPath]
         }
-        let close: [RowAction] = Close.allowed(s) && primary != .stopReminding ? [.close] : []
+        // Moss is never dismissed: only switching it off in Settings stops it.
+        let close: [RowAction] = Close.allowed(s) && primary != .stopReminding && !s.isMoss ? [.close] : []
 
         let inline = talk + [primary]
         let all = [[primary] + talk.reversed(), [.note], copies.filter { $0 != primary }, close]

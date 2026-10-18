@@ -165,6 +165,28 @@ struct SectionHeader: View {
     }
 }
 
+/// Above Moss's pinned row: it is cc-moss's own and always there.
+struct MossHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text("Moss")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(L.t("Always on", "一直开着"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+        .tip(L.t("cc-moss keeps Moss running. To turn it off, go to Settings › Moss.",
+                 "Moss 由 cc-moss 一直照看着。要关掉，请到设置 › Moss。"))
+    }
+}
+
 /// One session in two lines: state, name, when / your note or its last message.
 struct SessionRow: View {
     let session: Session

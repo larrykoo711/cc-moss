@@ -14,6 +14,7 @@ pub mod hook;
 pub mod install;
 pub mod launch;
 pub mod ls;
+pub mod moss;
 pub mod new;
 pub mod note;
 pub mod restore;

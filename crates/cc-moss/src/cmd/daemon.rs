@@ -3,8 +3,8 @@
 //! `run` is what launchd starts: it takes the single-instance lock, writes
 //! its status and a heartbeat, and stops cleanly on SIGTERM. `start`, `stop`
 //! and `status` are for people and the app; `install` and `uninstall` place
-//! and remove the LaunchAgent. Today the daemon only stays alive and says so;
-//! the Moss session it will look after comes later.
+//! and remove the LaunchAgent. While it runs it looks after Moss
+//! ([`super::moss::Looker`]).
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -95,8 +95,13 @@ pub fn run() -> Result<bool> {
 
     let beat = heartbeat();
     let mut next = Instant::now() + beat;
+    let say = |line: &str| log(&paths, line);
+    let mut moss = super::moss::Looker::new(&moss_core::store_dir::state_dir(), &say);
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
+        if let Some(moss) = moss.as_mut() {
+            moss.tick(Instant::now(), &say);
+        }
         if Instant::now() >= next {
             stored.heartbeat_ms = now_ms();
             if let Err(e) = status::write(&paths.status, &stored) {
@@ -153,7 +158,21 @@ pub fn report() -> status::Report {
 /// app (started from the Dock) and a shell with its own CC_MOSS_STATE_DIR
 /// or XDG_STATE_HOME then still look where the daemon writes.
 fn daemon_paths() -> Paths {
-    Paths::new(&pinned_state().unwrap_or_else(moss_core::store_dir::state_dir))
+    Paths::new(&state())
+}
+
+/// The state directory the daemon uses: its LaunchAgent's, else this one.
+pub fn state() -> PathBuf {
+    pinned_state().unwrap_or_else(moss_core::store_dir::state_dir)
+}
+
+/// The PATH the installed LaunchAgent gives the daemon.
+pub fn pinned_path() -> Option<String> {
+    if !applies() {
+        return None;
+    }
+    let text = std::fs::read_to_string(Launchd::plist_path().ok()?).ok()?;
+    plist::environment_value(&text, "PATH").filter(|s| !s.is_empty())
 }
 
 /// The state directory the installed LaunchAgent pins.
@@ -210,7 +229,7 @@ pub fn uptime(r: &status::Report) -> Option<String> {
     Some(span(now_ms() - r.started_ms?))
 }
 
-fn span(ms: i64) -> String {
+pub fn span(ms: i64) -> String {
     let s = ms.max(0) / 1000;
     let unit = |n: i64, en: &str, zh: &str| {
         tr!(
@@ -529,10 +548,20 @@ pub fn agent_plist() -> Result<String> {
     if !state.is_absolute() {
         bail!(moss_core::store_dir::NOT_ABSOLUTE);
     }
-    Ok(plist::render(&agent(&setup::hook_exe()?, &state)))
+    let exe = setup::hook_exe()?;
+    let path = daemon_search_path(
+        pinned_path().as_deref(),
+        std::env::var("PATH").ok().as_deref(),
+        std::env::var_os("HOME")
+            .filter(|h| !h.is_empty())
+            .map(PathBuf::from)
+            .as_deref(),
+        Path::new(&exe).parent(),
+    );
+    Ok(plist::render(&agent(&exe, &state, &path)))
 }
 
-fn agent(exe: &str, state: &Path) -> plist::Agent {
+fn agent(exe: &str, state: &Path, path: &str) -> plist::Agent {
     let paths = Paths::new(state);
     plist::Agent {
         label: LABEL.to_string(),
@@ -540,12 +569,53 @@ fn agent(exe: &str, state: &Path) -> plist::Agent {
         stdout: paths.stdout,
         stderr: paths.stderr,
         // launchd does not start the daemon from the user's shell: pin the
-        // state directory so the daemon, the CLI and the app agree on it.
-        environment: vec![(
-            "CC_MOSS_STATE_DIR".to_string(),
-            state.to_string_lossy().into_owned(),
-        )],
+        // state directory so the daemon, the CLI and the app agree on it,
+        // and a PATH where Moss finds `claude` and `tmux`.
+        environment: vec![
+            (
+                "CC_MOSS_STATE_DIR".to_string(),
+                state.to_string_lossy().into_owned(),
+            ),
+            ("PATH".to_string(), path.to_string()),
+        ],
     }
+}
+
+/// The daemon's PATH: what the installed LaunchAgent already has first (so
+/// installing from another shell or the app does not reshuffle it), then
+/// this process's PATH, then cc-moss's own folder and where Homebrew and
+/// Claude Code's installers put programs. Each folder once.
+fn daemon_search_path(
+    pinned: Option<&str>,
+    current: Option<&str>,
+    home: Option<&Path>,
+    exe_dir: Option<&Path>,
+) -> String {
+    let mut dirs: Vec<String> = Vec::new();
+    let mut add = |d: String| {
+        let d = d.trim_end_matches('/').to_string();
+        if !d.is_empty() && d.starts_with('/') && !dirs.contains(&d) {
+            dirs.push(d);
+        }
+    };
+    for list in [pinned, current].into_iter().flatten() {
+        for d in list.split(':') {
+            add(d.to_string());
+        }
+    }
+    if let Some(dir) = exe_dir {
+        add(dir.to_string_lossy().into_owned());
+    }
+    add("/opt/homebrew/bin".into());
+    add("/usr/local/bin".into());
+    if let Some(home) = home {
+        add(home.join(".local/bin").to_string_lossy().into_owned());
+        add(home.join(".claude/local").to_string_lossy().into_owned());
+    }
+    for d in ["/usr/bin", "/bin", "/usr/sbin", "/sbin"] {
+        add(d.into());
+    }
+    dirs.join(":")
 }
 
 /// Write the plist if it differs. True when it changed.
@@ -979,6 +1049,7 @@ mod tests {
         let text = plist::render(&agent(
             "/Users/someone/My Tools/cc-moss",
             Path::new("/Users/someone/.local/state/cc-moss"),
+            "/opt/homebrew/bin:/usr/bin:/bin",
         ));
         for want in [
             "<key>Label</key>\n    <string>io.github.larrykoo711.cc-moss.daemon</string>",
@@ -986,13 +1057,35 @@ mod tests {
             "<key>KeepAlive</key>\n    <true/>",
             "<key>RunAtLoad</key>\n    <true/>",
             "<key>ThrottleInterval</key>\n    <integer>30</integer>",
-            "<key>ProcessType</key>\n    <string>Background</string>",
+            "<key>ProcessType</key>\n    <string>Standard</string>",
+            "<key>PATH</key>\n        <string>/opt/homebrew/bin:/usr/bin:/bin</string>",
             "<string>/Users/someone/.local/state/cc-moss/daemon/stdout.log</string>",
             "<string>/Users/someone/.local/state/cc-moss/daemon/stderr.log</string>",
             "<key>CC_MOSS_STATE_DIR</key>\n        <string>/Users/someone/.local/state/cc-moss</string>",
         ] {
             assert!(text.contains(want), "missing {want:?} in\n{text}");
         }
+    }
+
+    #[test]
+    fn daemon_path_keeps_what_it_had_and_adds_the_usual_places() {
+        let path = daemon_search_path(
+            Some("/custom/bin:/usr/bin"),
+            Some("/usr/bin:/Users/a/.npm/bin::relative:/opt/homebrew/bin/"),
+            Some(Path::new("/Users/a")),
+            Some(Path::new("/opt/homebrew/Cellar/cc-moss/1/bin")),
+        );
+        assert_eq!(
+            path,
+            "/custom/bin:/usr/bin:/Users/a/.npm/bin:/opt/homebrew/bin:\
+             /opt/homebrew/Cellar/cc-moss/1/bin:/usr/local/bin:/Users/a/.local/bin:\
+             /Users/a/.claude/local:/bin:/usr/sbin:/sbin"
+        );
+        let bare = daemon_search_path(None, None, None, None);
+        assert_eq!(
+            bare,
+            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        );
     }
 
     #[test]

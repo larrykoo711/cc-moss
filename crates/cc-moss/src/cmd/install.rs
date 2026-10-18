@@ -493,6 +493,7 @@ pub fn run(opts: Options) -> Result<()> {
         app::offer(opts.dry_run, opts.yes)?;
     }
     daemon::install_step(opts.dry_run)?;
+    super::moss::install_step(opts.dry_run)?;
 
     let tools = install_tools(&opts);
     if opts.dry_run {
@@ -603,6 +604,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         }
     }
     app::remove(opts.dry_run, opts.yes)?;
+    super::moss::uninstall_step(opts.dry_run)?;
     daemon::uninstall_step(opts.dry_run)?;
 
     let state = moss_core::store_dir::state_dir();

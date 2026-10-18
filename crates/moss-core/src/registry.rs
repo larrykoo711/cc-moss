@@ -494,6 +494,26 @@ impl Registry {
         Ok(())
     }
 
+    /// Record what cc-moss runs this session as (`moss`).
+    pub fn set_role(&self, slot_id: &str, role: &str) -> Result<()> {
+        self.write()?.execute(
+            "UPDATE slots SET role = ?2 WHERE slot_id = ?1",
+            params![slot_id, role],
+        )?;
+        Ok(())
+    }
+
+    /// Close every open slot with `role` (an old Moss, before a new one
+    /// starts): they are never offered for restore. How many were closed.
+    pub fn close_role(&self, role: &str, reason: &str, now_ms: i64) -> Result<usize> {
+        Ok(self.write()?.execute(
+            "UPDATE slots SET status = 'closed', end_reason = ?2, ended_at = ?3,
+               attention = NULL, busy = 0
+             WHERE role = ?1 AND status <> 'closed'",
+            params![role, reason, now_ms],
+        )?)
+    }
+
     /// `cc-moss restore` launched this slot; SessionStart clears the mark.
     pub fn mark_restore_started(&self, slot_id: &str, now_ms: i64) -> Result<()> {
         self.write()?.execute(
@@ -813,7 +833,8 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
                     note_goal, note_state, note_text, launch_args, restore_started_at, busy, last_prompt,
                     attention,
                     (SELECT transcript_path FROM slot_sessions ss
-                      WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id)
+                      WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id),
+                    role
              FROM slots ORDER BY created_at, slot_id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -852,6 +873,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             last_prompt: r.get(22)?,
             attention: r.get(23)?,
             transcript_path: r.get(24)?,
+            role: r.get(25)?,
             created_at_ms: r.get(13)?,
             last_active_at_ms: r.get(14)?,
             ended_at_ms: r.get(15)?,
@@ -908,6 +930,8 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         ("attention", "attention TEXT"),
         // After 0.1.1: when this slot's current interruption was reported.
         ("lost_reported_at", "lost_reported_at INTEGER"),
+        // After 0.2.2: what cc-moss runs the session as (`moss`).
+        ("role", "role TEXT"),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?

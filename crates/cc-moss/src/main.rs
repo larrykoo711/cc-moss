@@ -206,6 +206,11 @@ enum Command {
         #[command(subcommand)]
         action: DaemonCommand,
     },
+    /// Moss, the session cc-moss keeps running for you: switch it on or off.
+    Moss {
+        #[command(subcommand)]
+        action: MossCommand,
+    },
     /// Questions sessions are waiting on: see them, answer them from here.
     Ask {
         #[command(subcommand)]
@@ -333,6 +338,27 @@ enum DaemonCommand {
 }
 
 #[derive(Subcommand)]
+enum MossCommand {
+    /// Switch Moss on; the daemon starts it and keeps it running.
+    Start,
+    /// Switch Moss off and end it; it stays off until `start`.
+    Stop,
+    /// Whether Moss is on and running, since when, and how often it restarted.
+    Status {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Replace Moss's identity, soul or notes about you with the text on
+    /// standard input (what /moss-profile uses).
+    #[command(hide = true)]
+    Profile {
+        /// identity | soul | user
+        name: String,
+    },
+}
+
+#[derive(Subcommand)]
 enum ConfigCommand {
     /// Print a setting's value (the default when it is not set).
     Get {
@@ -417,6 +443,10 @@ fn main() -> std::process::ExitCode {
             .map(|a| a.to_string_lossy().into_owned())
             .find(|a| !a.starts_with('-'))
             .unwrap_or_default();
+        // Moss's fence decides, and fails closed; not a session event.
+        if event == cmd::moss::GUARD_EVENT {
+            return cmd::moss::guard_hook();
+        }
         cmd::hook::run(&event);
         return std::process::ExitCode::SUCCESS;
     }
@@ -517,6 +547,12 @@ fn main() -> std::process::ExitCode {
             DaemonCommand::Stop => report(cmd::daemon::stop()),
             DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
         },
+        Command::Moss { action } => report(match action {
+            MossCommand::Start => cmd::moss::start(),
+            MossCommand::Stop => cmd::moss::stop(),
+            MossCommand::Status { json } => cmd::moss::print_status(json),
+            MossCommand::Profile { name } => cmd::moss::profile(&name),
+        }),
         Command::Ask { action } => report(cmd::ask::run(match action {
             AskCommand::List { json } => cmd::ask::Action::List { json },
             AskCommand::Answer {

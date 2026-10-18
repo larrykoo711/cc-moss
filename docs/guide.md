@@ -179,7 +179,7 @@ cc-moss alias rm tn
 
 ### 守护进程
 
-macOS 上，`cc-moss install` 会装一个常驻后台的 cc-moss 守护进程：登录后自动启动，被杀掉或意外退出也会被系统（launchd）重新拉起来，同一时间只会有一个。以后内置的 Moss 就跑在它里面；现在它只是安静地待着，不做别的事，也不联网。
+macOS 上，`cc-moss install` 会装一个常驻后台的 cc-moss 守护进程：登录后自动启动，被杀掉或意外退出也会被系统（launchd）重新拉起来，同一时间只会有一个。它负责照看 [Moss](#moss)；它自己不联网。
 
 ```sh
 cc-moss daemon status          # 在不在运行、跑了多久、是哪个版本
@@ -193,6 +193,28 @@ cc-moss daemon start           # 重新启动（需要时会先把它设置好�
 - 文件都在状态目录的 `daemon/` 下：`status.json`（状态和每 30 秒一次的心跳）、`daemon.log`（超过 1 MiB 重新开始），以及 launchd 的 `stdout.log`、`stderr.log`。系统里登记的是 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`，以你自己的身份运行，不需要 root；用 sudo 运行 `cc-moss daemon run` 会直接拒绝。
 - LaunchAgent 记着 `cc-moss install` 当时用的状态目录（`CC_MOSS_STATE_DIR`、`XDG_STATE_HOME`），`daemon status`、`doctor` 和 App 都去那里看，不管当前终端怎么设。`daemon start` 也不会改它；要把守护进程换到别的目录，在设好新目录的终端里运行 `cc-moss install`。
 - launchd 托管着守护进程时，你也可以在终端里自己运行 `cc-moss daemon run`，但同一时间只有一个能跑起来：launchd 那份会每隔五分钟再试一次，你那份停掉后大约五分钟内它就接上。
+- LaunchAgent 里还记着一份 `PATH`（安装时终端里的 PATH，加上 Homebrew 和 Claude Code 常装的位置），守护进程靠它找到 `claude` 和 `tmux`。装到别处的话，装好后再运行一次 `cc-moss install`。
+
+### Moss
+
+Moss 是 cc-moss 替你一直开着的一个 Claude Code 会话（macOS）。守护进程登录后把它拉起来；它被杀掉、崩溃，或者它所在的 tmux 没了，守护进程会等一会儿再把它拉起来（30 秒、2 分钟、10 分钟，之后每小时一次；稳定跑满 10 分钟就从头算）。每次都是全新的会话：它记得的事和手头的活都写在文件里，起来后先读这些接着干，没事就安静待着。现在它只是一直在；和它说话、让它替你派活，是后面的版本。
+
+```sh
+cc-moss moss status          # 开没开、在不在运行、跑了多久、重启过几次
+cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…"}
+cc-moss moss stop            # 关掉并结束它；之后一直关着，重新登录也不会启动
+cc-moss moss start           # 重新打开，守护进程几秒内把它拉起来
+```
+
+- **结束不了它，只能关掉它。** 会话列表、选择器、`cc-moss close` 都不提供结束 Moss；面板里它固定在最上面一行，没有「不再提醒」，也不会出现在「找回」里。要停，就在菜单栏 App 的设置 ›「Moss」里关掉开关，或者运行 `cc-moss moss stop`，或者在配置里写 `[moss] enabled = false`。三种都会一直关着，直到你再打开。
+- **它住在哪。** 状态目录下的 `moss/`（默认 `~/.local/state/cc-moss/moss/`），不在「文稿」这类受隐私保护的文件夹里：
+  - cc-moss 的文件，每次 `cc-moss install`（以及每次启动 Moss）都会换成新版：`CLAUDE.md`、`SECURITY.md`（最先读、最优先的规矩）、`.claude/settings.json`（防护钩子）、`.claude/skills/moss-profile/`。
+  - 你的（和它自己的）文件，只在缺的时候建一份，之后从不改动：`IDENTITY.md`（名字，默认 Moss）、`SOUL.md`（说话和做事的方式）、`USER.md`（它对你的了解）、`journal/`（每天一个日志）、`memory/`（长期记忆）。
+  - `SESSIONS.md`：守护进程按会话记录每分钟（或有变化时）写一份会话一览，给 Moss 读。
+- **它能碰什么。** Moss 不弹权限确认（bypass），所以它的项目设置里有一道防护钩子：只允许写自己家里的文件；不许改自己的设置、钩子、`SECURITY.md` 和 `CLAUDE.md`；`IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改（它会先把旧的存进 `.snapshots/`）。钩子判断不了的时候一律拒绝。
+- **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。想看看它，在面板里点它那一行就行。
+- **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
+- `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 会结束它、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
 
 ## 状态栏 App
 
@@ -302,7 +324,7 @@ Homebrew 和 macOS 的 Releases 下载包里都带着 App；从源码装（`carg
 | 小莫 | 开关、大小、互动方式、声音 |
 | 通知 | 谁来告诉你、提醒哪些事；通知被关掉时提示一句 |
 | 权限 | cc-moss 向 macOS 要的所有权限，一页看全：辅助功能、通知、控制你的终端（自动化），每项写着现在的状态和用途，缺了点「去允许」。有一项被关掉、又正好用得上时，侧栏这一页旁边会有个小圆点 |
-| Moss | 守护进程在不在运行、跑了多久；没在运行时点「启动」（见[守护进程](#守护进程)） |
+| Moss | Moss 的开关和状态（运行了多久、重启过几次，见 [Moss](#moss)）；守护进程在不在运行，没在运行时点「启动」（见[守护进程](#守护进程)） |
 | 关于 | App 和命令行的版本、检查更新、`cc-moss` 程序的位置、再看一遍欢迎引导 |
 
 侧栏顶上的搜索框能直接搜设置项。
@@ -387,6 +409,7 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 - `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，以及最近一次提问的前 200 个字符（在选择器里显示）；还有最近 7 天的会话事件，不含提示词，权限提示的说明文字最多存 200 个字符。
 - `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
 - `~/.local/state/cc-moss/daemon/`：守护进程的状态、心跳和日志（macOS），每个最多 1 MB。
+- `~/.local/state/cc-moss/moss/`：[Moss](#moss) 的家：它的人设、每天的日志、记忆，以及给它读的会话一览（macOS）。
 - `~/.local/state/cc-moss/asks/`：会话正在等你回答的题目（题目原文和选项，或要批准的操作的前 300 个字符）和答案；过期一小时后删掉。
 - `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
 
@@ -394,6 +417,8 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 
 - **检查新版本**：打开选择器或运行 `doctor` 时，每天最多一次，用 `curl` 向`https://github.com/larrykoo711/cc-moss/releases/latest` 问一下它指向哪个版本。就是一个普通的 HTTPS 请求，不带任何关于你、你的会话或你这台机器的信息；在后台进行，3 秒没回应就放弃。钩子和 `ls --json` 从不联网。在配置文件里写 `[update] check = false` 或设置 `CC_MOSS_NO_UPDATE_CHECK=1` 即可关闭；关闭后你自己运行`cc-moss update` 照样能用。
 - **安装你同意的东西**：`cc-moss install` 里的工具，以及 `cc-moss update` 下载的新版本。
+
+[Moss](#moss) 是一个 Claude Code 会话，它用你的 Claude Code 登录跟 Anthropic 通信，和你自己开的会话一样；闲着的时候不发请求。不想要它，运行 `cc-moss moss stop`。
 
 ## 配置
 
@@ -420,6 +445,9 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 [ask]
 enabled = true            # 会话问你问题时，别处（命令行、App）也能答；没人接手时等于没开
 wait_secs = 300           # 等别处的答案最多多少秒（1–590），等的时候终端里照样能答
+
+[moss]
+enabled = true            # Moss 一直开着（macOS）；false 关掉，cc-moss moss start|stop 改的就是它
 ```
 
 界面语言也可以用命令改，不用打开文件：`cc-moss config set ui.language zh`（设回 `auto` 就重新跟随系统），`cc-moss config get ui.language` 查看当前值。加上 `--json` 输出 `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`，出错时是 `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}`（`code` 还可能是 `bad_value`、`config`）。

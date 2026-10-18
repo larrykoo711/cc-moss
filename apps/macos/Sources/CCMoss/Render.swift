@@ -12,7 +12,7 @@ import SwiftUI
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
-///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -142,7 +142,16 @@ enum Render {
                 case "unknown": .failed(AppModel.describe(MossClient.Failure.timedOut))
                 default: nil
                 }
-                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, daemonDemo: daemonDemo, dark: args.contains("--dark"),
+                // `--moss running|restarted|off`: the Moss card with that status.
+                let since = Date().addingTimeInterval(-2 * 3600 - 300)
+                let mossDemo: MossCheck? = switch value("--moss") {
+                case "running": .known(MossStatus(enabled: true, running: true, since: since))
+                case "restarted": .known(MossStatus(enabled: true, running: true, since: since, restarts: 1))
+                case "off": .known(MossStatus(enabled: false, running: false))
+                default: nil
+                }
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, daemonDemo: daemonDemo, mossDemo: mossDemo,
+                             dark: args.contains("--dark"),
                              height: value("--height").flatMap(Double.init), out: out)
             } else {
                 // `--hover`: the pointer on the selected row; `--menu`: a menu open
@@ -344,9 +353,9 @@ enum Render {
 
     /// `height`: a taller window than the default, to see a long page whole.
     @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?,
-                                                daemonDemo: DaemonCheck? = nil, dark: Bool,
+                                                daemonDemo: DaemonCheck? = nil, mossDemo: MossCheck? = nil, dark: Bool,
                                                 height: Double?, out: String) {
-        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo, daemonDemo: daemonDemo)
+        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo, daemonDemo: daemonDemo, mossDemo: mossDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         var size = host.fittingSize

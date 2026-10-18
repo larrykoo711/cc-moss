@@ -22,15 +22,36 @@ pub const STEPS: [Duration; 4] = [
 pub const STABLE: Duration = Duration::from_secs(10 * 60);
 
 /// How long to wait after each failure.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RestartLadder {
     failures: usize,
     started: Option<Instant>,
+    /// [`STEPS`] unless a test asked for shorter ones.
+    steps: Vec<Duration>,
+}
+
+impl Default for RestartLadder {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl RestartLadder {
     pub fn new() -> Self {
-        Self::default()
+        Self::with_steps(STEPS.to_vec())
+    }
+
+    /// Other waits (tests shorten them); an empty list means [`STEPS`].
+    pub fn with_steps(steps: Vec<Duration>) -> Self {
+        RestartLadder {
+            failures: 0,
+            started: None,
+            steps: if steps.is_empty() {
+                STEPS.to_vec()
+            } else {
+                steps
+            },
+        }
     }
 
     /// The child was (re)started at `now`.
@@ -47,7 +68,7 @@ impl RestartLadder {
             self.failures = 0;
         }
         self.started = None;
-        let wait = STEPS[self.failures.min(STEPS.len() - 1)];
+        let wait = self.steps[self.failures.min(self.steps.len() - 1)];
         self.failures += 1;
         wait
     }
@@ -92,8 +113,13 @@ impl Default for Watchdog {
 impl Watchdog {
     /// Not started yet: the first check says [`Step::StartNow`].
     pub fn new() -> Self {
+        Self::with_ladder(RestartLadder::new())
+    }
+
+    /// With its own ladder (shorter waits in tests).
+    pub fn with_ladder(ladder: RestartLadder) -> Self {
         Watchdog {
-            ladder: RestartLadder::new(),
+            ladder,
             state: State::Down { retry_at: None },
         }
     }

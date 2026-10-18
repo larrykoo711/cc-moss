@@ -188,6 +188,7 @@ fn checks() -> Result<Vec<Check>> {
     let mut out = vec![version_check()];
     out.extend(app_check());
     out.extend(daemon_check());
+    out.extend(super::moss::facts().map(|f| moss_check(&f)));
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {
@@ -750,6 +751,49 @@ fn daemon_check() -> Option<Check> {
     })
 }
 
+/// Moss (macOS): on and running, and what the daemon needs to start it.
+fn moss_check(f: &super::moss::Facts) -> Check {
+    let what = "Moss";
+    if !f.enabled {
+        return check(
+            Mark::Note,
+            what,
+            tr!("off", "已关闭"),
+            Some("cc-moss moss start".into()),
+        );
+    }
+    let missing: Vec<&str> = [("claude", f.claude_found), ("tmux", f.tmux_found)]
+        .iter()
+        .filter(|(_, found)| !found)
+        .map(|(name, _)| *name)
+        .collect();
+    if !missing.is_empty() {
+        let names = missing.join(", ");
+        return check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("the daemon can't find {names}, so it can't start Moss"),
+                format!("守护进程找不到 {names}，所以没法启动 Moss")
+            ),
+            Some(tr!(
+                format!("install {names}, then run `cc-moss install` so the daemon sees it"),
+                format!("先装好 {names}，再运行 `cc-moss install` 让守护进程看得到它")
+            )),
+        );
+    }
+    if f.running {
+        check(Mark::Ok, what, tr!("running", "运行中"), None)
+    } else {
+        check(
+            Mark::Warn,
+            what,
+            tr!("on, but not running", "已打开，但没在运行"),
+            Some("cc-moss daemon start".into()),
+        )
+    }
+}
+
 /// The menubar app (macOS only): in an Applications folder, where its
 /// notifications work, and the same version as this cc-moss.
 fn app_check() -> Option<Check> {
@@ -896,6 +940,44 @@ fn alias_names(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doctor_names_missing_claude_for_moss() {
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        let facts = |claude_found, tmux_found| super::super::moss::Facts {
+            enabled: true,
+            running: false,
+            claude_found,
+            tmux_found,
+        };
+        let c = moss_check(&facts(false, true));
+        assert_eq!(c.mark, Mark::Warn);
+        assert!(
+            c.detail.contains("claude") && !c.detail.contains("tmux"),
+            "{}",
+            c.detail
+        );
+        assert!(c
+            .fix
+            .as_deref()
+            .is_some_and(|f| f.contains("cc-moss install")));
+        let both = moss_check(&facts(false, false));
+        assert!(both.detail.contains("claude, tmux"), "{}", both.detail);
+        let fine = moss_check(&super::super::moss::Facts {
+            enabled: true,
+            running: true,
+            claude_found: true,
+            tmux_found: true,
+        });
+        assert_eq!(fine.mark, Mark::Ok);
+        let off = moss_check(&super::super::moss::Facts {
+            enabled: false,
+            running: false,
+            claude_found: false,
+            tmux_found: false,
+        });
+        assert_eq!(off.mark, Mark::Note, "off is a choice, not a problem");
+    }
 
     #[test]
     fn finds_blocks_after_starship() {

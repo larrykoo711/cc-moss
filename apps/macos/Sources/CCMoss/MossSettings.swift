@@ -1,13 +1,13 @@
 import MossKit
 import SwiftUI
 
-/// Settings › Moss: whether the cc-moss daemon (the background process
-/// Moss will live in) is running, and Start when it isn't. Read only
-/// otherwise: launchd keeps it going, `cc-moss daemon stop` stops it.
+/// Settings › Moss: Moss itself (on or off, how long it has run), then
+/// the cc-moss daemon it lives in, with Start when that isn't running.
 struct MossSettings: View {
     let model: AppModel
     /// Screenshots pass a fixed check and nothing is asked of cc-moss.
     var demo: DaemonCheck?
+    var mossDemo: MossCheck?
     @State private var check: DaemonCheck = .checking
     @State private var starting = false
     @State private var problem: String?
@@ -17,11 +17,12 @@ struct MossSettings: View {
     private var detail: String {
         if let problem { return problem }
         if case .failed(let why) = shown { return why }
-        return L.t("It starts when you log in, and comes back on its own if it stops. Moss will run inside it.",
-                   "登录时自动启动，意外退出也会自己回来。以后 Moss 就跑在它里面。")
+        return L.t("It starts when you log in, and comes back on its own if it stops. Moss runs inside it.",
+                   "登录时自动启动，意外退出也会自己回来。Moss 就跑在它里面。")
     }
 
     var body: some View {
+        MossCard(model: model, demo: mossDemo)
         SettingsCard(title: L.t("In the Background", "后台")) {
             CardRow(title: shown.line(),
                     detail: detail,
@@ -86,6 +87,87 @@ struct MossSettings: View {
             }
             await refresh()
             starting = false
+        }
+    }
+}
+
+/// The Moss card: its status line and the switch. Off means cc-moss ends it
+/// and leaves it off; nothing else in the app can end it.
+private struct MossCard: View {
+    let model: AppModel
+    var demo: MossCheck?
+    @State private var check: MossCheck = .checking
+    @State private var on = true
+    @State private var busy = false
+    @State private var problem: String?
+
+    private var shown: MossCheck { demo ?? check }
+
+    var body: some View {
+        SettingsCard(title: "Moss") {
+            CardRow(title: shown.line(),
+                    detail: problem ?? L.t("A Claude Code session cc-moss keeps running for you. It uses your Claude Code sign-in, and while it waits it uses none of your plan.",
+                                           "cc-moss 替你一直开着的一个 Claude Code 会话。它用你的 Claude Code 登录；闲着等的时候，不耗你的额度。"),
+                    divider: false) {
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Toggle("", isOn: $on)
+                        .toggleStyle(.switch)
+                        .cursor(.pointingHand)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .disabled(model.client == nil || shown.status == nil)
+                        .onChange(of: on) { _, value in
+                            if value != shown.status?.enabled { set(value) }
+                        }
+                }
+            }
+        }
+        Text(L.t("Moss can't be ended from the session list. Turn it off here; it stays off until you turn it back on.",
+                 "会话列表里结束不了 Moss。在这里关掉；之后会一直关着，直到你再打开。"))
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .onAppear { if let s = demo?.status { on = s.enabled } }
+            .task(id: model.cliPath) {
+                guard demo == nil else { return }
+                while !Task.isCancelled {
+                    await refresh()
+                    try? await Task.sleep(for: .seconds(5))
+                }
+            }
+    }
+
+    private func refresh() async {
+        guard let client = model.client else {
+            check = .failed(L.t("The app can't find the cc-moss command.", "App 找不到 cc-moss 命令。"))
+            return
+        }
+        do {
+            let status = try await client.mossStatus()
+            check = .known(status)
+            if !busy { on = status.enabled }
+        } catch {
+            check = .failed(AppModel.describe(error))
+        }
+    }
+
+    private func set(_ value: Bool) {
+        guard let client = model.client, demo == nil, !busy else { return }
+        busy = true
+        Task {
+            do {
+                try await client.setMoss(value)
+                problem = nil
+            } catch {
+                problem = value
+                    ? L.t("Didn't turn on: \(error)", "没能打开：\(error)")
+                    : L.t("Didn't turn off: \(error)", "没能关掉：\(error)")
+            }
+            await refresh()
+            busy = false
         }
     }
 }
