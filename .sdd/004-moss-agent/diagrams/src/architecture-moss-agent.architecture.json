@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "cc-moss Stage 3: Moss Agent",
+    "subtitle": "sessions run in bypass; questions go to wherever you are; one resident daemon",
+    "output": "architecture-moss-agent.html"
+  },
+  "components": [
+    { "id": "session", "type": "external", "label": "Claude sessions", "sublabel": "tmux, bypass", "pos": [40, 150], "size": [140, 60] },
+    { "id": "hooks", "type": "backend", "label": "cc-moss hook", "sublabel": "observe + ask", "pos": [250, 150], "size": [140, 60] },
+    { "id": "state", "type": "database", "label": "State dir", "sublabel": "registry, asks", "pos": [460, 150], "size": [140, 60] },
+    { "id": "daemon", "type": "backend", "label": "cc-moss daemon", "sublabel": "presence + router", "pos": [680, 150], "size": [150, 60], "tag": "launchd" },
+    { "id": "slack", "type": "external", "label": "Slack", "sublabel": "channels only", "pos": [920, 150], "size": [130, 60] },
+    { "id": "app", "type": "frontend", "label": "cc-moss.app", "sublabel": "answer cards, Mo", "pos": [460, 340], "size": [140, 60] },
+    { "id": "moss", "type": "security", "label": "Moss session", "sublabel": "resident claude", "pos": [685, 340], "size": [140, 60] },
+    { "id": "cli", "type": "frontend", "label": "cc-moss CLI", "sublabel": "dispatch, doctor", "pos": [920, 340], "size": [130, 60], "tag": "audited" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Runs as you, after login", "wraps": ["daemon", "moss"] }
+  ],
+  "connections": [
+    { "from": "session", "to": "hooks", "label": "hook", "variant": "emphasis" },
+    { "from": "hooks", "to": "state", "label": "ask", "variant": "emphasis" },
+    { "from": "state", "to": "daemon", "label": "watch", "variant": "emphasis" },
+    { "from": "daemon", "to": "slack", "label": "socket", "variant": "emphasis" },
+    { "from": "state", "to": "app", "label": "answer", "fromSide": "bottom", "toSide": "top", "labelAt": [560, 275] },
+    { "from": "daemon", "to": "moss", "label": "inject", "fromSide": "bottom", "toSide": "top", "labelAt": [785, 275] },
+    { "from": "moss", "to": "cli", "label": "acts" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Ask broker", "items": ["Blocking hook writes the question", "Desktop, Slack or Moss answers", "Timeout falls back to the session"] },
+    { "dot": "emerald", "title": "One resident", "items": ["Only the daemon spawns Moss", "Restart ladder 30s to 1h", "The app is a client"] },
+    { "dot": "amber", "title": "Moss hands", "items": ["Every action is a CLI command", "Dispatch writes an audit line", "One switch pauses Moss"] }
+  ]
+}
