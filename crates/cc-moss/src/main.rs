@@ -206,12 +206,77 @@ enum Command {
         #[command(subcommand)]
         action: DaemonCommand,
     },
+    /// Questions sessions are waiting on: see them, answer them from here.
+    Ask {
+        #[command(subcommand)]
+        action: AskCommand,
+    },
     /// Entry point for Claude Code hooks. Always exits 0.
     #[command(hide = true)]
     Hook {
         /// session-start | user-prompt-submit | stop | session-end | notification | post-tool-use
+        /// | pre-tool-use | permission-request
         event: String,
     },
+}
+
+#[derive(Subcommand)]
+enum AskCommand {
+    /// List the questions sessions are waiting on.
+    List {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Answer a question; the session carries on as if you answered in its terminal.
+    #[command(group(clap::ArgGroup::new("reply").required(true).args(["choice", "text", "allow", "deny"])))]
+    Answer {
+        /// The question's id from `cc-moss ask list` (a prefix is enough).
+        id: String,
+        /// The option to pick; repeat for several, in question order.
+        #[arg(long, value_name = "LABEL")]
+        choice: Vec<String>,
+        /// Your own answer instead of an option (one question only).
+        #[arg(long, conflicts_with_all = ["choice", "allow", "deny"])]
+        text: Option<String>,
+        /// Let the tool run.
+        #[arg(long, conflicts_with_all = ["choice", "deny"])]
+        allow: bool,
+        /// Don't let the tool run.
+        #[arg(long, conflicts_with_all = ["choice"])]
+        deny: bool,
+        /// With --deny: what to tell Claude instead.
+        #[arg(long, requires = "deny")]
+        message: Option<String>,
+        /// Who is answering (for the app, the daemon and Slack).
+        #[arg(long, value_enum, default_value = "cli", hide = true)]
+        by: AnswerBy,
+    },
+    /// Say you are here to take questions, so sessions wait for you a while (90 seconds per call).
+    Take {
+        /// Your name: a-z, 0-9, - and _.
+        #[arg(long)]
+        name: String,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum AnswerBy {
+    Cli,
+    Desktop,
+    Slack,
+    Moss,
+}
+
+impl From<AnswerBy> for moss_core::ask::By {
+    fn from(by: AnswerBy) -> Self {
+        match by {
+            AnswerBy::Cli => moss_core::ask::By::Cli,
+            AnswerBy::Desktop => moss_core::ask::By::Desktop,
+            AnswerBy::Slack => moss_core::ask::By::Slack,
+            AnswerBy::Moss => moss_core::ask::By::Moss,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -452,6 +517,27 @@ fn main() -> std::process::ExitCode {
             DaemonCommand::Stop => report(cmd::daemon::stop()),
             DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
         },
+        Command::Ask { action } => report(cmd::ask::run(match action {
+            AskCommand::List { json } => cmd::ask::Action::List { json },
+            AskCommand::Answer {
+                id,
+                choice,
+                text,
+                allow,
+                deny,
+                message,
+                by,
+            } => cmd::ask::Action::Answer {
+                id,
+                choices: choice,
+                text,
+                allow,
+                deny,
+                message,
+                by: by.into(),
+            },
+            AskCommand::Take { name } => cmd::ask::Action::Take { name },
+        })),
         Command::Note {
             name,
             goal,

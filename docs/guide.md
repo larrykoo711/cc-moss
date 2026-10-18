@@ -25,7 +25,7 @@ cc-moss doctor                           # 检查是否都装好了
 
 | 部分 | 做什么 |
 |---|---|
-| `hooks` | 在 `~/.claude/settings.json` 写入六个钩子，让 Claude Code 上报会话事件；你没设过 `skipDangerousModePermissionPrompt` 时把它设为 `true`，新会话就不会卡在 bypass 警告上（见[新会话的权限](#新会话的权限)）；加上 `t` 别名（`~/.local/bin/t`，见[别名](#别名)） |
+| `hooks` | 在 `~/.claude/settings.json` 写入八个钩子，让 Claude Code 上报会话事件、让别处能替会话答题（见[替会话接住问题](#替会话接住问题)）；你没设过 `skipDangerousModePermissionPrompt` 时把它设为 `true`，新会话就不会卡在 bypass 警告上（见[新会话的权限](#新会话的权限)）；加上 `t` 别名（`~/.local/bin/t`，见[别名](#别名)） |
 | `tmux` | 一份调好的配置 `~/.config/cc-moss/tmux.conf`，由 `~/.tmux.conf` 顶部的一行引入；写在那行之后的设置都以你的为准 |
 | `starship` | starship 提示符，只在你还没有 starship 配置时写入（加 `--replace-starship` 替换你的） |
 | `shell` | ssh 断线后自动复位终端；让非交互 shell（`ssh host cmd`、cron）也能用到 Homebrew 的 PATH |
@@ -104,11 +104,12 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
+| `cc-moss ask list [--json]` / `ask answer id (--choice 选项… \| --text 文字 \| --allow \| --deny [--message 理由])` / `ask take --name 名字` | 看、答会话正在等你回答的问题（见[替会话接住问题](#替会话接住问题)） |
 | `cc-moss send 名字 -- 文字` | 替你在一个正在运行的会话里输入一段话，就像在它的终端里打字；多行会原样整段送达 |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
-| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）和 `claude.permission_mode`（`bypass`、`default`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`）和 `ask.enabled`（`true`、`false`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | 常驻后台的守护进程：看状态、启动、停掉（macOS，见[守护进程](#守护进程)） |
 | `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |
 | `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
@@ -128,6 +129,27 @@ cc-moss restore                      # 崩溃之后：全部找回来
 `default_args` 或命令行里已经带了 `--dangerously-skip-permissions` 或 `--permission-mode` 时，cc-moss 不再重复加。`~/.claude/settings.json` 或管理员下发的设置（macOS 上是 `/Library/Application Support/ClaudeCode/managed-settings.json`）里 `permissions.disableBypassPermissionsMode` 是 `"disable"` 时，新会话按普通模式开，`cc-moss doctor` 会说明原因。
 
 Claude Code 第一次用 bypass 时会弹一个警告，在后台的 tmux 窗格里没人看得见，会话就卡在那里。所以 `cc-moss install` 会在你没设过的情况下把 `~/.claude/settings.json` 的 `skipDangerousModePermissionPrompt` 设为 `true`，并在 `~/.local/state/cc-moss/claude-settings-owned.json` 记下这是 cc-moss 写的。你自己设过（不管 `true` 还是 `false`）就不动；`cc-moss install --uninstall` 只撤掉 cc-moss 写的那一项。
+
+### 替会话接住问题
+
+会话问你选择题（Claude 的 AskUserQuestion），或者 `--safe` 会话要你批准一个操作时，cc-moss 会把整道题记下来，别处也能替你答：现在是命令行，以后还有状态栏 App、Slack 和小莫。谁先答算谁的；终端里的对话框一直都在，你照样可以直接在终端里答。
+
+```sh
+cc-moss ask take --name me          # 告诉会话「我在」：接下来 90 秒里的提问会等你
+cc-moss ask list                    # 看看谁在等你回答
+cc-moss ask answer 1a2b --choice B  # 选 B；id 写开头几位就行
+cc-moss ask answer 1a2b --choice 家人 --choice 同事   # 多选，或一次好几题：按题目顺序一个个给
+cc-moss ask answer 1a2b --text "都行，你定"           # 不选选项，自己写（只限一道题）
+cc-moss ask answer 9c8d --allow     # 权限请求：同意；--deny [--message 理由] 是不同意
+```
+
+- **默认开着，但没人接手就等于没开。** 只有最近 90 秒里有人 `ask take` 过（App 和守护进程以后会自己定时报到），会话才会等外面的答案；否则立刻照常问你，和以前一模一样。
+- **最多等 5 分钟**（`[ask] wait_secs`，最长 590 秒）。等的时候终端里照样能答；到点没人答，就当没这回事，题还在终端里等你。
+- **你在终端里先答了**，别处的这道题自动撤回，晚到的答案作废。按 Esc 取消也一样。
+- 出了任何错（配置读不到、状态目录写不了……）都当没开，绝不让会话卡住。
+- 想关掉：`cc-moss config set ask.enabled false`。
+
+`ask list --json` 输出 `{"schema":1,"asks":[…]}`，每道题带 `id`、`kind`（`question` 或 `permission`）、`session_id`、`session_name`、`cwd`、`created_at`、`expires_at`，以及 `questions`（原样的题目和选项）或 `tool`（`name` 和最多 300 字的 `preview`）。题目存在 `~/.local/state/cc-moss/asks/`，只有你自己能读。
 
 ### 别名
 
@@ -316,7 +338,7 @@ flowchart LR
     P --> T
 ```
 
-每个会话在登记表里有一条记录：Claude Code 会话 id、目录、启动参数、进程和 tmux 会话。没有正常告别就消失的会话（崩溃、重启、终端被关）记为**中断**；你主动结束的记为**关闭**，之后不再提示恢复。钩子尽量不打扰你：几毫秒就结束，从不阻塞提问；cc-moss 的二进制不在了，它就什么都不做。
+每个会话在登记表里有一条记录：Claude Code 会话 id、目录、启动参数、进程和 tmux 会话。没有正常告别就消失的会话（崩溃、重启、终端被关）记为**中断**；你主动结束的记为**关闭**，之后不再提示恢复。钩子尽量不打扰你：几毫秒就结束；唯一会等的是替会话接住问题的那个，而且只在有人接手时才等，等的时候终端里照样能答；cc-moss 的二进制不在了，它就什么都不做。
 
 ### 会话事件
 
@@ -330,9 +352,9 @@ cc-moss events --json --since 42
 
 下次把 `last_seq` 当作 `--since` 传回去就行。`kind` 有 `started`、`working`、`finished`、`needs_you`、`renamed`、`ended`、`interrupted`、`restored`、`closed`；事件里不存你的提示词。
 
-**需要你确认**：Claude Code 弹出权限提示、提问或等你输入时，大约 6 秒后会发一条通知，cc-moss 记下 `needs_you`，`ls --json` 里这个会话的 `attention` 变成 `permission`、`question` 或 `input`。你点了同意（工具跑完）、回了话、这一轮结束或会话退出，它就自动清掉。cc-moss 只是记录，从不替你回答，也不拦任何提示。目前 Claude Code 把 AskUserQuestion 的提问也报成权限提示，所以这类提问显示为 `permission`。
+**需要你确认**：Claude Code 弹出权限提示、提问或等你输入时，大约 6 秒后会发一条通知，cc-moss 记下 `needs_you`，`ls --json` 里这个会话的 `attention` 变成 `permission`、`question` 或 `input`。你点了同意（工具跑完）、回了话、这一轮结束或会话退出，它就自动清掉。这里 cc-moss 只是记录，不拦任何提示；只有你在别处答了题（见[替会话接住问题](#替会话接住问题)），答案才会交回会话。目前 Claude Code 把 AskUserQuestion 的提问也报成权限提示，所以这类提问显示为 `permission`。
 
-这两个钩子（`Notification`、`PostToolUse`）是 0.1.1 之后新加的。从 0.1.1 或更早的版本升级上来的话，`cc-moss doctor` 会提示少了 2 个钩子，运行一次 `cc-moss setup` 补上即可；setup 只加缺的那两个，照旧先给你看 diff。
+这两个钩子（`Notification`、`PostToolUse`）是 0.1.1 之后新加的，替会话接住问题的两个（`PreToolUse`、`PermissionRequest`）是 0.2.2 之后。从旧版本升级上来，`cc-moss doctor` 会提示少了几个钩子，运行一次 `cc-moss setup` 补上即可；setup 只加缺的那几个，照旧先给你看 diff。
 
 ### 恢复时带回什么
 
@@ -355,6 +377,7 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 - `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，以及最近一次提问的前 200 个字符（在选择器里显示）；还有最近 7 天的会话事件，不含提示词，权限提示的说明文字最多存 200 个字符。
 - `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
 - `~/.local/state/cc-moss/daemon/`：守护进程的状态、心跳和日志（macOS），每个最多 1 MB。
+- `~/.local/state/cc-moss/asks/`：会话正在等你回答的题目（题目原文和选项，或要批准的操作的前 300 个字符）和答案；过期一小时后删掉。
 - `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
 
 状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。只有两处会联网：
@@ -383,6 +406,10 @@ language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
 
 [update]
 check = true              # 每天检查一次新版本（选择器和 doctor）；false 关闭
+
+[ask]
+enabled = true            # 会话问你问题时，别处（命令行、App）也能答；没人接手时等于没开
+wait_secs = 300           # 等别处的答案最多多少秒（1–590），等的时候终端里照样能答
 ```
 
 界面语言也可以用命令改，不用打开文件：`cc-moss config set ui.language zh`（设回 `auto` 就重新跟随系统），`cc-moss config get ui.language` 查看当前值。加上 `--json` 输出 `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`，出错时是 `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}`（`code` 还可能是 `bad_value`、`config`）。
@@ -415,9 +442,9 @@ check = true              # 每天检查一次新版本（选择器和 doctor）
 
 `cc-moss install` 照样会装好钩子、tmux 和 starship 配置，不会动你的 shell 配置文件；想要这个提示符的话，自己在 shell 配置里加上 starship 的 init 那一行。`t` 和其他别名是普通命令，在 bash、fish 里一样能用，只要 `~/.local/bin` 在 PATH 上。
 
-**升级后 `doctor` 说少了 2 个钩子**
+**升级后 `doctor` 说少了几个钩子**
 
-新版本多了两个钩子，用来知道会话什么时候在等你确认。运行 `cc-moss setup`，它只补上缺的那两个，别的不动。
+新版本多了钩子：用来知道会话什么时候在等你确认，以及让别处能替会话答题。运行 `cc-moss setup`，它只补上缺的那几个，别的不动。
 
 **有会话没被登记上**
 

@@ -31,7 +31,7 @@ cc-moss doctor                           # checks that everything is in place
 
 | Part | What it does |
 |---|---|
-| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; `skipDangerousModePermissionPrompt` set to `true` if you haven't set it, so new sessions don't stall on the bypass warning (see [Permissions for new sessions](#permissions-for-new-sessions)); the `t` alias (`~/.local/bin/t`, see [Aliases](#aliases)) |
+| `hooks` | Eight hooks in `~/.claude/settings.json`, so Claude Code reports session events and a session's questions can be answered from elsewhere (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)); `skipDangerousModePermissionPrompt` set to `true` if you haven't set it, so new sessions don't stall on the bypass warning (see [Permissions for new sessions](#permissions-for-new-sessions)); the `t` alias (`~/.local/bin/t`, see [Aliases](#aliases)) |
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
@@ -126,11 +126,12 @@ In the picker:
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
+| `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT \| --allow \| --deny [--message WHY])` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
 | `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
-| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`) or `claude.permission_mode` (`bypass`, `default`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`) or `ask.enabled` (`true`, `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | The daemon that stays in the background: its status, start it, stop it (macOS; see [The daemon](#the-daemon)) |
 | `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
@@ -161,6 +162,38 @@ the session just waits. So if you haven't set `skipDangerousModePermissionPrompt
 `cc-moss install` sets it to `true` and notes in `~/.local/state/cc-moss/claude-settings-owned.json` that cc-moss
 wrote it. If you set it yourself, `true` or `false`, it's left alone; `cc-moss install --uninstall` takes out only
 what cc-moss wrote.
+
+### Answering a session's questions from elsewhere
+
+When a session asks you a multiple-choice question (Claude's AskUserQuestion), or a `--safe` session wants your OK
+for something, cc-moss writes the whole question down so it can be answered from somewhere else: the command line
+today, and later the menubar app, Slack and Mo. Whoever answers first wins. The dialog in the terminal stays up the
+whole time, so you can still answer there.
+
+```sh
+cc-moss ask take --name me          # tell sessions you're around: questions in the next 90 seconds wait for you
+cc-moss ask list                    # see which sessions are waiting on an answer
+cc-moss ask answer 1a2b --choice B  # pick B; the first few characters of the id are enough
+cc-moss ask answer 1a2b --choice Family --choice Friends   # several picks, or several questions: one after another, in order
+cc-moss ask answer 1a2b --text "Either is fine"            # your own answer instead of an option (one question only)
+cc-moss ask answer 9c8d --allow     # a permission request: allow it; --deny [--message WHY] says no
+```
+
+- **On by default, but it does nothing unless someone is taking questions.** A session only waits for an answer from
+  elsewhere if someone ran `ask take` in the last 90 seconds (the app and the daemon will check in on their own).
+  Otherwise it asks you right away, just as before.
+- **It waits up to 5 minutes** (`[ask] wait_secs`, at most 590 seconds). You can answer in the terminal meanwhile; if
+  nobody answers in time, nothing happens and the question is still waiting in the terminal.
+- **If you answer in the terminal first,** the question is withdrawn everywhere else and a late answer is dropped.
+  Pressing Esc does the same.
+- If anything goes wrong (a config it can't read, a state folder it can't write to…), it counts as off. It never holds
+  a session up.
+- To turn it off: `cc-moss config set ask.enabled false`.
+
+`ask list --json` prints `{"schema":1,"asks":[…]}`. Each question has `id`, `kind` (`question` or `permission`),
+`session_id`, `session_name`, `cwd`, `created_at`, `expires_at`, and either `questions` (the questions and options as
+the session sent them) or `tool` (`name` and a `preview` of at most 300 characters). Questions are kept in
+`~/.local/state/cc-moss/asks/`, readable only by you.
 
 ### Aliases
 
@@ -404,8 +437,9 @@ flowchart LR
 
 Each session gets a record in the registry with its Claude Code session id, folder, launch flags, process and tmux
 session. A session that disappears without saying goodbye (a crash, a reboot, a killed terminal) is **interrupted**;
-one you end on purpose is **closed** and never offered again. The hook is built to stay out of the way: it finishes in
-a few milliseconds, never blocks a prompt, and does nothing at all if the cc-moss binary is gone.
+one you end on purpose is **closed** and never offered again. The hooks are built to stay out of the way: they finish in
+a few milliseconds and do nothing at all if the cc-moss binary is gone. The one that waits is the one that catches a
+question for answering elsewhere, and only while someone is taking questions; the terminal dialog stays usable meanwhile.
 
 ### Session events
 
@@ -426,12 +460,13 @@ Pass `last_seq` back as `--since` next time. `kind` is one of `started`, `workin
 **Needs you**: when Claude Code shows a permission prompt, asks a question or waits for input, it sends a notification
 about 6 seconds later. cc-moss records `needs_you`, and the session's `attention` in `ls --json` becomes `permission`,
 `question` or `input`. It clears by itself once you approve (the tool finishes), reply, the turn ends or the session
-exits. cc-moss only takes note: it never answers for you and never holds a prompt back. Claude Code currently reports
+exits. Here cc-moss only takes note and never holds a prompt back; an answer only goes back to the session when you give one
+elsewhere (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)). Claude Code currently reports
 AskUserQuestion as a permission prompt too, so those questions show as `permission`.
 
-The two hooks behind this (`Notification`, `PostToolUse`) came after 0.1.1. Coming from 0.1.1 or earlier,
-`cc-moss doctor` says two hooks are missing; run `cc-moss setup` once to add them. It adds just those two and, as
-always, shows you the diff first.
+The two hooks behind this (`Notification`, `PostToolUse`) came after 0.1.1, and the two that catch questions
+(`PreToolUse`, `PermissionRequest`) after 0.2.2. Coming from an older version, `cc-moss doctor` says some hooks are
+missing; run `cc-moss setup` once to add them. It adds just the missing ones and, as always, shows you the diff first.
 
 ### What comes back
 
@@ -459,6 +494,8 @@ cc-moss runs locally and sends nothing about you anywhere. It keeps:
   session events, without prompts (a permission prompt's text is kept to 200 characters).
 - `~/.local/state/cc-moss/hook.log`: hook errors, capped at 1 MB.
 - `~/.local/state/cc-moss/daemon/`: the daemon's status, heartbeat and logs (macOS), each capped at 1 MB.
+- `~/.local/state/cc-moss/asks/`: questions sessions are waiting on (the questions and options, or the first 300
+  characters of what a tool wants to do) and their answers; deleted an hour after they expire.
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
 
 The state folder is readable only by you. It reads Claude Code's own session files and runs `claude agents`, `ps` and
@@ -492,6 +529,10 @@ language = "auto"         # "auto" (your system language), "en" or "zh"
 
 [update]
 check = true              # look for a new cc-moss once a day (picker and doctor); false turns it off
+
+[ask]
+enabled = true            # questions a session asks can be answered elsewhere too; does nothing while nobody takes them
+wait_secs = 300           # how long to wait for an answer from elsewhere (1–590); the terminal stays usable meanwhile
 ```
 
 You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).
@@ -524,8 +565,9 @@ open a new terminal (`cc-moss install` added it in `~/.zshenv`); in other shells
 files alone: add starship's init line for your shell yourself if you want the prompt. `t` and your other aliases are
 plain commands and work in bash and fish too, as long as `~/.local/bin` is on your PATH.
 
-**After upgrading, `doctor` says two hooks are missing.** The new version adds two hooks so it can tell when a session
-is waiting for you. Run `cc-moss setup`: it adds only those two and leaves everything else alone.
+**After upgrading, `doctor` says some hooks are missing.** The new version adds hooks so it can tell when a session
+is waiting for you, and so its questions can be answered from elsewhere. Run `cc-moss setup`: it adds only the missing
+ones and leaves everything else alone.
 
 **Something isn't being tracked.** Run `cc-moss doctor`: it checks the hooks, tmux, the prompt and the tools, and says
 how to fix each one.

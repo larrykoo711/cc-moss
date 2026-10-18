@@ -19,7 +19,7 @@ ratatui = { version = "0.30", default-features = false, features = ["crossterm",
 rusqlite = { version = "0.40", features = ["bundled"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
-time = { version = "0.3", features = ["formatting"] }
+time = { version = "0.3", features = ["formatting", "parsing"] }
 toml = "1"
 toml_edit = { version = "0.25.15", default-features = false, features = ["parse", "display"] }
 ulid = "3"

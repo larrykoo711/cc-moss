@@ -12,6 +12,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   comes back if it's killed, and only one ever runs. `cc-moss daemon status` says whether it's up, for how long and
   which version; `daemon stop` and `daemon start` turn it off and on. Settings has a new Moss page showing the same,
   with Start when it's not running, and `cc-moss doctor` checks it. Moss will live in it later.
+- **Answer a session's question from elsewhere.** When a session asks a multiple-choice question, or a `--safe`
+  session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
+  `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`) hands the answer back, and the session
+  carries on. The terminal dialog stays up meanwhile, and whoever answers first wins. Sessions only wait while someone
+  takes questions (`cc-moss ask take`, which the app and Slack will do later), for at most 5 minutes
+  (`[ask] wait_secs`); otherwise, or if anything goes wrong, nothing changes. Two new hooks, `PreToolUse` and
+  `PermissionRequest`: run `cc-moss setup` after upgrading. Turn it off with `cc-moss config set ask.enabled false`.
 
 ### Changed
 

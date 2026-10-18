@@ -187,3 +187,55 @@ Enter to select · ↑/↓ to navigate · Esc to cancel
 - 用户在终端按 Esc 取消时 PermissionRequest hook 的去向
 - 其他 Claude Code 版本（只测 2.1.302）
 - bypass 风险确认框在全新 HOME 下的行为（交给 T1.2）
+
+## 补测（T1.3，2026-10-18，Claude Code 2.1.302）：多选、自由文字、多题
+
+方法同上：真实 `claude --setting-sources project,local --model haiku --dangerously-skip-permissions`，独立 tmux socket
+`tmux -L cc-moss-probe2`，hook 只写在 scratch 探针目录的项目级 `.claude/settings.json`。这次 hook 直接跑 T1.3 的
+`cc-moss hook pre-tool-use / permission-request / post-tool-use`（外面包一层只记日志的脚本），`CC_MOSS_STATE_DIR` 指向 scratch。
+
+### 终端里答（没有接手方，cc-moss 不等）：PostToolUse 里的 `answers`
+
+| 题型 | 终端操作 | `answers` |
+|------|----------|-----------|
+| 多选（`multiSelect: true`，苹果 / 香蕉 / 樱桃） | 按 `1`、`3` 勾选，→ 到 Submit，回车 | `{"喜欢哪些水果？":"苹果, 樱桃"}` |
+| 自由文字（选「Type something.」） | 按 `3`，直接打字「都不要，白开水」，回车 | `{"喝茶还是咖啡？":"都不要，白开水"}` |
+| 一次多题（单选 + 多选） | 第一题按 `2`，第二题勾 `1`、`2`，Submit | `{"去哪座城市？":"上海","带哪些东西？":"伞, 相机"}` |
+
+结论：**多选的值是所选 label 用 `", "`（逗号加空格）连接**（本次勾选顺序与选项顺序相同，分不出按哪个排）；**自由文字的值就是用户打的原文**，不加前缀；
+**多题时 `answers` 每题一个键，键是问题原文**。与 T1.3 的回填格式一致。多题的界面是顶部一排页签（`☐ 城市  ☐ 携带  ✔ Submit`），
+最后有一页「Review your answers」确认。
+
+### 外面答（有接手方，`cc-moss ask answer`）
+
+| 题型 | 命令 | 界面 | Claude 之后 |
+|------|------|------|-------------|
+| 多题（单选 + 多选） | `ask answer <id> --choice 看展 --choice 家人 --choice 同事` | `· 周末做什么？ → 看展` / `· 和谁一起？ → 家人, 同事` + `Allowed by PermissionRequest hook` | 「收到：…看展；…家人, 同事」 |
+| 自由文字 | `ask answer <id> --text '都行，你定'` | `· 晚饭吃面还是饭？ → 都行，你定` + `Allowed by PermissionRequest hook` | 「收到：都行，你定」 |
+
+- hook 输出的 `answers` 与随后 PostToolUse 里的 `answers` 逐字相同（`{"周末做什么？":"看展","和谁一起？":"家人, 同事"}`）。
+- PreToolUse 先写的题被 PermissionRequest 沿用：状态目录里只有一份 `<id>.json`，答完是 `{"reason":"answered"}`。
+- 等待期间终端对话框照常显示，可以随时答。
+
+### 终端先答、Esc 取消（有接手方）
+
+- 终端先答：hook 在等时按 `2` 选「狗」，Claude 回「收到：狗」；PostToolUse 到达后题目撤回为 `{"reason":"answered-in-session"}`，
+  等着的 hook 在 2 秒内（下一次轮询）退出，没有输出。
+- Esc 取消：界面显示 `User declined to answer questions`，**没有 PostToolUse**；**Claude Code 直接结束了正在等的 PermissionRequest hook 进程**
+  （之后 `pgrep` 查不到），题目文件留着、没写撤回。随后这一轮结束会触发 Stop，cc-moss 装好的 Stop hook 会把它撤回
+  （`answered-in-session`）；万一没有，题目到 `expires_at` 后也不再列出。
+
+### 普通模式下的 Bash 权限请求（`--permission-mode default`，有接手方）
+
+另起一个探针（`tmux -L cc-moss-probe3`，同样的隔离做法），看 `--safe` 会话的权限请求：
+
+- `touch probe.txt`：PermissionRequest hook 在等时，终端里的「Do you want to proceed?」对话框**照常显示、可以答**；
+  在终端按 `1` 同意 → 命令执行 → PostToolUse(Bash) 到达，题目撤回为 `answered-in-session`，等着的 hook 同一秒退出。
+- `touch second.txt`：`cc-moss ask answer <id> --allow` → 命令执行，界面 `Allowed by PermissionRequest hook`。
+- `touch third.txt`：`cc-moss ask answer <id> --deny --message "先别建这个文件"` → 界面 `Error: 先别建这个文件` +
+  `Denied by PermissionRequest hook`，文件没建，Claude 把这句话当成拦截理由转述给用户。
+
+### 不留痕（补测）
+
+- `shasum ~/.claude/settings.json`：开工前后都是 `0b078f0d2c8a8e7815fca98cbb60caf2007dff66`。
+- `tmux -L cc-moss-probe2` / `cc-moss-probe3` 各自 `kill-server` 后 `ls` → `no server running on …`；两个探针 scratch 目录都已删除。

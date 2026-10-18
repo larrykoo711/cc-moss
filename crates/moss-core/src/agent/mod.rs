@@ -17,16 +17,23 @@ pub enum HookKind {
     SessionEnd,
     Notification,
     PostToolUse,
+    /// Before AskUserQuestion: notes the question, never waits.
+    PreToolUse,
+    /// A session waits on a question or a permission: the one hook that
+    /// may wait for an answer from outside (T1.3).
+    PermissionRequest,
 }
 
 impl HookKind {
-    pub const ALL: [HookKind; 6] = [
+    pub const ALL: [HookKind; 8] = [
         HookKind::SessionStart,
         HookKind::UserPromptSubmit,
         HookKind::Stop,
         HookKind::SessionEnd,
         HookKind::Notification,
         HookKind::PostToolUse,
+        HookKind::PreToolUse,
+        HookKind::PermissionRequest,
     ];
 
     pub fn cli_name(self) -> &'static str {
@@ -37,6 +44,8 @@ impl HookKind {
             HookKind::SessionEnd => "session-end",
             HookKind::Notification => "notification",
             HookKind::PostToolUse => "post-tool-use",
+            HookKind::PreToolUse => "pre-tool-use",
+            HookKind::PermissionRequest => "permission-request",
         }
     }
 

@@ -198,6 +198,27 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("daemon status", "", "守护进程在不在运行、跑了多久、是哪个版本"),
     ("daemon status", "json", "机器可读的输出（schema 1）"),
+    ("ask", "", "会话在等你回答的问题：在这里看、在这里答"),
+    ("ask list", "", "列出会话正在等你回答的问题"),
+    ("ask list", "json", "机器可读的输出（schema 1）"),
+    (
+        "ask answer",
+        "",
+        "回答一道题；会话照常往下走，就像你在它的终端里答的一样",
+    ),
+    ("ask answer", "id", "`cc-moss ask list` 里题目的 id（写开头几位就行）"),
+    ("ask answer", "choice", "要选的选项；多选或多题就写多次，按题目顺序"),
+    ("ask answer", "text", "不选选项，自己写答案（只限一道题）"),
+    ("ask answer", "allow", "同意，让它用这个工具"),
+    ("ask answer", "deny", "不同意"),
+    ("ask answer", "message", "配合 --deny：改为告诉 Claude 的话"),
+    ("ask answer", "by", "谁在答（给 App、守护进程和 Slack 用）"),
+    (
+        "ask take",
+        "",
+        "告诉会话你在，可以替它接问题，它就会等你一会儿（每次管 90 秒）",
+    ),
+    ("ask take", "name", "你的名字：只能用 a-z、0-9、- 和 _"),
 ];
 
 const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令。\n\n\
@@ -249,6 +270,7 @@ pub fn localize(cmd: Command) -> Command {
         .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("config", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("daemon", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("ask", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 
 /// One command's description, argument help, headings and help flag.

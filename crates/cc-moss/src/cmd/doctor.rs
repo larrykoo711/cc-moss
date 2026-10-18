@@ -216,6 +216,23 @@ fn checks() -> Result<Vec<Check>> {
             ),
             fix_setup.clone(),
         ),
+        // Only the question hooks: sessions are still recorded, they just
+        // can't be answered from elsewhere until the next install.
+        Ok(setup::HookStatus::Incomplete(missing))
+            if missing
+                .iter()
+                .all(|m| matches!(*m, "PreToolUse" | "PermissionRequest")) =>
+        {
+            check(
+                Mark::Warn,
+                tr!("hooks", "钩子"),
+                tr!(
+                    "the hooks for answering a session's questions from elsewhere aren't set up yet",
+                    "替会话接住问题的钩子还没装上"
+                ),
+                fix_setup.clone(),
+            )
+        }
         Ok(setup::HookStatus::Incomplete(missing)) => check(
             Mark::Fail,
             tr!("hooks", "钩子"),

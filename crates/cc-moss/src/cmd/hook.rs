@@ -3,6 +3,10 @@
 //! Contract with the agent: never fail, stay fast, and print nothing to stdout
 //! except one `systemMessage` JSON on SessionStart outside tmux. Any error is
 //! appended to `hook.log` and swallowed.
+//!
+//! `pre-tool-use` and `permission-request` are the exception to "stay fast":
+//! they belong to answering questions from outside ([`super::ask_hook`]) and
+//! only print a decision for an answer that arrived.
 
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -46,10 +50,25 @@ fn handle(event: &str) -> Result<()> {
         // `claude -p` and SDK sessions fire the same hooks (F10) but are not
         // something a person would want restored. PostToolUse runs after
         // every tool call: logging those would flood the log.
-        if !matches!(kind, HookKind::PostToolUse | HookKind::Notification) {
+        if !matches!(
+            kind,
+            HookKind::PostToolUse
+                | HookKind::Notification
+                | HookKind::PreToolUse
+                | HookKind::PermissionRequest
+        ) {
             log(kind.cli_name(), "skipped: non-interactive session");
         }
         return Ok(());
+    }
+    if matches!(kind, HookKind::PreToolUse | HookKind::PermissionRequest) {
+        return super::ask_hook::handle(kind, &payload);
+    }
+    if let Err(e) = super::ask_hook::withdraw(kind, &payload) {
+        log(
+            kind.cli_name(),
+            &format!("withdrawing questions failed: {e:#}"),
+        );
     }
     let Some(event) = ClaudeAgent.parse_hook(kind, &payload)? else {
         // A notification cc-moss does not act on (idle reminder, completion).

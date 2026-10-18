@@ -4,21 +4,25 @@ use moss_core::settings_json::{install, is_ours, to_claude_string, uninstall};
 use serde_json::{json, Value};
 
 const EXE: &str = "/usr/local/bin/cc-moss";
-const EVENTS: [&str; 6] = [
+const EVENTS: [&str; 8] = [
     "SessionStart",
     "UserPromptSubmit",
     "Stop",
     "SessionEnd",
     "Notification",
     "PostToolUse",
+    "PreToolUse",
+    "PermissionRequest",
 ];
-const NAMES: [&str; 6] = [
+const NAMES: [&str; 8] = [
     "session-start",
     "user-prompt-submit",
     "stop",
     "session-end",
     "notification",
     "post-tool-use",
+    "pre-tool-use",
+    "permission-request",
 ];
 
 fn ours(exe: &str, name: &str) -> Value {
@@ -40,6 +44,18 @@ fn ours_for_all_tools(exe: &str, name: &str) -> Value {
     json!({ "matcher": "*", "hooks": [{ "type": "command", "command": guarded(exe, name), "timeout": 10 }] })
 }
 
+/// PreToolUse only runs before AskUserQuestion, and only takes note.
+fn ours_before_questions(exe: &str) -> Value {
+    json!({ "matcher": "AskUserQuestion", "hooks": [{ "type": "command",
+        "command": guarded(exe, "pre-tool-use"), "timeout": 10 }] })
+}
+
+/// PermissionRequest may wait for an answer from outside: 600 s.
+fn ours_waiting(exe: &str) -> Value {
+    json!({ "matcher": "*", "hooks": [{ "type": "command",
+        "command": guarded(exe, "permission-request"), "timeout": 600 }] })
+}
+
 fn expected_hooks(exe: &str) -> Value {
     json!({
         "SessionStart": [ours(exe, "session-start")],
@@ -48,6 +64,8 @@ fn expected_hooks(exe: &str) -> Value {
         "SessionEnd": [ours(exe, "session-end")],
         "Notification": [ours(exe, "notification")],
         "PostToolUse": [ours_for_all_tools(exe, "post-tool-use")],
+        "PreToolUse": [ours_before_questions(exe)],
+        "PermissionRequest": [ours_waiting(exe)],
     })
 }
 
@@ -97,6 +115,8 @@ fn keeps_foreign_hooks_on_same_event() {
             "UserPromptSubmit",
             "SessionEnd",
             "Notification",
+            "PreToolUse",
+            "PermissionRequest",
         ]
     );
 }
@@ -168,7 +188,7 @@ fn is_ours_matches_quoted_and_bare_paths() {
     for no in [
         "/usr/local/bin/not-cc-moss hook stop",
         "cc-moss hook stop && rm -rf /",
-        "cc-moss hook pre-tool-use",
+        "cc-moss hook pre-compact",
         "~/bin/notify.sh",
         "cc-moss ls",
         "echo hi; /usr/local/bin/cc-moss hook stop",
@@ -360,6 +380,42 @@ fn new_hooks_added_to_an_older_install() {
     // A user's own Notification hook does not count as ours.
     let users = json!({ "hooks": { "Notification": [foreign()] } });
     assert!(missing_hooks(&users).contains(&HookKind::Notification));
+}
+
+#[test]
+fn ask_hooks_added_to_an_install_from_before_them() {
+    use moss_core::agent::HookKind;
+    use moss_core::settings_json::missing_hooks;
+    let user_pre =
+        json!({ "matcher": "Bash", "hooks": [{ "type": "command", "command": "~/bin/guard.sh" }] });
+    let mut old = install(
+        &json!({ "hooks": { "PreToolUse": [user_pre.clone()] } }),
+        EXE,
+    )
+    .unwrap();
+    let hooks = old["hooks"].as_object_mut().unwrap();
+    hooks.insert("PreToolUse".into(), json!([user_pre.clone()]));
+    hooks.shift_remove("PermissionRequest");
+    assert_eq!(
+        missing_hooks(&old),
+        [HookKind::PreToolUse, HookKind::PermissionRequest]
+    );
+
+    let new = install(&old, EXE).unwrap();
+    assert!(missing_hooks(&new).is_empty());
+    assert_eq!(
+        new["hooks"]["PreToolUse"],
+        json!([user_pre.clone(), ours_before_questions(EXE)])
+    );
+    assert_eq!(
+        new["hooks"]["PermissionRequest"],
+        json!([ours_waiting(EXE)])
+    );
+
+    let gone = uninstall(&new).unwrap();
+    assert_eq!(gone["hooks"]["PreToolUse"], json!([user_pre]));
+    assert!(gone["hooks"].get("PermissionRequest").is_none());
+    assert!(moss_core::settings_json::hook_binaries(&gone).is_empty());
 }
 
 mod bypass_prompt {

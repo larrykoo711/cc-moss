@@ -1,0 +1,244 @@
+//! `cc-moss ask list|answer|take`: see and answer the questions sessions
+//! are waiting on. The files are the protocol (`moss_core::ask`); these
+//! commands are its reference client.
+
+use anyhow::{anyhow, bail, Result};
+use moss_core::ask::{self, Answer, AnswerError, Ask, Behavior, By, ChoiceError, Kind, Store};
+use moss_core::slot::now_ms;
+use moss_core::store_dir;
+use serde_json::json;
+
+pub const JSON_SCHEMA: u32 = 1;
+
+pub enum Action {
+    List {
+        json: bool,
+    },
+    Answer {
+        id: String,
+        choices: Vec<String>,
+        text: Option<String>,
+        allow: bool,
+        deny: bool,
+        message: Option<String>,
+        by: By,
+    },
+    Take {
+        name: String,
+    },
+}
+
+pub fn run(action: Action) -> Result<()> {
+    let store = Store::new(&store_dir::state_dir());
+    match action {
+        Action::List { json } => list(&store, json),
+        Action::Answer {
+            id,
+            choices,
+            text,
+            allow,
+            deny,
+            message,
+            by,
+        } => {
+            let reply = Reply {
+                choices,
+                text,
+                allow,
+                deny,
+                message,
+            };
+            answer(&store, &id, &reply, by)
+        }
+        Action::Take { name } => take(&store, &name),
+    }
+}
+
+fn list(store: &Store, as_json: bool) -> Result<()> {
+    let now = now_ms();
+    store.sweep(now);
+    let asks = store.open(now);
+    if as_json {
+        let out = json!({ "schema": JSON_SCHEMA, "asks": asks });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+    if asks.is_empty() {
+        println!(
+            "{}",
+            tr!(
+                "No session is waiting on a question.",
+                "没有会话在等你回答。"
+            )
+        );
+        return Ok(());
+    }
+    for a in &asks {
+        let who = a
+            .session_name
+            .clone()
+            .unwrap_or_else(|| a.session_id.chars().take(8).collect());
+        match a.kind {
+            Kind::Question => {
+                for q in a.questions.iter().flatten() {
+                    let text = q.get("question").and_then(|v| v.as_str()).unwrap_or("");
+                    let labels: Vec<&str> = q
+                        .get("options")
+                        .and_then(|o| o.as_array())
+                        .into_iter()
+                        .flatten()
+                        .filter_map(|o| o.get("label").and_then(|l| l.as_str()))
+                        .collect();
+                    let several = q.get("multiSelect").and_then(|m| m.as_bool()) == Some(true);
+                    let hint = if several {
+                        tr!(" (pick any)", "（可多选）")
+                    } else {
+                        ""
+                    };
+                    println!("{}  {who}  {text}{hint}", a.id);
+                    println!("    {}", labels.join(" / "));
+                }
+            }
+            Kind::Permission => {
+                let (tool, preview) = a
+                    .tool
+                    .as_ref()
+                    .map(|t| (t.name.as_str(), t.preview.as_str()))
+                    .unwrap_or_default();
+                println!(
+                    "{}  {who}  {}",
+                    a.id,
+                    tr!(
+                        format!("wants to use {tool}: {preview}"),
+                        format!("想用 {tool}：{preview}")
+                    )
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+struct Reply {
+    choices: Vec<String>,
+    text: Option<String>,
+    allow: bool,
+    deny: bool,
+    message: Option<String>,
+}
+
+fn build(ask: &Ask, reply: &Reply, by: By) -> Result<Answer> {
+    let mut answer = Answer {
+        schema: ask::SCHEMA,
+        by,
+        answers: None,
+        behavior: None,
+        message: None,
+    };
+    match ask.kind {
+        Kind::Question => {
+            if reply.allow || reply.deny {
+                bail!(tr!(
+                    "this is a question: answer with --choice or --text",
+                    "这是一道选择题：用 --choice 或 --text 回答"
+                ));
+            }
+            let questions = ask.questions.as_deref().unwrap_or_default();
+            let answers = ask::answers_from(questions, &reply.choices, reply.text.as_deref())
+                .map_err(|e| anyhow!(choice_error(&e, questions.len())))?;
+            answer.answers = Some(answers);
+        }
+        Kind::Permission => {
+            if !reply.choices.is_empty() || reply.text.is_some() {
+                bail!(tr!(
+                    "this asks for permission: answer with --allow or --deny",
+                    "这是在请求权限：用 --allow 或 --deny 回答"
+                ));
+            }
+            answer.behavior = Some(if reply.allow {
+                Behavior::Allow
+            } else {
+                Behavior::Deny
+            });
+            answer.message = reply.message.clone().filter(|m| !m.is_empty());
+        }
+    }
+    Ok(answer)
+}
+
+fn choice_error(e: &ChoiceError, count: usize) -> String {
+    match e {
+        ChoiceError::NotAnOption(label) => tr!(
+            format!("`{label}` is not one of the options (see `cc-moss ask list`)"),
+            format!("`{label}` 不是可选项（看看 `cc-moss ask list`）")
+        ),
+        ChoiceError::Unanswered(n) if count > 1 => tr!(
+            format!(
+                "question {n} of {count} has no answer; give one --choice per question, in order"
+            ),
+            format!("第 {n} 题（共 {count} 题）还没答；每题给一个 --choice，按顺序")
+        ),
+        ChoiceError::Unanswered(_) => tr!(
+            "give an answer with --choice or --text".to_string(),
+            "用 --choice 或 --text 给个答案".to_string()
+        ),
+        ChoiceError::TextNeedsOneQuestion => tr!(
+            "--text works for a single question; this one has several".to_string(),
+            "--text 只能用在只有一题的时候；这里有好几题".to_string()
+        ),
+        ChoiceError::OneOnly(n) => tr!(
+            format!("question {n} takes one choice"),
+            format!("第 {n} 题只能选一个")
+        ),
+    }
+}
+
+fn answer(store: &Store, id: &str, reply: &Reply, by: By) -> Result<()> {
+    let now = now_ms();
+    let ask = store.find_open(id, now).map_err(|e| answer_error(&e, id))?;
+    let answer = build(&ask, reply, by)?;
+    store
+        .answer(&ask.id, &answer)
+        .map_err(|e| answer_error(&e, id))?;
+    let who = ask
+        .session_name
+        .clone()
+        .unwrap_or_else(|| ask.session_id.chars().take(8).collect());
+    println!(
+        "{}",
+        tr!(
+            format!("Answered. {who} carries on with it."),
+            format!("答好了，{who} 会接着往下做。")
+        )
+    );
+    Ok(())
+}
+
+fn answer_error(e: &AnswerError, id: &str) -> anyhow::Error {
+    anyhow!(match e {
+        AnswerError::NotFound => tr!(
+            format!("no question `{id}` (see `cc-moss ask list`)"),
+            format!("没有 `{id}` 这道题（看看 `cc-moss ask list`）")
+        ),
+        AnswerError::Closed => tr!(
+            format!("question {id} no longer needs an answer"),
+            format!("{id} 这道题已经不用答了")
+        ),
+        AnswerError::AlreadyAnswered => tr!(
+            format!("someone already answered question {id}"),
+            format!("{id} 这道题已经有人答了")
+        ),
+        AnswerError::Io(err) => format!("{err}"),
+    })
+}
+
+fn take(store: &Store, name: &str) -> Result<()> {
+    if !ask::valid_taker_name(name) {
+        bail!(tr!(
+            format!("`{name}`: taker names use a-z, 0-9, - and _"),
+            format!("`{name}`：名字只能用 a-z、0-9、- 和 _")
+        ));
+    }
+    store.take(name)?;
+    Ok(())
+}
