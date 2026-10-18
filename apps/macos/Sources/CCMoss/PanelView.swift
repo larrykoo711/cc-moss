@@ -8,19 +8,26 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: AppModel
     @FocusState private var searchFocused: Bool
-    @State var showActions = false
+    /// The open menu: one session's, or cc-moss's own.
+    @State var menu: PanelMenu?
     @State private var toast: String?
     @Environment(\.colorScheme) private var scheme
     @Environment(\.openWindow) private var openWindow
     @Environment(\.closePanel) private var closePanel
-    /// Which shortcut's key caps are lit right now ("↵" or "⌘K").
+    /// The key cap lit right now ("↵"), so the keyboard gets feedback too.
     @State private var litKey: String?
-    /// The row under the pointer, which shows its open button.
-    @State private var hoveredID: String?
-    /// The ⌘K list as it was when the menu opened. Rebuilding it while open
-    /// moved items under the pointer: a click meant for "Write a Note"
-    /// could land on "Quit".
-    @State private var menuActions: [PanelAction] = []
+    /// The row under the pointer, which shows its buttons.
+    @State var hoveredID: String?
+    /// The menu's items as they were when it opened. Rebuilding them while
+    /// open moved items under the pointer: a click meant for "Write a Note"
+    /// could land on something else.
+    @State private var menuSections: [[PanelAction]] = []
+    /// The lit menu item; ↑↓ move it, Return runs it.
+    @State private var menuIndex: Int?
+    @State private var rightClicks: Any?
+    @State private var scrolls: Any?
+    /// Hover waits while the list scrolls (user 2026-10-18).
+    @State private var hoverGate = HoverGate()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,13 +61,19 @@ struct PanelView: View {
         .focusEffectDisabled()
         .tooltipLayer()
         .background(Theme.surface(scheme))
-        .overlay(alignment: .bottomTrailing) {
-            if showActions {
-                // Opened without ⌘K (screenshots start with it open): freeze the list now.
-                ActionsMenu(actions: menuActions.isEmpty ? actions : menuActions) { showActions = false }
-                    .padding(.trailing, 10)
-                    .padding(.bottom, 50)
-                    .transition(.opacity.combined(with: .scale(scale: 0.97, anchor: .bottomTrailing)))
+        .overlayPreferenceValue(MenuAnchorKey.self) { anchor in
+            if let menu {
+                // Opened without a click (screenshots start with it open): build the items now.
+                let sections = menuSections.isEmpty ? sections(for: menu) : menuSections
+                GeometryReader { geo in
+                    ZStack(alignment: .topLeading) {
+                        // A click anywhere else closes it, as a menu does.
+                        Color.clear.contentShape(Rectangle()).onTapGesture { closeMenu() }
+                        ActionsMenu(sections: sections, highlighted: $menuIndex) { closeMenu() }
+                            .offset(menuOffset(menu, sections: sections, row: anchor.map { geo[$0] }, in: geo.size))
+                    }
+                }
+                .transition(.opacity)
             }
         }
         .overlay {
@@ -91,7 +104,7 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
-        .animation(.easeOut(duration: 0.12), value: showActions)
+        .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
         .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
@@ -103,6 +116,26 @@ struct PanelView: View {
             searchFocused = true
             model.terminals.rescan()
             model.refresh()
+            // Right-click a row: everything for that session, as in Finder.
+            if rightClicks == nil {
+                rightClicks = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { event in
+                    guard event.window is KeyPanel, model.form == nil, let id = hoveredID else { return event }
+                    model.selectedID = id
+                    openMenu(.session(id, full: true))
+                    return nil
+                }
+            }
+            // Scrolling: drop the hovered row's buttons; rows passing under
+            // the pointer aren't hovered until it moves again.
+            if scrolls == nil {
+                scrolls = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { event in
+                    if event.window is KeyPanel {
+                        hoverGate.scrolled(pointer: NSEvent.mouseLocation)
+                        if hoveredID != nil, menu == nil { hoveredID = nil }
+                    }
+                    return event
+                }
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
             // Only the panel's own window; back from a dropdown or the folder
@@ -125,11 +158,18 @@ struct PanelView: View {
                 .focused($searchFocused)
                 .onSubmit {
                     flash("↵")
-                    // Return answers the "stop reminding?" card when it is up.
-                    if model.closeGate.asking { model.confirmClose() } else { perform(primaryAction) }
+                    // Return answers the "stop reminding?" card when it is up,
+                    // and runs the lit item when a menu is.
+                    if model.closeGate.asking {
+                        model.confirmClose()
+                    } else if menu != nil {
+                        runMenuItem()
+                    } else {
+                        perform(primaryAction)
+                    }
                 }
-                .onKeyPress(.downArrow) { model.move(1); return .handled }
-                .onKeyPress(.upArrow) { model.move(-1); return .handled }
+                .onKeyPress(.downArrow) { menu != nil ? moveInMenu(1) : model.move(1); return .handled }
+                .onKeyPress(.upArrow) { menu != nil ? moveInMenu(-1) : model.move(-1); return .handled }
                 .onKeyPress(.escape) { escape(); return .handled }
                 .onKeyPress(.tab, phases: .down) { press in
                     model.stateFilter = StateFilterBar.cycle(model.stateFilter, forward: !press.modifiers.contains(.shift))
@@ -218,7 +258,7 @@ struct PanelView: View {
             }
             .scrollIndicators(.never)
             .onChange(of: model.selectedID) { _, id in
-                guard let id else { return }
+                guard let id, hoverGate.shouldScrollToSelection() else { return }
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(id) }
             }
         }
@@ -227,22 +267,34 @@ struct PanelView: View {
     private func row(_ s: Session) -> some View {
         // A click only selects; opening is deliberate: the button that
         // appears at the end of the hovered row, the action pill below, or
-        // Return (user 2026-10-16).
-        SessionRow(session: s, selected: s.id == model.selected?.id,
-                   action: s.id == hoveredID ? primaryAction : nil,
-                   secondary: s.id == hoveredID ? noteAction(s) : nil,
-                   perform: { perform($0) },
-                   problem: model.restoreProblem(s),
-                   restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
+        // Return (user 2026-10-16). The row carries its own actions: the
+        // few used most, then "⋯" for the rest (user 2026-10-18).
+        let menuOpen = menuRow == s.id
+        let shown = s.id == hoveredID || menuOpen
+        let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
+        return SessionRow(session: s, selected: s.id == model.selected?.id,
+                          actions: shown ? actions.inline.map { action($0, for: s) } : [],
+                          more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
+                          menuOpen: menuOpen,
+                          perform: { perform($0) },
+                          problem: model.restoreProblem(s),
+                          restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
             .id(s.id)
             .contentShape(Rectangle())
-            .onHover { inside in
-                // Rows under the open ⌘K menu stay put.
-                if inside, !showActions {
+            .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
+            .onContinuousHover { phase in
+                switch phase {
+                case .active:
+                    // Rows under an open menu stay put, and rows sliding
+                    // under a still pointer during a scroll aren't hovered.
+                    guard menu == nil, hoveredID != s.id, hoverGate.allowsHover(pointer: NSEvent.mouseLocation) else { return }
                     hoveredID = s.id
-                    model.selectedID = s.id
-                } else if hoveredID == s.id {
-                    hoveredID = nil
+                    if model.selectedID != s.id {
+                        hoverGate.selectingByHover()
+                        model.selectedID = s.id
+                    }
+                case .ended:
+                    if hoveredID == s.id { hoveredID = nil }
                 }
             }
             .onTapGesture { model.selectedID = s.id }
@@ -270,44 +322,35 @@ struct PanelView: View {
                 // The version gives way first when the main action is long.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 4) {
-                        LogoButton(version: model.version) { showSettings() }
+                        LogoButton(version: model.version, open: menu == .app) { toggleMenu(.app) }
                         if model.phase == .ready { NewSessionButton { model.startNewSession() } }
                     }
                     HStack(spacing: 4) {
-                        LogoButton(version: model.version, compact: true) { showSettings() }
+                        LogoButton(version: model.version, compact: true, open: menu == .app) { toggleMenu(.app) }
                         if model.phase == .ready { NewSessionButton { model.startNewSession() } }
                     }
                 }
             }
             Spacer()
-            // Raycast's floating pill: the main action, then everything else.
-            HStack(spacing: 4) {
-                if let primary = primaryAction {
-                    PillButton(action: { perform(primary) }) {
-                        HStack(spacing: 6) {
-                            ActionIcon(action: primary, symbolSize: 11)
-                            Text(primary.title).font(.system(size: 12, weight: .medium))
-                                .lineLimit(1).fixedSize()
-                            KeyCap(text: "↵", lit: litKey == "↵")
-                        }
-                    }
-                    .tip(primary.help ?? primary.title)
-                    Rectangle().fill(Theme.hairline(scheme)).frame(width: 1, height: 16)
-                }
-                PillButton(action: { toggleActions() }) {
+            // Raycast's floating pill with the main action; the rest live on
+            // each session's row (user 2026-10-18).
+            if let primary = primaryAction {
+                PillButton(action: { perform(primary) }) {
                     HStack(spacing: 6) {
-                        Text(L.t("Actions", "更多")).font(.system(size: 12))
+                        ActionIcon(action: primary, symbolSize: 11)
+                        Text(primary.title).font(.system(size: 12, weight: .medium))
                             .lineLimit(1).fixedSize()
-                        KeyCap(text: "⌘K", lit: litKey == "⌘K" || showActions)
+                        KeyCap(text: "↵", lit: litKey == "↵")
                     }
                 }
+                .tip(primary.help ?? primary.title)
+                .padding(.horizontal, 3)
+                .frame(height: 32)
+                .fixedSize()
+                .background(Capsule().fill(Theme.raised(scheme)))
+                .overlay(Capsule().strokeBorder(Theme.hairline(scheme), lineWidth: 1))
+                .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.08), radius: 6, y: 2)
             }
-            .padding(.horizontal, 3)
-            .frame(height: 32)
-            .fixedSize()
-            .background(Capsule().fill(Theme.raised(scheme)))
-            .overlay(Capsule().strokeBorder(Theme.hairline(scheme), lineWidth: 1))
-            .shadow(color: .black.opacity(scheme == .dark ? 0.35 : 0.08), radius: 6, y: 2)
         }
         .padding(.leading, 14)
         .padding(.trailing, 8)
@@ -320,95 +363,156 @@ struct PanelView: View {
 
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
-        if s.state == .interrupted {
-            if model.restoreIsHopeless(s) {
-                // Nothing to bring back: offer to stop reminding instead.
-                return PanelAction(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, shortcut: "↵",
-                                   help: L.t("Never offer this one for restore again. `cc-moss ls --all` still lists it.",
-                                             "以后不再提示找回它；`cc-moss ls --all` 里仍然看得到。")) {
-                    model.close([s])
-                }
+        return action(RowActions(s, hopeless: model.restoreIsHopeless(s)).primary, for: s)
+    }
+
+    /// What one row action looks like and does.
+    private func action(_ kind: RowAction, for s: Session) -> PanelAction {
+        switch kind {
+        case .open:
+            let terminal = model.terminals.current
+            return PanelAction(title: L.t("Open", "打开"), icon: Icons.open, shortcut: "↵",
+                               image: terminal.map { TerminalPrefs.icon($0, size: 16) },
+                               help: terminal.map { L.t("Open in \($0.terminal.displayName)", "在\(zhPad($0.terminal.displayName))里打开") }) {
+                open(s)
             }
+        case .bringBack:
             return PanelAction(title: model.restoreFlow.isRunning(s.id) ? L.t("Bringing Back…", "正在找回…") : L.t("Bring Back", "找回"),
                                icon: Icons.restore, shortcut: "↵",
                                help: L.t("Restart it in tmux, right where the conversation left off.",
                                          "在 tmux 里把它重新开起来，接着上次的对话。")) {
                 model.restore(s)
             }
-        }
-        if !s.inTmux {
-            // An attach command is no use for it; its folder is (user 2026-10-16).
-            return PanelAction(title: L.t("Copy", "复制"), icon: Icons.copy, shortcut: "↵",
-                               help: L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
-                                         "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。复制的是它的目录路径。")) {
+        case .stopReminding:
+            // Nothing to bring back: offer to stop reminding instead.
+            return PanelAction(title: L.t("Stop Reminding", "不再提醒"), icon: Icons.dismiss, shortcut: "↵",
+                               help: L.t("Never offer this one for restore again. `cc-moss ls --all` still lists it.",
+                                         "以后不再提示找回它；`cc-moss ls --all` 里仍然看得到。")) {
+                model.close([s])
+            }
+        case .copyPath:
+            // Outside tmux an attach command is no use; its folder is (user 2026-10-16).
+            let main = !s.inTmux && s.state != .interrupted
+            return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: main ? "↵" : "",
+                               help: main ? L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
+                                                "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。") : nil) {
                 copy(s.cwd)
             }
-        }
-        let terminal = model.terminals.current
-        return PanelAction(title: L.t("Open", "打开"), icon: Icons.open, shortcut: "↵",
-                           image: terminal.map { TerminalPrefs.icon($0, size: 16) },
-                           help: terminal.map { L.t("Open in \($0.terminal.displayName)", "在\(zhPad($0.terminal.displayName))里打开") }) {
-            open(s)
+        case .copyCommand:
+            return PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                copy(model.attachCommand(s))
+            }
+        case .copyRestoreCommand:
+            // The way back that needs no app: paste it in a terminal.
+            return PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
+                copy(model.restoreCommand(s))
+            }
+        case .message:
+            return PanelAction(title: L.t("Send a Message…", "发消息…"), icon: Icons.message, shortcut: "⌘E",
+                               help: L.t("Type something into this session, as if in its terminal",
+                                         "替你在这个会话里输入一段话，就像在它的终端里打字")) {
+                model.writeMessage(s)
+            }
+        case .rename:
+            return PanelAction(title: L.t("Rename…", "重命名…"), icon: Icons.rename, shortcut: "") {
+                model.startRename(s)
+            }
+        case .note:
+            return PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "",
+                               help: L.t("Write a note on this session", "给这个会话写一句便条")) {
+                model.editNote(s)
+            }
+        case .close:
+            return PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
+                model.askToClose([s])
+            }
         }
     }
 
-    private var actions: [PanelAction] {
-        var list: [PanelAction] = []
-        // The main action leads the list too, unless it is the copy below.
-        if let s = model.selected, s.inTmux || s.state == .interrupted, let primary = primaryAction {
-            list.append(primary)
-        }
-        if let s = model.selected, model.phase == .ready {
-            if s.state == .interrupted {
-                // The way back that needs no app: paste it in a terminal.
-                list.append(PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                    copy(model.restoreCommand(s))
-                })
-            } else if s.inTmux {
-                list.append(PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                    copy(model.attachCommand(s))
-                })
-            }
-            list.append(PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: s.inTmux ? "" : "↵") {
-                copy(s.cwd)
-            })
-        }
-        if let s = model.selected, model.phase == .ready {
-            if Message.allowed(s) {
-                list.append(PanelAction(title: L.t("Send a Message…", "发消息…"), icon: Icons.message, shortcut: "⌘E",
-                                        help: L.t("Type something into this session, as if in its terminal",
-                                                  "替你在这个会话里输入一段话，就像在它的终端里打字") ) {
-                    model.writeMessage(s)
-                })
-                list.append(PanelAction(title: L.t("Rename…", "重命名…"), icon: Icons.rename, shortcut: "") {
-                    model.startRename(s)
-                })
-            }
-            list.append(noteAction(s))
-            if Close.allowed(s) {
-                list.append(PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
-                    model.askToClose([s])
-                })
-            }
-        }
+    /// cc-moss's own menu, on the logo: what isn't about one session.
+    private var appSections: [[PanelAction]] {
+        var first: [PanelAction] = []
         if model.phase == .ready {
-            list.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
+            first.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
                 model.startNewSession()
             })
         }
-        list.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
-        list.append(PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() })
-        list.append(PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
-            NSApplication.shared.terminate(nil)
-        })
-        return list
+        first.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
+        return [
+            first,
+            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() }],
+            [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
+                NSApplication.shared.terminate(nil)
+            }],
+        ]
     }
 
-    private func noteAction(_ s: Session) -> PanelAction {
-        PanelAction(title: L.t("Write a Note…", "写便条…"), icon: Icons.note, shortcut: "",
-                    help: L.t("Write a note on this session", "给这个会话写一句便条")) {
-            model.editNote(s)
+    private func sections(for menu: PanelMenu) -> [[PanelAction]] {
+        switch menu {
+        case .app:
+            return appSections
+        case let .session(id, full):
+            guard let s = model.sessions.first(where: { $0.id == id }) else { return [] }
+            let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
+            return (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
         }
+    }
+
+    // MARK: Menus
+
+    private var menuRow: String? {
+        if case let .session(id, _) = menu { id } else { nil }
+    }
+
+    private func openMenu(_ next: PanelMenu, keyboard: Bool = false) {
+        menuSections = sections(for: next)
+        menuIndex = keyboard ? 0 : nil
+        menu = next
+    }
+
+    private func toggleMenu(_ next: PanelMenu, keyboard: Bool = false) {
+        if menu == next { closeMenu() } else { openMenu(next, keyboard: keyboard) }
+    }
+
+    private func closeMenu() {
+        menu = nil
+        menuIndex = nil
+        menuSections = []
+    }
+
+    /// ⌘K: everything for the selected session, at its row.
+    private func commandK() {
+        if let s = model.selected, model.phase == .ready {
+            toggleMenu(.session(s.id, full: true), keyboard: true)
+        } else {
+            toggleMenu(.app, keyboard: true)
+        }
+    }
+
+    private func moveInMenu(_ step: Int) {
+        let count = menuSections.joined().count
+        guard count > 0 else { return }
+        menuIndex = ((menuIndex ?? (step > 0 ? -1 : count)) + step + count) % count
+    }
+
+    private func runMenuItem() {
+        let items = Array(menuSections.joined())
+        guard let i = menuIndex, items.indices.contains(i) else { return }
+        closeMenu()
+        items[i].perform()
+    }
+
+    /// Under its row, right edges lined up (above it when there's no room
+    /// below); cc-moss's own sits over the logo.
+    private func menuOffset(_ menu: PanelMenu, sections: [[PanelAction]], row: CGRect?, in size: CGSize) -> CGSize {
+        let height = ActionsMenu.height(sections), width = ActionsMenu.width
+        let floor = size.height - 50 // the action bar
+        guard case .session = menu, let row else {
+            return CGSize(width: 10, height: floor - height)
+        }
+        let below = row.maxY - 2
+        let y = below + height <= floor ? below : max(row.minY - height + 2, 8)
+        return CGSize(width: min(row.maxX - width - 4, size.width - width - 8), height: y)
     }
 
     private func dismissForm() {
@@ -416,13 +520,8 @@ struct PanelView: View {
         model.closeGate.cancel()
     }
 
-    private func toggleActions() {
-        if !showActions { menuActions = actions }
-        showActions.toggle()
-    }
-
     private func perform(_ action: PanelAction?) {
-        showActions = false
+        closeMenu()
         action?.perform()
     }
 
@@ -460,8 +559,8 @@ struct PanelView: View {
     private func escape() {
         if model.form != nil || model.closeGate.asking {
             dismissForm()
-        } else if showActions {
-            showActions = false
+        } else if menu != nil {
+            closeMenu()
         } else if model.openProblem != nil {
             model.openProblem = nil
         } else if model.stateFilter != nil {
@@ -476,7 +575,7 @@ struct PanelView: View {
     private func shortcut(_ press: KeyPress) -> KeyPress.Result {
         guard press.modifiers.contains(.command) else { return .ignored }
         switch press.characters.lowercased() {
-        case "k": flash("⌘K"); toggleActions()
+        case "k": commandK()
         case "r": model.refresh()
         case "n" where model.phase == .ready: model.startNewSession()
         case "e":
@@ -491,6 +590,21 @@ struct PanelView: View {
         default: return .ignored
         }
         return .handled
+    }
+}
+
+/// A menu in the panel: one session's ("⋯" shows what its row doesn't;
+/// right-click and ⌘K show everything), or cc-moss's own on the logo.
+enum PanelMenu: Equatable {
+    case session(String, full: Bool)
+    case app
+}
+
+/// Where the open session menu's row is, so the menu can sit under it.
+struct MenuAnchorKey: PreferenceKey {
+    static let defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        value = value ?? nextValue()
     }
 }
 
