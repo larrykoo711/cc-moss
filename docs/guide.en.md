@@ -31,7 +31,7 @@ cc-moss doctor                           # checks that everything is in place
 
 | Part | What it does |
 |---|---|
-| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; the `t` alias (`~/.local/bin/t`, see [Aliases](#aliases)) |
+| `hooks` | Six hooks in `~/.claude/settings.json`, so Claude Code reports session events; `skipDangerousModePermissionPrompt` set to `true` if you haven't set it, so new sessions don't stall on the bypass warning (see [Permissions for new sessions](#permissions-for-new-sessions)); the `t` alias (`~/.local/bin/t`, see [Aliases](#aliases)) |
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
@@ -120,7 +120,7 @@ In the picker:
 | Command | What it does |
 |---|---|
 | `cc-moss` / `cc-moss pick [QUERY]` | Pick a session, an interrupted session or a folder |
-| `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists |
+| `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [--safe] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists. Bypass by default; `--safe` starts this one in normal mode, even over bypass added in the config (see [Permissions for new sessions](#permissions-for-new-sessions)) |
 | `cc-moss ls [--all] [--json]` | List sessions (`--json` for scripts; may still change before 1.0) |
 | `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
@@ -130,12 +130,36 @@ In the picker:
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
-| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting; today only `ui.language` (`auto`, `zh`, `en`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`) or `claude.permission_mode` (`bypass`, `default`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` alias |
 
 `NAME` can be the Claude Code session name, the tmux session name or the start of the session id.
+
+### Permissions for new sessions
+
+New sessions from `cc-moss new` and the app start in bypass mode (with `--dangerously-skip-permissions`): Claude
+doesn't stop to ask for permission, it just gets on with it. Your deny rules and Claude Code's own protection of
+sensitive paths still apply. Sessions already running, and sessions you bring back, keep the flags they started with.
+
+For normal mode, where Claude asks before each step:
+
+- Just this once: `cc-moss new NAME --safe`. This session skips bypass, including any your config's `default_args`
+  adds (`--dangerously-skip-permissions`, `--permission-mode`); the config itself stays as it is
+- From now on: `cc-moss config set claude.permission_mode default`, or turn off "Let it work on its own" in the app's
+  Settings › General › New sessions. Set it to `bypass` to switch back
+
+If `default_args` or the command line already has `--dangerously-skip-permissions` or `--permission-mode`, cc-moss
+doesn't add another. If `~/.claude/settings.json` or settings from your administrator (on macOS,
+`/Library/Application Support/ClaudeCode/managed-settings.json`) set `permissions.disableBypassPermissionsMode` to
+`"disable"`, new sessions start in normal mode and `cc-moss doctor` tells you why.
+
+The first time Claude Code runs in bypass mode it shows a warning. In a tmux pane in the background nobody sees it, and
+the session just waits. So if you haven't set `skipDangerousModePermissionPrompt` in `~/.claude/settings.json`,
+`cc-moss install` sets it to `true` and notes in `~/.local/state/cc-moss/claude-settings-owned.json` that cc-moss
+wrote it. If you set it yourself, `true` or `false`, it's left alone; `cc-moss install --uninstall` takes out only
+what cc-moss wrote.
 
 ### Aliases
 
@@ -293,7 +317,7 @@ Mo can make a sound too, under Settings › Mo › Voice:
 
 | Page | What's there |
 |---|---|
-| General | Open at Login, interface language, workspace, the terminal sessions open in, new tab or new window |
+| General | Open at Login, interface language, whether new sessions work on their own (bypass), workspace, the terminal sessions open in, new tab or new window |
 | Shortcuts | The shortcut for the panel; short names to type in a terminal (open the session list, start a session, bring stopped ones back…): click the keycap, type, Return saves, and it plays what the name does. Your own commands sit under the folded Your own; the same names as `cc-moss alias` (see [Aliases](#aliases)). The keys inside the panel |
 | Menu Bar | How the icon shows, motion |
 | Mo | On or off, size, interaction, voice |
@@ -429,7 +453,8 @@ Optional, in `~/.config/cc-moss/config.toml`:
 
 ```toml
 [claude]
-default_args = ["--dangerously-skip-permissions"]   # added to every `cc-moss new`
+permission_mode = "bypass"   # new sessions start in bypass mode; "default" asks before each step
+default_args = ["--model", "opus"]   # added to every `cc-moss new`
 
 [naming]
 host_prefix = true        # default: name tmux sessions <host>_<name>, handy when you ssh between machines

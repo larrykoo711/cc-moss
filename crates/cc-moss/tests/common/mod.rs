@@ -30,6 +30,11 @@ pub fn bin() -> Command {
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("CC_MOSS_CONFIG")
         .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
+        // Never the machine's own managed Claude Code settings.
+        .env(
+            "CC_MOSS_CLAUDE_MANAGED_SETTINGS",
+            "/nonexistent/cc-moss-test-managed-settings.json",
+        )
         // Assertions are in English, whatever this machine's language is.
         .env("CC_MOSS_LANG", "en")
         // No test reaches the network; update tests turn checking back on

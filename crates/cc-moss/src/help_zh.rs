@@ -51,6 +51,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("new", "dir", "工作目录（默认当前目录）"),
     ("new", "detach", "建好后先不进入"),
     ("new", "yes", "名字属于一个中断的会话时，不问直接恢复"),
+    ("new", "safe", "这一次按普通模式开，不用 bypass，连配置里 default_args 额外加的也不用"),
     (
         "new",
         "claude_args",

@@ -66,6 +66,9 @@ enum Command {
         /// If the name belongs to an interrupted session, restore it without asking.
         #[arg(long)]
         yes: bool,
+        /// Normal mode this time: no bypass, not even one added in the config's default_args.
+        #[arg(long)]
+        safe: bool,
         /// Extra arguments for claude, e.g. `--model opus`; `--` is optional.
         #[arg(last = true)]
         claude_args: Vec<String>,
@@ -353,12 +356,14 @@ fn main() -> std::process::ExitCode {
             dir,
             detach,
             yes,
+            safe,
             claude_args,
         } => report(cmd::new::run(cmd::new::NewArgs {
             name,
             dir,
             detach,
             yes,
+            safe,
             claude_args,
         })),
         Command::Ls { all, json } => report(cmd::ls::run(all, json)),

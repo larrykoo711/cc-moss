@@ -58,8 +58,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup language english chinese workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 语言 中文 英文 english 工作区 目录 文件夹 新会话 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup language english chinese new session bypass permission workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 语言 中文 英文 english 新会话 bypass 权限 放手 工作区 目录 文件夹 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
@@ -469,7 +469,7 @@ struct SoftButton: View {
     }
 }
 
-/// General: starting up, the language, and where sessions open.
+/// General: starting up, the language, how new sessions start, and where they open.
 struct GeneralSettings: View {
     @Bindable var model: AppModel
 
@@ -477,6 +477,10 @@ struct GeneralSettings: View {
     @State private var loginError: String?
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
+    /// `claude.permission_mode` as last read or saved (bypass until read).
+    @State private var permissionMode = PermissionMode.bypass
+    @State private var bypass = true
+    @State private var bypassError: String?
 
     var body: some View {
         SettingsCard(title: L.t("Startup", "启动")) {
@@ -509,10 +513,48 @@ struct GeneralSettings: View {
                 .onChange(of: language) { _, new in setLanguage(new) }
             }
         }
+        SettingsCard(title: L.t("New sessions", "新会话")) {
+            CardRow(
+                title: L.t("Let it work on its own", "直接放手干"),
+                detail: bypassError ?? L.t("New sessions don't stop to ask for permission (bypass).",
+                                           "新会话不再逐条问你权限（bypass）。"),
+                divider: false
+            ) {
+                Toggle("", isOn: $bypass)
+                    .toggleStyle(.switch)
+                    .cursor(.pointingHand)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .onChange(of: bypass) { _, on in setBypass(on) }
+            }
+        }
+        .task { await loadPermissionMode() }
         SettingsCard(title: L.t("Workspace", "工作区")) {
             WorkspaceRow()
         }
         TerminalSettings(prefs: model.terminals)
+    }
+
+    private func loadPermissionMode() async {
+        guard let mode = try? await model.client?.permissionMode() else { return }
+        permissionMode = mode
+        bypass = mode.isBypass
+    }
+
+    private func setBypass(_ on: Bool) {
+        let mode = PermissionMode(bypass: on)
+        guard mode != permissionMode else { return }
+        Task {
+            do {
+                guard let client = model.client else { throw MossClient.Failure.command(L.t("cc-moss not found", "没找到 cc-moss")) }
+                try await client.setPermissionMode(mode)
+                permissionMode = mode
+                bypassError = nil
+            } catch {
+                bypass = permissionMode.isBypass
+                bypassError = L.t("Couldn't save it: \(error)", "没存上：\(error)")
+            }
+        }
     }
 
     private func setLanguage(_ raw: String) {

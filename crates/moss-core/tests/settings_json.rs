@@ -361,3 +361,56 @@ fn new_hooks_added_to_an_older_install() {
     let users = json!({ "hooks": { "Notification": [foreign()] } });
     assert!(missing_hooks(&users).contains(&HookKind::Notification));
 }
+
+mod bypass_prompt {
+    use moss_core::settings_json::{
+        accept_bypass_prompt, added_keys, disables_bypass, forget_owned, removed_keys,
+        BYPASS_PROMPT_KEY,
+    };
+    use serde_json::json;
+
+    #[test]
+    fn install_accepts_bypass_prompt_once() {
+        let before = json!({ "model": "opus" });
+        let after = accept_bypass_prompt(&before).unwrap();
+        assert_eq!(after, json!({ "model": "opus", BYPASS_PROMPT_KEY: true }));
+        let owned = added_keys(&before, &after);
+        assert_eq!(owned, [BYPASS_PROMPT_KEY]);
+        // A second install changes nothing and claims nothing new.
+        let again = accept_bypass_prompt(&after).unwrap();
+        assert_eq!(again, after);
+        assert!(added_keys(&after, &again).is_empty());
+        // Uninstall takes out what it wrote, and only that.
+        let undone = forget_owned(&again, &owned).unwrap();
+        assert_eq!(undone, before);
+        assert_eq!(removed_keys(&again, &undone), [BYPASS_PROMPT_KEY]);
+    }
+
+    #[test]
+    fn keeps_users_own_prompt_setting() {
+        for value in [true, false] {
+            let users = json!({ BYPASS_PROMPT_KEY: value, "model": "opus" });
+            let after = accept_bypass_prompt(&users).unwrap();
+            assert_eq!(after, users, "{value}");
+            assert!(added_keys(&users, &after).is_empty(), "{value}");
+            // Not ours: uninstall leaves it.
+            assert_eq!(forget_owned(&after, &[]).unwrap(), users, "{value}");
+        }
+    }
+
+    #[test]
+    fn a_key_the_user_changed_after_install_stays() {
+        let owned = vec![BYPASS_PROMPT_KEY.to_string()];
+        let changed = json!({ BYPASS_PROMPT_KEY: false });
+        assert_eq!(forget_owned(&changed, &owned).unwrap(), changed);
+    }
+
+    #[test]
+    fn policy_can_disable_bypass() {
+        assert!(disables_bypass(
+            &json!({ "permissions": { "disableBypassPermissionsMode": "disable" } })
+        ));
+        assert!(!disables_bypass(&json!({ "permissions": { "allow": [] } })));
+        assert!(!disables_bypass(&json!({})));
+    }
+}

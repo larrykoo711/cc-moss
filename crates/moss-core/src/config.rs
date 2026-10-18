@@ -24,8 +24,30 @@ pub struct Config {
 #[derive(Debug, Default, Deserialize)]
 #[serde(default)]
 pub struct ClaudeConfig {
-    /// Extra arguments for every `cc-moss new`, e.g. `["--dangerously-skip-permissions"]`.
+    /// Extra arguments for every `cc-moss new`, e.g. `["--model", "opus"]`.
     pub default_args: Vec<String>,
+    /// How `cc-moss new` starts a session: in bypass mode unless set to `default`.
+    pub permission_mode: PermissionMode,
+}
+
+/// `[claude] permission_mode`: whether new sessions ask before each action.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PermissionMode {
+    /// `--dangerously-skip-permissions`: Claude Code does not stop to ask.
+    #[default]
+    Bypass,
+    /// Claude Code's own default: it asks for each permission.
+    Default,
+}
+
+impl PermissionMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            PermissionMode::Bypass => "bypass",
+            PermissionMode::Default => "default",
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -130,10 +152,13 @@ where
 
 /// The keys `cc-moss config get|set` may touch. Everything else in the file
 /// is the user's to edit by hand.
-pub const KEYS: &[&str] = &["ui.language"];
+pub const KEYS: &[&str] = &["ui.language", "claude.permission_mode"];
 
 /// What `ui.language` may be set to.
 pub const LANGUAGES: &[&str] = &["auto", "zh", "en"];
+
+/// What `claude.permission_mode` may be set to.
+pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -148,6 +173,7 @@ pub enum SettingError {
 pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
+        "claude.permission_mode" => PERMISSION_MODES,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -168,6 +194,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
             .map(|v| v.trim().to_ascii_lowercase())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "auto".into())),
+        "claude.permission_mode" => Ok(config.claude.permission_mode.as_str().into()),
         _ => Err(SettingError::UnknownKey),
     }
 }

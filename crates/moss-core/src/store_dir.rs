@@ -31,6 +31,12 @@ pub fn hook_log_path() -> PathBuf {
     state_dir().join("hook.log")
 }
 
+/// The keys cc-moss added to Claude Code's `settings.json` (a JSON array of
+/// names), so uninstall takes out only those.
+pub fn claude_settings_owned_path() -> PathBuf {
+    state_dir().join("claude-settings-owned.json")
+}
+
 fn non_empty_env(key: &str) -> Option<String> {
     std::env::var(key).ok().filter(|v| !v.is_empty())
 }

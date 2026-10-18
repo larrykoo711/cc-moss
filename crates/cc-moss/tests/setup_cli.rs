@@ -522,3 +522,47 @@ fn alias_setup_uninstall_only_removes_t() {
         "[aliases]\ntn = \"new\"\n"
     );
 }
+
+/// T1.2: setup adds `skipDangerousModePermissionPrompt` only when the user has
+/// not set it, records that in the state dir, and uninstall takes out only that.
+#[test]
+fn setup_owns_only_the_prompt_key_it_wrote() {
+    const KEY: &str = "skipDangerousModePermissionPrompt";
+    let record = |dir: &Path| dir.join(".local/state/cc-moss/claude-settings-owned.json");
+    let read = |dir: &Path| -> serde_json::Value {
+        serde_json::from_str(&fs::read_to_string(dir.join("settings.json")).unwrap()).unwrap()
+    };
+
+    // Not set: cc-moss writes it, notes it, and takes it out again.
+    let dir = tempfile::tempdir().unwrap();
+    fs::write(dir.path().join("settings.json"), CLAUDE_FORMATTED).unwrap();
+    let out = setup(dir.path(), &["--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert_eq!(read(dir.path())[KEY], true);
+    let owned: Vec<String> =
+        serde_json::from_str(&fs::read_to_string(record(dir.path())).unwrap()).unwrap();
+    assert_eq!(owned, [KEY]);
+    let out = setup(dir.path(), &["--uninstall", "--yes"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(read(dir.path()).get(KEY).is_none());
+    assert!(!record(dir.path()).exists());
+
+    // The user's own value, either way: never touched, never claimed.
+    for value in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let mut doc: serde_json::Value = serde_json::from_str(CLAUDE_FORMATTED).unwrap();
+        doc[KEY] = value.into();
+        let text = serde_json::to_string_pretty(&doc).unwrap() + "\n";
+        fs::write(dir.path().join("settings.json"), &text).unwrap();
+        let out = setup(dir.path(), &["--yes"]);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(read(dir.path())[KEY], value);
+        assert!(!record(dir.path()).exists(), "{value}");
+        let out = setup(dir.path(), &["--uninstall", "--yes"]);
+        assert!(out.status.success(), "{}", stderr(&out));
+        assert_eq!(
+            fs::read_to_string(dir.path().join("settings.json")).unwrap(),
+            text
+        );
+    }
+}
