@@ -169,10 +169,13 @@ struct SectionHeader: View {
 struct SessionRow: View {
     let session: Session
     let selected: Bool
-    /// The row's main action, shown as a button while the row is hovered.
-    var action: PanelAction?
-    /// A second, quieter button before it (write a note).
-    var secondary: PanelAction?
+    /// Buttons shown while the row is hovered, the main one last; empty
+    /// otherwise.
+    var actions: [PanelAction] = []
+    /// "⋯": the rest of this session's actions. Nil when there are none.
+    var more: (() -> Void)?
+    /// Its "⋯" menu is open: the buttons stay and "⋯" stays lit.
+    var menuOpen = false
     var perform: (PanelAction) -> Void = { _ in }
     /// Why it could not be brought back; replaces the second line.
     var problem: String?
@@ -223,22 +226,24 @@ struct SessionRow: View {
                 Text(L.ago(session.lastActiveAt))
                     .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
-                    .opacity(action == nil && !restoring ? 1 : 0)
+                    .opacity(actions.isEmpty && !restoring ? 1 : 0)
                 if restoring {
                     ProgressView().controlSize(.small).scaleEffect(0.7)
                         .frame(width: 30, height: 30)
                         .accessibilityLabel(L.t("Bringing it back", "正在找回"))
-                } else if let action {
+                } else if !actions.isEmpty {
                     HStack(spacing: 4) {
-                        if let secondary {
-                            RowActionButton(action: secondary, perform: perform)
+                        ForEach(actions) { RowActionButton(action: $0, perform: perform) }
+                        if let more {
+                            RowActionButton(action: PanelAction(title: L.t("More", "更多"), icon: Icons.more, shortcut: "",
+                                                                help: L.t("More for this session", "这个会话的更多操作")) {},
+                                            lit: menuOpen) { _ in more() }
                         }
-                        RowActionButton(action: action, perform: perform)
                     }
                     .transition(.opacity.combined(with: .scale(scale: 0.9)))
                 }
             }
-            .animation(.easeOut(duration: 0.12), value: action == nil)
+            .animation(.easeOut(duration: 0.12), value: actions.isEmpty)
         }
         .padding(.horizontal, 10)
         .frame(height: 48)
@@ -331,40 +336,65 @@ struct GuideCard: View {
 
 /// The ⌘K panel: every action for the selected session, with its shortcut.
 struct ActionsMenu: View {
-    let actions: [PanelAction]
+    /// Groups, with a thin line between them.
+    let sections: [[PanelAction]]
+    /// The lit row, counted across groups; the keyboard moves it too.
+    @Binding var highlighted: Int?
     let close: () -> Void
-    @State private var hovered: UUID?
     @Environment(\.colorScheme) private var scheme
 
+    static let width: CGFloat = 260
+    private static let rowHeight: CGFloat = 30
+    private static let spacing: CGFloat = 2
+    private static let dividerHeight: CGFloat = 7
+
+    /// Its height before it is drawn, to open it upward when there's no room below.
+    static func height(_ sections: [[PanelAction]]) -> CGFloat {
+        let rows = CGFloat(sections.joined().count), lines = CGFloat(max(sections.count - 1, 0))
+        return 12 + rows * rowHeight + lines * dividerHeight + max(rows + lines - 1, 0) * spacing
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(actions) { a in
-                Button {
-                    close()
-                    a.perform()
-                } label: {
-                    HStack(spacing: 9) {
-                        ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
-                        Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
-                        Spacer(minLength: 16)
-                        if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
-                    }
-                    .padding(.horizontal, 10)
-                    .frame(height: 30)
-                    .background(RoundedRectangle(cornerRadius: 6).fill(hovered == a.id ? Theme.selection(scheme) : .clear))
-                    .contentShape(Rectangle())
+        let offsets = sections.indices.map { i in sections[..<i].map(\.count).reduce(0, +) }
+        VStack(alignment: .leading, spacing: Self.spacing) {
+            ForEach(sections.indices, id: \.self) { i in
+                if i > 0 {
+                    Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, (Self.dividerHeight - 1) / 2)
                 }
-                .buttonStyle(.plain)
-        .handCursor()
-        .focusable(false)
-                .onHover { if $0 { hovered = a.id } }
+                ForEach(Array(sections[i].enumerated()), id: \.element.id) { j, a in
+                    item(a, index: offsets[i] + j)
+                }
             }
         }
         .padding(6)
-        .frame(width: 280)
+        .frame(width: Self.width)
         .background(Theme.raised(scheme), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Theme.hairline(scheme)))
         .shadow(color: .black.opacity(0.18), radius: 14, y: 6)
+    }
+
+    private func item(_ a: PanelAction, index: Int) -> some View {
+        Button {
+            close()
+            a.perform()
+        } label: {
+            HStack(spacing: 9) {
+                ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
+                Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
+                Spacer(minLength: 16)
+                if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: Self.rowHeight)
+            .background(RoundedRectangle(cornerRadius: 6).fill(highlighted == index ? Theme.selection(scheme) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .focusable(false)
+        .onHover { if $0 { highlighted = index } }
     }
 }
 
@@ -417,11 +447,14 @@ struct SlidingPicker<Value: Hashable>: View {
 /// terminal's icon to open it, or the action that fits (bring back, copy).
 struct RowActionButton: View {
     let action: PanelAction
+    /// Drawn as hovered: its menu is open.
+    var lit = false
     let perform: (PanelAction) -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let shown = hovering || lit
         Button { perform(action) } label: {
             Group {
                 if let image = action.image {
@@ -431,9 +464,9 @@ struct RowActionButton: View {
                 }
             }
             .frame(width: 30, height: 30)
-            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(hovering ? Theme.hairline(scheme) : .clear))
-            .shadow(color: .black.opacity(hovering ? 0.08 : 0), radius: 2, y: 1)
+            .background(RoundedRectangle(cornerRadius: 8).fill(shown ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(shown ? Theme.hairline(scheme) : .clear))
+            .shadow(color: .black.opacity(shown ? 0.08 : 0), radius: 2, y: 1)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

@@ -409,7 +409,7 @@ private struct PanelKeys: View {
     private var keys: [(String, String)] {
         [
             ("↵", L.t("Open the selected session", "打开选中的会话")),
-            ("⌘K", L.t("More actions", "更多操作")),
+            ("⌘K", L.t("Everything for the selected session", "选中会话的全部操作")),
             ("⌘N", L.t("New session", "新会话")),
             ("⌘E", L.t("Send a message", "发消息")),
             ("⇧⌘C", L.t("Copy its command", "复制命令")),
