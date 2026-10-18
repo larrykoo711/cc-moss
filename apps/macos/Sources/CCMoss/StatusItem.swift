@@ -314,6 +314,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         feed.start()
         model.onAsks = { alerts.handleAsks($0) }
+        let highlight = panel?.onVisibilityChange
+        panel?.onVisibilityChange = { shown in
+            highlight?(shown)
+            if !shown { alerts.panelClosed() }
+        }
         self.alerts = alerts
         self.events = feed
         let startup = StartupReminder(model: model) { alerts.remindMissed($0) }

@@ -33,6 +33,37 @@ import Testing
         #expect(arrive(&alerts, [ask()], AlertContext(mode: .auto, panelOpen: true)).map(\.destination) == [AlertDestination.none])
     }
 
+    @Test func aQuestionTheOpenPanelHeldGoesToMoWhenThePanelCloses() {
+        var alerts = AskAlerts()
+        _ = arrive(&alerts, [ask()], AlertContext(mode: .auto, petEnabled: true, petVisible: true, panelOpen: true))
+        let told = alerts.panelClosed(stillOpen: [ask()], in: petOnScreen, now: now)
+        #expect(told.map(\.destination) == [.pet])
+        #expect(told[0].alert.askId == "a1b2c3d4e5f6a7b8")
+        // Told now, so taken back when it goes; and never told a third time.
+        #expect(alerts.panelClosed(stillOpen: [ask()], in: petOnScreen, now: now).isEmpty)
+        #expect(alerts.gone(["a1b2c3d4e5f6a7b8"]).map(\.destination) == [.pet])
+    }
+
+    @Test func aQuestionAnsweredInThePanelIsNotToldAfterwards() {
+        var alerts = AskAlerts()
+        _ = arrive(&alerts, [ask()], AlertContext(mode: .auto, panelOpen: true))
+        #expect(alerts.panelClosed(stillOpen: [], in: petOnScreen, now: now).isEmpty)
+        #expect(alerts.panelClosed(stillOpen: [ask()], in: petOnScreen, now: now).isEmpty)
+    }
+
+    @Test func aQuestionAlreadyToldElsewhereIsNotToldAgainOnClose() {
+        var alerts = AskAlerts()
+        _ = arrive(&alerts, [ask()], petOnScreen)
+        #expect(alerts.panelClosed(stillOpen: [ask()], in: petOnScreen, now: now).isEmpty)
+    }
+
+    @Test func quietHoursStillHoldWhenThePanelCloses() {
+        var alerts = AskAlerts()
+        _ = arrive(&alerts, [ask()], AlertContext(mode: .auto, panelOpen: true))
+        let quiet = AlertContext(mode: .auto, petEnabled: true, petVisible: true, doNotDisturb: true)
+        #expect(alerts.panelClosed(stillOpen: [ask()], in: quiet, now: now).map(\.destination) == [AlertDestination.none])
+    }
+
     @Test func theSameQuestionIsToldOnce() {
         var alerts = AskAlerts()
         _ = arrive(&alerts, [ask()], noPet)

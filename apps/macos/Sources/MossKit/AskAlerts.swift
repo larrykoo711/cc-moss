@@ -13,6 +13,9 @@ public struct AskAlerts: Sendable {
 
     /// Questions already decided, whatever the answer was.
     private var told: [String: Told] = [:]
+    /// Questions the open panel showed instead of telling you anywhere: told
+    /// when the panel closes with them still unanswered.
+    private var heldByPanel: [String: SessionAlert] = [:]
     /// The last "needs you" event alert per session, to keep the two
     /// sources (the event stream and the question list) from both speaking.
     private var eventAlerted: [String: Date] = [:]
@@ -42,6 +45,7 @@ public struct AskAlerts: Sendable {
                now.timeIntervalSince(last) < Self.overlap {
                 destination = .none
             }
+            if context.panelOpen { heldByPanel[ask.id] = alert }
             let t = Told(alert: alert, destination: destination)
             told[ask.id] = t
             out.append(t)
@@ -49,10 +53,26 @@ public struct AskAlerts: Sendable {
         return out
     }
 
+    /// The panel closed. The questions it was holding that are still open
+    /// are told now, where any alert would go (Mo, else a notification);
+    /// each one only this once. Questions answered meanwhile are dropped.
+    public mutating func panelClosed(stillOpen asks: [Ask], in context: AlertContext, now: Date) -> [Told] {
+        let held = heldByPanel
+        heldByPanel = [:]
+        return asks.compactMap { ask in
+            guard var alert = held[ask.id] else { return nil }
+            alert.at = now
+            let t = Told(alert: alert, destination: AlertRouter.destination(for: alert, in: context))
+            told[ask.id] = t
+            return t
+        }
+    }
+
     /// The questions that went: what to take back (a notification, Mo's
     /// message). Each is taken back once.
     public mutating func gone(_ ids: [String]) -> [Told] {
         ids.compactMap { id in
+            heldByPanel[id] = nil
             guard let t = told[id] else { return nil }
             // Remember it was decided (a question never comes back with the
             // same id), but there is nothing left to take back.

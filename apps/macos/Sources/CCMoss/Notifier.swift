@@ -191,21 +191,32 @@ final class AlertCenter {
         if AlertToggles(defaults: defaults).isOn(.needsYou), !change.arrived.isEmpty {
             let told = askAlerts.arrived(change.arrived, slot: { [model] in model.askSlot($0) },
                                          title: { [model] in model.askTitle($0) }, in: context(), now: now)
-            for t in told {
-                switch t.destination {
-                case .pet:
-                    toPet(t.alert)
-                case .notification:
-                    let note = NotificationPlan.askNote(for: t.alert, title: t.alert.name ?? "")
-                    if let gate { Task { await gate.deliver(note) } }
-                case .none:
-                    break
-                }
-            }
+            deliver(told)
         }
         let back = askAlerts.gone(change.gone).filter { $0.destination == .notification }
         if let gate, !back.isEmpty {
             gate.withdraw(back.compactMap { $0.alert.askId.map(NotificationPlan.askNoteID) })
+        }
+    }
+
+    /// The panel closed with questions it showed still unanswered: tell
+    /// them now (Mo, else a notification), so they don't wait unseen.
+    func panelClosed() {
+        guard AlertToggles(defaults: defaults).isOn(.needsYou) else { return }
+        deliver(askAlerts.panelClosed(stillOpen: model.askDesk.open.map(\.ask), in: context(), now: Date()))
+    }
+
+    private func deliver(_ told: [AskAlerts.Told]) {
+        for t in told {
+            switch t.destination {
+            case .pet:
+                toPet(t.alert)
+            case .notification:
+                let note = NotificationPlan.askNote(for: t.alert, title: t.alert.name ?? "")
+                if let gate { Task { await gate.deliver(note) } }
+            case .none:
+                break
+            }
         }
     }
 
