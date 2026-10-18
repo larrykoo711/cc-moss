@@ -61,6 +61,7 @@ enum Icons {
     static let refresh = "arrow.clockwise"
     static let quit = "power"
     static let message = "paperplane"
+    static let more = "ellipsis"
     static let rename = "character.cursor.ibeam"
     static let settings = "gearshape"
     static let general = "gearshape"

@@ -14,6 +14,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Told when an update takes Accessibility away.** The panel says "Allow Accessibility again" at the top, with Allow,
   instead of the shortcut going quiet without a word.
 
+### Changed
+
+- **Each session carries its own actions.** Point at a session and Rename, Send a Message and Open sit at the end of
+  its row, with ⋯ for the rest (a note, copying, stop reminding). Right-click it, or press ⌘K, for all of them, right
+  beside the session. New session, refresh, settings and quit moved to the cc-moss logo at the bottom left.
+
 ### Fixed
 
 - **The app no longer quits when you leave Settings › Shortcuts too quickly.** Moving to another page while it was

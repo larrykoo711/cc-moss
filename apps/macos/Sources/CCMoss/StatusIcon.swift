@@ -50,11 +50,14 @@ struct Continuum: Shape {
     }
 }
 
-/// The footer mark: flows while the pointer is on it, opens Settings on click.
+/// The footer mark: flows while the pointer is on it; a click opens
+/// cc-moss's own menu (new session, settings, quit), like an app menu.
 struct LogoButton: View {
     let version: String
     /// Just the mark, when the action bar is short of room.
     var compact = false
+    /// Its menu is open.
+    var open = false
     let action: () -> Void
     @State private var hovering = false
     @State private var start = Date()
@@ -79,7 +82,7 @@ struct LogoButton: View {
             }
             .padding(.horizontal, 6)
             .padding(.vertical, 4)
-            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.primary.opacity(0.06) : .clear))
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering || open ? Color.primary.opacity(0.06) : .clear))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
@@ -88,8 +91,8 @@ struct LogoButton: View {
             if inside { start = Date() }
             withAnimation(.easeOut(duration: 0.15)) { hovering = inside }
         }
-        .tip(L.t("Settings", "设置"))
-        .accessibilityLabel(L.t("cc-moss settings", "cc-moss 设置"))
+        .tip(L.t("New session, settings, quit", "新会话、设置、退出"))
+        .accessibilityLabel(L.t("cc-moss menu", "cc-moss 菜单"))
     }
 }
 

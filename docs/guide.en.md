@@ -223,13 +223,18 @@ On a session you can open, Return opens a new window in your terminal, straight 
 Ghostty (recommended), iTerm2, WezTerm, Kitty and Alacritty are supported; pick yours in Settings › General. Using
 another one? ⇧⌘C copies the command for you to paste.
 
+Each session carries its own actions. Point at one and its buttons appear at the end of the row: Rename, Send a Message
+and Open (Bring Back for a stopped session), then ⋯ for the rest: write a note, copy the command or the folder path,
+stop reminding. Right-click a session, or press ⌘K, for all of them at once. What isn't about one session (new
+session, refresh, settings, quit) is on the cc-moss logo at the bottom left.
+
 | Key | What it does |
 |---|---|
 | Typing | Search sessions |
 | ↑ ↓ | Move the selection |
 | ↵ | Open the selected session; bring it back if it stopped |
 | Tab / ⇧Tab | Cycle the filter: all, working, waiting, stopped |
-| ⌘K | Every action for the selected session: open, copy the command, copy the folder path, send a message, rename, write a note, stop reminding |
+| ⌘K | Every action for the selected session, next to it; ↑ ↓ and ↵ pick one |
 | ⌘N | New session: a name and a folder |
 | ⌘E | Send a message: types it into the session's terminal for you (a session outside tmux gets a note instead) |
 | ⇧⌘C | Copy the command (for a stopped session, the restore command) |

@@ -5,7 +5,8 @@ import SwiftUI
 /// Off-screen rendering of the panel for screenshots.
 ///
 ///   CCMoss --render out.png --demo sessions.json [--dark] [--query q]
-///          [--filter working|waiting|interrupted] [--select <id>] [--actions]
+///          [--filter working|waiting|interrupted] [--select <id>] [--hover]
+///          [--menu full|more|app]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
@@ -135,7 +136,17 @@ enum Render {
                 drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"),
                              height: value("--height").flatMap(Double.init), out: out)
             } else {
-                draw(model: model, dark: args.contains("--dark"), actions: args.contains("--actions"), out: out)
+                // `--hover`: the pointer on the selected row; `--menu`: a menu open
+                // (that row's "⋯" or everything for it, or cc-moss's own).
+                let id = model.selected?.id
+                let menu: PanelMenu? = switch value("--menu") {
+                case "app": .app
+                case "more": id.map { .session($0, full: false) }
+                case "full": id.map { .session($0, full: true) }
+                default: nil
+                }
+                let hover = args.contains("--hover") || value("--menu") == "more" ? id : nil
+                draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, out: out)
             }
             done.signal()
             exit(0)
@@ -362,8 +373,8 @@ enum Render {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
     }
 
-    @MainActor private static func draw(model: AppModel, dark: Bool, actions: Bool, out: String) {
-        let root = PanelView(model: model, showActions: actions)
+    @MainActor private static func draw(model: AppModel, dark: Bool, menu: PanelMenu?, hover: String?, out: String) {
+        let root = PanelView(model: model, menu: menu, hoveredID: hover)
             // Stand-in for the desktop behind the frosted glass.
             .background(dark ? Color(red: 0.16, green: 0.22, blue: 0.30) : Color(red: 0.55, green: 0.66, blue: 0.75))
             .environment(\.colorScheme, dark ? .dark : .light)
