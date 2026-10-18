@@ -131,6 +131,7 @@ In the picker:
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
 | `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`) or `claude.permission_mode` (`bypass`, `default`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | The daemon that stays in the background: its status, start it, stop it (macOS; see [The daemon](#the-daemon)) |
 | `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` alias |
@@ -185,6 +186,27 @@ and `|` are plain text. It can only run cc-moss's own commands.
 - A shell alias or function with the same name runs instead of the alias. `alias add` and `doctor` point it out; your
   shell files are never edited.
 - The menubar app's Settings › Shortcuts page (under "In the Terminal") adds, edits and removes them, through these same commands; the panel's shortcut lives on the same page.
+
+### The daemon
+
+On macOS, `cc-moss install` sets up a cc-moss daemon that stays in the background: it starts when you log in, macOS
+(launchd) starts it again if it's killed or crashes, and there is only ever one. The built-in Moss will run inside it
+later; for now it just stays up, does nothing else and never goes online.
+
+```sh
+cc-moss daemon status          # running or not, for how long, which version
+cc-moss daemon status --json   # {"schema":1,"running":true,"pid":…,"version":"…","started_at":"…","heartbeat_at":"…"}
+cc-moss daemon stop            # stop it; it stays off, after logging in again too, until you start it
+cc-moss daemon start           # start it again (setting it up first if needed)
+```
+
+- The menubar app's Settings › Moss page shows whether it's running, with Start when it isn't. `cc-moss doctor`
+  checks it too and tells you which command fixes it.
+- After an update, run `cc-moss install` once and the daemon moves to the new version. `cc-moss install --uninstall`
+  stops it and removes its setup.
+- Its files are under `daemon/` in the state directory: `status.json` (its status, with a heartbeat every 30 seconds),
+  `daemon.log` (started afresh past 1 MiB), and launchd's `stdout.log` and `stderr.log`. What macOS knows about is
+  `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`; it runs as you, never as root.
 
 ## The menubar app
 
@@ -323,6 +345,7 @@ Mo can make a sound too, under Settings › Mo › Voice:
 | Mo | On or off, size, interaction, voice |
 | Notifications | Who tells you, what to tell you; a word when notifications are turned off |
 | Permissions | Everything cc-moss asks macOS for, on one page: Accessibility, notifications, control of your terminal (Automation). Each says where it stands and what it's for, with Allow when one is missing. When one is off and something uses it, a small dot shows beside the page |
+| Moss | Whether the daemon is running and for how long, with Start when it isn't (see [The daemon](#the-daemon)) |
 | About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |
 
 The search field at the top of the sidebar finds any setting.
@@ -435,6 +458,7 @@ cc-moss runs locally and sends nothing about you anywhere. It keeps:
   your notes, and the first 200 characters of your latest prompt (shown in the picker); plus the last 7 days of
   session events, without prompts (a permission prompt's text is kept to 200 characters).
 - `~/.local/state/cc-moss/hook.log`: hook errors, capped at 1 MB.
+- `~/.local/state/cc-moss/daemon/`: the daemon's status, heartbeat and logs (macOS), each capped at 1 MB.
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
 
 The state folder is readable only by you. It reads Claude Code's own session files and runs `claude agents`, `ps` and

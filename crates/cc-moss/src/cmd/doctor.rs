@@ -9,7 +9,7 @@ use moss_core::platform::{on_path, Tool};
 
 use super::files::read_optional;
 use super::install::{self, Paths};
-use super::{alias, app, setup};
+use super::{alias, app, daemon, setup};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -187,6 +187,7 @@ fn checks() -> Result<Vec<Check>> {
     };
     let mut out = vec![version_check()];
     out.extend(app_check());
+    out.extend(daemon_check());
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {
@@ -688,6 +689,52 @@ fn version_check() -> Check {
 
 /// The menubar app (macOS only): in an Applications folder, where its
 /// notifications work, and the same version as this cc-moss.
+/// The resident daemon (macOS): running, on this version.
+fn daemon_check() -> Option<Check> {
+    if !daemon::applies() || app::as_root() {
+        return None;
+    }
+    let what = tr!("daemon", "守护进程");
+    let r = daemon::report();
+    let current = env!("CARGO_PKG_VERSION");
+    Some(if !r.running {
+        if daemon::plist_present() {
+            check(
+                Mark::Warn,
+                what,
+                tr!("not running", "没在运行"),
+                Some("cc-moss daemon start".into()),
+            )
+        } else {
+            check(
+                Mark::Warn,
+                what,
+                tr!("not set up", "还没设置"),
+                Some("cc-moss install".into()),
+            )
+        }
+    } else if r.version.as_deref() != Some(current) {
+        let have = r.version.clone().unwrap_or_else(|| "?".into());
+        check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("running {have}, not {current}"),
+                format!("跑的是 {have}，不是 {current}")
+            ),
+            Some("cc-moss install".into()),
+        )
+    } else {
+        let up = daemon::uptime(&r).unwrap_or_else(|| "?".into());
+        check(
+            Mark::Ok,
+            what,
+            tr!(format!("running for {up}"), format!("运行中，已 {up}")),
+            None,
+        )
+    })
+}
+
 fn app_check() -> Option<Check> {
     if !app::applies() {
         return None;

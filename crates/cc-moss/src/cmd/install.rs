@@ -13,7 +13,7 @@ use moss_core::managed_block;
 use moss_core::platform::{install_commands, on_path, without_sudo, Platform, Tool};
 
 use super::files::{self, read_optional, Change, Removal};
-use super::{alias, app, confirm, setup};
+use super::{alias, app, confirm, daemon, setup};
 
 pub const TMUX_CONF: &str = include_str!("../../assets/tmux.conf");
 pub const STARSHIP_TOML: &str = include_str!("../../assets/starship.toml");
@@ -492,6 +492,7 @@ pub fn run(opts: Options) -> Result<()> {
     if opts.wants(Part::App) {
         app::offer(opts.dry_run, opts.yes)?;
     }
+    daemon::install_step(opts.dry_run)?;
 
     let tools = install_tools(&opts);
     if opts.dry_run {
@@ -602,6 +603,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
         }
     }
     app::remove(opts.dry_run, opts.yes)?;
+    daemon::uninstall_step(opts.dry_run)?;
 
     let state = moss_core::store_dir::state_dir();
     println!(

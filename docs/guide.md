@@ -109,6 +109,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
 | `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）和 `claude.permission_mode`（`bypass`、`default`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | 常驻后台的守护进程：看状态、启动、停掉（macOS，见[守护进程](#守护进程)） |
 | `cc-moss doctor [--fix]` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接） |
 | `cc-moss update [--check] [--yes]` | 检查新版本并升级（`--check` 只看不装） |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | 只安装或移除钩子和 `t` 别名 |
@@ -145,6 +146,21 @@ cc-moss alias rm tn
 - 名字只能用 `a-z`、`0-9`、`-`、`_`。名字已经是 PATH 上的某个命令（比如 `ls`）时会拒绝，确实要用就加 `--force`；`~/.local/bin` 里同名的文件如果不是 cc-moss 建的，永远不会被替换。
 - 你的 shell 里如果有同名的 alias 或函数，它会先于别名执行。`alias add` 和 `doctor` 会指出来，但不会改你的 shell 配置。
 - 菜单栏 App 的设置 ›「快捷键」页（「在终端里」一组）也能增删改，背后调的就是这几条命令；唤出面板的快捷键也在这一页。
+
+### 守护进程
+
+macOS 上，`cc-moss install` 会装一个常驻后台的 cc-moss 守护进程：登录后自动启动，被杀掉或意外退出也会被系统（launchd）重新拉起来，同一时间只会有一个。以后内置的 Moss 就跑在它里面；现在它只是安静地待着，不做别的事，也不联网。
+
+```sh
+cc-moss daemon status          # 在不在运行、跑了多久、是哪个版本
+cc-moss daemon status --json   # {"schema":1,"running":true,"pid":…,"version":"…","started_at":"…","heartbeat_at":"…"}
+cc-moss daemon stop            # 停掉；重新登录也不会再启动，直到你运行 start
+cc-moss daemon start           # 重新启动（需要时会先把它设置好）
+```
+
+- 菜单栏 App 的设置 ›「Moss」页也能看到它在不在运行，没在运行时点「启动」就行。`cc-moss doctor` 也会检查它，并告诉你该运行哪条命令。
+- 升级后运行一次 `cc-moss install`，守护进程就会换成新版本。`cc-moss install --uninstall` 会停掉它并删掉它的配置。
+- 文件都在状态目录的 `daemon/` 下：`status.json`（状态和每 30 秒一次的心跳）、`daemon.log`（超过 1 MiB 重新开始），以及 launchd 的 `stdout.log`、`stderr.log`。系统里登记的是 `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.daemon.plist`，以你自己的身份运行，不需要 root。
 
 ## 状态栏 App
 
@@ -254,6 +270,7 @@ Homebrew 和 macOS 的 Releases 下载包里都带着 App；从源码装（`carg
 | 小莫 | 开关、大小、互动方式、声音 |
 | 通知 | 谁来告诉你、提醒哪些事；通知被关掉时提示一句 |
 | 权限 | cc-moss 向 macOS 要的所有权限，一页看全：辅助功能、通知、控制你的终端（自动化），每项写着现在的状态和用途，缺了点「去允许」。有一项被关掉、又正好用得上时，侧栏这一页旁边会有个小圆点 |
+| Moss | 守护进程在不在运行、跑了多久；没在运行时点「启动」（见[守护进程](#守护进程)） |
 | 关于 | App 和命令行的版本、检查更新、`cc-moss` 程序的位置、再看一遍欢迎引导 |
 
 侧栏顶上的搜索框能直接搜设置项。
@@ -337,6 +354,7 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 
 - `~/.local/state/cc-moss/registry.db`：每个会话的 id、名字、目录、启动参数、进程 id、tmux 会话、你的备注，以及最近一次提问的前 200 个字符（在选择器里显示）；还有最近 7 天的会话事件，不含提示词，权限提示的说明文字最多存 200 个字符。
 - `~/.local/state/cc-moss/hook.log`：钩子的错误日志，最多 1 MB。
+- `~/.local/state/cc-moss/daemon/`：守护进程的状态、心跳和日志（macOS），每个最多 1 MB。
 - `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
 
 状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。只有两处会联网：

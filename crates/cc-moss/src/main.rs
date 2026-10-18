@@ -201,6 +201,11 @@ enum Command {
         #[arg(last = true, required = true)]
         text: Vec<String>,
     },
+    /// The resident cc-moss daemon that launchd keeps running (macOS).
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonCommand,
+    },
     /// Entry point for Claude Code hooks. Always exits 0.
     #[command(hide = true)]
     Hook {
@@ -243,6 +248,22 @@ enum AliasCommand {
         json: bool,
         /// The alias to remove.
         name: String,
+    },
+}
+
+#[derive(Subcommand)]
+enum DaemonCommand {
+    /// Run in the foreground; this is what launchd starts.
+    Run,
+    /// Have launchd start the daemon, setting it up if needed.
+    Start,
+    /// Stop the daemon; it stays off, across logins too, until `start`.
+    Stop,
+    /// Whether the daemon is running, since when, and which version.
+    Status {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -421,6 +442,16 @@ fn main() -> std::process::ExitCode {
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
+        Command::Daemon { action } => match action {
+            DaemonCommand::Run => match cmd::daemon::run() {
+                Ok(true) => std::process::ExitCode::SUCCESS,
+                Ok(false) => std::process::ExitCode::FAILURE,
+                Err(e) => report(Err(e)),
+            },
+            DaemonCommand::Start => report(cmd::daemon::start()),
+            DaemonCommand::Stop => report(cmd::daemon::stop()),
+            DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
+        },
         Command::Note {
             name,
             goal,

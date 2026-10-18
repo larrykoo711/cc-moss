@@ -15,6 +15,8 @@ struct SettingsView: View {
     @State var tab: Tab = .general
     /// Canned `alias ls --json` for screenshots.
     var aliasDemo: AliasList?
+    /// Canned `daemon status --json` for screenshots.
+    var daemonDemo: DaemonStatus?
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     @State private var back: [Tab] = []
@@ -26,7 +28,7 @@ struct SettingsView: View {
     /// The sections, in the sidebar's order. Everyday things first, one
     /// subject per page; About stands apart at the bottom of the list.
     enum Tab: String, CaseIterable, Hashable {
-        case general, shortcuts, menuBar, mo, notifications, permissions, about
+        case general, shortcuts, menuBar, mo, notifications, permissions, moss, about
 
         var title: String {
             switch self {
@@ -36,6 +38,7 @@ struct SettingsView: View {
             case .notifications: L.t("Notifications", "通知")
             case .shortcuts: L.t("Shortcuts", "快捷键")
             case .permissions: L.t("Permissions", "权限")
+            case .moss: "Moss"
             case .about: L.t("About", "关于")
             }
         }
@@ -48,6 +51,7 @@ struct SettingsView: View {
             case .notifications: Icons.notifications
             case .shortcuts: Icons.shortcuts
             case .permissions: Icons.permissions
+            case .moss: "server.rack"
             case .about: "infinity"
             }
         }
@@ -69,6 +73,8 @@ struct SettingsView: View {
                                                   "快捷键 热键 键盘 连按 唤出 面板 短命令 终端 别名 输入 alias")]
             case .permissions: [title, L.t("privacy security accessibility automation notifications allow system events terminal tab double tap",
                                            "隐私 安全 辅助功能 自动化 通知 允许 授权 system events 终端 标签页 连按")]
+            case .moss: [title, L.t("daemon background launchd login running start keep alive",
+                                     "守护进程 后台 常驻 登录 运行 启动 launchd")]
             case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }
@@ -126,6 +132,7 @@ struct SettingsView: View {
                         case .notifications: NotificationSettings()
                         case .shortcuts: ShortcutsSettings(model: model, demo: aliasDemo)
                         case .permissions: PermissionsSettings(model: model)
+                        case .moss: MossSettings(model: model, demo: daemonDemo)
                         case .about: AboutSettings(model: model)
                         }
                     }

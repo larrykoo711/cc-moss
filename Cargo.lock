@@ -128,6 +128,7 @@ dependencies = [
  "ratatui",
  "rusqlite",
  "serde_json",
+ "signal-hook",
  "tempfile",
  "unicode-width",
  "uuid",

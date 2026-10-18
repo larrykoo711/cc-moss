@@ -4,6 +4,7 @@ pub mod attach;
 pub mod close;
 pub mod config;
 pub mod confirm;
+pub mod daemon;
 pub mod doctor;
 pub mod events;
 pub mod files;

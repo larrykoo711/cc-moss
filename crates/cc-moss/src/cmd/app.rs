@@ -34,7 +34,7 @@ pub fn applies() -> bool {
 
 /// Running as root or under sudo. The app in `~/Applications` belongs to
 /// the user and runs in their session; root neither replaces nor starts it.
-fn as_root() -> bool {
+pub(super) fn as_root() -> bool {
     std::env::var_os("SUDO_USER").is_some_and(|v| !v.is_empty()) || install::is_root()
 }
 

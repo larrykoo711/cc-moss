@@ -12,7 +12,7 @@ import SwiftUI
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
-///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|about [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -133,7 +133,14 @@ enum Render {
                     PermissionCenter.shared.pin(accessibility: .allowed,
                                                 automation: [.terminal(.terminal): .allowed, .systemEvents: .allowed])
                 }
-                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"),
+                // `--daemon running|stopped`: the Moss page with that status.
+                let daemonDemo: DaemonStatus? = switch value("--daemon") {
+                case "running": DaemonStatus(running: true, pid: 4242, version: "0.2.2",
+                                             startedAt: Date().addingTimeInterval(-3 * 3600 - 300))
+                case "stopped": .stopped
+                default: nil
+                }
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, daemonDemo: daemonDemo, dark: args.contains("--dark"),
                              height: value("--height").flatMap(Double.init), out: out)
             } else {
                 // `--hover`: the pointer on the selected row; `--menu`: a menu open
@@ -334,9 +341,10 @@ enum Render {
     }
 
     /// `height`: a taller window than the default, to see a long page whole.
-    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool,
+    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?,
+                                                daemonDemo: DaemonStatus? = nil, dark: Bool,
                                                 height: Double?, out: String) {
-        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo)
+        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo, daemonDemo: daemonDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         var size = host.fittingSize

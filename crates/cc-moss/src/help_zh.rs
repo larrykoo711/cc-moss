@@ -188,6 +188,16 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("note", "state", "停在哪里 / 在等什么"),
     ("note", "text", "随手记的备注"),
     ("note", "clear", "清空全部备注"),
+    ("daemon", "", "常驻的 cc-moss 守护进程，由 launchd 看着（macOS）"),
+    ("daemon run", "", "在前台运行；launchd 启动的就是它"),
+    ("daemon start", "", "让 launchd 启动守护进程，需要时先把它设置好"),
+    (
+        "daemon stop",
+        "",
+        "停掉守护进程；在你再次 start 之前一直不启动，重新登录也不会",
+    ),
+    ("daemon status", "", "守护进程在不在运行、跑了多久、是哪个版本"),
+    ("daemon status", "json", "机器可读的输出（schema 1）"),
 ];
 
 const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令。\n\n\
@@ -238,6 +248,7 @@ pub fn localize(cmd: Command) -> Command {
     cmd.mut_subcommand("help", |c| c.about(HELP))
         .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("config", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("daemon", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 
 /// One command's description, argument help, headings and help flag.

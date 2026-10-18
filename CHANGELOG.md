@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **A cc-moss daemon that stays in the background (macOS).** `cc-moss install` sets it up: it starts when you log in,
+  comes back if it's killed, and only one ever runs. `cc-moss daemon status` says whether it's up, for how long and
+  which version; `daemon stop` and `daemon start` turn it off and on. Settings has a new Moss page showing the same,
+  with Start when it's not running, and `cc-moss doctor` checks it. Moss will live in it later.
+
 ### Changed
 
 - **New sessions start in bypass mode.** Sessions from `cc-moss new` and the app no longer stop to ask for each

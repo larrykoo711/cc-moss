@@ -7,6 +7,7 @@ pub mod agent;
 pub mod aliases;
 pub mod command;
 pub mod config;
+pub mod daemon;
 pub mod event;
 pub mod launch_args;
 pub mod managed_block;
