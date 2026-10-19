@@ -1,0 +1,85 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792140600000-f00000",
+   "at": "2026-10-16T08:50:00Z",
+   "from": "you",
+   "text": "帮我盯一下修发票那个会话",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140620000-f00001",
+   "at": "2026-10-16T08:50:20Z",
+   "from": "you",
+   "text": "跑完对账脚本就告诉我",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140660000-g00000",
+   "at": "2026-10-16T08:51:00Z",
+   "from": "moss",
+   "text": "好，我盯着。",
+   "reply_to": "1792140620000-f00001",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140900000-g00001",
+   "at": "2026-10-16T08:55:00Z",
+   "from": "moss",
+   "text": "**修发票** 开始跑对账脚本了。",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141200000-g00002",
+   "at": "2026-10-16T09:00:00Z",
+   "from": "moss",
+   "text": "跑到第 2 步，核对税额。",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141560000-g00003",
+   "at": "2026-10-16T09:06:00Z",
+   "from": "moss",
+   "text": "第 2 步过了，没发现差额。",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141980000-g00004",
+   "at": "2026-10-16T09:13:00Z",
+   "from": "moss",
+   "text": "第 3 步在比对上个月的发票，会慢一点。",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792142460000-g00005",
+   "at": "2026-10-16T09:21:00Z",
+   "from": "moss",
+   "text": "跑完了，全部对上。",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792144860000-h00000",
+   "at": "2026-10-16T10:01:00Z",
+   "from": "moss",
+   "text": "对了，**偶发测试** 刚又失败了一次，还是同一个用例。",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}

@@ -251,6 +251,7 @@ private struct MossConversation: View {
     var body: some View {
         let desk = model.mossDesk
         let messages = desk.messages
+        let groups = MossThread.groups(messages)
         let lastMoss = messages.last { $0.from == .moss }?.id
         let waiting = desk.waiting
         let thinking = waiting != nil
@@ -259,15 +260,16 @@ private struct MossConversation: View {
                 LazyVStack(spacing: 10) {
                     top(messages, proxy: proxy)
                         .id(Self.topID)
-                    ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
-                        if let stamp = Self.stamp(m, after: i > 0 ? messages[i - 1] : nil) {
+                    ForEach(Array(groups.enumerated()), id: \.element.id) { i, group in
+                        // Time lines go between groups only.
+                        if let stamp = Self.stamp(group.first, after: i > 0 ? groups[i - 1].last : nil) {
                             Text(stamp)
                                 .font(.system(size: 10.5))
                                 .foregroundStyle(.tertiary)
                                 .padding(.top, i == 0 ? 0 : 4)
                         }
-                        MossMessageView(model: model, message: m,
-                                        buttons: m.id == lastMoss && desk.canTalk ? m.buttons : [])
+                        MossMessageView(model: model, group: group,
+                                        buttons: group.last.id == lastMoss && desk.canTalk ? group.last.buttons : [])
                     }
                     if let waiting {
                         MossThinking(waiting: waiting)
@@ -328,7 +330,11 @@ private struct MossConversation: View {
                 loadingEarlier = true
                 Task {
                     await model.loadEarlierMoss()
-                    if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                    // The message may now share a bubble with older ones: find its group.
+                    let groups = MossThread.groups(model.mossDesk.messages)
+                    if let anchor, let target = groups.first(where: { $0.messages.contains { $0.id == anchor } })?.id {
+                        proxy.scrollTo(target, anchor: .top)
+                    }
                     loadingEarlier = false
                 }
             } label: {
@@ -376,12 +382,17 @@ private struct MossConversation: View {
     }
 }
 
-/// One message: yours on the right, Moss's on the left.
+/// One group of messages (one, or several said in one go): yours on the
+/// right, Moss's on the left, one bubble, each message its own paragraph.
 private struct MossMessageView: View {
     @Bindable var model: AppModel
-    let message: MossMessage
+    let group: MossGroup
     let buttons: [String]
     @Environment(\.colorScheme) private var scheme
+
+    /// The message that speaks for the group: the last one (its buttons, its
+    /// delivery line); for a lone card or refusal, the only one.
+    private var message: MossMessage { group.last }
 
     var body: some View {
         switch message.from {
@@ -401,10 +412,14 @@ private struct MossMessageView: View {
                                      graphic: MossScreenCard.make(command: command, text: message.text),
                                      fold: (message.id, model))
                 } else {
-                    MossFoldable(id: message.id, model: model) {
-                        MossRichText(text: message.shownText(), quiet: message.fallback)
-                            .padding(.horizontal, 11)
-                            .padding(.vertical, 8)
+                    MossFoldable(id: group.id, model: model) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            ForEach(group.messages) { m in
+                                MossRichText(text: m.shownText(), quiet: m.fallback)
+                            }
+                        }
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
                     }
                         .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
                         .clipShape(ChatBubble(mine: false))
@@ -429,12 +444,16 @@ private struct MossMessageView: View {
         HStack(spacing: 0) {
             Spacer(minLength: 56)
             VStack(alignment: .trailing, spacing: 4) {
-                Text(message.text)
-                    .font(.system(size: MossCommand.looksLikeCommand(message.text) ? 12.5 : 13,
-                                  design: MossCommand.looksLikeCommand(message.text) ? .monospaced : .default))
-                    .foregroundStyle(.primary)
-                    .textSelection(.enabled)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(group.messages) { m in
+                        Text(m.text)
+                            .font(.system(size: MossCommand.looksLikeCommand(m.text) ? 12.5 : 13,
+                                          design: MossCommand.looksLikeCommand(m.text) ? .monospaced : .default))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
                     .padding(.horizontal, 11)
                     .padding(.vertical, 8)
                     .background(ChatBubble(mine: true).fill(Theme.brand.opacity(scheme == .dark ? 0.26 : 0.13)))
