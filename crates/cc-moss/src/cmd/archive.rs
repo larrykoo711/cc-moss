@@ -65,8 +65,10 @@ fn refused(name: &str, slot: Option<&Slot>, reason: &'static str, message: Strin
     }
 }
 
-/// `cc-moss archive <name>… [--json]`. False when one was refused.
-pub fn archive(names: &[String], as_json: bool) -> Result<bool> {
+/// `cc-moss archive <name>… [--end] [--json]`. False when one was refused.
+/// With `end`, a running session that is idle is ended first (asked to
+/// quit, recorded as closed) and then archived.
+pub fn archive(names: &[String], end: bool, as_json: bool) -> Result<bool> {
     let registry = Registry::open(&store_dir::registry_path())?;
     let slots = registry.slots()?;
     let mut outcomes = Vec::new();
@@ -87,7 +89,13 @@ pub fn archive(names: &[String], as_json: bool) -> Result<bool> {
             ));
             continue;
         }
-        if slot.effective_status(proc::is_alive) == Status::Running {
+        let running = slot.effective_status(proc::is_alive) == Status::Running;
+        if running && end {
+            if let Some(no) = end_idle(&registry, name, slot) {
+                outcomes.push(no);
+                continue;
+            }
+        } else if running {
             outcomes.push(refused(
                 name,
                 Some(slot),
@@ -102,7 +110,8 @@ pub fn archive(names: &[String], as_json: bool) -> Result<bool> {
         registry.archive(
             std::slice::from_ref(&slot.slot_id),
             "you",
-            &|s| s.effective_status(proc::is_alive) == Status::Running,
+            // Ended just now on purpose: its process is gone.
+            &|s| !(end && running) && s.effective_status(proc::is_alive) == Status::Running,
             now_ms(),
         )?;
         outcomes.push(Outcome {
@@ -117,6 +126,87 @@ pub fn archive(names: &[String], as_json: bool) -> Result<bool> {
         });
     }
     print(&outcomes, as_json)
+}
+
+/// End a running session that is idle, the way `adopt` asks one to quit,
+/// and record it as closed by the user (no "dropped" news). Its tmux
+/// session goes with it when Claude Code was the pane's program; a shell
+/// holding it stays. The refusal, if it can't.
+fn end_idle(registry: &Registry, name: &str, slot: &Slot) -> Option<Outcome> {
+    if is_busy(slot) {
+        return Some(refused(
+            name,
+            Some(slot),
+            "busy",
+            tr!(
+                format!("{name} is working or waiting for you; archive it when it's idle."),
+                format!("{name} 正在干活或在等你；等它闲下来再归档。")
+            ),
+        ));
+    }
+    let failed = |why: String| {
+        Some(refused(
+            name,
+            Some(slot),
+            "failed",
+            tr!(
+                format!("Couldn't end {name}: {why}"),
+                format!("没能结束 {name}：{why}")
+            ),
+        ))
+    };
+    let Some(pid) = slot.pid else {
+        return failed("cc-moss doesn't know its process".into());
+    };
+    if !super::adopt::still_it(slot) {
+        return failed("its process isn't that Claude Code any more".into());
+    }
+    // Its exit is on purpose: no interrupted news while it goes.
+    if let Err(e) = registry.mark_restore_started(&slot.slot_id, now_ms()) {
+        return failed(format!("{e:#}"));
+    }
+    // SAFETY: a signal to a pid just checked to be this Claude Code.
+    unsafe {
+        libc::kill(pid as libc::pid_t, libc::SIGTERM);
+    }
+    let until = Instant::now() + Duration::from_secs(10);
+    while proc::liveness(pid, slot.pid_start.as_deref()) == proc::Liveness::Alive {
+        if Instant::now() >= until {
+            let _ = registry.clear_restore_started(&slot.slot_id);
+            return failed(tr!("it didn't quit within 10 seconds", "它 10 秒内没有退出").into());
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let closed = registry
+        .close_by_user(&slot.slot_id, now_ms())
+        .and_then(|()| registry.clear_restore_started(&slot.slot_id));
+    match closed {
+        Ok(()) => None,
+        Err(e) => failed(format!("{e:#}")),
+    }
+}
+
+/// In a turn, waiting for the user, or with something typed in its input.
+fn is_busy(slot: &Slot) -> bool {
+    if super::provider::in_turn(slot) || slot.attention.is_some() {
+        return true;
+    }
+    let Some(loc) = slot.tmux.as_ref() else {
+        return false;
+    };
+    let screen = moss_core::command::run_with_timeout(
+        std::process::Command::new("tmux")
+            .args(moss_core::tmux::Socket::Path(loc.socket.clone()).args())
+            .args(["capture-pane", "-p", "-J", "-e", "-t", &loc.pane_id]),
+        Duration::from_secs(3),
+    );
+    match screen {
+        Ok(out) if out.status.success() => {
+            moss_core::moss::inbox::input_has_text(&String::from_utf8_lossy(&out.stdout))
+        }
+        // Can't look: not sure it's idle.
+        _ => true,
+    }
 }
 
 /// `cc-moss unarchive <name>… [--json]`. False when one was refused.

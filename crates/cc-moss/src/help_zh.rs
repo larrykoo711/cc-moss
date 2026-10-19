@@ -187,6 +187,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("close", "names", "会话名"),
     ("archive", "", "把没在运行的会话收进归档：不在列表里，随时能拿回来"),
     ("archive", "names", "会话名（Claude 名、tmux 名或 id 前缀）"),
+    ("archive", "end", "还在运行的会话若闲着，先结束它再归档"),
     ("archive", "json", "机器可读的输出（schema 1）"),
     ("restart", "", "在原来的 tmux 窗格里重开会话，用上新的 API 供应商"),
     ("restart", "names", "会话名（Claude 名、tmux 名或 id 前缀）"),

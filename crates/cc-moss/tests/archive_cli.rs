@@ -11,6 +11,102 @@ use common::{bin, dead_pid, end_json, hook, start_json, FakeProcess};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
+fn session_of(w: &common::World, name: &str) -> serde_json::Value {
+    common::ls_json(&w.state(), true)["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == name)
+        .cloned()
+        .unwrap_or_else(|| panic!("no session {name}"))
+}
+
+fn archive_end(w: &common::World, name: &str) -> (serde_json::Value, bool) {
+    let out = w
+        .cc_moss()
+        .args(["archive", name, "--end", "--json"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let v = serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}: {out:?}"));
+    (v, out.status.success())
+}
+
+fn alive(pid: u64) -> bool {
+    // SAFETY: signal 0 only checks.
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+#[test]
+fn archive_end_ends_an_idle_session() {
+    let w = common::World::new("aee");
+    w.new_session("api");
+    w.session_id("api");
+    let before = session_of(&w, "api");
+    let pid = before["pid"].as_u64().unwrap();
+    let tmux_name = before["tmux"]["session_name"].as_str().unwrap().to_string();
+    // Without --end, a running session is refused as before.
+    let out = w
+        .cc_moss()
+        .args(["archive", "api", "--json"])
+        .output()
+        .unwrap();
+    assert!(!out.status.success());
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"][0]["reason"], "running");
+
+    let (v, ok) = archive_end(&w, "api");
+    assert!(ok, "{v}");
+    assert_eq!(v["results"][0]["result"], "archived", "{v}");
+    let until = Instant::now() + Duration::from_secs(10);
+    while alive(pid) {
+        assert!(Instant::now() < until, "its process is still there");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let after = session_of(&w, "api");
+    assert_eq!(after["status"], "closed", "{after}");
+    assert!(after["archived_at"].as_str().is_some(), "{after}");
+    // claude was the pane's program: its tmux session went with it.
+    let until = Instant::now() + Duration::from_secs(10);
+    while w.session_names().contains(&tmux_name) {
+        assert!(Instant::now() < until, "its tmux session stayed");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let events = w.cc_moss().args(["events", "--json"]).output().unwrap();
+    let events: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
+    let kinds: Vec<&str> = events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|e| e["kind"].as_str().unwrap())
+        .collect();
+    assert!(!kinds.contains(&"interrupted"), "{kinds:?}");
+    assert!(kinds.contains(&"archived"), "{kinds:?}");
+}
+
+#[test]
+fn archive_end_refuses_a_busy_session() {
+    let w = common::World::new("aeb");
+    w.new_session("api");
+    let sid = w.session_id("api");
+    w.first_prompt(&sid, "api");
+    let until = Instant::now() + Duration::from_secs(10);
+    while session_of(&w, "api")["busy"] != true {
+        assert!(Instant::now() < until, "never busy");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let pid = session_of(&w, "api")["pid"].as_u64().unwrap();
+    let (v, ok) = archive_end(&w, "api");
+    assert!(!ok, "{v}");
+    assert_eq!(v["results"][0]["result"], "refused", "{v}");
+    assert_eq!(v["results"][0]["reason"], "busy", "{v}");
+    std::thread::sleep(Duration::from_millis(500));
+    assert!(alive(pid), "a busy session keeps running");
+    let after = session_of(&w, "api");
+    assert_eq!(after["status"], "running");
+    assert!(after["archived_at"].is_null());
+}
+
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

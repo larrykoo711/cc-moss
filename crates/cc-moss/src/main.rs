@@ -191,6 +191,9 @@ enum Command {
         /// Session names (Claude name, tmux name or id prefix).
         #[arg(required = true)]
         names: Vec<String>,
+        /// End a running session first, if it is idle (its turn is over, nothing typed).
+        #[arg(long)]
+        end: bool,
         /// Machine-readable output (schema 1).
         #[arg(long)]
         json: bool,
@@ -600,7 +603,7 @@ fn main() -> std::process::ExitCode {
             archived,
             json,
         } => report(cmd::ls::run(all, archived, json)),
-        Command::Archive { names, json } => exit(cmd::archive::archive(&names, json)),
+        Command::Archive { names, end, json } => exit(cmd::archive::archive(&names, end, json)),
         Command::Unarchive { names, json } => exit(cmd::archive::unarchive(&names, json)),
         Command::Restart {
             names,
