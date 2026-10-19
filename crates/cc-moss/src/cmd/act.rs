@@ -5,9 +5,10 @@
 //!
 //! Actions that lose nothing run at once: `setup-fix`, `sync-name`, `name`,
 //! `forget-gone`. Those that start or end work or forget a session the user
-//! may want (`restore`, `forget`, `end`) need `--because <id>`: a message of
-//! the user's, under ten minutes old, answering a Moss message with buttons.
-//! Moss cannot write the conversation file, so it cannot make one up.
+//! may want (`restore`, `forget`, `end`) need `--because <id>`: the user's
+//! tap, under ten minutes old, on the yes button cc-moss put under the Moss
+//! message that proposed exactly that (`[[confirm:]]`). Moss cannot write the
+//! conversation file, so it cannot make one up, and it never words the button.
 //! Nothing is ever done to Moss itself.
 
 use std::path::{Path, PathBuf};
@@ -17,6 +18,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use moss_core::moss::act::{audit_path, dir, result_path, Outcome, Request};
 use moss_core::moss::chat::{self, Line};
+use moss_core::moss::dir::Dir;
 use moss_core::moss::inbox::{self, Pane, Typed};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
@@ -104,9 +106,9 @@ pub fn consent_key(because: &str, action: &str, slot_id: &str) -> String {
 /// Whether `because` is the user's go-ahead for `action` on `slot_id`: a
 /// message of theirs, at most ten minutes old, answering the Moss message
 /// right before it, which proposed exactly this action for exactly this
-/// session (`[[confirm:]]`, recorded by the daemon), and whose text is one
-/// of that proposal's yes buttons. Each go-ahead works once per action and
-/// session (`used`).
+/// session (`[[confirm:]]`, recorded by the daemon), and whose text is that
+/// proposal's yes button, worded by cc-moss. Each go-ahead works once per
+/// action and session (`used`).
 pub fn consent(
     lines: &[Line],
     because: Option<&str>,
@@ -142,7 +144,7 @@ pub fn consent(
     if !agreed {
         return Err(
             "the user's reply is not a yes to this action for this session; ask with \
-             [[buttons:]] and [[confirm:]]"
+             [[confirm: <action> <session>]] and let them tap the yes button cc-moss adds"
                 .into(),
         );
     }
@@ -277,26 +279,26 @@ impl Hands {
         if !self.home.exists() {
             return;
         }
-        // A real folder, never a link Moss put there.
-        let Ok(actions) = moss::home::ensure_real_dir(&self.home, "actions") else {
+        // A real folder, never a link Moss put there, held open: renaming
+        // it and putting a link in its place afterwards changes nothing.
+        let Ok(actions) = Dir::open(&self.home, "actions") else {
             return;
         };
         self.prune_results(&actions);
-        let pending: Vec<PathBuf> = inbox::plain_files(&actions, "json")
+        let pending: Vec<String> = actions
+            .files("json")
             .into_iter()
-            .filter(|p| !p.to_string_lossy().ends_with(".result.json"))
+            .filter(|n| !n.ends_with(".result.json"))
             .collect();
         // One a go: a long restore never holds up Moss's conversation more
         // than once in a row.
-        if let Some(path) = pending.into_iter().next() {
-            let id = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let request = std::fs::read_to_string(&path)
+        if let Some(name) = pending.into_iter().next() {
+            let id = name.trim_end_matches(".json").to_string();
+            let request = actions
+                .read(&name)
                 .ok()
                 .and_then(|t| serde_json::from_str::<Request>(&t).ok());
-            let _ = moss::remove(&path);
+            let _ = actions.remove(&name);
             let (outcome, message) = match &request {
                 None => ("refused", "the request could not be read".to_string()),
                 Some(_) if !enabled => (
@@ -311,8 +313,8 @@ impl Hands {
                 outcome: outcome.to_string(),
                 message: message.clone(),
             };
-            let _ = moss::home::write_if_changed(
-                &result_path(&self.home, &id),
+            let _ = actions.write(
+                &format!("{id}.result.json"),
                 &serde_json::to_string(&out).unwrap_or_default(),
             );
             self.audit(&id, request.as_ref(), outcome, &message);
@@ -348,15 +350,13 @@ impl Hands {
     }
 
     /// Results nobody read within an hour.
-    fn prune_results(&self, actions: &Path) {
+    fn prune_results(&self, actions: &Dir) {
         let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
-        for p in inbox::plain_files(actions, "json") {
-            let result = p.to_string_lossy().ends_with(".result.json");
-            let old = std::fs::metadata(&p)
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| t < hour_ago);
+        for name in actions.files("json") {
+            let result = name.ends_with(".result.json");
+            let old = actions.modified(&name).is_ok_and(|t| t < hour_ago);
             if result && old {
-                let _ = std::fs::remove_file(&p);
+                let _ = actions.remove(&name);
             }
         }
     }
@@ -427,11 +427,6 @@ impl Hands {
             ) {
                 return ("refused", e);
             }
-            self.use_consent(&consent_key(
-                r.because.as_deref().unwrap_or_default(),
-                &r.action,
-                &slot.slot_id,
-            ));
         }
         let result = match &action {
             Action::SyncName(_) => sync_name(&registry, &slot),
@@ -443,11 +438,15 @@ impl Hands {
             Action::Restore(_) => self.restore(&slot),
             Action::SetupFix | Action::SyncNames => unreachable!(),
         };
-        match result {
-            Ok(said) => ("done", said),
-            Err(e) if e.downcast_ref::<Busy>().is_some() => ("skipped", format!("{e}")),
-            Err(e) => ("failed", format!("{e:#}")),
-        }
+        settle(result, || {
+            if action.needs_consent() {
+                self.use_consent(&consent_key(
+                    r.because.as_deref().unwrap_or_default(),
+                    &r.action,
+                    &slot.slot_id,
+                ));
+            }
+        })
     }
 
     /// `cc-moss setup --yes`, then `cc-moss doctor --fix`.
@@ -525,6 +524,19 @@ fn sync_names(state: &Path) -> Result<usize> {
         }
     }
     Ok(renamed)
+}
+
+/// The outcome of an action. The user's go-ahead is spent (`spend`) only
+/// when it was done: a busy session or a failure leaves it for a retry.
+fn settle(result: Result<String>, spend: impl FnOnce()) -> (&'static str, String) {
+    match result {
+        Ok(said) => {
+            spend();
+            ("done", said)
+        }
+        Err(e) if e.downcast_ref::<Busy>().is_some() => ("skipped", format!("{e}")),
+        Err(e) => ("failed", format!("{e:#}")),
+    }
 }
 
 /// The session is in the middle of something; try again later.
@@ -653,6 +665,21 @@ impl Pane for SessionPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn act_spends_the_go_ahead_only_when_done() {
+        let spent = std::cell::Cell::new(0);
+        let busy: Result<String> = Err(Busy("busy").into());
+        assert_eq!(settle(busy, || spent.set(spent.get() + 1)).0, "skipped");
+        let failed: Result<String> = Err(anyhow::anyhow!("restore: no"));
+        assert_eq!(settle(failed, || spent.set(spent.get() + 1)).0, "failed");
+        assert_eq!(spent.get(), 0, "a busy or failed action keeps the go-ahead");
+        assert_eq!(
+            settle(Ok("ended".into()), || spent.set(spent.get() + 1)).0,
+            "done"
+        );
+        assert_eq!(spent.get(), 1);
+    }
 
     fn slot(id: &str, name: &str, role: Option<&str>) -> Slot {
         Slot {

@@ -6,6 +6,7 @@ pub mod account;
 pub mod act;
 pub mod chat;
 pub mod digest;
+pub mod dir;
 pub mod guard;
 pub mod home;
 pub mod inbox;

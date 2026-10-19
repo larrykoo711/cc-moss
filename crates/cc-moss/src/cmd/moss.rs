@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use moss_core::command::{run_with_timeout, RunError};
 use moss_core::config::Config;
+use moss_core::moss::dir::Dir;
 use moss_core::moss::guard::{self, Decision};
 use moss_core::moss::home::{self, File, Kind};
 use moss_core::moss::keeper::{self, Action, Keeper};
@@ -59,7 +60,10 @@ pub fn files(exe: &str, state: &Path) -> Vec<File> {
     vec![
         managed("CLAUDE.md", CLAUDE_MD),
         managed("SECURITY.md", SECURITY_MD),
-        managed(".claude/settings.json", &settings_json(exe, state)),
+        managed(
+            ".claude/settings.json",
+            &settings_json(exe, state, config_dir().as_deref()),
+        ),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
         managed(".claude/skills/moss-sessions/SKILL.md", SESSIONS_SKILL),
         managed(".claude/skills/moss-doctor/SKILL.md", DOCTOR_SKILL),
@@ -81,8 +85,17 @@ const SHELL_READ_ONLY: &[&str] = &[
     "USER.md",
 ];
 
-/// Where Claude Code keeps every session's transcript.
-const PRIVATE_READS: &str = "~/.claude";
+/// Where Claude Code keeps every session's transcript, and its own record
+/// of your projects and history.
+const PRIVATE_READS: &[&str] = &["~/.claude", "~/.claude.json"];
+
+/// `CLAUDE_CONFIG_DIR` when set (absolute): Claude Code keeps there what
+/// it otherwise keeps in `~/.claude` and `~/.claude.json`.
+fn config_dir() -> Option<PathBuf> {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+}
 
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
@@ -99,7 +112,7 @@ const PROFILE_COMMAND: &str = "cc-moss moss profile *";
 ///   (the working directory), the per-user temp folder and the registry
 ///   cc-moss's own commands update; no retry outside it; Claude Code
 ///   refuses to start rather than run without it.
-fn settings_json(exe: &str, state: &Path) -> String {
+fn settings_json(exe: &str, state: &Path, config_dir: Option<&Path>) -> String {
     let home = moss::home_dir(state);
     let command = format!(
         "{} hook {GUARD_EVENT} --home {} || exit 2",
@@ -120,6 +133,12 @@ fn settings_json(exe: &str, state: &Path) -> String {
         .chain(&[".claude"])
         .map(|f| format!("./{f}"))
         .collect();
+    let deny_read: Vec<String> = PRIVATE_READS
+        .iter()
+        .map(|p| p.to_string())
+        .chain(config_dir.map(|c| c.to_string_lossy().into_owned()))
+        .chain([state.to_string_lossy().into_owned()])
+        .collect();
     let value = serde_json::json!({
         "hooks": {
             "PreToolUse": [{
@@ -130,10 +149,12 @@ fn settings_json(exe: &str, state: &Path) -> String {
                 "hooks": [{ "type": "command", "command": stop }]
             }]
         },
-        // Other sessions' conversations are not Moss's to read: not with
-        // its file tools (a deny rule holds in bypass mode too) ...
+        // No file tools at all (a deny rule holds in bypass mode too): they
+        // check a path and open it later, outside the sandbox, so a link
+        // swapped in between leads them anywhere. Moss reads and writes
+        // with the shell, where the sandbox decides at the moment of use.
         "permissions": {
-            "deny": [format!("Read({PRIVATE_READS}/**)")]
+            "deny": guard::FILE_TOOLS
         },
         "sandbox": {
             "enabled": true,
@@ -144,10 +165,10 @@ fn settings_json(exe: &str, state: &Path) -> String {
             "filesystem": {
                 "allowWrite": allow_write,
                 "denyWrite": deny_write,
-                // ... nor from the shell: not Claude Code's folder, not
-                // cc-moss's state (the registry, other sessions' questions),
+                // Other sessions' conversations are not Moss's to read: not
+                // Claude Code's folder, not cc-moss's state (the registry, other sessions' questions),
                 // except its own home (the working directory) inside it.
-                "denyRead": [PRIVATE_READS, state.to_string_lossy()],
+                "denyRead": deny_read,
                 "allowRead": ["."]
             },
             // It looks after sessions on this Mac: no network.
@@ -608,26 +629,31 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
     let mut text = String::new();
     match from {
         Some(path) => {
-            // It runs outside Moss's sandbox: only a draft in Moss's own
-            // home, links followed, may become its profile.
+            // It runs outside Moss's sandbox: only a plain file in Moss's
+            // own home may become its profile, opened folder by folder from
+            // the home and never through a link, so a link swapped in while
+            // it runs leads nowhere.
             let home = moss::home_dir(&state());
-            let inside = guard::resolve(&std::path::absolute(path)?)
-                .zip(guard::resolve(&home))
-                .is_some_and(|(p, h)| p.starts_with(&h));
-            if !inside {
-                bail!(tr!(
-                    format!(
-                        "{} is not in Moss's home; save the draft there (drafts/) first",
-                        path.display()
-                    ),
-                    format!(
-                        "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
-                        path.display()
-                    )
-                ));
-            }
-            text = std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?
+            let read = in_home(&home, path).and_then(|rel| {
+                Dir::home(&home)
+                    .and_then(|d| d.read_at(&rel))
+                    .with_context(|| format!("cannot read {}", path.display()))
+            });
+            text = match read {
+                Ok(text) => text,
+                Err(e) => {
+                    return Err(e.context(tr!(
+                        format!(
+                            "{} is not in Moss's home; save the draft there (drafts/) first",
+                            path.display()
+                        ),
+                        format!(
+                            "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
+                            path.display()
+                        )
+                    )))
+                }
+            };
         }
         None => {
             std::io::stdin()
@@ -645,24 +671,40 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
         text.push('\n');
     }
     let home = moss::home_dir(&state());
-    let path = home.join(file);
-    if let Ok(old) = std::fs::read_to_string(&path) {
-        // Never through a link: `.snapshots` and the file are replaced, not
-        // followed.
+    home::ensure_real_dir(&home, ".snapshots")?;
+    let dir = Dir::home(&home).with_context(|| format!("{}", home.display()))?;
+    if let Ok(old) = dir.read(file) {
+        // Never through a link: `.snapshots` is opened as a real folder
+        // and written through that, and the file is replaced, not followed.
         let stamp = rfc3339(now_ms()).replace(':', "-");
         let stem = file.trim_end_matches(".md");
-        home::write_generated(
-            &home.join(".snapshots"),
-            &format!("{stem}-{stamp}.md"),
-            &old,
-        )?;
+        dir.sub(".snapshots")?
+            .write(&format!("{stem}-{stamp}.md"), &old)?;
     }
-    home::write_generated(&home, file, &text)?;
+    dir.write(file, &text)?;
     println!(
         "{}",
         tr!(format!("Saved {file}."), format!("已保存 {file}。"))
     );
     Ok(())
+}
+
+/// `path` as a path inside `home` (plain names only), or why not.
+fn in_home(home: &Path, path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    // The home as named, or as the system names it (/var is /private/var).
+    let real = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let rel = absolute
+        .strip_prefix(home)
+        .or_else(|_| absolute.strip_prefix(&real))
+        .map_err(|_| anyhow::anyhow!("{} is outside the home", path.display()))?;
+    if !rel
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+    {
+        bail!("{} is not a plain path inside the home", path.display());
+    }
+    Ok(rel.to_path_buf())
 }
 
 // ---------------------------------------------------------------- guard hook
@@ -698,8 +740,9 @@ fn home_arg(args: &[std::ffi::OsString]) -> Option<PathBuf> {
 }
 
 fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
-    let home =
-        home.context("no --home in the guard's command (settings from an older cc-moss?)")?;
+    // Settings without it are from an older cc-moss: refuse until they are
+    // rewritten.
+    home.context("no --home in the guard's command (settings from an older cc-moss?)")?;
     let mut payload = String::new();
     std::io::stdin().read_to_string(&mut payload)?;
     let input: serde_json::Value =
@@ -710,23 +753,7 @@ fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
         .context("no tool_name")?;
     let empty = serde_json::Value::Object(Default::default());
     let tool_input = input.get("tool_input").unwrap_or(&empty);
-    let cwd = input
-        .get("cwd")
-        .and_then(serde_json::Value::as_str)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.clone());
-    let private = guard::private_reads(
-        std::env::var_os("HOME").as_deref().map(Path::new),
-        std::env::var_os("CLAUDE_CONFIG_DIR")
-            .as_deref()
-            .map(Path::new),
-        home.parent(),
-        &home,
-    );
-    match guard::decide_read(&private, &cwd, tool, tool_input) {
-        Decision::Allow => Ok(guard::decide(&home, &cwd, tool, tool_input)),
-        deny => Ok(deny),
-    }
+    Ok(guard::decide(tool, tool_input))
 }
 
 // ---------------------------------------------------------------- install / uninstall
@@ -1002,8 +1029,8 @@ impl Looker {
         }
     }
 
-    /// Once a day, the first time the desktop is seen: the same request as
-    /// the panel's checkup button.
+    /// Once a day, the first time the user opens the panel that day (the
+    /// app's `panel-opened` mark): the same request as its checkup button.
     fn daily_checkup(&mut self, now: Instant, log: &dyn Fn(&str)) {
         if now < self.next_daily {
             return;
@@ -1378,7 +1405,7 @@ mod tests {
 
     #[test]
     fn guard_settings_run_this_cc_moss_and_fail_closed() {
-        let text = settings_json("/Users/a b/it's/cc-moss", Path::new("/s t/state"));
+        let text = settings_json("/Users/a b/it's/cc-moss", Path::new("/s t/state"), None);
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         let hook = &v["hooks"]["PreToolUse"][0];
         assert_eq!(hook["matcher"], "*", "every tool, MCP tools too");
@@ -1396,7 +1423,7 @@ mod tests {
     #[test]
     fn moss_settings_turn_the_strict_sandbox_on() {
         let v: serde_json::Value =
-            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
         let sandbox = &v["sandbox"];
         assert_eq!(sandbox["enabled"], true);
         assert_eq!(sandbox["failIfUnavailable"], true, "never unsandboxed");
@@ -1430,15 +1457,27 @@ mod tests {
         );
         assert!(deny.contains(&"./input-busy".into()));
         // Claude Code's folder and cc-moss's state are not for its shell,
-        // except its own home; nor for Read.
+        // except its own home.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude", "/s"])
+            serde_json::json!(["~/.claude", "~/.claude.json", "/s"])
+        );
+        // Claude Code's folder where CLAUDE_CONFIG_DIR puts it, too.
+        let moved: serde_json::Value = serde_json::from_str(&settings_json(
+            "/bin/cc-moss",
+            Path::new("/s"),
+            Some(Path::new("/c")),
+        ))
+        .unwrap();
+        assert_eq!(
+            moved["sandbox"]["filesystem"]["denyRead"],
+            serde_json::json!(["~/.claude", "~/.claude.json", "/c", "/s"])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
+        // No file tools: Moss reads and writes through the sandboxed shell.
         assert_eq!(
             v["permissions"]["deny"],
-            serde_json::json!(["Read(~/.claude/**)"])
+            serde_json::json!(["Read", "Write", "Edit", "NotebookEdit", "Grep", "Glob"])
         );
         // Offline: no network from its shell.
         assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
@@ -1452,7 +1491,7 @@ mod tests {
         // any sandbox widening in them) never reach it, so the hooks that
         // record it are in its own settings.
         let v: serde_json::Value =
-            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
         let commands = |event: &str| -> Vec<String> {
             v["hooks"][event]
                 .as_array()

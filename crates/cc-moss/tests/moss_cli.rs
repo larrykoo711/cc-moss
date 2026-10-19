@@ -126,6 +126,16 @@ fn moss_profile_reads_only_from_its_home() {
     std::os::unix::fs::symlink(&outside, home.join("drafts/link.md")).unwrap();
     assert!(!run(&home.join("drafts/link.md")).status.success());
     assert!(!home.join("SOUL.md").exists());
+    // A folder on the way that leads out, and `..`.
+    let away = dir.path().join("away");
+    std::fs::create_dir_all(&away).unwrap();
+    std::fs::write(away.join("soul.md"), "other sessions' words\n").unwrap();
+    std::os::unix::fs::symlink(&away, home.join("drafts/away")).unwrap();
+    assert!(!run(&home.join("drafts/away/soul.md")).status.success());
+    assert!(!run(&home.join("drafts/../../away/soul.md"))
+        .status
+        .success());
+    assert!(!home.join("SOUL.md").exists());
     // A draft in its home is fine.
     std::fs::write(home.join("drafts/soul.md"), "# Soul\nCalm.\n").unwrap();
     let out = run(&home.join("drafts/soul.md"));
@@ -134,6 +144,21 @@ fn moss_profile_reads_only_from_its_home() {
         std::fs::read_to_string(home.join("SOUL.md")).unwrap(),
         "# Soul\nCalm.\n"
     );
+    // The old one is kept in .snapshots, never through a link put there.
+    std::fs::remove_dir_all(home.join(".snapshots")).ok();
+    std::os::unix::fs::symlink(&away, home.join(".snapshots")).unwrap();
+    std::fs::write(home.join("drafts/soul.md"), "# Soul\nBold.\n").unwrap();
+    let out = run(&home.join("drafts/soul.md"));
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        std::fs::read_dir(&away).unwrap().count(),
+        1,
+        "nothing written out"
+    );
+    let kept: Vec<_> = std::fs::read_dir(home.join(".snapshots"))
+        .unwrap()
+        .collect();
+    assert_eq!(kept.len(), 1);
 }
 
 #[test]
@@ -231,51 +256,51 @@ fn guard_hook_blocks_with_exit_2_and_fails_closed() {
     let dir = tempfile::tempdir().unwrap();
     let home = dir.path().join("moss");
     std::fs::create_dir_all(&home).unwrap();
-    let write = |path: &str| {
-        serde_json::json!({
-            "tool_name": "Write",
-            "cwd": home,
-            "tool_input": { "file_path": path, "content": "x" }
-        })
-        .to_string()
+    let tool = |name: &str, input: serde_json::Value| {
+        serde_json::json!({ "tool_name": name, "cwd": home, "tool_input": input }).to_string()
     };
-    let inside = guard(&home, &write("journal/today.md"));
-    assert_eq!(inside.status.code(), Some(0), "{inside:?}");
-    assert!(inside.stdout.is_empty() && inside.stderr.is_empty());
+    let shell_cmd = tool(
+        "Bash",
+        serde_json::json!({ "command": "echo hi >> journal/today.md" }),
+    );
+    // The shell, in its sandbox, is how Moss touches files.
+    let shell = guard(&home, &shell_cmd);
+    assert_eq!(shell.status.code(), Some(0), "{shell:?}");
+    assert!(shell.stdout.is_empty() && shell.stderr.is_empty());
 
-    let outside = guard(&home, &write("/etc/hosts"));
-    assert_eq!(outside.status.code(), Some(2), "{outside:?}");
-    assert!(String::from_utf8_lossy(&outside.stderr).contains("own home"));
-
-    let settings = guard(&home, &write(".claude/settings.json"));
-    assert_eq!(settings.status.code(), Some(2));
+    // Claude Code's file tools are off, inside the home too: a link swapped
+    // in after the check would lead them anywhere.
+    for (name, input) in [
+        (
+            "Write",
+            serde_json::json!({ "file_path": "journal/today.md", "content": "x" }),
+        ),
+        (
+            "Write",
+            serde_json::json!({ "file_path": "/etc/hosts", "content": "x" }),
+        ),
+        ("Edit", serde_json::json!({ "file_path": "memory/a.md" })),
+        ("Read", serde_json::json!({ "file_path": "SESSIONS.md" })),
+        ("Grep", serde_json::json!({ "pattern": "x", "path": "/" })),
+        ("Glob", serde_json::json!({ "pattern": "**/*" })),
+    ] {
+        let out = guard(&home, &tool(name, input));
+        assert_eq!(out.status.code(), Some(2), "{name}: {out:?}");
+        assert!(
+            String::from_utf8_lossy(&out.stderr).contains("with the shell"),
+            "{name}: {out:?}"
+        );
+    }
 
     // An MCP server's write tool never gets past it.
-    let mcp = serde_json::json!({
-        "tool_name": "mcp__fs__write_file",
-        "cwd": home,
-        "tool_input": { "path": "/etc/hosts", "content": "x" }
-    });
-    assert_eq!(guard(&home, &mcp.to_string()).status.code(), Some(2));
-
-    // Other sessions' transcripts stay unread (bin() sets HOME).
-    let read = |path: &str| {
-        serde_json::json!({
-            "tool_name": "Read",
-            "cwd": home,
-            "tool_input": { "file_path": path }
-        })
-        .to_string()
-    };
-    let peek = guard(
-        &home,
-        &read("/nonexistent/cc-moss-test-home/.claude/projects/-work/a.jsonl"),
+    let mcp = tool(
+        "mcp__fs__write_file",
+        serde_json::json!({ "path": "/etc/hosts", "content": "x" }),
     );
-    assert_eq!(peek.status.code(), Some(2), "{peek:?}");
-    assert_eq!(guard(&home, &read("SESSIONS.md")).status.code(), Some(0));
+    assert_eq!(guard(&home, &mcp).status.code(), Some(2));
 
-    // Without --home (settings of an older cc-moss): no, even for a write
-    // inside the home the state directory would point to.
+    // Without --home (settings of an older cc-moss): no, even for a
+    // shell command that would otherwise go through.
     let mut child = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CLAUDE_PROJECT_DIR", &home)
@@ -285,11 +310,7 @@ fn guard_hook_blocks_with_exit_2_and_fails_closed() {
         .stderr(Stdio::null())
         .spawn()
         .unwrap();
-    let _ = child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(write("journal/today.md").as_bytes());
+    let _ = child.stdin.take().unwrap().write_all(shell_cmd.as_bytes());
     assert_eq!(child.wait().unwrap().code(), Some(2));
 
     // Unreadable input: no.

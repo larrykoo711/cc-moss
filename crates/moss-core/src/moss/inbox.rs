@@ -52,14 +52,25 @@ pub fn new_id(now_ms: i64) -> String {
     format!("{:013}-{random:06x}", now_ms.max(0))
 }
 
-/// Drop `message` in the inbox. Never replaces a file (`O_EXCL`).
+/// Drop `message` in the inbox. Never replaces a file, never through a
+/// link (see [`super::dir`]).
 pub fn put(home: &Path, message: &Message) -> io::Result<PathBuf> {
-    let dir = super::home::ensure_real_dir(home, "inbox")?;
-    let path = dir.join(format!("{}.json", message.id));
+    let name = format!("{}.json", message.id);
     let mut text = serde_json::to_string(message).map_err(io::Error::other)?;
     text.push('\n');
-    put_whole(&path, &text)?;
-    Ok(path)
+    // Made if missing (the home too); then used only through its descriptor.
+    super::home::ensure_real_dir(home, "inbox")?;
+    super::dir::Dir::open(home, "inbox")?.put_new(&name, &text)?;
+    Ok(dir(home).join(name))
+}
+
+/// Take `path` (one of [`waiting`]'s) out of the inbox.
+pub fn take(home: &Path, path: &Path) -> io::Result<()> {
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| io::Error::other("not an inbox file"))?;
+    super::dir::Dir::open(home, "inbox")?.remove(name)
 }
 
 /// Write `text` as the new file `path`, whole: into `<name>.tmp` first,
@@ -81,31 +92,21 @@ pub fn put_whole(path: &Path, text: &str) -> io::Result<()> {
     linked
 }
 
-/// Plain files in `dir` (never links), with extension `ext`, sorted.
-pub fn plain_files(dir: &Path, ext: &str) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .flatten()
-        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
-        .map(|e| e.path())
-        .filter(|p| p.extension().is_some_and(|x| x == ext))
-        .collect();
-    files.sort();
-    files
-}
-
 /// What waits, oldest first. A file that does not read as a message comes
 /// with `None`, so it can be put aside rather than block the rest.
 pub fn waiting(home: &Path) -> Vec<(PathBuf, Option<Message>)> {
-    plain_files(&dir(home), "json")
+    let Ok(inbox) = super::dir::Dir::open(home, "inbox") else {
+        return Vec::new();
+    };
+    inbox
+        .files("json")
         .into_iter()
-        .map(|p| {
-            let m = std::fs::read_to_string(&p)
+        .map(|name| {
+            let m = inbox
+                .read(&name)
                 .ok()
                 .and_then(|t| serde_json::from_str::<Message>(&t).ok());
-            (p, m)
+            (dir(home).join(name), m)
         })
         .collect()
 }
@@ -681,7 +682,7 @@ impl Courier {
                     .file_stem()
                     .map(|s| s.to_string_lossy().into_owned())
                     .unwrap_or_default();
-                let _ = crate::moss::remove(&path);
+                let _ = take(home, &path);
                 out.push(Outcome::Failed {
                     id,
                     from: String::new(),
@@ -713,7 +714,7 @@ impl Courier {
                 clean
             };
             let typed = type_in(pane, &text);
-            let _ = crate::moss::remove(&path);
+            let _ = take(home, &path);
             match typed {
                 Typed::Sent { .. } => {
                     let sent = InFlight {

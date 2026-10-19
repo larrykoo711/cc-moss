@@ -15,7 +15,7 @@ pub struct Parsed {
     /// Sessions Moss points at (`[[sessions:]]`), as written: names, slot
     /// ids or id prefixes; [`resolve_sessions`] makes them slot ids.
     pub sessions: Vec<String>,
-    /// What a yes would let Moss do (`[[confirm: restore api | 找回]]`).
+    /// What Moss asks the user to agree to (`[[confirm: restore api]]`).
     pub confirms: Vec<Confirm>,
 }
 
@@ -26,7 +26,6 @@ pub struct Confirm {
     pub action: String,
     /// As written: a name, slot id or id prefix.
     pub session: String,
-    pub yes: Vec<String>,
 }
 
 /// What a session was doing when Moss pointed at it, so a card does not
@@ -126,6 +125,25 @@ const MAX_BUTTONS: usize = 6;
 /// The actions that need the user's go-ahead (`cc-moss moss act`).
 pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end"];
 
+/// At most this many `[[confirm:]]` in one message.
+const MAX_CONFIRMS: usize = 12;
+
+/// The yes button cc-moss puts under a question for `action` on the
+/// sessions `names`: it says what the tap agrees to, in the user's words,
+/// and only a tap on it is a go-ahead (Moss never words it).
+pub fn yes_label(action: &str, names: &[String], chinese: bool) -> String {
+    let (verb, sep) = match (action, chinese) {
+        ("restore", true) => ("找回", "、"),
+        ("forget", true) => ("不再提示", "、"),
+        ("end", true) => ("结束", "、"),
+        ("restore", false) => ("Bring back", ", "),
+        ("forget", false) => ("Stop offering", ", "),
+        ("end", false) => ("End", ", "),
+        (other, _) => (other, ", "),
+    };
+    format!("{verb} {}", names.join(sep))
+}
+
 /// At most this many pinned on the quick bar.
 const MAX_QUICK: usize = 3;
 
@@ -175,18 +193,26 @@ pub fn parse(reply: &str) -> Parsed {
             }
             true
         } else if let Some(spec) = strip_prefix_ci(inner, "confirm:") {
-            // `restore <session> | <yes> | <yes>`: only the actions that need
-            // the user's go-ahead, with a session and at least one yes.
-            let mut parts = spec.split('|').map(str::trim);
-            let head: Vec<&str> = parts.next().unwrap_or("").split_whitespace().collect();
-            let yes: Vec<String> = parts.filter(|y| !y.is_empty()).map(String::from).collect();
+            // `restore <session>`: only the actions that need the user's
+            // go-ahead, with a session. Button labels after `|` are Moss's
+            // words and never count as a yes: cc-moss words the yes button
+            // itself ([`yes_label`]).
+            let head: Vec<&str> = spec
+                .split('|')
+                .next()
+                .unwrap_or("")
+                .split_whitespace()
+                .collect();
             if let [action, session] = head.as_slice() {
-                if CONSENT_ACTIONS.contains(action) && !yes.is_empty() {
-                    out.confirms.push(Confirm {
-                        action: action.to_string(),
-                        session: session.to_string(),
-                        yes,
-                    });
+                let confirm = Confirm {
+                    action: action.to_string(),
+                    session: session.to_string(),
+                };
+                if CONSENT_ACTIONS.contains(action)
+                    && out.confirms.len() < MAX_CONFIRMS
+                    && !out.confirms.contains(&confirm)
+                {
+                    out.confirms.push(confirm);
                 }
             }
             true
@@ -365,7 +391,7 @@ mod tests {
     #[test]
     fn reply_markers_confirm() {
         let p = parse(
-            "4 dropped. [[buttons: 全部找回 | 都不要了]]\n[[confirm: restore api | 全部找回]][[confirm: forget api | 都不要了]][[confirm: dispatch x | 全部找回]][[confirm: restore | 全部找回]]",
+            "4 dropped. [[buttons: 都不要了]]\n[[confirm: restore api | 好的]][[confirm: forget api]][[confirm: dispatch x]][[confirm: restore]][[confirm: restore api]]",
         );
         assert_eq!(p.text, "4 dropped.");
         assert_eq!(
@@ -374,15 +400,13 @@ mod tests {
                 Confirm {
                     action: "restore".into(),
                     session: "api".into(),
-                    yes: vec!["全部找回".into()]
                 },
                 Confirm {
                     action: "forget".into(),
                     session: "api".into(),
-                    yes: vec!["都不要了".into()]
                 },
             ],
-            "only consent actions, each with a session and a yes"
+            "only consent actions, each with a session, once"
         );
     }
 
