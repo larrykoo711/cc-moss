@@ -2,9 +2,14 @@
 //! lives, what it is called, and what the daemon records about it. Starting
 //! it (tmux) is the binary's job; the rules are here.
 
+pub mod chat;
+pub mod digest;
 pub mod guard;
 pub mod home;
+pub mod inbox;
 pub mod keeper;
+pub mod markers;
+pub mod reply;
 
 use std::io;
 use std::path::{Path, PathBuf};
