@@ -10,7 +10,7 @@ import Testing
     @Test func theItemsAreActionsThenCommandsForTheAccount() {
         #expect(ids(MossQuick.items(account: .subscription)) == [
             "action:needs-you", "action:stuck", "action:today",
-            "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats", "cmd:/help",
+            "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats",
         ])
         #expect(!ids(MossQuick.items(account: .api)).contains("cmd:/usage"))
         #expect(ids(MossQuick.items(account: .api)).contains("cmd:/cost"))
@@ -35,7 +35,7 @@ import Testing
     @Test func moreListsOnlyWhatTheBarDoesntShowOnce() {
         let ranked = MossQuick.ranked(MossQuick.items(account: .subscription), uses: [], context: .init(), now: now)
         let more = MossQuick.overflow(ranked, shown: 3)
-        #expect(ids(more) == ["cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats", "cmd:/help"])
+        #expect(ids(more) == ["cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats"])
         #expect(Set(ids(more)).isDisjoint(with: ids(Array(ranked.prefix(3)))))
         #expect(MossQuick.overflow(ranked, shown: ranked.count).isEmpty)
     }
@@ -55,14 +55,14 @@ import Testing
     @Test func oldUsesFade() {
         #expect(abs(MossQuick.score("x", uses: [MossQuickUse(id: "x", at: ago(days: 7))], now: now) - 0.5) < 0.001)
         // Four uses a month ago weigh less than one yesterday.
-        let old = (0..<4).map { _ in MossQuickUse(id: "cmd:/stats", at: ago(days: 30)) }
-        let new = [MossQuickUse(id: "cmd:/help", at: ago(days: 1))]
+        let old = (0..<4).map { _ in MossQuickUse(id: "cmd:/context", at: ago(days: 30)) }
+        let new = [MossQuickUse(id: "cmd:/stats", at: ago(days: 1))]
         let ranked = MossQuick.ranked(MossQuick.items(), uses: old + new, context: .init(), now: now)
-        #expect(ids(ranked).firstIndex(of: "cmd:/help")! < ids(ranked).firstIndex(of: "cmd:/stats")!)
+        #expect(ids(ranked).firstIndex(of: "cmd:/stats")! < ids(ranked).firstIndex(of: "cmd:/context")!)
     }
 
     @Test func theMomentBoosts() {
-        let uses = (0..<2).map { _ in MossQuickUse(id: "cmd:/help", at: now) }
+        let uses = (0..<2).map { _ in MossQuickUse(id: "cmd:/stats", at: now) }
         var ctx = MossQuick.Context(anyInterrupted: true)
         #expect(ids(MossQuick.ranked(MossQuick.items(), uses: uses, context: ctx, now: now)).first == "action:stuck")
         ctx = MossQuick.Context(usageHot: true)

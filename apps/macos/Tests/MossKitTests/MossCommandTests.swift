@@ -25,7 +25,7 @@ import Testing
     }
 
     @Test func theAllowlist() {
-        #expect(MossCommand.all.map(\.name) == ["/usage", "/status", "/context", "/cost", "/stats", "/help"])
+        #expect(MossCommand.all.map(\.name) == ["/usage", "/status", "/context", "/cost", "/stats"])
         #expect(!MossCommand.isAllowed("/clear") && !MossCommand.isAllowed("/compact"), "Moss's context is managed for it")
         #expect(MossCommand.isAllowed("/usage"))
         #expect(MossCommand.isAllowed("/USAGE "))
@@ -70,15 +70,15 @@ import Testing
     }
 
     @Test func aSubscriptionGetsUsageNotCost() {
-        #expect(names(.subscription) == ["/usage", "/status", "/context", "/stats", "/help"])
+        #expect(names(.subscription) == ["/usage", "/status", "/context", "/stats"])
     }
 
     @Test func anAPIKeyGetsCostNotUsage() {
-        #expect(names(.api) == ["/status", "/context", "/cost", "/stats", "/help"])
+        #expect(names(.api) == ["/status", "/context", "/cost", "/stats"])
     }
 
     @Test func aCloudAccountGetsCostNotUsage() {
-        #expect(names(.cloud) == ["/status", "/context", "/cost", "/stats", "/help"])
+        #expect(names(.cloud) == ["/status", "/context", "/cost", "/stats"])
     }
 
     @Test func unknownShowsEverything() {

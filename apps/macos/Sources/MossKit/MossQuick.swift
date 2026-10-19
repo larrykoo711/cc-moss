@@ -56,7 +56,6 @@ public enum MossQuick {
         "/context": ("square.stack.3d.up", "Context", "上下文"),
         "/cost": ("dollarsign.circle", "Cost", "花费"),
         "/stats": ("chart.bar", "Stats", "统计"),
-        "/help": ("questionmark.circle", "Help", "帮助"),
     ]
 
     /// Everything, in the default order: the actions, then the commands
