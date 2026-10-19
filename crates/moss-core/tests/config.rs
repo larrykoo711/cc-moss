@@ -111,7 +111,10 @@ mod setting {
                 "claude.permission_mode",
                 "ask.enabled",
                 "moss.enabled",
-                "moss.digest"
+                "moss.digest",
+                "moss.actions",
+                "moss.daily_checkup",
+                "moss.daily_brief"
             ]
         );
         assert_eq!(

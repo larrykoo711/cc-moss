@@ -32,6 +32,7 @@ const SOUL_MD: &str = include_str!("../../templates/moss/SOUL.md");
 const USER_MD: &str = include_str!("../../templates/moss/USER.md");
 const PROFILE_SKILL: &str = include_str!("../../templates/moss/skills/moss-profile/SKILL.md");
 const SESSIONS_SKILL: &str = include_str!("../../templates/moss/skills/moss-sessions/SKILL.md");
+const DOCTOR_SKILL: &str = include_str!("../../templates/moss/skills/moss-doctor/SKILL.md");
 
 /// What the guard hook is called as: `cc-moss hook moss-guard`.
 pub const GUARD_EVENT: &str = "moss-guard";
@@ -61,6 +62,7 @@ pub fn files(exe: &str, state: &Path) -> Vec<File> {
         managed(".claude/settings.json", &settings_json(exe, state)),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
         managed(".claude/skills/moss-sessions/SKILL.md", SESSIONS_SKILL),
+        managed(".claude/skills/moss-doctor/SKILL.md", DOCTOR_SKILL),
         user("IDENTITY.md", IDENTITY_MD),
         user("SOUL.md", SOUL_MD),
         user("USER.md", USER_MD),
@@ -247,9 +249,8 @@ fn enabled() -> Result<bool> {
 }
 
 /// `[moss]` in the config file the daemon reads: on, and news on.
-fn switches() -> Result<(bool, bool)> {
-    let moss = Config::load_from(&config_file())?.moss;
-    Ok((moss.enabled, moss.digest))
+fn switches() -> Result<moss_core::config::MossConfig> {
+    Ok(Config::load_from(&config_file())?.moss)
 }
 
 // ---------------------------------------------------------------- start / stop / status
@@ -817,6 +818,12 @@ pub struct Looker {
     account: Option<(moss::account::Account, Instant)>,
     /// `[moss] digest`.
     digest: bool,
+    /// `[moss] actions`.
+    actions: bool,
+    /// `[moss] daily_checkup`, `[moss] daily_brief`.
+    daily: (bool, bool),
+    next_daily: Instant,
+    hands: super::act::Hands,
     socket: String,
     state: PathBuf,
     exe: String,
@@ -836,6 +843,22 @@ pub struct Looker {
 const CONFIG_EVERY: Duration = Duration::from_secs(1);
 /// How often SESSIONS.md is rewritten at the latest.
 const SESSIONS_EVERY: Duration = Duration::from_secs(60);
+/// How often the daemon looks whether the daily checkup is due.
+const DAILY_EVERY: Duration = Duration::from_secs(30);
+
+/// Whether the app's panel is there: its heartbeat as a question taker
+/// (`asks/takers/desktop.alive`) is fresh.
+fn desktop_present(state: &Path) -> bool {
+    let alive = state.join("asks/takers/desktop.alive");
+    std::fs::metadata(alive)
+        .and_then(|m| m.modified())
+        .is_ok_and(|t| {
+            std::time::SystemTime::now()
+                .duration_since(t)
+                .map_or(true, |age| age.as_secs() < moss_core::ask::TAKER_FRESH_SECS)
+        })
+}
+
 /// SESSIONS.md also lists the sessions closed within this.
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// How often the registry is asked whether anything changed.
@@ -864,6 +887,10 @@ impl Looker {
             talk,
             account: None,
             digest: true,
+            actions: true,
+            daily: (true, true),
+            next_daily: now,
+            hands: super::act::Hands::new(state, &exe),
             socket,
             state: state.to_path_buf(),
             exe,
@@ -882,9 +909,11 @@ impl Looker {
         if now >= self.next_config {
             self.next_config = now + CONFIG_EVERY;
             match switches() {
-                Ok((on, digest)) => {
-                    self.enabled = Some(on);
-                    self.digest = digest;
+                Ok(moss) => {
+                    self.enabled = Some(moss.enabled);
+                    self.digest = moss.digest;
+                    self.actions = moss.actions;
+                    self.daily = (moss.daily_checkup, moss.daily_brief);
                     self.config_error = false;
                 }
                 Err(e) if !self.config_error => {
@@ -920,10 +949,42 @@ impl Looker {
                 )),
             },
         }
+        if enabled {
+            self.hands.tick(now, self.actions, log);
+        }
         if enabled && self.keeper.is_up() {
             self.refresh_sessions(now, log);
+            self.daily_checkup(now, log);
             self.talk.tick(&self.socket, now, self.digest, log);
         }
+    }
+
+    /// Once a day, the first time the desktop is seen: the same request as
+    /// the panel's checkup button.
+    fn daily_checkup(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if now < self.next_daily {
+            return;
+        }
+        self.next_daily = now + DAILY_EVERY;
+        let (on, brief) = self.daily;
+        let path = super::checkup::daily_path(&self.state);
+        let last = std::fs::read_to_string(&path).ok();
+        let today = super::checkup::today();
+        if !super::checkup::daily_due(
+            on,
+            desktop_present(&self.state),
+            last.as_deref().map(str::trim),
+            &today,
+        ) {
+            return;
+        }
+        let zh = crate::i18n::lang() == crate::i18n::Lang::Zh;
+        self.talk
+            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log);
+        if let Err(e) = home::write_if_changed(&path, &format!("{today}\n")) {
+            log(&format!("moss: error: noting today's checkup: {e}"));
+        }
+        log("moss: daily checkup asked for");
     }
 
     fn start(&mut self, now: Instant, log: &dyn Fn(&str)) {
@@ -1374,6 +1435,7 @@ mod tests {
             ".claude/settings.json",
             ".claude/skills/moss-profile/SKILL.md",
             ".claude/skills/moss-sessions/SKILL.md",
+            ".claude/skills/moss-doctor/SKILL.md",
         ] {
             assert_eq!(kind(managed), Some(Kind::Managed), "{managed}");
         }

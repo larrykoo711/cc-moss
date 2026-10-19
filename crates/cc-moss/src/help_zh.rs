@@ -109,6 +109,8 @@ const TEXT: &[(&str, &str, &str)] = &[
         "体检钩子、别名、tmux、starship、shell 区块和工具",
     ),
     ("doctor", "fix", "把缺失或失效的别名链接重新建好"),
+    ("doctor", "sessions", "各会话和安装情况的事实，给 Moss 体检用"),
+    ("doctor", "json", "机器可读的输出（schema 1），配合 --sessions"),
     (
         "alias",
         "",
@@ -203,6 +205,19 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("moss stop", "", "关掉 Moss 并结束它；在你再次 start 之前不会启动"),
     ("moss status", "", "Moss 开没开、在不在运行、跑了多久、重启过几次"),
     ("moss status", "json", "机器可读的输出（schema 1）"),
+    (
+        "moss act",
+        "",
+        "Moss 请守护进程替它做的事（它的沙箱碰不到你的会话）；restore、forget、end 要你点头",
+    ),
+    (
+        "moss act",
+        "action",
+        "setup-fix | sync-name | name | forget-gone | restore | forget | end",
+    ),
+    ("moss act", "args", "会话；`name` 还要跟上新名字"),
+    ("moss act", "because", "你那条点头的消息的 id"),
+    ("moss act", "wait", "等结果回来，输出成 JSON"),
     ("moss say", "", "跟 Moss 说句话；它的回复在 `moss chat` 和面板里"),
     ("moss say", "json", "把这条消息的 id 输出成 JSON（schema 1）"),
     ("moss say", "text", "要说的话；多行会整条送到"),
