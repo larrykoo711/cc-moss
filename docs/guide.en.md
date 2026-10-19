@@ -646,7 +646,7 @@ in To Do.
 word starts or initials, then anywhere in the name, then the folder, the note and the last thing you said; among
 equals, the most recently active first. Every word you type has to match. Matched letters in a name are highlighted;
 a session found by its folder, note or last message says so under it ("in path: …", "note: …", "last said: …").
-Abbreviations and pinyin initials work too: `kds` finds koo-device-setup, and `jkps` or `jiekou` finds 接口评审.
+Abbreviations and pinyin initials work too: `ar` finds api-review, and `jkps` or `jiekou` finds 接口评审.
 Sessions closed in the last 30 days are searched as well and listed under Closed, where Bring Back starts one again
 right where its conversation left off. When nothing matches, it says No match for "…", with Ask Moss →.
 

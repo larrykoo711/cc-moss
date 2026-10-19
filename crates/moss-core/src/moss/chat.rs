@@ -509,7 +509,7 @@ mod tests {
                 "e1",
                 "2026-10-19T10:40:38Z",
                 FROM_EVENTS,
-                "[动态] koo-device-setup 需要你（权限）",
+                "[动态] api-review 需要你（权限）",
             ),
         )
         .unwrap();
@@ -529,7 +529,7 @@ mod tests {
                     "m1",
                     "2026-10-19T10:42:00Z",
                     FROM_MOSS,
-                    "koo-device-setup 又在等你批一个权限。",
+                    "api-review 又在等你批一个权限。",
                 )
             },
         )
