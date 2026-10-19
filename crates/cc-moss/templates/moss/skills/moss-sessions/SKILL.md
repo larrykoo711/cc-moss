@@ -29,7 +29,7 @@ Put them anywhere in a reply; cc-moss takes them out before the user sees the te
 
 - `[[quick: /usage | stuck]]`: pins up to three things on the panel's quick bar for the next 24 hours.
   Each is a built-in action (`needs-you`: who is waiting on the user, `stuck`: what dropped or got stuck,
-  `today`: what got done today) or one of the commands the panel runs (`/usage`, `/status`, `/context`,
+  `today`: what got done today, `checkup`: a checkup, `tidy`: tidying up sessions) or one of the commands the panel runs (`/usage`, `/status`, `/context`,
   `/cost`, `/help`, `/stats`). Use it sparingly, for what the user will likely want next: after talking
   about limits, `/usage`; when sessions keep dropping, `stuck`. Never more than three, and not for what
   is already obvious.

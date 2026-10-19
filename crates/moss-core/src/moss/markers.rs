@@ -130,7 +130,7 @@ pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end"];
 const MAX_QUICK: usize = 3;
 
 /// The panel's built-in actions (`MossAction` ids in the app).
-pub const ACTIONS: &[&str] = &["needs-you", "stuck", "today"];
+pub const ACTIONS: &[&str] = &["needs-you", "stuck", "today", "checkup", "tidy"];
 
 /// Whether `item` can sit on the quick bar: a built-in action, or a Claude
 /// Code command the panel runs.
@@ -393,6 +393,12 @@ mod tests {
         assert_eq!(p.quick, ["/usage", "stuck"]);
         // Unknown items dropped (other ids, refused commands, plain words),
         // repeats once, at most three.
+        let p = parse("[[quick: checkup | tidy]]x");
+        assert_eq!(
+            p.quick,
+            ["checkup", "tidy"],
+            "the panel's checkup and tidy-up"
+        );
         let p = parse("[[quick: needs-you | waiting | /login | open it | today | /usage | /status | needs-you]]ok");
         assert_eq!(p.quick, ["needs-you", "today", "/usage"]);
         assert_eq!(p.text, "ok");

@@ -292,6 +292,165 @@ pub fn daily_request(zh: bool, brief: bool) -> String {
     }
 }
 
+/// Whether the panel was opened today (local date): the app touches
+/// `<state>/desktop/panel-opened` whenever it opens.
+pub fn panel_opened_today(state: &Path) -> bool {
+    let mark = state.join("desktop/panel-opened");
+    let Some(at) = std::fs::symlink_metadata(mark)
+        .ok()
+        .filter(|m| m.file_type().is_file())
+        .and_then(|m| m.modified().ok())
+    else {
+        return false;
+    };
+    let secs = at
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs()) as libc::time_t;
+    local_date(secs) == today()
+}
+
+/// A moment's local date, `YYYY-MM-DD`.
+fn local_date(secs: libc::time_t) -> String {
+    // SAFETY: localtime_r with a valid out-pointer.
+    let tm = unsafe {
+        let mut tm: libc::tm = std::mem::zeroed();
+        libc::localtime_r(&secs, &mut tm);
+        tm
+    };
+    format!(
+        "{:04}-{:02}-{:02}",
+        tm.tm_year + 1900,
+        tm.tm_mon + 1,
+        tm.tm_mday
+    )
+}
+
+/// `3 天`, `5 hours`: a span short enough for a table.
+fn span(secs: i64, zh: bool) -> String {
+    let (n, en, cn) = match secs {
+        s if s >= 86_400 => (s / 86_400, "day", "天"),
+        s if s >= 3600 => (s / 3600, "hour", "小时"),
+        s => ((s / 60).max(1), "minute", "分钟"),
+    };
+    if zh {
+        format!("{n} {cn}")
+    } else {
+        format!("{n} {en}{}", if n == 1 { "" } else { "s" })
+    }
+}
+
+/// The facts as a short table for people: name, state, and what stands
+/// out. Unknown facts say nothing.
+pub fn table(facts: &Value, zh: bool) -> String {
+    let empty = Vec::new();
+    let sessions = facts["sessions"].as_array().unwrap_or(&empty);
+    if sessions.is_empty() {
+        return if zh {
+            "没有会话。\n"
+        } else {
+            "No sessions.\n"
+        }
+        .to_string();
+    }
+    let mut out = String::new();
+    for s in sessions {
+        let name = s["name"].as_str().map(String::from).unwrap_or_else(|| {
+            s["session_id"]
+                .as_str()
+                .unwrap_or("")
+                .chars()
+                .take(8)
+                .collect()
+        });
+        let state = match (s["status"].as_str(), zh) {
+            (Some("interrupted"), true) => "断了",
+            (Some("interrupted"), false) => "dropped",
+            (_, true) => "运行中",
+            (_, false) => "running",
+        };
+        let mut notes: Vec<String> = Vec::new();
+        if s["auto_named"] == true {
+            notes.push(if zh { "没名字" } else { "no name" }.into());
+        }
+        if s["folder_exists"] == false {
+            notes.push(
+                if zh {
+                    "文件夹已不在"
+                } else {
+                    "folder is gone"
+                }
+                .into(),
+            );
+        }
+        if let Some(secs) = s["dropped_for_secs"].as_i64() {
+            let d = span(secs, zh);
+            notes.push(if zh {
+                format!("断了 {d}")
+            } else {
+                format!("dropped {d} ago")
+            });
+        }
+        if let Some(secs) = s["idle_for_secs"].as_i64().filter(|s| *s >= 86_400) {
+            let d = span(secs, zh);
+            notes.push(if zh {
+                format!("闲了 {d}")
+            } else {
+                format!("idle {d}")
+            });
+        }
+        if let Some(why) = s["waiting_on_you"].as_str() {
+            let why_zh = match why {
+                "permission" => "权限",
+                "question" => "提问",
+                _ => "等输入",
+            };
+            notes.push(if zh {
+                format!("在等你（{why_zh}）")
+            } else {
+                format!("waiting for you ({why})")
+            });
+        }
+        if s["tmux_name_matches"] == false {
+            notes.push(
+                if zh {
+                    "tmux 名对不上"
+                } else {
+                    "tmux name differs"
+                }
+                .into(),
+            );
+        }
+        out.push_str(&format!(
+            "{}  {}  {}\n",
+            super::pad(&name, 24),
+            super::pad(state, 8),
+            notes.join(if zh { "；" } else { "; " })
+        ));
+    }
+    out
+}
+
+/// `cc-moss doctor --sessions`: the table.
+pub fn print_sessions_table() -> Result<()> {
+    let facts = if std::env::var(moss_core::moss::ROLE_ENV).as_deref() == Ok(moss_core::moss::ROLE)
+    {
+        let path = moss_core::moss::home_dir(&super::daemon::state()).join(FACTS);
+        serde_json::from_str(&std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "{} is not there yet; the daemon writes it within a minute",
+                path.display()
+            )
+        })?)?
+    } else {
+        report()?
+    };
+    print!(
+        "{}",
+        table(&facts, crate::i18n::lang() == crate::i18n::Lang::Zh)
+    );
+    Ok(())
+}
+
 /// Whether the daily checkup is due: switched on, the desktop is there,
 /// and none was sent on `today` (a local date).
 pub fn daily_due(enabled: bool, desktop: bool, last: Option<&str>, today: &str) -> bool {
@@ -474,6 +633,65 @@ mod tests {
         // The same words as the button.
         assert_eq!(daily_request(true, true), request(true));
         assert_eq!(daily_request(false, true), request(false));
+    }
+
+    #[test]
+    fn daily_checkup_follows_the_panel_opening_today() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path();
+        assert!(!panel_opened_today(state), "never opened");
+        let mark = state.join("desktop/panel-opened");
+        std::fs::create_dir_all(mark.parent().unwrap()).unwrap();
+        std::fs::write(&mark, "").unwrap();
+        assert!(panel_opened_today(state));
+        // Opened yesterday only.
+        let yesterday = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * 86_400);
+        std::fs::File::options()
+            .write(true)
+            .open(&mark)
+            .unwrap()
+            .set_modified(yesterday)
+            .unwrap();
+        assert!(!panel_opened_today(state));
+    }
+
+    #[test]
+    fn sessions_read_as_a_short_table() {
+        let facts = json!({"schema": 1, "sessions": [
+            {"name": null, "session_id": "0837a145-0000", "status": "running", "auto_named": true,
+             "folder_exists": true, "idle_for_secs": 3 * 86_400, "dropped_for_secs": null,
+             "waiting_on_you": null, "tmux_name_matches": "unknown"},
+            {"name": "api", "session_id": "a1", "status": "interrupted", "auto_named": false,
+             "folder_exists": false, "idle_for_secs": null, "dropped_for_secs": 3 * 86_400 + 60,
+             "waiting_on_you": null, "tmux_name_matches": null},
+            {"name": "web", "session_id": "b2", "status": "running", "auto_named": false,
+             "folder_exists": true, "idle_for_secs": null, "dropped_for_secs": null,
+             "waiting_on_you": "permission", "tmux_name_matches": false}
+        ]});
+        let text = table(&facts, true);
+        assert!(
+            text.contains("0837a145") && text.contains("没名字") && text.contains("闲了 3 天"),
+            "{text}"
+        );
+        assert!(
+            text.contains("api") && text.contains("断了 3 天") && text.contains("文件夹已不在"),
+            "{text}"
+        );
+        assert!(
+            text.contains("在等你（权限）") && text.contains("tmux 名对不上"),
+            "{text}"
+        );
+        assert!(
+            !text.contains("unknown"),
+            "unknown is not shown as a problem: {text}"
+        );
+        let en = table(&facts, false);
+        assert!(
+            en.contains("no name")
+                && en.contains("dropped 3 days")
+                && en.contains("folder is gone"),
+            "{en}"
+        );
     }
 
     #[test]

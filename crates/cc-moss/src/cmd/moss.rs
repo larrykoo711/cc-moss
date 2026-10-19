@@ -477,6 +477,7 @@ pub fn say(json: bool, text: &str) -> Result<()> {
 
 /// `cc-moss moss chat [--json] [--limit N]`: the conversation so far.
 pub fn chat(json: bool, limit: usize) -> Result<()> {
+    let limit = limit.clamp(1, 1000);
     let home = moss::home_dir(&state());
     if json {
         let db = state().join("registry.db");
@@ -894,19 +895,6 @@ const SESSIONS_EVERY: Duration = Duration::from_secs(60);
 /// How often the daemon looks whether the daily checkup is due.
 const DAILY_EVERY: Duration = Duration::from_secs(30);
 
-/// Whether the app's panel is there: its heartbeat as a question taker
-/// (`asks/takers/desktop.alive`) is fresh.
-fn desktop_present(state: &Path) -> bool {
-    let alive = state.join("asks/takers/desktop.alive");
-    std::fs::metadata(alive)
-        .and_then(|m| m.modified())
-        .is_ok_and(|t| {
-            std::time::SystemTime::now()
-                .duration_since(t)
-                .map_or(true, |age| age.as_secs() < moss_core::ask::TAKER_FRESH_SECS)
-        })
-}
-
 /// SESSIONS.md also lists the sessions closed within this.
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// How often the registry is asked whether anything changed.
@@ -1018,9 +1006,10 @@ impl Looker {
         let path = super::checkup::daily_path(&self.state);
         let last = std::fs::read_to_string(&path).ok();
         let today = super::checkup::today();
+        // The first time the panel is opened each day (the app marks it).
         if !super::checkup::daily_due(
             on,
-            desktop_present(&self.state),
+            super::checkup::panel_opened_today(&self.state),
             last.as_deref().map(str::trim),
             &today,
         ) {

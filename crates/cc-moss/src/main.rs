@@ -124,7 +124,7 @@ enum Command {
         #[arg(long)]
         fix: bool,
         /// Facts about every session and the install, for Moss's checkup.
-        #[arg(long, requires = "json", conflicts_with = "fix")]
+        #[arg(long, conflicts_with = "fix")]
         sessions: bool,
         /// Machine-readable output (schema 1); with --sessions.
         #[arg(long, requires = "sessions")]
@@ -135,7 +135,7 @@ enum Command {
         #[command(subcommand)]
         action: AliasCommand,
     },
-    /// Read or change a setting in config.toml (today: ui.language).
+    /// Read or change a setting in config.toml (`config set --help` lists them).
     Config {
         #[command(subcommand)]
         action: ConfigCommand,
@@ -429,20 +429,23 @@ enum ConfigCommand {
         /// Machine-readable output (schema 1).
         #[arg(long)]
         json: bool,
-        /// The setting: ui.language.
+        /// The setting, e.g. ui.language or moss.daily_checkup.
         key: String,
     },
     /// Change a setting; comments and everything else in the file stay.
     ///
     /// `cc-moss config set ui.language zh` switches cc-moss to Chinese;
-    /// `auto` follows the system again. Known keys: ui.language (auto, zh, en).
+    /// `auto` follows the system again. Known keys: ui.language (auto, zh,
+    /// en), claude.permission_mode (bypass, default), and true/false ones:
+    /// ask.enabled, moss.enabled, moss.digest, moss.actions,
+    /// moss.daily_checkup, moss.daily_brief.
     Set {
         /// Machine-readable output (schema 1).
         #[arg(long)]
         json: bool,
-        /// The setting: ui.language.
+        /// The setting, e.g. ui.language or moss.daily_checkup.
         key: String,
-        /// The new value; for ui.language: auto, zh or en.
+        /// The new value: for ui.language auto, zh or en; true or false for switches.
         value: String,
     },
 }
@@ -581,7 +584,12 @@ fn main() -> std::process::ExitCode {
                 cmd::install::run(opts)
             })
         }
-        Command::Doctor { sessions: true, .. } => report(cmd::checkup::print_sessions_json()),
+        Command::Doctor {
+            sessions: true,
+            json: true,
+            ..
+        } => report(cmd::checkup::print_sessions_json()),
+        Command::Doctor { sessions: true, .. } => report(cmd::checkup::print_sessions_table()),
         Command::Doctor { fix, .. } => match cmd::doctor::run(fix) {
             Ok(true) => std::process::ExitCode::SUCCESS,
             Ok(false) => std::process::ExitCode::FAILURE,
