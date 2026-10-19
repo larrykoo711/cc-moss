@@ -115,7 +115,15 @@ pub trait Pane {
     /// Press one key (`send-keys Enter`, `send-keys Escape`).
     fn key(&mut self, key: &str) -> Result<(), String>;
     fn wait(&mut self, how_long: Duration);
+    /// Make the window at least this big (panels are cut short in a small
+    /// one).
+    fn fit(&mut self, _columns: u32, _rows: u32) {}
 }
+
+/// The size Moss's window is started at, and grown to before a command
+/// shows a panel.
+pub const COLUMNS: u32 = 100;
+pub const ROWS: u32 = 50;
 
 /// Claude Code's prompt mark, in front of the input line.
 const PROMPT: char = '❯';
@@ -142,6 +150,20 @@ pub(crate) fn prompt_line(plain_line: &str) -> bool {
 /// least one border.
 fn rule_line(plain_line: &str) -> bool {
     plain_line.chars().any(border) && plain_line.chars().all(|c| c.is_whitespace() || border(c))
+}
+
+/// Where Claude Code's input box starts in `plain_lines`: the top rule of
+/// the last prompt line with a rule right above it and one below.
+pub fn input_box_top(plain_lines: &[String]) -> Option<usize> {
+    let lines = plain_lines;
+    (1..lines.len())
+        .rev()
+        .find(|i| {
+            prompt_line(&lines[*i])
+                && rule_line(&lines[i - 1])
+                && lines[i + 1..].iter().any(|l| rule_line(l))
+        })
+        .map(|i| i - 1)
 }
 
 /// Where the input starts: the first prompt line inside the box that holds
@@ -454,13 +476,24 @@ impl Courier {
                 });
                 continue;
             };
+            // A command of yours is the caller's to run (super::slash).
+            if message.from == "you" && super::slash::classify(&message.text).is_some() {
+                break;
+            }
             match pane.screen() {
                 Ok(screen) if input_empty(&screen) => self.input_busy = false,
                 // Someone is typing in Moss's terminal, or it is not at
                 // its prompt: the next tick looks again.
                 _ => break,
             }
-            let typed = type_in(pane, &message.text);
+            // Claude Code runs any input starting with `/` as a command: a
+            // message that only looks like one goes in after a space.
+            let text = if message.text.starts_with('/') {
+                format!(" {}", message.text)
+            } else {
+                message.text.clone()
+            };
+            let typed = type_in(pane, &text);
             let _ = crate::moss::remove(&path);
             match typed {
                 Typed::Sent { .. } => {
@@ -517,6 +550,9 @@ pub(crate) mod fake {
         pub paste_errors: u32,
         /// C-u does not clear the input.
         pub sticky: bool,
+        /// What a command shows on Enter, until Escape.
+        pub panels: Vec<(String, String)>,
+        pub showing: Option<String>,
     }
 
     impl Pane for FakePane {
@@ -538,7 +574,7 @@ pub(crate) mod fake {
             Ok(())
         }
         fn screen(&mut self) -> Result<String, String> {
-            if let Some(s) = &self.screen_override {
+            if let Some(s) = self.showing.as_ref().or(self.screen_override.as_ref()) {
                 return Ok(s.clone());
             }
             let shown = if self.garbled {
@@ -553,8 +589,17 @@ pub(crate) mod fake {
         fn key(&mut self, key: &str) -> Result<(), String> {
             self.calls.push(format!("key {key}"));
             match key {
-                "Enter" => self.submitted.push(std::mem::take(&mut self.input)),
-                "Escape" => self.input.clear(),
+                "Enter" => {
+                    let typed = std::mem::take(&mut self.input);
+                    if let Some((_, panel)) = self.panels.iter().find(|(c, _)| *c == typed) {
+                        self.showing = Some(panel.clone());
+                    }
+                    self.submitted.push(typed);
+                }
+                "Escape" => {
+                    self.input.clear();
+                    self.showing = None;
+                }
                 "C-u" if !self.sticky => self.input.clear(),
                 _ => {}
             }
@@ -581,6 +626,17 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn inbox_never_types_a_message_as_a_command() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "/login\nwhy the terminal?");
+        let mut pane = FakePane::default();
+        let out = Courier::default().step(h, &mut pane, Some(false), 1);
+        assert!(matches!(&out[..], [Outcome::Sent(_)]), "{out:?}");
+        assert_eq!(pane.submitted, [" /login\nwhy the terminal?"]);
     }
 
     #[test]

@@ -53,6 +53,12 @@ pub struct Line {
     pub state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// A Claude Code command's result: which command (`/usage`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    /// That command is not run from the panel.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub refused: bool,
 }
 
 impl Line {
@@ -132,6 +138,11 @@ pub struct Shown {
     pub reply_to: Option<String>,
     pub fallback: bool,
     pub buttons: Vec<String>,
+    /// A Claude Code command's result (its screen, or why it was not run).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub command: Option<String>,
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub refused: bool,
 }
 
 /// The last `limit` messages, oldest first, with the state of yours folded
@@ -176,6 +187,8 @@ fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
             reply_to: l.reply_to.clone(),
             fallback: l.fallback,
             buttons: l.buttons.clone(),
+            command: l.command.clone(),
+            refused: l.refused,
         });
     }
     for s in shown.iter_mut().filter(|s| s.from == FROM_YOU) {
@@ -290,6 +303,39 @@ mod tests {
         assert_eq!(fold(h, 2)[1].id, "x");
         assert_eq!(last_reply_at(h).as_deref(), Some("t"));
         assert!(fold(&h.join("none"), 10).is_empty());
+    }
+
+    #[test]
+    fn chat_passes_commands_through() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        append(h, &Line::message("1", "t", FROM_YOU, "/usage")).unwrap();
+        append(
+            h,
+            &Line {
+                command: Some("/usage".into()),
+                ..moss("m1", "1", "  Usage")
+            },
+        )
+        .unwrap();
+        append(h, &Line::message("2", "t", FROM_YOU, "/login")).unwrap();
+        append(
+            h,
+            &Line {
+                command: Some("/login".into()),
+                refused: true,
+                ..moss("m2", "2", "needs the terminal")
+            },
+        )
+        .unwrap();
+        let v = to_json(&fold(h, 10));
+        let m = v["messages"].as_array().unwrap();
+        assert_eq!(m[0]["state"], "replied");
+        assert_eq!(m[1]["command"], "/usage");
+        assert!(m[1].get("refused").is_none());
+        assert_eq!(m[3]["command"], "/login");
+        assert_eq!(m[3]["refused"], true);
+        assert!(m[0].get("command").is_none());
     }
 
     #[test]

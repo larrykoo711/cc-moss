@@ -1014,9 +1014,16 @@ impl Looker {
         // `=moss:`: exactly that session (set-option takes a pane target).
         let target = format!("={}:", moss::SESSION);
         let args = claude_args(&session_id);
+        // Big enough for Claude Code's panels (/usage, /status) to fit.
+        let columns = inbox::COLUMNS.to_string();
+        let rows = inbox::ROWS.to_string();
         let mut command: Vec<&str> = vec![
             "new-session",
             "-d",
+            "-x",
+            &columns,
+            "-y",
+            &rows,
             "-s",
             moss::SESSION,
             "-c",
@@ -1055,6 +1062,12 @@ impl Looker {
                     &target,
                     "remain-on-exit",
                     "off",
+                    // Its own server: nobody attaching shrinks it.
+                    ";",
+                    "set-option",
+                    "-g",
+                    "window-size",
+                    "manual",
                 ],
             ]
             .concat(),

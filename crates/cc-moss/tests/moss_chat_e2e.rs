@@ -127,6 +127,90 @@ fn heard(w: &World) -> String {
     std::fs::read_to_string(w.path("fifos").join("moss-heard.txt")).unwrap_or_default()
 }
 
+/// The Claude Code commands the fake Moss ran.
+fn commands(w: &World) -> String {
+    std::fs::read_to_string(w.path("fifos").join("moss-commands.txt")).unwrap_or_default()
+}
+
+fn mine(w: &World, id: &str) -> serde_json::Value {
+    messages(w)
+        .into_iter()
+        .find(|m| m["id"] == id)
+        .unwrap_or_else(|| panic!("{id} not in the chat"))
+}
+
+#[test]
+fn slash_command_shows_its_screen() {
+    let w = World::new("chat-slash");
+    let _d = daemon(&w);
+    moss_idle(&w);
+    let usage = say(&w, "/usage");
+    let shown = reply_to(&w, &usage);
+    assert_eq!(shown["command"], "/usage", "{shown}");
+    let text = shown["text"].as_str().unwrap();
+    assert!(text.contains("Skills % of usage"), "{text}");
+    assert!(text.contains("Usage credits"), "{text}");
+    assert!(!text.contains("Esc to cancel"), "{text}");
+    assert!(
+        !text.contains("/usage"),
+        "the echo line is not part of it: {text}"
+    );
+    assert_eq!(shown["fallback"], false);
+    assert_eq!(mine(&w, &usage)["state"], "replied");
+    assert!(!heard(&w).contains("/usage"), "a command is not a message");
+    // The panel was closed: the next message goes in and is answered.
+    let after = say(&w, "back at the prompt?");
+    assert_eq!(reply_to(&w, &after)["text"], "echo: back at the prompt?");
+
+    // /clear: a new transcript, and the next message is still claimed.
+    let clear = say(&w, "/clear");
+    let cleared = reply_to(&w, &clear);
+    assert_eq!(cleared["command"], "/clear");
+    assert!(
+        cleared["text"]
+            .as_str()
+            .unwrap()
+            .starts_with("Cleared Moss's conversation"),
+        "{cleared}"
+    );
+    let next = say(&w, "after the clear");
+    let answer = reply_to(&w, &next);
+    assert_eq!(answer["text"], "echo: after the clear", "{answer}");
+    assert_eq!(answer["fallback"], false);
+    assert_eq!(commands(&w), "/usage\n/clear\n");
+}
+
+#[test]
+fn slash_command_not_allowed() {
+    let w = World::new("chat-slash-refused");
+    let _d = daemon(&w);
+    moss_idle(&w);
+    let login = say(&w, "/login");
+    let refused = reply_to(&w, &login);
+    assert_eq!(refused["command"], "/login");
+    assert_eq!(refused["refused"], true);
+    assert!(
+        refused["text"]
+            .as_str()
+            .unwrap()
+            .contains("Open in Terminal"),
+        "{refused}"
+    );
+    assert_eq!(mine(&w, &login)["state"], "replied");
+    // Several lines starting with / are an ordinary message.
+    let plain = say(&w, "/login\nwhy does this need the terminal?");
+    assert_eq!(
+        reply_to(&w, &plain)["text"],
+        "echo:  /login\nwhy does this need the terminal?"
+    );
+    assert!(
+        commands(&w).is_empty(),
+        "nothing typed in: {}",
+        commands(&w)
+    );
+    assert!(!heard(&w).starts_with("/login\n/login"), "{}", heard(&w));
+}
+
 #[test]
 fn say_gets_a_reply() {
     let w = World::new("chat-reply");
