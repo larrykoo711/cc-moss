@@ -496,7 +496,7 @@ private struct MossMessageView: View {
                     QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
                 }
                 if !buttons.isEmpty {
-                    MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id)) { i in
+                    MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id), stacks: true) { i in
                         model.chooseForMoss(buttons[i], on: message.id)
                     }
                 }
@@ -744,11 +744,15 @@ private struct MossThinking: View {
 // MARK: - Chips
 
 /// Small buttons in a row: Moss's abilities, or the replies it suggests.
-/// When they don't fit, they drop their icons, then scroll.
+/// When they don't fit, they drop their icons, then scroll; replies stack
+/// instead, each one wrapping, because a yes button must be read in full
+/// (it says which sessions the tap agrees to).
 private struct MossChips: View {
     /// Title and an optional symbol.
     let titles: [(String, String?)]
     var enabled = true
+    /// Stack and wrap instead of scrolling when the row doesn't fit.
+    var stacks = false
     let tap: (Int) -> Void
 
     var body: some View {
@@ -756,10 +760,18 @@ private struct MossChips: View {
             row(icons: true)
             row(icons: false)
             row(icons: false, compact: true)
-            ScrollView(.horizontal) { row(icons: false, compact: true).padding(.horizontal, 1) }
-                .scrollIndicators(.never)
-                .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
-                                     startPoint: .leading, endPoint: .trailing))
+            if stacks {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(titles.enumerated()), id: \.offset) { i, item in
+                        MossChip(title: item.0, icon: nil, enabled: enabled, wraps: true) { tap(i) }
+                    }
+                }
+            } else {
+                ScrollView(.horizontal) { row(icons: false, compact: true).padding(.horizontal, 1) }
+                    .scrollIndicators(.never)
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
+                                         startPoint: .leading, endPoint: .trailing))
+            }
         }
     }
 
@@ -780,6 +792,8 @@ private struct MossChip: View {
     var enabled = true
     /// Moss suggested it: a small sparkle on the corner.
     var pinned = false
+    /// Long titles wrap onto more lines instead of being cut.
+    var wraps = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -795,15 +809,19 @@ private struct MossChip: View {
                 Text(title)
                     .font(.system(size: compact ? 11.5 : 12, weight: .medium,
                                   design: MossCommand.looksLikeCommand(title) ? .monospaced : .default))
-                    .lineLimit(1)
-                    .fixedSize()
+                    .lineLimit(wraps ? nil : 1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: !wraps, vertical: true)
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, compact ? 7 : 10)
-            .frame(height: 28)
-            .background(Capsule().fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10) : Theme.raised(scheme)))
-            .overlay(Capsule().strokeBorder(hovering ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
-            .contentShape(Capsule())
+            .padding(.vertical, wraps ? 6 : 0)
+            .frame(minHeight: 28)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10) : Theme.raised(scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(hovering ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(PressStyle())
         .focusable(false)
