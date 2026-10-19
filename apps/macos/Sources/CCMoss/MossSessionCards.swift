@@ -39,20 +39,25 @@ struct MossSessionCards: View {
     @Bindable var model: AppModel
     let messageID: String
     let cards: [MossSessionCard]
+    /// Older cards of a session are receipts; only the newest is live.
+    var roles: [String: MossCardHistory.Role] = [:]
 
     private var ids: [String] { cards.map(\.id) }
+    private var live: [MossSessionCard] { cards.filter { (roles[$0.id] ?? .live) == .live } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(cards) { card in
-                if let s = card.session {
-                    MossSessionCardView(model: model, card: card, session: s, groupHandled: MossSessionCard.showsAllHandled(cards),
+                if case let .receipt(receipt)? = roles[card.id] {
+                    CardReceipt(name: card.session?.title, receipt: receipt)
+                } else if let s = card.session {
+                    MossSessionCardView(model: model, card: card, session: s, groupHandled: MossSessionCard.showsAllHandled(live),
                                         key: "\(messageID)/\(card.id)")
                 } else {
                     GoneCard()
                 }
             }
-            if MossSessionCard.showsAllHandled(cards) {
+            if MossSessionCard.showsAllHandled(live) {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold))
                     Text(L.t("All handled", "都处理好了"))
@@ -69,6 +74,45 @@ struct MossSessionCards: View {
             let known = Set(model.sessions.map(\.id))
             if model.closedPool == nil, ids.contains(where: { !known.contains($0) }) { model.loadClosed() }
         }
+    }
+}
+
+/// An older card of a session that has a newer one further down: what
+/// happened then, in one line, no buttons. The mention in the words above
+/// still leads to the session.
+private struct CardReceipt: View {
+    let name: String?
+    let receipt: MossCardHistory.Receipt
+
+    var body: some View {
+        HStack(spacing: 5) {
+            switch receipt {
+            case let .handled(at):
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.green.opacity(0.8))
+                Text(at.map { L.t("Handled \(Self.time($0))", "已处理 \(Self.time($0))") } ?? L.t("Handled", "已处理"))
+            case .past:
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(L.t("Since moved on", "已过去"))
+            }
+            if let name {
+                Text("·").foregroundStyle(.tertiary)
+                Text(name).lineLimit(1)
+            }
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .background(Capsule().fill(Color.primary.opacity(0.04)))
+        .accessibilityElement(children: .combine)
+    }
+
+    static func time(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.setLocalizedDateFormatFromTemplate("HH:mm")
+        return f.string(from: date)
     }
 }
 
