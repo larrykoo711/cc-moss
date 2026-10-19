@@ -60,13 +60,17 @@ impl Action {
             "forget" => one(Action::Forget),
             "end" => one(Action::End),
             "name" => match args {
-                [s, name] => {
-                    let name = name.trim();
+                [s, given] => {
+                    let name = given.trim();
                     if name.is_empty()
                         || name.chars().count() > 60
                         || name.chars().any(char::is_control)
                     {
                         Err("a name is one line of at most 60 characters".into())
+                    } else if moss_core::naming::has_hidden_chars(given) {
+                        Err("a name has no invisible characters (direction marks, \
+                             zero-width spaces, line separators)"
+                            .into())
                     } else {
                         Ok(Action::Name(s.clone(), name.to_string()))
                     }
@@ -962,6 +966,14 @@ mod tests {
             Ok(Action::Name("abc123".into(), "ofoxai".into()))
         );
         assert!(Action::parse("name", &a(&["abc", "two\nlines"])).is_err());
+        // Names that would look like another session's in a yes button.
+        for hidden in ["ap\u{202E}i", "a\u{200B}pi", "api\u{2028}", "a\u{200D}pi"] {
+            assert!(
+                Action::parse("name", &a(&["abc", hidden])).is_err(),
+                "{hidden:?}"
+            );
+        }
+        assert!(Action::parse("name", &a(&["abc", "👩\u{200D}💻 notes"])).is_ok());
         assert!(Action::parse("dispatch", &a(&["x"])).is_err());
         assert!(Action::parse("restore", &[]).is_err());
         assert!(Action::Restore("x".into()).needs_consent());

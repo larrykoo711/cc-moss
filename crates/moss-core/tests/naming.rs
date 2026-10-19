@@ -1,4 +1,4 @@
-use moss_core::naming::{sanitize, session_name, unique};
+use moss_core::naming::{has_hidden_chars, sanitize, session_name, unique};
 
 #[test]
 fn sanitize_cases() {
@@ -78,4 +78,32 @@ fn a_missing_host_name_is_cached_too() {
     assert_eq!(cached_host_prefix(dir.path()), None);
     std::fs::write(dir.path().join("host_prefix"), "host-a\n").unwrap();
     assert_eq!(cached_host_prefix(dir.path()).as_deref(), Some("host-a"));
+}
+
+#[test]
+fn naming_rejects_hidden_characters() {
+    for name in [
+        "api\u{202E}gnp",
+        "a\u{200B}pi",
+        "api\u{2028}x",
+        "api\u{2029}",
+        "\u{FEFF}api",
+        "a\u{200D}pi",
+        "api\u{E0041}",
+        "soft\u{00AD}hyphen",
+    ] {
+        assert!(has_hidden_chars(name), "{name:?}");
+        assert!(!has_hidden_chars(&sanitize(name)), "{name:?}");
+    }
+    // An emoji joined into one stays whole.
+    for name in [
+        "👩\u{200D}💻 notes",
+        "接口评审",
+        "api-review",
+        "🏳️\u{200D}🌈",
+    ] {
+        assert!(!has_hidden_chars(name), "{name:?}");
+    }
+    assert_eq!(sanitize("👩\u{200D}💻"), "👩\u{200D}💻");
+    assert_eq!(sanitize("a\u{202E}pi"), "api");
 }

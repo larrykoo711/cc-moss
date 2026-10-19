@@ -530,9 +530,10 @@ works too.
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
 it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
-first, and cc-moss itself puts the yes button under the question, saying what it agrees to ("Bring back api, db",
-"End work"). Only your tap on that button counts, for exactly what it says, within 10 minutes, and only once;
-Moss's own buttons and anything typed don't. The daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
+first, and cc-moss itself puts the yes button under the question, saying what it agrees to, with each session's
+folder ("End work · ~/code/work"). When two open sessions share a name, Moss can't ask about either by that name
+until one is renamed. Only your tap on that button counts, for exactly what it says, within 10 minutes, and only
+once; Moss's own buttons and anything typed don't. The daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
 say), the action is skipped with a reason. Each one is written to `audit.jsonl` in the state directory (when, what,
 on which session, on the strength of which message, and how it went). For a Moss that only says what to do, set
 `[moss] actions = false` (or `cc-moss config set moss.actions false`).

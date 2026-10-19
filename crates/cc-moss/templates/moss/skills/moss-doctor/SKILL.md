@@ -61,9 +61,10 @@ they need to decide, then the buttons for the decision:
 
 Every question that leads to `restore`, `forget` or `end` carries one `[[confirm: <action> <session>]]`
 per session and action (its `session_id` prefix or name). The markers are not shown. cc-moss adds the yes
-button itself, one per action, worded with the sessions it covers (「找回 api、db」, "End work"): only a
+button itself, one per action, worded with the sessions it covers and their folders («结束 work · ~/code/work»): only a
 tap on that button is a yes. Your own `[[buttons:]]` are for other answers ("not now", "keep it"); a tap
 on one of them never lets you act. Don't write your own yes button for these.
+A session whose name another open session shares gets no yes button; tell the user to rename one first.
 
 Nothing wrong and nothing done: just "体检完了，都好好的" (or "All good: nothing needed fixing."). Leave out
 empty lines ("· 修好了" with nothing after it). One question at a time; ask the most important one first.

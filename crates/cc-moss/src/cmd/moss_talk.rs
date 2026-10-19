@@ -665,11 +665,32 @@ impl Talk {
             let Some(slot) = slots.iter().find(|s| s.slot_id == slot_id) else {
                 continue;
             };
-            let name = slot
-                .name
-                .clone()
-                .filter(|n| !n.trim().is_empty())
-                .unwrap_or_else(|| slot.session_id.chars().take(8).collect());
+            let named = slot.name.clone().filter(|n| !n.trim().is_empty());
+            // Two open sessions of one name: a button could not say which.
+            let shared = named.as_ref().is_some_and(|n| {
+                slots
+                    .iter()
+                    .filter(|s| {
+                        s.status != moss_core::slot::Status::Closed
+                            && !s.is_moss()
+                            && s.name.as_deref().map(str::trim) == Some(n.trim())
+                    })
+                    .count()
+                    > 1
+            });
+            if shared {
+                continue;
+            }
+            // The folder too, so a session renamed to look like another
+            // still shows where it is.
+            let name = format!(
+                "{} · {}",
+                named.unwrap_or_else(|| slot.session_id.chars().take(8).collect()),
+                markers::short_folder(
+                    &slot.cwd,
+                    std::env::var_os("HOME").as_deref().map(Path::new)
+                )
+            );
             if !found
                 .iter()
                 .any(|(a, s, _)| *a == c.action && *s == slot_id)
@@ -1003,7 +1024,11 @@ mod tests {
         // Only sessions that exist; one yes button per action, worded by
         // cc-moss with every session it covers.
         let chinese = tr!(false, true);
-        let yes = markers::yes_label("restore", &["api".into(), "db".into()], chinese);
+        let yes = markers::yes_label(
+            "restore",
+            &["api · /w/api".into(), "db · /w/db".into()],
+            chinese,
+        );
         assert_eq!(
             line.proposals,
             [
@@ -1024,6 +1049,23 @@ mod tests {
     }
 
     #[test]
+    fn a_name_two_open_sessions_share_gets_no_yes_button() {
+        let dir = tempfile::tempdir().unwrap();
+        // Moss renamed work to api: two open sessions now read "api".
+        let (talk, _) = talk_with_sessions(dir.path(), &["api", "api", "db"]);
+        let line = talk.reply_line(
+            &sent_by_you(),
+            "End it? [[confirm: end api]][[confirm: end a1b2c3d1]][[confirm: end db]]",
+            2,
+        );
+        let chinese = tr!(false, true);
+        let end_db = markers::yes_label("end", &["db · /w/db".into()], chinese);
+        assert_eq!(line.proposals.len(), 1, "{:?}", line.proposals);
+        assert_eq!(line.proposals[0].yes, std::slice::from_ref(&end_db));
+        assert_eq!(line.buttons, [end_db]);
+    }
+
+    #[test]
     fn moss_labels_never_count_as_consent() {
         let dir = tempfile::tempdir().unwrap();
         let (talk, ids) = talk_with_sessions(dir.path(), &["api", "work", "db"]);
@@ -1034,8 +1076,8 @@ mod tests {
             2,
         );
         let chinese = tr!(false, true);
-        let end_work = markers::yes_label("end", &["work".into()], chinese);
-        let forget_db = markers::yes_label("forget", &["db".into()], chinese);
+        let end_work = markers::yes_label("end", &["work · /w/work".into()], chinese);
+        let forget_db = markers::yes_label("forget", &["db · /w/db".into()], chinese);
         assert_eq!(
             asked.buttons,
             [
