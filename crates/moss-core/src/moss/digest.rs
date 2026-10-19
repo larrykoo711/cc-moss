@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::time::Duration;
 
 /// Changes this close together go in as one line.
-pub const WINDOW: Duration = Duration::from_secs(30);
+pub const WINDOW: Duration = Duration::from_secs(20);
 
 /// The same state of the same session is not told again within this.
 pub const REPEAT: Duration = Duration::from_secs(10 * 60);
@@ -173,18 +173,18 @@ mod tests {
         d.push(change("api", Kind::NeedsYou), t0);
         assert_eq!(d.due(t0, true), None, "not at once");
         d.push(change("login", Kind::Disconnected), t0 + 10 * S);
-        d.push(change("docs", Kind::Done), t0 + 29 * S);
-        assert_eq!(d.due(t0 + 29 * S, true), None);
+        d.push(change("docs", Kind::Done), t0 + 19 * S);
+        assert_eq!(d.due(t0 + 19 * S, true), None);
         assert_eq!(
-            d.due(t0 + 30 * S, true).as_deref(),
+            d.due(t0 + 20 * S, true).as_deref(),
             Some("[动态] api 需要你（权限）；login 断了；docs 做完了")
         );
-        assert_eq!(d.due(t0 + 31 * S, true), None, "said once");
+        assert_eq!(d.due(t0 + 21 * S, true), None, "said once");
         // A change after that opens a new window of its own.
-        d.push(change("web", Kind::Done), t0 + 40 * S);
-        assert_eq!(d.due(t0 + 60 * S, false), None);
+        d.push(change("web", Kind::Done), t0 + 30 * S);
+        assert_eq!(d.due(t0 + 49 * S, false), None);
         assert_eq!(
-            d.due(t0 + 70 * S, false).as_deref(),
+            d.due(t0 + 50 * S, false).as_deref(),
             Some("[Update] web finished")
         );
     }
@@ -195,7 +195,7 @@ mod tests {
         let t0 = 1_000_000;
         d.push(change("api", Kind::Disconnected), t0);
         d.push(change("api", Kind::Disconnected), t0 + S);
-        assert_eq!(d.due(t0 + 30 * S, true).as_deref(), Some("[动态] api 断了"));
+        assert_eq!(d.due(t0 + 20 * S, true).as_deref(), Some("[动态] api 断了"));
         // Again within ten minutes: not told; another state of it is.
         d.push(change("api", Kind::Disconnected), t0 + 5 * 60 * S);
         d.push(change("api", Kind::Done), t0 + 5 * 60 * S);
@@ -204,9 +204,9 @@ mod tests {
             Some("[动态] api 做完了")
         );
         // Ten minutes after it was told, it is news again.
-        d.push(change("api", Kind::Disconnected), t0 + 30 * S + 10 * 60 * S);
+        d.push(change("api", Kind::Disconnected), t0 + 20 * S + 10 * 60 * S);
         assert_eq!(
-            d.due(t0 + 30 * S + 11 * 60 * S, true).as_deref(),
+            d.due(t0 + 20 * S + 11 * 60 * S, true).as_deref(),
             Some("[动态] api 断了")
         );
     }

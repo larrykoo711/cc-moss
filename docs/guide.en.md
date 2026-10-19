@@ -399,7 +399,7 @@ cc-moss moss chat --json                                 # the last 200 messages
   fetch the reply; see the terminal)". A turn still running after 5 minutes is followed for up to 15; if Moss is
   stopped on a confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
 - **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
-  30 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. In the
+  20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. In the
   conversation it's a small grey line in the middle. To keep Moss out of it, put `[moss] digest = false` in the config.
 - **Reply alerts.** None while you're on the Moss page; otherwise Mo shows a bubble if Mo is on screen, or you get a
   notification, and either takes you to the Moss page. Moss can also note something quietly without telling you, or
