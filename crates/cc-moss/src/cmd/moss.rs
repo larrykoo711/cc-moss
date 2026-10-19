@@ -1019,8 +1019,7 @@ impl Looker {
         }
         let session_id = uuid::Uuid::new_v4().to_string();
         let cwd = home.to_string_lossy().replace('#', "##");
-        let role = format!("{}={}", moss::ROLE_ENV, moss::ROLE);
-        let which = format!("{}={session_id}", moss::SESSION_ENV);
+        let env = session_env(&session_id);
         // `=moss:`: exactly that session (set-option takes a pane target).
         let target = format!("={}:", moss::SESSION);
         let args = claude_args(&session_id);
@@ -1038,12 +1037,11 @@ impl Looker {
             moss::SESSION,
             "-c",
             &cwd,
-            "-e",
-            &role,
-            "-e",
-            &which,
-            &claude,
         ];
+        for e in &env {
+            command.extend(["-e", e.as_str()]);
+        }
+        command.push(&claude);
         command.extend(args.iter().map(String::as_str));
         let out = tmux(
             &self.socket,
@@ -1179,6 +1177,22 @@ enum Launch {
 /// user's would load for minutes at every start and fill its context, and
 /// the guard refuses their tools anyway. User settings still load, so
 /// cc-moss's own hooks record Moss.
+/// The environment Moss's Claude Code starts with (`new-session -e`): its
+/// role and session id, for cc-moss's hooks, and room to keep a long
+/// conversation before compacting: 500k tokens (a plain number; Claude Code
+/// caps it to the model's own window when that is smaller).
+fn session_env(session_id: &str) -> Vec<String> {
+    vec![
+        format!("{}={}", moss::ROLE_ENV, moss::ROLE),
+        format!("{}={session_id}", moss::SESSION_ENV),
+        format!("{AUTO_COMPACT_ENV}={AUTO_COMPACT_WINDOW}"),
+    ]
+}
+
+/// Claude Code's context window before it compacts on its own.
+const AUTO_COMPACT_ENV: &str = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
+const AUTO_COMPACT_WINDOW: u32 = 500_000;
+
 fn claude_args(session_id: &str) -> Vec<String> {
     [
         "--dangerously-skip-permissions",
@@ -1285,6 +1299,22 @@ mod tests {
         assert_eq!(
             v["permissions"]["deny"],
             serde_json::json!(["Read(~/.claude/projects/**)"])
+        );
+    }
+
+    #[test]
+    fn moss_starts_with_its_role_and_a_large_context() {
+        let env = session_env("abc");
+        assert!(env.contains(&"CC_MOSS_ROLE=moss".to_string()), "{env:?}");
+        assert!(
+            env.contains(&"CC_MOSS_MOSS_SESSION=abc".to_string()),
+            "{env:?}"
+        );
+        // A plain number: "500k" does not take. Claude Code caps it to a
+        // smaller model's window by itself.
+        assert!(
+            env.contains(&"CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000".to_string()),
+            "{env:?}"
         );
     }
 

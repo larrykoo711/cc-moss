@@ -96,6 +96,13 @@ impl Pane for TmuxPane<'_> {
         std::thread::sleep(how_long);
     }
 
+    fn attached(&mut self) -> Option<bool> {
+        // Moss's server is its own: any client is someone at its terminal.
+        self.run(&["list-clients"])
+            .ok()
+            .map(|out| !out.trim().is_empty())
+    }
+
     fn mark(&mut self) -> Option<i64> {
         let target = self.target().ok()?;
         let at = self
@@ -346,6 +353,7 @@ impl Talk {
                     );
                     self.claim = Some((sent, claim));
                 }
+                Outcome::Cleared => log("moss: cleared stale input"),
                 Outcome::Failed { id, from, error } => {
                     log(&format!("moss: error: message {id} did not go in: {error}"));
                     if from == chat::FROM_YOU {
@@ -391,7 +399,16 @@ impl Talk {
             answer(self, text, false, true);
             return;
         }
-        let ready = turn != Some(true) && pane.screen().is_ok_and(|s| inbox::input_empty(&s));
+        let ready = turn != Some(true)
+            && match self.courier.input(pane, now_ms()) {
+                inbox::Input::Ready => true,
+                inbox::Input::Cleared => {
+                    log("moss: cleared stale input");
+                    false
+                }
+                inbox::Input::Wait => false,
+            };
+        self.show_input_busy(self.courier.input_busy());
         if !ready {
             return;
         }

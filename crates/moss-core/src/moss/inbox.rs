@@ -128,6 +128,11 @@ pub trait Pane {
     fn screen_since(&mut self, _mark: i64) -> Result<String, String> {
         self.screen()
     }
+    /// Whether a terminal is attached to Moss's tmux (someone may be
+    /// typing there); `None` when tmux did not say.
+    fn attached(&mut self) -> Option<bool> {
+        None
+    }
 }
 
 /// The size Moss's window is started at, and grown to before a command
@@ -426,6 +431,8 @@ pub struct InFlight {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Outcome {
     Sent(InFlight),
+    /// Text left in Moss's input with nobody at its terminal was cleared.
+    Cleared,
     Failed {
         id: String,
         from: String,
@@ -440,6 +447,44 @@ pub enum Outcome {
 pub struct Courier {
     in_flight: Option<InFlight>,
     input_busy: bool,
+    /// Text sitting in Moss's input, and since when it has not changed.
+    stale: Option<(String, i64)>,
+}
+
+/// Text left in Moss's input with no terminal attached is cleared after
+/// this long unchanged: nobody is typing it.
+pub const STALE_UNATTENDED_MS: i64 = 10_000;
+
+/// With a terminal attached it is only reported, after this long.
+pub const STALE_ATTENDED_MS: i64 = 30_000;
+
+/// What Moss's input looks like to the queue.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Input {
+    /// Its box is drawn and empty.
+    Ready,
+    /// Not now: not at its prompt, or someone's text is in it.
+    Wait,
+    /// Stale text with nobody attached was cleared.
+    Cleared,
+}
+
+/// The text in Moss's input box, if its box shows and holds any.
+fn input_text(screen: &str) -> Option<String> {
+    if !input_has_text(screen) {
+        return None;
+    }
+    let lines: Vec<String> = plain(screen).lines().map(String::from).collect();
+    let start = input_start(&lines)?;
+    let mut text = String::new();
+    for line in &lines[start..] {
+        if rule_line(line) {
+            break;
+        }
+        text.push_str(line);
+        text.push('\n');
+    }
+    Some(squeeze(&text))
 }
 
 impl Courier {
@@ -456,6 +501,56 @@ impl Courier {
     /// The reply to the message in flight is in (or will not come).
     pub fn done(&mut self) {
         self.in_flight = None;
+    }
+
+    /// Whether Moss's input is free for the next message. Text that sits
+    /// there unchanged is not left to block the queue for ever: with no
+    /// terminal attached to Moss's tmux nobody is typing it, so after
+    /// [`STALE_UNATTENDED_MS`] it is cleared (C-u, once); with one attached
+    /// it is reported as `input_busy` after [`STALE_ATTENDED_MS`]. Text that
+    /// changes is someone typing, and is left alone.
+    pub fn input(&mut self, pane: &mut dyn Pane, now_ms: i64) -> Input {
+        let Ok(screen) = pane.screen() else {
+            return Input::Wait;
+        };
+        if input_empty(&screen) {
+            self.stale = None;
+            self.input_busy = false;
+            return Input::Ready;
+        }
+        let Some(text) = input_text(&screen) else {
+            // Not at its prompt (a turn, a dialog, starting up).
+            self.stale = None;
+            return Input::Wait;
+        };
+        let since = match &self.stale {
+            Some((seen, since)) if *seen == text => *since,
+            _ => {
+                self.stale = Some((text, now_ms));
+                return Input::Wait;
+            }
+        };
+        let unchanged = now_ms - since;
+        match pane.attached() {
+            Some(false) if unchanged >= STALE_UNATTENDED_MS => {
+                let _ = pane.key("C-u");
+                pane.wait(SETTLE);
+                self.stale = None;
+                if pane.screen().is_ok_and(|s| input_empty(&s)) {
+                    self.input_busy = false;
+                    Input::Cleared
+                } else {
+                    self.input_busy = true;
+                    Input::Wait
+                }
+            }
+            _ => {
+                if unchanged >= STALE_ATTENDED_MS {
+                    self.input_busy = true;
+                }
+                Input::Wait
+            }
+        }
     }
 
     /// Type in the oldest message if Moss is ready for it. `turn_open` is
@@ -490,11 +585,16 @@ impl Courier {
             if message.from == "you" && super::slash::classify(&message.text).is_some() {
                 break;
             }
-            match pane.screen() {
-                Ok(screen) if input_empty(&screen) => self.input_busy = false,
+            match self.input(pane, now_ms) {
+                Input::Ready => {}
+                // Cleared now; it goes in on the next look.
+                Input::Cleared => {
+                    out.push(Outcome::Cleared);
+                    break;
+                }
                 // Someone is typing in Moss's terminal, or it is not at
                 // its prompt: the next tick looks again.
-                _ => break,
+                Input::Wait => break,
             }
             // Claude Code runs any input starting with `/` as a command: a
             // message that only looks like one goes in after a space.
@@ -569,6 +669,8 @@ pub(crate) mod fake {
         pub history: String,
         /// Lines on screen; what is above goes to the scrollback.
         pub rows: Option<usize>,
+        /// Whether a terminal is attached to Moss's tmux (`None`: unknown).
+        pub attached: Option<bool>,
     }
 
     impl FakePane {
@@ -628,6 +730,9 @@ pub(crate) mod fake {
         fn mark(&mut self) -> Option<i64> {
             Some(0)
         }
+        fn attached(&mut self) -> Option<bool> {
+            self.attached
+        }
         fn screen_since(&mut self, _mark: i64) -> Result<String, String> {
             Ok(self.whole())
         }
@@ -674,6 +779,83 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn stale_input_is_cleared_when_nobody_is_attached() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "hello");
+        let mut pane = FakePane {
+            input: "现在谁在等我".into(),
+            attached: Some(false),
+            ..FakePane::default()
+        };
+        let mut c = Courier::default();
+        assert!(c.step(h, &mut pane, Some(false), 0).is_empty());
+        assert!(c.step(h, &mut pane, Some(false), 9_000).is_empty());
+        assert!(!pane.calls.iter().any(|k| k == "key C-u"));
+        let out = c.step(h, &mut pane, Some(false), 10_000);
+        assert!(out.contains(&Outcome::Cleared), "{out:?}");
+        assert_eq!(pane.calls.iter().filter(|k| *k == "key C-u").count(), 1);
+        let out = c.step(h, &mut pane, Some(false), 10_250);
+        assert!(
+            matches!(&out[..], [Outcome::Sent(_)])
+                || out.iter().any(|o| matches!(o, Outcome::Sent(_))),
+            "{out:?}"
+        );
+        assert_eq!(pane.submitted, ["hello"]);
+        assert!(!c.input_busy());
+    }
+
+    #[test]
+    fn stale_input_with_someone_attached_is_reported() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "hello");
+        let mut pane = FakePane {
+            input: "half a thought".into(),
+            attached: Some(true),
+            ..FakePane::default()
+        };
+        let mut c = Courier::default();
+        assert!(c.step(h, &mut pane, Some(false), 0).is_empty());
+        assert!(c.step(h, &mut pane, Some(false), 29_000).is_empty());
+        assert!(!c.input_busy());
+        c.step(h, &mut pane, Some(false), 30_000);
+        assert!(c.input_busy(), "said, not silent");
+        assert!(
+            !pane.calls.iter().any(|k| k == "key C-u"),
+            "never cleared under someone"
+        );
+        // They clear it themselves: busy no more, and the queue moves.
+        pane.input.clear();
+        let out = c.step(h, &mut pane, Some(false), 31_000);
+        assert!(out.iter().any(|o| matches!(o, Outcome::Sent(_))), "{out:?}");
+        assert!(!c.input_busy());
+    }
+
+    #[test]
+    fn input_someone_is_typing_is_never_cleared() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "hello");
+        let mut pane = FakePane {
+            input: "t".into(),
+            attached: Some(false),
+            ..FakePane::default()
+        };
+        let mut c = Courier::default();
+        for i in 0..10 {
+            assert!(c.step(h, &mut pane, Some(false), i * 9_000).is_empty());
+            pane.input.push('x');
+        }
+        assert!(
+            !pane.calls.iter().any(|k| k == "key C-u"),
+            "{:?}",
+            pane.calls
+        );
+        assert!(!c.input_busy());
     }
 
     #[test]
