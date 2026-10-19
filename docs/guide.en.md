@@ -392,12 +392,12 @@ cc-moss moss chat --json                                 # the last 200 messages
 
 - **How it reaches Moss.** What you send waits in line. When Moss is free and its input is empty, the daemon pastes
   it into Moss's terminal in one go and reads the screen back to make sure it arrived; after three misses it's marked
-  "Not sent" with a Resend button, and the rest still go. While Moss is in the middle of something, new messages wait
+  "Didn't get through" with a Resend button, and the rest still go. While Moss is in the middle of something, new messages wait
   and go in order.
 - **How the reply comes back.** When Moss finishes, cc-moss takes its last words from its conversation log. Claude
-  Code doesn't document that log, so when the reply can't be found it doesn't hang: it says "Moss got it (couldn't
-  fetch the reply; see the terminal)". A turn still running after 5 minutes is followed for up to 15; if Moss is
-  stopped on a confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
+  Code doesn't document that log, so when the reply can't be found it doesn't hang: it says "Moss got it (couldn't fetch the reply, check the
+  terminal)." A turn still running after 5 minutes is followed for up to 15; if Moss is stopped on a
+  confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
 - **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
   20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. In the
   conversation it's a small grey line in the middle. To keep Moss out of it, put `[moss] digest = false` in the config.
@@ -406,8 +406,8 @@ cc-moss moss chat --json                                 # the last 200 messages
   put a few buttons under a reply; clicking one sends those words to it.
 - **Only what you send from the panel or with `moss say` is in the conversation.** What you type straight into
   Moss's terminal stays in the terminal.
-- **Privacy.** Moss gets only what you send it and the session updates (names and states); it never gets other
-  sessions' conversations.
+- **Privacy.** cc-moss passes Moss only what you send it and the session updates (names and states), never other
+  sessions' conversations, and Moss's guard and sandbox keep it from reading their logs in `~/.claude/projects`.
 
 ## The menubar app
 
