@@ -11,6 +11,7 @@ use moss_core::moss::chat::{self, Line};
 use moss_core::moss::digest::{self, Change, Digest};
 use moss_core::moss::inbox::{self, InFlight, Outcome, Pane};
 use moss_core::moss::reply::{self, Claim, Timing, Verdict};
+use moss_core::moss::slash::{self, Slash};
 use moss_core::moss::{self, markers};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339, Status};
@@ -94,7 +95,50 @@ impl Pane for TmuxPane<'_> {
     fn wait(&mut self, how_long: Duration) {
         std::thread::sleep(how_long);
     }
+
+    fn fit(&mut self, columns: u32, rows: u32) {
+        let Ok(target) = self.target() else {
+            return;
+        };
+        let Ok(size) = self.run(&[
+            "display-message",
+            "-p",
+            "-t",
+            &target,
+            "#{window_width} #{window_height}",
+        ]) else {
+            return;
+        };
+        let mut it = size
+            .split_whitespace()
+            .map(|n| n.parse::<u32>().unwrap_or(0));
+        let (w, h) = (it.next().unwrap_or(0), it.next().unwrap_or(0));
+        if w >= columns && h >= rows {
+            return;
+        }
+        // A Moss started before cc-moss sized it: its own server, so the
+        // size option there touches nobody else.
+        let _ = self.run(&["set-option", "-g", "window-size", "manual"]);
+        let _ = self.run(&[
+            "resize-window",
+            "-t",
+            &target,
+            "-x",
+            &columns.max(w).to_string(),
+            "-y",
+            &rows.max(h).to_string(),
+        ]);
+    }
 }
+
+/// A `/compact` running in Moss's terminal.
+struct Compacting {
+    id: String,
+    since: Instant,
+}
+
+/// The longest a `/compact` is waited for.
+const COMPACT_LIMIT: Duration = Duration::from_secs(5 * 60);
 
 /// The conversation with one running Moss.
 pub struct Talk {
@@ -113,6 +157,7 @@ pub struct Talk {
     next_inbox: Instant,
     next_registry: Instant,
     waiting_shown: bool,
+    compacting: Option<Compacting>,
 }
 
 impl Talk {
@@ -140,6 +185,7 @@ impl Talk {
             next_inbox: now,
             next_registry: now,
             waiting_shown: true,
+            compacting: None,
         }
     }
 
@@ -150,6 +196,7 @@ impl Talk {
             self.received(&sent, now_ms(), "Moss restarted before it replied", log);
         }
         self.courier.done();
+        self.compacting = None;
         self.transcript = None;
         self.show_waiting(false);
     }
@@ -217,6 +264,10 @@ impl Talk {
             self.take_reply(&mut pane, now_ms, log);
             return;
         }
+        if self.compacting.is_some() {
+            self.check_compact(&mut pane, now, now_ms, log);
+            return;
+        }
         // Markers left from turns no message of ours started.
         reply::take_stops(&self.home);
         self.show_waiting(false);
@@ -233,6 +284,15 @@ impl Talk {
             .as_deref()
             .and_then(moss_core::transcript::turn_open);
         let from = std::fs::metadata(&transcript).map_or(0, |m| m.len());
+        // A command of yours at the head of the queue.
+        if let Some((path, Some(message))) = inbox::waiting(&self.home).into_iter().next() {
+            if message.from == chat::FROM_YOU {
+                if let Some(command) = slash::classify(&message.text) {
+                    self.command(&path, &message, command, &mut pane, turn, now, log);
+                    return;
+                }
+            }
+        }
         let outcomes = self.courier.step(&self.home, &mut pane, turn, now_ms);
         self.show_input_busy(self.courier.input_busy());
         for outcome in outcomes {
@@ -259,6 +319,162 @@ impl Talk {
                 }
             }
         }
+    }
+
+    /// Run a Claude Code command of yours (AMEND-2): refused ones at once,
+    /// the rest once Moss is ready, like a message.
+    #[allow(clippy::too_many_arguments)]
+    fn command(
+        &mut self,
+        path: &Path,
+        message: &inbox::Message,
+        command: Slash,
+        pane: &mut dyn Pane,
+        turn: Option<bool>,
+        now: Instant,
+        log: &dyn Fn(&str),
+    ) {
+        let name = command.name().to_string();
+        let answer = |talk: &Talk, text: &str, fallback: bool, refused: bool| {
+            let at = now_ms();
+            let line = Line {
+                reply_to: Some(message.id.clone()),
+                command: Some(name.clone()),
+                refused,
+                fallback,
+                ..Line::message(&inbox::new_id(at), &rfc3339(at), chat::FROM_MOSS, text)
+            };
+            talk.record(&line, log);
+        };
+        if let Slash::Refused(_) = command {
+            let _ = moss::remove(path);
+            let text = tr!(
+                "This one needs the terminal: click Open in Terminal at the top right.",
+                "这个命令要在终端里用：点右上角「在终端打开」。"
+            );
+            answer(self, text, false, true);
+            return;
+        }
+        let ready = turn != Some(true) && pane.screen().is_ok_and(|s| inbox::input_empty(&s));
+        if !ready {
+            return;
+        }
+        let _ = moss::remove(path);
+        let at = rfc3339(now_ms());
+        self.record(&Line::state(&message.id, &at, "sent", None), log);
+        let failed = |talk: &Talk, error: &str| {
+            log(&format!("moss: error: {name} did not run: {error}"));
+            let line = Line::state(&message.id, &rfc3339(now_ms()), "failed", Some(error));
+            talk.record(&line, log);
+        };
+        let timing = slash::Timing::default();
+        match command {
+            Slash::Display(_) => {
+                pane.fit(inbox::COLUMNS, inbox::ROWS);
+                match slash::show(pane, &message.text, timing) {
+                    Ok(text) if !text.trim().is_empty() => answer(self, &text, false, false),
+                    Ok(_) => answer(
+                        self,
+                        tr!(
+                            "Nothing came back from that command; see Moss's terminal.",
+                            "这个命令没有显示出东西；去 Moss 的终端看看。"
+                        ),
+                        true,
+                        false,
+                    ),
+                    Err(e) => failed(self, &e),
+                }
+            }
+            Slash::Clear => match slash::run(pane, &message.text) {
+                Ok(()) => {
+                    let back = slash::Timing {
+                        back: Duration::from_secs(10),
+                        ..timing
+                    };
+                    slash::wait_ready(pane, back);
+                    answer(
+                        self,
+                        tr!(
+                            "Cleared Moss's conversation (its journal and memory are still there).",
+                            "已清空 Moss 这一轮的对话（日志和记忆都还在）。"
+                        ),
+                        false,
+                        false,
+                    );
+                }
+                Err(e) => failed(self, &e),
+            },
+            Slash::Compact => match slash::run(pane, &message.text) {
+                Ok(()) => {
+                    self.compacting = Some(Compacting {
+                        id: message.id.clone(),
+                        since: now,
+                    })
+                }
+                Err(e) => failed(self, &e),
+            },
+            Slash::Refused(_) => {}
+        }
+    }
+
+    /// A `/compact` is done once Moss is out of its turn and back at its
+    /// prompt (or after [`COMPACT_LIMIT`]).
+    fn check_compact(
+        &mut self,
+        pane: &mut dyn Pane,
+        now: Instant,
+        now_ms: i64,
+        log: &dyn Fn(&str),
+    ) {
+        let Some(c) = &self.compacting else {
+            return;
+        };
+        if now < self.next_inbox {
+            return;
+        }
+        self.next_inbox = now + INBOX_EVERY;
+        let elapsed = now.duration_since(c.since);
+        let turn = self
+            .transcript
+            .as_deref()
+            .and_then(moss_core::transcript::turn_open);
+        let back = elapsed >= Duration::from_secs(2)
+            && turn != Some(true)
+            && pane
+                .screen()
+                .is_ok_and(|s| inbox::input_empty(&s) && !reply::working(&s));
+        let late = elapsed >= COMPACT_LIMIT;
+        if !back && !late {
+            return;
+        }
+        let id = c.id.clone();
+        self.compacting = None;
+        let (text, fallback) = if back {
+            (
+                tr!("Compacted Moss's conversation.", "已压缩 Moss 的对话。"),
+                false,
+            )
+        } else {
+            (
+                tr!(
+                    "Moss is still compacting; see its terminal.",
+                    "Moss 还在压缩对话；去它的终端看看。"
+                ),
+                true,
+            )
+        };
+        let line = Line {
+            reply_to: Some(id),
+            command: Some("/compact".into()),
+            fallback,
+            ..Line::message(
+                &inbox::new_id(now_ms),
+                &rfc3339(now_ms),
+                chat::FROM_MOSS,
+                text,
+            )
+        };
+        self.record(&line, log);
     }
 
     fn take_reply(&mut self, pane: &mut dyn Pane, now_ms: i64, log: &dyn Fn(&str)) {

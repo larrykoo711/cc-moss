@@ -10,6 +10,7 @@ pub mod inbox;
 pub mod keeper;
 pub mod markers;
 pub mod reply;
+pub mod slash;
 
 use std::io;
 use std::path::{Path, PathBuf};

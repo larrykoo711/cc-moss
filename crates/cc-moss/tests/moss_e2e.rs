@@ -194,6 +194,24 @@ fn moss_comes_up_with_role() {
         ),
         "off"
     );
+    // Room for Claude Code's panels.
+    assert_eq!(
+        moss_option(
+            &w,
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "=moss:",
+                "#{window_width}x#{window_height}"
+            ]
+        ),
+        "100x50"
+    );
+    assert_eq!(
+        moss_option(&w, &["show-options", "-g", "-v", "window-size"]),
+        "manual"
+    );
     let st = status(&w);
     assert_eq!(st["daemon_running"], true, "{st}");
     assert!(st.get("last_error").is_none(), "{st}");
