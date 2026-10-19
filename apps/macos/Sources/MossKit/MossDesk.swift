@@ -8,6 +8,8 @@ import Observation
 public final class MossDesk {
     /// The conversation as `moss chat --json` last said.
     public private(set) var chat: [MossMessage] = []
+    /// Moss's newest quick-bar pin, when cc-moss says.
+    public private(set) var pin: MossChat.Pin?
     /// Sent from here and not in `chat` yet: on its way, or refused.
     public private(set) var pending: [MossMessage] = []
     public private(set) var status: MossStatus?
@@ -62,6 +64,7 @@ public final class MossDesk {
         let first = !loaded
         loaded = true
         if new.messages != chat { chat = new.messages }
+        if new.pin != pin { pin = new.pin }
         let logged = Set(chat.map(\.id))
         if pending.contains(where: { logged.contains($0.id) }) { pending.removeAll { logged.contains($0.id) } }
         if first { markRead() }

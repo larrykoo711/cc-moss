@@ -79,6 +79,11 @@ enum Render {
                 model.mossTyping = args.contains("--moss-typing")
                 // `--moss-typing "/"`: with that typed (a slash shows the command list).
                 if let typed = value("--moss-typing"), !typed.hasPrefix("--") { model.mossDraft = typed }
+                // `--moss-quick-uses '/usage:5,waiting:2'`: the quick bar as if those were
+                // sent that often lately (nothing is saved); `--moss-quick-open`: its "⋯" list.
+                model.quickPersist = false
+                model.quickUses = Self.quickUses(value("--moss-quick-uses") ?? "")
+                model.mossQuickOpen = args.contains("--moss-quick-open")
             }
             model.query = value("--query") ?? ""
             switch value("--filter") {
@@ -467,6 +472,16 @@ enum Render {
         if let i = args.firstIndex(of: "--write"), let card = model.askDesk.open.first {
             let text = i + 1 < args.count && !args[i + 1].hasPrefix("--") ? args[i + 1] : ""
             model.act(on: card.id) { $0.writing = true; $0.draft = text; return nil }
+        }
+    }
+
+    /// "/usage:5,waiting:2" → that many uses of each, an hour apart, ending now.
+    static func quickUses(_ spec: String) -> [MossQuickUse] {
+        spec.split(separator: ",").flatMap { part -> [MossQuickUse] in
+            let bits = part.split(separator: ":")
+            guard let token = bits.first, let id = MossQuick.id(fromMoss: String(token)) else { return [] }
+            let count = bits.count > 1 ? Int(bits[1]) ?? 1 : 1
+            return (0..<count).map { MossQuickUse(id: id, at: L.clock().addingTimeInterval(-Double($0) * 3600)) }
         }
     }
 

@@ -28,6 +28,19 @@ struct MossPage: View {
             }
             MossInputBar(model: model, keys: keys)
         }
+        .overlay(alignment: .bottomTrailing) {
+            if model.mossQuickOpen {
+                ZStack(alignment: .bottomTrailing) {
+                    // A click anywhere else closes it, as a menu does.
+                    Color.clear.contentShape(Rectangle()).onTapGesture { model.mossQuickOpen = false }
+                    MossQuickMenu(model: model)
+                        .padding(.trailing, 10)
+                        .padding(.bottom, 54)
+                }
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.mossQuickOpen)
         .animation(.easeOut(duration: 0.18), value: desk.messages.isEmpty)
         .task(id: model.panelShown) {
             // Moss thinking doesn't touch the state folder: look again every
@@ -582,6 +595,8 @@ private struct MossChip: View {
     let icon: String?
     var compact = false
     var enabled = true
+    /// Moss suggested it: a small sparkle on the corner.
+    var pinned = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -611,7 +626,212 @@ private struct MossChip: View {
         .focusable(false)
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
+        .overlay(alignment: .topTrailing) {
+            if pinned {
+                Text(Image(systemName: "sparkle"))
+                    .font(.system(size: 7.5, weight: .bold))
+                    .foregroundStyle(Theme.brand)
+                    .padding(2)
+                    .background(Circle().fill(Theme.surface(scheme)))
+                    .offset(x: 3, y: -4)
+                    .allowsHitTesting(false)
+            }
+        }
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside && enabled } }
+    }
+
+    /// The chip's width as drawn (for fitting a row without guessing).
+    static func width(title: String, icon: Bool) -> CGFloat {
+        let font = NSFont.systemFont(ofSize: 12, weight: .medium)
+        let text = ceil((title as NSString).size(withAttributes: [.font: font]).width)
+        return text + (icon ? 14 + 5 : 0) + 20 + 2
+    }
+}
+
+// MARK: - The quick bar
+
+/// Moss's abilities and the account's commands in one row, the ones you
+/// use most first. As many as fit; the rest are behind "⋯". The order is
+/// worked out when the page opens and after each send, never while you
+/// point at it, so nothing moves under the pointer.
+private struct MossQuickRow: View {
+    @Bindable var model: AppModel
+    let enabled: Bool
+    @State private var ranked: [MossQuickItem] = []
+    @State private var pinned: Set<String> = []
+    static let spacing: CGFloat = 6
+    static let moreWidth: CGFloat = 34
+
+    var body: some View {
+        GeometryReader { geo in
+            let shown = Self.fit(ranked, in: geo.size.width)
+            HStack(spacing: Self.spacing) {
+                ForEach(ranked.prefix(shown)) { item in
+                    MossChip(title: item.title(), icon: item.symbol, enabled: enabled, pinned: pinned.contains(item.id)) {
+                        model.doQuick(item)
+                    }
+                    .tip(pinned.contains(item.id) ? L.t("Suggested by Moss · \(item.text())", "Moss 推荐 · \(item.text())")
+                                                  : item.text())
+                }
+                if shown < ranked.count || model.quickItems.contains(where: \.careful) {
+                    more
+                }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .frame(height: 30)
+        .onAppear(perform: rank)
+        .onChange(of: model.quickSends) { _, _ in rank() }
+        .onChange(of: model.quickContext.mossPicks) { _, _ in rank() }
+        .onChange(of: model.mossDesk.status?.account) { _, _ in rank() }
+    }
+
+    private var more: some View {
+        Button {
+            model.mossQuickOpen.toggle()
+        } label: {
+            Image(systemName: "ellipsis")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(model.mossQuickOpen ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                .frame(width: Self.moreWidth, height: 28)
+                .background(Capsule().fill(model.mossQuickOpen ? Theme.brand.opacity(0.12) : Color.primary.opacity(0.05)))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .disabled(!enabled)
+        .opacity(enabled ? 1 : 0.45)
+        .tip(L.t("Everything Moss can do", "全部快捷指令"))
+    }
+
+    private func rank() {
+        let context = model.quickContext
+        ranked = MossQuick.ranked(model.quickItems, uses: model.quickUses, context: context, now: Date())
+        pinned = Set(context.mossPicks)
+    }
+
+    /// How many chips fit in `width` in order, leaving room for "⋯" when
+    /// some don't. Chips never shrink or wrap.
+    static func fit(_ items: [MossQuickItem], in width: CGFloat) -> Int {
+        let widths = items.map { MossChip.width(title: $0.title(), icon: true) }
+        let all = widths.reduce(0, +) + spacing * CGFloat(max(0, widths.count - 1)) + spacing + moreWidth
+        if all <= width { return items.count }
+        var used: CGFloat = moreWidth
+        var count = 0
+        for w in widths {
+            if used + spacing + w > width { break }
+            used += spacing + w
+            count += 1
+        }
+        return count
+    }
+}
+
+/// Everything behind "⋯": the most used, then every command (/clear and
+/// /compact ask first).
+private struct MossQuickMenu: View {
+    @Bindable var model: AppModel
+    @State private var confirming: String?
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        let ranked = MossQuick.ranked(model.quickItems, uses: model.quickUses, context: model.quickContext, now: Date())
+        let picks = Set(model.quickContext.mossPicks)
+        VStack(alignment: .leading, spacing: 2) {
+            heading(L.t("Frequent", "常用"))
+            ForEach(ranked.prefix(5)) { item in row(item, pinned: picks.contains(item.id)) }
+            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).padding(.vertical, 4)
+            heading(L.t("Commands", "命令"))
+            ForEach(model.quickItems.filter { $0.command != nil }) { item in row(item, pinned: false) }
+        }
+        .padding(6)
+        .frame(width: 268)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 14, y: 4)
+    }
+
+    private func heading(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 10.5, weight: .semibold))
+            .foregroundStyle(.tertiary)
+            .padding(.horizontal, 8)
+            .padding(.top, 4)
+            .padding(.bottom, 2)
+    }
+
+    @ViewBuilder private func row(_ item: MossQuickItem, pinned: Bool) -> some View {
+        if confirming == item.id {
+            HStack(spacing: 6) {
+                Text(item.command == "/clear" ? L.t("Clear Moss's conversation?", "清空 Moss 的对话？")
+                                              : L.t("Compact Moss's conversation?", "压缩 Moss 的对话？"))
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Spacer(minLength: 4)
+                Button(L.t("Cancel", "取消")) { confirming = nil }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .handCursor()
+                Button(item.title()) {
+                    confirming = nil
+                    model.doQuick(item)
+                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(item.command == "/clear" ? Theme.red : Theme.brand)
+                .handCursor()
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.selection(scheme)))
+        } else {
+            MossQuickMenuRow(item: item, pinned: pinned) {
+                if item.careful { confirming = item.id } else { model.doQuick(item) }
+            }
+        }
+    }
+}
+
+private struct MossQuickMenuRow: View {
+    let item: MossQuickItem
+    let pinned: Bool
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Text(Image(systemName: item.symbol))
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(item.careful ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.brand))
+                    .frame(width: 16)
+                Text(item.title())
+                    .font(.system(size: 12.5))
+                    .lineLimit(1)
+                if pinned {
+                    Text(Image(systemName: "sparkle"))
+                        .font(.system(size: 8, weight: .bold))
+                        .foregroundStyle(Theme.brand)
+                        .tip(L.t("Suggested by Moss", "Moss 推荐"))
+                }
+                Spacer(minLength: 6)
+                if let command = item.command {
+                    Text(command)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(.tertiary)
+                }
+            }
+            .padding(.horizontal, 8)
+            .frame(height: 28)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? Theme.selection(scheme) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .tip(item.text())
     }
 }
 
@@ -871,10 +1091,7 @@ private struct MossInputBar: View {
 
     private var actions: some View {
         HStack(spacing: 6) {
-            MossChips(titles: MossAction.all.map { ($0.title(), $0.symbol) }, enabled: blocked == nil) { i in
-                model.doMoss(MossAction.all[i])
-            }
-            Spacer(minLength: 0)
+            MossQuickRow(model: model, enabled: blocked == nil)
             MossIconButton(symbol: "keyboard", tip: L.t("Type a message", "打字")) { model.mossTyping = true }
                 .disabled(blocked != nil)
                 .opacity(blocked == nil ? 1 : 0.45)

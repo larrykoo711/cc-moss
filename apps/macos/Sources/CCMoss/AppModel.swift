@@ -74,7 +74,10 @@ final class AppModel {
     var page: PanelPage = .sessions {
         didSet {
             // Back on the Moss page later, it opens on its actions again.
-            if page != .moss { mossTyping = false }
+            if page != .moss {
+                mossTyping = false
+                mossQuickOpen = false
+            }
             if page == .moss && panelShown { mossDesk.markRead() }
         }
     }
@@ -88,6 +91,14 @@ final class AppModel {
     var mossTyping = false
     /// What's typed in the Moss page's field, not sent yet.
     var mossDraft = ""
+    /// The quick bar's "⋯" list is open.
+    var mossQuickOpen = false
+    /// What was sent from the quick bar and when, for its order (this Mac only).
+    var quickUses: [MossQuickUse] = MossQuickLog.load()
+    /// Off for screenshots: their made-up uses are never saved.
+    @ObservationIgnored var quickPersist = true
+    /// Bumped after every send: the quick bar re-ranks then (never while you hover).
+    var quickSends = 0
     /// Moss answered something sent from the panel (for the alerts).
     @ObservationIgnored var onMossReplies: (([MossMessage]) -> Void)?
     /// Settings › Notifications › "Answer questions here" (`ask.enabled`).
