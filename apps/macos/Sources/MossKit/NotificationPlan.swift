@@ -11,8 +11,12 @@ public enum AlertKind: String, CaseIterable, Sendable {
     case finished
     /// An interrupted session is back.
     case restored
+    /// Moss answered something you sent from the panel (T2.3). Never in the
+    /// event stream: the app makes it, and it never merges with a session's alert.
+    case mossReply = "moss_reply"
 
-    public var defaultOn: Bool { self != .finished }
+    /// Moss's replies have no switch of their own; the toggles never see them.
+    public var defaultOn: Bool { self != .finished && self != .mossReply }
 
     /// What the alert offers; clicking the alert itself does the same.
     public var action: AlertAction { self == .interrupted ? .restore : .open }
@@ -180,6 +184,9 @@ public struct NotificationPlan: Sendable {
         case .restored:
             heading = L.t("\(title) is back", "\(title) 找回来了")
             body = L.t("Right where you left off.", "从上次停下的地方接着来。")
+        case .mossReply:
+            heading = L.t("Moss replied", "Moss 回你了")
+            body = L.t("The reply is on the Moss page.", "回复在面板的 Moss 页里。")
         }
         return AlertNote(id: "cc-moss.\(alert.id)", title: heading, body: body, action: alert.kind.action,
                          slotId: alert.slotId, thread: alert.slotId)

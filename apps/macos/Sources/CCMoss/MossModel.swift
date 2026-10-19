@@ -34,6 +34,13 @@ extension AppModel {
         }
     }
 
+    func chooseForMoss(_ reply: String, on message: String) {
+        Task {
+            await mossDesk.choose(reply, on: message)
+            refresh()
+        }
+    }
+
     func doMoss(_ action: MossAction) {
         Task {
             await mossDesk.perform(action)

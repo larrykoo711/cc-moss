@@ -473,7 +473,7 @@ final class PetController {
         model.stateFilter = switch message.kind {
         case .interrupted: .interrupted
         case .finished: .waiting
-        case .needsYou, .restored: nil
+        case .needsYou, .restored, .mossReply: nil
         }
         if let first = message.slots.first, model.sessions.contains(where: { $0.id == first }) { model.selectedID = first }
         showPanel()
@@ -509,13 +509,13 @@ final class PetController {
         // answered (here or in the terminal) and the card has said how it went.
         if let askId = alert.askId { return cards.contains(askId) }
         // Moss's answer isn't a session's state: it stays until it's handled or expires.
-        if alert.slotId == MossReplyRouter.slot { return true }
+        if alert.kind == .mossReply { return true }
         if now.timeIntervalSince(alert.at) < 5 { return true }
         guard let session = sessions.first(where: { $0.id == alert.slotId }) else { return false }
         switch alert.kind {
         case .needsYou: return session.needsYou
         case .interrupted: return session.state == .interrupted
-        case .restored, .finished: return true
+        case .restored, .finished, .mossReply: return true
         }
     }
 

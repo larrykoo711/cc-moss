@@ -111,13 +111,17 @@ private struct MossStatusBar: View {
             VStack(alignment: .leading, spacing: 1) {
                 Text("Moss")
                     .font(.system(size: 14, weight: .semibold))
-                HStack(spacing: 6) {
-                    MossDot(color: MossTone.color(status?.activity), breathing: status?.activity == .thinking)
+                HStack(alignment: .top, spacing: 6) {
+                    MossDot(color: status?.inputBusy == true && status?.activity.canTalk == true ? Theme.amber : MossTone.color(status?.activity),
+                            breathing: status?.activity == .thinking && status?.inputBusy != true)
+                        .padding(.top, 4.5)
+                    // A long reason (stuck input, a failed start) takes a second line.
                     Text(status?.activityLine() ?? L.t("Checking…", "正在查看…"))
                         .font(.system(size: 11.5))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                        .lineLimit(2)
                         .truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .tip(status?.activityLine() ?? "")
             }
@@ -132,7 +136,8 @@ private struct MossStatusBar: View {
             }
         }
         .padding(.horizontal, 16)
-        .frame(height: 50)
+        .padding(.vertical, 7)
+        .frame(minHeight: 50)
         .accessibilityElement(children: .contain)
     }
 }
@@ -315,14 +320,16 @@ private struct MossMessageView: View {
             MossAvatar(size: 22)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 6) {
-                MossMarkdown(text: message.shownText(), quiet: message.fallback)
+                MossRichText(text: message.shownText(), quiet: message.fallback)
                     .padding(.horizontal, 11)
                     .padding(.vertical, 8)
                     .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
                     .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                     .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 if !buttons.isEmpty {
-                    MossChips(titles: buttons.map { ($0, nil) }) { i in model.sayToMoss(buttons[i]) }
+                    MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id)) { i in
+                        model.chooseForMoss(buttons[i], on: message.id)
+                    }
                 }
             }
             Spacer(minLength: 36)
@@ -400,7 +407,7 @@ private struct ChatBubble: Shape {
 
 /// Moss's words with basic Markdown: bold, italics, links, `code` inline,
 /// and fenced code blocks.
-private struct MossMarkdown: View {
+private struct MossRichText: View {
     let text: String
     var quiet = false
     @Environment(\.colorScheme) private var scheme
@@ -431,8 +438,7 @@ private struct MossMarkdown: View {
     }
 
     private func inline(_ raw: String) -> AttributedString {
-        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
-        guard var out = try? AttributedString(markdown: raw, options: options) else { return AttributedString(raw) }
+        var out = MossMarkdown.inline(raw)
         for run in out.runs where run.inlinePresentationIntent?.contains(.code) == true {
             out[run.range].font = .system(size: 12, design: .monospaced)
             out[run.range].backgroundColor = Color.primary.opacity(scheme == .dark ? 0.12 : 0.07)
@@ -627,7 +633,8 @@ private struct MossInputBar: View {
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) {
-                        text += "\n"
+                        // A line break where the cursor is, the way AppKit's own fields do it.
+                        NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
                     } else {
                         send()
                     }

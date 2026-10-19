@@ -17,6 +17,8 @@ public final class MossDesk {
     public private(set) var resent: Set<String> = []
     /// Moss's newest answer you have seen on the page.
     public private(set) var readThrough: String?
+    /// Moss's messages whose suggested replies were used: one per message.
+    public private(set) var answered: Set<String> = []
     @ObservationIgnored public var watch = MossReplyWatch()
     /// How a message reaches Moss: `cc-moss moss say`, or a stand-in.
     @ObservationIgnored public var say: @MainActor (String) async throws -> String
@@ -69,7 +71,7 @@ public final class MossDesk {
     /// Send `text` to Moss. It shows at once as "sending"; cc-moss's answer
     /// turns it into "queued", or "failed" with cc-moss's reason.
     public func send(_ text: String) async {
-        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = MossMarkdown.normalised(text).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
         serial += 1
         let local = "local-\(serial)"
@@ -81,6 +83,14 @@ public final class MossDesk {
         } catch {
             replace(local) { $0.delivery = .failed; $0.error = Self.describe(error) }
         }
+    }
+
+    /// One of the replies Moss suggested under `message`: sends it, and the
+    /// rest of that row can't be sent any more.
+    public func choose(_ reply: String, on message: MessageID) async {
+        guard !answered.contains(message) else { return }
+        answered.insert(message)
+        await send(reply)
     }
 
     /// One of Moss's abilities: sends its words.

@@ -33,6 +33,11 @@ extension MossStatus {
     /// or why it can't talk right now.
     public func activityLine(now: Date = L.clock(), lang: Lang = L.lang) -> String {
         let t = { (en: String, zh: String) in lang == .zh ? zh : en }
+        // Stuck text comes first: nothing else gets through until it's cleared.
+        if inputBusy, activity.canTalk {
+            return t("There's unsent text in Moss's input; take a look in the terminal",
+                     "Moss 的输入框里有没送出去的字，去终端看看")
+        }
         let line: String = switch activity {
         case .idle:
             if let since {
@@ -210,6 +215,27 @@ public struct MossAction: Identifiable, Equatable, Sendable {
                    details: ("What each session finished", "各会话做完的事"),
                    texts: ("What did the sessions finish today? Keep it short.", "今天各个会话做完了什么？简短列一下。")),
     ]
+}
+
+/// Moss's words as rich text: inline Markdown (bold, italics, `code`,
+/// links), whitespace kept. Only https links stay clickable; anything else
+/// (file://, a custom scheme) is plain text.
+public enum MossMarkdown {
+    public static func inline(_ raw: String) -> AttributedString {
+        let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
+        guard var out = try? AttributedString(markdown: raw, options: options) else { return AttributedString(raw) }
+        for run in out.runs {
+            if let url = run.link, url.scheme?.lowercased() != "https" {
+                out[run.range].link = nil
+            }
+        }
+        return out
+    }
+
+    /// What `moss say` takes: line breaks as \n only (cc-moss refuses \r).
+    public static func normalised(_ text: String) -> String {
+        text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+    }
 }
 
 extension MossClient {

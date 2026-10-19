@@ -20,10 +20,12 @@ public struct MossStatus: Equatable, Sendable {
     public var queued: Int
     /// When Moss last answered something sent from the panel.
     public var lastReplyAt: Date?
+    /// Text from a delivery that didn't go through is still in Moss's input.
+    public var inputBusy: Bool
 
     public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
                 daemonRunning: Bool = true, lastError: String? = nil, activity: MossActivity? = nil,
-                queued: Int = 0, lastReplyAt: Date? = nil) {
+                queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false) {
         self.enabled = enabled
         self.running = running
         self.since = since
@@ -34,6 +36,7 @@ public struct MossStatus: Equatable, Sendable {
         self.activity = activity ?? MossActivity.derived(enabled: enabled, running: running, daemonRunning: daemonRunning)
         self.queued = queued
         self.lastReplyAt = lastReplyAt
+        self.inputBusy = inputBusy
     }
 
     private struct Wire: Decodable {
@@ -48,6 +51,7 @@ public struct MossStatus: Equatable, Sendable {
         var activity: String?
         var queued: Int?
         var last_reply_at: String?
+        var input_busy: Bool?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -65,7 +69,8 @@ public struct MossStatus: Equatable, Sendable {
                           lastError: wire.last_error.flatMap { $0.isEmpty ? nil : $0 },
                           activity: wire.activity.flatMap(MossActivity.init(rawValue:)),
                           queued: max(0, wire.queued ?? 0),
-                          lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp))
+                          lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp),
+                          inputBusy: wire.input_busy ?? false)
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the

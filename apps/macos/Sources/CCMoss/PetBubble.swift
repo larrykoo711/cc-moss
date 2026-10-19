@@ -33,6 +33,7 @@ enum BubbleStyle {
         case .interrupted: Theme.amber
         case .restored: Color.green
         case .finished: Theme.amber
+        case .mossReply: Theme.brand
         }
     }
 
@@ -42,6 +43,7 @@ enum BubbleStyle {
         case .interrupted: Icons.state(.interrupted)
         case .restored: "checkmark.circle"
         case .finished: Icons.state(.waiting)
+        case .mossReply: "bubble.left.and.text.bubble.right"
         }
     }
 
@@ -52,7 +54,7 @@ enum BubbleStyle {
 
     static func secondaryIcon(_ kind: AlertKind) -> String {
         switch kind {
-        case .needsYou, .finished: "clock"
+        case .needsYou, .finished, .mossReply: "clock"
         case .interrupted: "xmark"
         case .restored: "checkmark"
         }

@@ -79,6 +79,19 @@ import Testing
         #expect(s.inputBlocked(lang: .zh) == "Moss 关着，去设置里打开就能聊。")
     }
 
+    @Test func stuckInputIsReadAndSaid() throws {
+        #expect(try status("idle").inputBusy == false, "missing means no")
+        let s = try status("idle", extra: #","input_busy":true"#)
+        #expect(s.inputBusy)
+        #expect(s.activityLine(now: now, lang: .zh) == "Moss 的输入框里有没送出去的字，去终端看看")
+        #expect(s.activityLine(now: now, lang: .en) == "There's unsent text in Moss's input; take a look in the terminal")
+    }
+
+    @Test func offSaysOffEvenWithStuckInput() {
+        let s = MossStatus(enabled: false, running: false, activity: .off, inputBusy: true)
+        #expect(s.activityLine(now: now, lang: .en) == "Off · turn it on in Settings")
+    }
+
     @Test func onlyOnAndRunningCanTalk() {
         #expect(MossActivity.allCases.filter(\.canTalk) == [.idle, .thinking, .waiting])
         #expect(MossStatus(enabled: true, running: true, activity: .thinking).inputBlocked(lang: .en) == nil)

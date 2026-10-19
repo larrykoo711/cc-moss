@@ -51,11 +51,11 @@ public enum MossReplyRouter {
     public static let reason = "moss-reply"
 
     /// Stand-in for the router, which looks only at the context.
-    private static let alert = SessionAlert(id: 0, slotId: slot, kind: .finished, at: Date(timeIntervalSince1970: 0))
+    private static let alert = SessionAlert(id: 0, slotId: slot, kind: .mossReply, at: Date(timeIntervalSince1970: 0))
 
     /// The alert Mo is handed for an answer.
     public static func alert(for reply: MossMessage, id: Int, at: Date) -> SessionAlert {
-        SessionAlert(id: id, slotId: slot, kind: .finished, name: "Moss", reason: reason, at: at)
+        SessionAlert(id: id, slotId: slot, kind: .mossReply, name: "Moss", reason: reason, at: at)
     }
 
     /// The first words of an answer, for a notification.

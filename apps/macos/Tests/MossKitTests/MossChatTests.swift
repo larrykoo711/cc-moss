@@ -130,6 +130,33 @@ private let chatJSON = #"""
         #expect(desk.messages.map(\.id) == ["1760608990000-000003"])
     }
 
+    @Test func onlyHttpsLinksStayLinks() {
+        let text = MossMarkdown.inline("[docs](https://example.com) [file](file:///etc/passwd) [x](javascript:alert(1))")
+        let links = text.runs.compactMap(\.link)
+        #expect(links == [URL(string: "https://example.com")!])
+        #expect(String(text.characters) == "docs file x")
+    }
+
+    @Test func lineBreaksAreNormalised() {
+        #expect(MossMarkdown.normalised("a\r\nb\rc\nd") == "a\nb\nc\nd")
+    }
+
+    @MainActor @Test func carriageReturnsNeverReachTheCLI() async {
+        var said: [String] = []
+        let desk = MossDesk { text in said.append(text); return "1760608900000-000009" }
+        await desk.send("one\r\ntwo\rthree")
+        #expect(said == ["one\ntwo\nthree"])
+    }
+
+    @MainActor @Test func aSuggestedReplyIsSentOncePerMessage() async {
+        var said: [String] = []
+        let desk = MossDesk { text in said.append(text); return "1760608900000-00000\(said.count)" }
+        await desk.choose("去看看", on: "m1")
+        await desk.choose("先不管", on: "m1")
+        #expect(said == ["去看看"])
+        #expect(desk.answered.contains("m1"))
+    }
+
     @MainActor @Test func unreadUntilThePageIsSeen() throws {
         let desk = MossDesk { _ in "" }
         let chat = try MossChat.decode(Data(chatJSON.utf8))
