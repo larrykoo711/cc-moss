@@ -155,6 +155,11 @@ struct PanelView: View {
             // Selecting another row (the keyboard, a click) closes a reply line.
             if let open = model.replyOpenID, open != id { model.closeReply() }
         }
+        .onChange(of: model.pins) { _, _ in hoveredID = nil }
+        .onChange(of: model.listItems.map(\.id)) { _, ids in
+            // The hovered row went away (filtered, closed): drop its buttons.
+            if let h = hoveredID, !ids.contains(h) { hoveredID = nil }
+        }
         .onChange(of: model.replyOpenID) { _, id in
             if id != nil { replyFocused = true } else if model.form == nil { searchFocused = true }
         }
@@ -289,20 +294,15 @@ struct PanelView: View {
     private var sessionList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                // One flat list (user 2026-10-19): a row moving into Pinned
+                // is the same row moving, not a copy left behind still lit.
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    let pinned = model.pinnedShown
-                    if !pinned.isEmpty {
-                        PinnedHeader()
-                        ForEach(pinned) { s in row(s) }
-                    }
-                    ForEach(model.projects) { project in
-                        SectionHeader(project: project)
-                        ForEach(project.sessions) { s in row(s) }
-                    }
-                    if !model.olderShown.isEmpty {
-                        OlderGroupHeader(model: model)
-                        if model.olderExpanded {
-                            ForEach(model.olderShown) { s in row(s) }
+                    ForEach(model.listItems) { item in
+                        switch item {
+                        case .pinnedHeader: PinnedHeader()
+                        case let .projectHeader(project): SectionHeader(project: project)
+                        case .olderHeader: OlderGroupHeader(model: model)
+                        case let .row(s, pinned): row(s, pinned: pinned)
                         }
                     }
                 }
@@ -325,7 +325,7 @@ struct PanelView: View {
         }
     }
 
-    private func row(_ s: Session) -> some View {
+    private func row(_ s: Session, pinned: Bool = false) -> some View {
         // A click only selects; opening is deliberate: the button that
         // appears at the end of the hovered row, the action pill below, or
         // Return (user 2026-10-16). The row carries its own actions: the
@@ -338,21 +338,36 @@ struct PanelView: View {
         // selected nothing (user 2026-10-18). Its own buttons still win.
         let shownSession = s
         let lineOpen = model.replyOpenID == s.id
+        let note = model.rowNote.flatMap { $0.id == s.id ? $0.text : nil }
         return VStack(spacing: 0) {
-            rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions, lineOpen: lineOpen)
+            rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
+                      lineOpen: lineOpen, pinned: pinned)
             if lineOpen {
                 ReplyLineView(model: model, session: s, focused: $replyFocused)
                     .transition(.opacity)
+            }
+            if let note {
+                HStack(spacing: 5) {
+                    Image(systemName: "info.circle").font(.system(size: 10, weight: .semibold))
+                    Text(note).font(.system(size: 11.5)).lineLimit(1)
+                }
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 44)
+                .padding(.bottom, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
             }
         }
         .background(RoundedRectangle(cornerRadius: 8).fill(lineOpen ? Theme.selection(scheme) : .clear))
         .clipped()
         .animation(.easeOut(duration: 0.18), value: lineOpen)
-        .id(s.id)
+        .animation(.easeOut(duration: 0.18), value: note)
+        // A hairline of air between rows: two lit neighbours never merge into one block.
+        .padding(.vertical, 1)
     }
 
     private func rowButton(_ s: Session, shownSession: Session, menuOpen: Bool, shown: Bool, actions: RowActions,
-                           lineOpen: Bool) -> some View {
+                           lineOpen: Bool, pinned: Bool) -> some View {
         Button {
             model.selectedID = s.id
             // Waiting for you: a reply line opens right under it.
@@ -364,7 +379,7 @@ struct PanelView: View {
                        menuOpen: menuOpen,
                        perform: { perform($0) },
                        problem: model.restoreProblem(s),
-                       pinned: model.pins.contains(s.id),
+                       pinned: pinned,
                        lineOpen: lineOpen,
                        pin: s.isMoss ? nil : { model.togglePin(s) },
                        restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
@@ -745,9 +760,15 @@ struct ReplyLineView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .bottom, spacing: 6) {
-                TextField(L.t("Reply…", "回一句…"), text: $model.replyDraft, axis: .vertical)
+                TextField(ReplyLine.busy(session) ? L.t("It's busy; this waits until it's done", "它在忙，发出去会排在这一轮后面")
+                                                  : L.t("Reply…", "回一句…"),
+                          text: $model.replyDraft, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13))
+                    // An untouched suggestion is as quiet as a placeholder.
+                    .foregroundStyle(model.replyField.untouched ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                    .simultaneousGesture(TapGesture().onEnded { model.replyEngaged() })
+                    .onKeyPress(keys: [.leftArrow, .rightArrow]) { _ in model.replyEngaged(); return .ignored }
                     .lineLimit(1...3)
                     .focused(focused)
                     .disabled(sending)

@@ -135,28 +135,54 @@ extension AppModel {
     /// row, with Claude Code's own suggestion already in it. Any other row
     /// closes it.
     func openReply(_ s: Session) {
-        guard ReplyLine.opens(s) else { closeReply(); return }
+        guard ReplyLine.opens(s) else {
+            closeReply()
+            // Not a silent no-op: say why, under the row, for a moment.
+            if let why = ReplyLine.blocked(s) { showRowNote(s.id, why) }
+            return
+        }
         guard replyOpenID != s.id else { return }
         guard !sendFlow.isSending else { return }
         replyOpenID = s.id
         replyDraft = ""
-        replyTouched = false
-        replyPrefilled = nil
+        replyField = SuggestionField()
         sendFlow = .idle
+        // Mid-turn Claude Code shows no suggestion: nothing to ask for.
+        guard !ReplyLine.busy(s) else { return }
         let handle = s.handle
         Task {
             let guess = if let demo = demoSuggestion { demo } else { await client?.suggest(handle) }
-            guard replyOpenID == s.id,
-                  let fill = Suggestion.prefill(text: replyDraft, touched: replyTouched, suggestion: guess) else { return }
-            replyPrefilled = fill
+            guard replyOpenID == s.id, let fill = replyField.offer(guess, text: replyDraft) else { return }
             replyDraft = fill
-            FieldSelection.selectAllSoon()
+            FieldSelection.selectAllQuietly()
         }
     }
 
     /// The line's text changed: yours, unless it's the suggestion going in.
     func replyEdited(_ text: String) {
-        if text != replyPrefilled { replyTouched = true }
+        let was = replyField.untouched
+        replyField.changed(to: text)
+        if was && !replyField.untouched { FieldSelection.showHighlight() }
+    }
+
+    /// An arrow key or a click in the line: the suggestion is ordinary text now.
+    func replyEngaged() {
+        guard replyField.untouched else { return }
+        replyField.engaged()
+        FieldSelection.showHighlight()
+    }
+
+    /// A quiet line under a row for 2 s: why it can't be typed into.
+    func showRowNote(_ id: String, _ why: ReplyLine.Blocked) {
+        let text = switch why {
+        case .notInTmux: L.t("Not in tmux, so it can't be typed into from here", "不在 tmux 里，没法从这里打字")
+        case .dropped: L.t("Dropped; bring it back first", "断了，先找回")
+        }
+        rowNote = (id, text)
+        Task {
+            try? await Task.sleep(nanoseconds: 2_000_000_000)
+            if rowNote?.id == id { rowNote = nil }
+        }
     }
 
     func closeReply() {
@@ -512,10 +538,8 @@ struct MessageForm: View {
     @Bindable var model: AppModel
     let session: Session
     @State private var text = ""
-    /// You typed in the field: a suggestion arriving later leaves it alone.
-    @State private var touched = false
-    /// The suggestion put in the field, to tell it apart from your typing.
-    @State private var prefilled: String?
+    /// Claude Code's suggestion in the field: quiet until you touch it.
+    @State private var field = SuggestionField()
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -523,8 +547,12 @@ struct MessageForm: View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
                  aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text,
-                           locked: sending) { send() }
-                .onChange(of: text) { _, new in if new != prefilled { touched = true } }
+                           locked: sending, quiet: field.untouched, onEngage: engage) { send() }
+                .onChange(of: text) { _, new in
+                    let was = field.untouched
+                    field.changed(to: new)
+                    if was && !field.untouched { FieldSelection.showHighlight() }
+                }
                 .onAppear { if let demo = model.demoSuggestion { take(demo) } }
                 .task(id: session.id) {
                     // Claude Code's own suggestion, asked once, off the main
@@ -558,10 +586,15 @@ struct MessageForm: View {
 
     /// The suggestion goes in as real text, all selected, unless you've typed.
     private func take(_ guess: String?) {
-        guard let fill = Suggestion.prefill(text: text, touched: touched, suggestion: guess) else { return }
-        prefilled = fill
+        guard let fill = field.offer(guess, text: text) else { return }
         text = fill
-        FieldSelection.selectAllSoon()
+        FieldSelection.selectAllQuietly()
+    }
+
+    private func engage() {
+        guard field.untouched else { return }
+        field.engaged()
+        FieldSelection.showHighlight()
     }
 
     private func send() {
@@ -654,6 +687,10 @@ struct MultilineField: View {
     @Binding var text: String
     /// On its way: covered by "Sending…", no typing, no focus.
     var locked = false
+    /// A suggestion nobody has touched yet: grey, like a placeholder.
+    var quiet = false
+    /// An arrow key or a click in the text.
+    var onEngage: () -> Void = {}
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -670,6 +707,9 @@ struct MultilineField: View {
             }
             TextEditor(text: $text)
                 .font(.system(size: 13))
+                .foregroundStyle(quiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                .simultaneousGesture(TapGesture().onEnded { onEngage() })
+                .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { _ in onEngage(); return .ignored }
                 .scrollContentBackground(.hidden)
                 .focused($focused)
                 .padding(.horizontal, 5)
@@ -713,14 +753,24 @@ struct MultilineField: View {
     }
 }
 
-/// Text put into a field for you (a suggestion) arrives all selected:
-/// typing replaces it, an arrow key lets you edit it in place.
+/// Text put into a field for you (a suggestion) arrives selected, so typing
+/// replaces it, but without the selection's highlight: it should look as
+/// quiet as a placeholder (user 2026-10-19).
 enum FieldSelection {
-    @MainActor static func selectAllSoon() {
+    @MainActor static func selectAllQuietly() {
         // Once the field has the new text and the keyboard.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
-            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+            editor.selectedTextAttributes = [.backgroundColor: NSColor.clear]
+            editor.selectAll(nil)
         }
+    }
+
+    /// The text is yours now: selections look like selections again.
+    @MainActor static func showHighlight() {
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+        editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor,
+                                         .foregroundColor: NSColor.selectedTextColor]
     }
 }
 

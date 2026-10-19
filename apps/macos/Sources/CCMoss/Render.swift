@@ -264,7 +264,8 @@ enum Render {
                 case "full": id.map { .session($0, full: true) }
                 default: nil
                 }
-                let hover = args.contains("--hover") || value("--menu") == "more" ? id : nil
+                // `--hover-id <id>`: the pointer on that row instead of the selected one.
+                let hover = value("--hover-id") ?? (args.contains("--hover") || value("--menu") == "more" ? id : nil)
                 let click = value("--click").flatMap(Self.point)
                 await draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, click: click, out: out)
             }
@@ -582,6 +583,45 @@ enum Render {
             // Draw again with the card as the click left it.
             host.layoutSubtreeIfNeeded()
             settle(0.3)
+        }
+        // `--events "move:x,y;click:x,y;…"` (points from the top left): the pointer
+        // moving over the panel and clicking, as real mouse events, in order; then
+        // which rows are lit. For hover bugs a still picture can't show.
+        if let i = CommandLine.arguments.firstIndex(of: "--events"), i + 1 < CommandLine.arguments.count {
+            window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+            window.acceptsMouseMovedEvents = true
+            window.makeKeyAndOrderFront(nil)
+            settle(0.3)
+            for step in CommandLine.arguments[i + 1].split(separator: ";") {
+                let parts = step.split(separator: ":")
+                guard parts.count == 2 else { continue }
+                // `cmd:p`: ⌘ and that key, as you'd press them.
+                if parts[0] == "cmd" {
+                    let key = String(parts[1])
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                                    windowNumber: window.windowNumber, context: nil, characters: key,
+                                                    charactersIgnoringModifiers: key, isARepeat: false, keyCode: 35) {
+                            window.sendEvent(e)
+                        }
+                    }
+                    settle(0.4)
+                    continue
+                }
+                let xy = parts[1].split(separator: ",").compactMap { Double($0) }
+                guard xy.count == 2 else { continue }
+                let at = NSPoint(x: xy[0], y: model.panelHeight - xy[1])
+                let types: [NSEvent.EventType] = parts[0] == "click" ? [.mouseMoved, .leftMouseDown, .leftMouseUp] : [.mouseMoved]
+                for type in types {
+                    if let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                  windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                        window.sendEvent(e)
+                    }
+                    settle(0.08)
+                }
+                settle(0.35)
+            }
+            FileHandle.standardError.write(Data("pins: \(model.pins.ids), selected: \(model.selectedID ?? "none")\n".utf8))
         }
         // `--press x,y` (points from the top left): a real click on the panel, and
         // which session is selected after it.

@@ -71,9 +71,17 @@ final class AppModel {
     var replyOpenID: String?
     /// What's in that line.
     var replyDraft = ""
+    /// A quiet note under one row for a moment (why it can't be typed into).
+    var rowNote: (id: String, text: String)?
+
+    /// The Sessions page, flat: headings and rows, each row once, its pin
+    /// taken from the section it's in.
+    var listItems: [SessionListItem] {
+        SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded)
+    }
     /// You typed in the line: a suggestion arriving later leaves it alone.
-    @ObservationIgnored var replyTouched = false
-    @ObservationIgnored var replyPrefilled: String?
+    /// Claude Code's suggestion in that line: quiet until you touch it.
+    var replyField = SuggestionField()
     /// A newer cc-moss, when the last check found one (the gear's dot).
     var update: UpdateInfo?
     @ObservationIgnored var updateCheckedAt: Date?

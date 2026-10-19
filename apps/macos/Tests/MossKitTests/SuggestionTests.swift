@@ -18,6 +18,39 @@ import Testing
         #expect(Suggestion.prefill(text: "", touched: false, suggestion: "  ") == nil)
     }
 
+    @Test func aFilledSuggestionIsQuietUntilTouched() {
+        var field = SuggestionField()
+        #expect(field.offer("run the tests", text: "") == "run the tests")
+        #expect(field.untouched, "grey, like a placeholder")
+        field.changed(to: "run the tests")
+        #expect(field.untouched, "the suggestion going in isn't an edit")
+        field.changed(to: "x")
+        #expect(!field.untouched && field.typed, "typing replaced it")
+    }
+
+    @Test func anArrowOrAClickMakesItOrdinaryText() {
+        var field = SuggestionField()
+        _ = field.offer("run the tests", text: "")
+        field.engaged()
+        #expect(!field.untouched)
+        #expect(!field.typed, "nothing typed yet")
+    }
+
+    @Test func typedTextKeepsLaterSuggestionsOut() {
+        var field = SuggestionField()
+        field.changed(to: "fix")
+        #expect(field.offer("run the tests", text: "fix") == nil)
+        field.changed(to: "")
+        #expect(field.offer("run the tests", text: "") == nil, "cleared by you: still yours")
+    }
+
+    @Test func aSendStartsAFreshField() {
+        var field = SuggestionField()
+        field.changed(to: "hello")
+        field.reset()
+        #expect(field.offer("next", text: "") == "next")
+    }
+
     @Test func decodesTheCLIAnswer() {
         #expect(Suggestion.decode(Data(#"{"schema":1,"suggestion":"在浏览器打开 about 页看下"}"#.utf8)) == "在浏览器打开 about 页看下")
         #expect(Suggestion.decode(Data(#"{"schema":1,"suggestion":null}"#.utf8)) == nil)
@@ -49,10 +82,22 @@ import Testing
 
     @Test func whichRowsOpenALine() {
         #expect(ReplyLine.opens(s("A")) && ReplyLine.opens(s("C")) && ReplyLine.opens(s("G")))
-        #expect(!ReplyLine.opens(s("B")), "busy")
+        #expect(ReplyLine.opens(s("B")), "busy too: it waits for the turn to end")
+        #expect(ReplyLine.busy(s("B")) && !ReplyLine.busy(s("A")))
         #expect(!ReplyLine.opens(s("D")), "asking for a permission: answered on To Do")
         #expect(!ReplyLine.opens(s("E")), "dropped")
         #expect(!ReplyLine.opens(s("F")), "not in tmux")
+    }
+
+    @Test func rowsThatCantTakeTypingSayWhy() {
+        #expect(ReplyLine.blocked(s("E")) == .dropped)
+        #expect(ReplyLine.blocked(s("F")) == .notInTmux)
+        #expect(ReplyLine.blocked(s("A")) == nil && ReplyLine.blocked(s("B")) == nil)
+    }
+
+    @Test func aBusySessionIsNotWaiting() {
+        let busyInput = sessions([sessionJSON(id: "H", name: "x", busy: true, attention: "input")])[0]
+        #expect(ReplyLine.opens(busyInput) && !ReplyLine.waiting(busyInput))
     }
 
     @Test func mossNeverOpensALine() {

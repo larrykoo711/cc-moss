@@ -1169,9 +1169,8 @@ private struct MossInputBar: View {
     @FocusState private var focused: Bool
     /// The lit command in the list, moved with ↑↓.
     @State private var lit = 0
-    /// You typed since text mode opened: Moss's guess leaves the field alone.
-    @State private var touched = false
-    @State private var prefilled: String?
+    /// Moss's guess in the field: quiet until you touch it.
+    @State private var guess = SuggestionField()
     @Environment(\.colorScheme) private var scheme
 
     private var desk: MossDesk { model.mossDesk }
@@ -1223,12 +1222,17 @@ private struct MossInputBar: View {
     /// Claude Code's guess at what you'd say to Moss, when it has one.
     private var suggestion: String? { Suggestion.prefill(text: "", touched: false, suggestion: model.mossSuggestion) }
 
-    /// Put Moss's guess in the field, all selected, unless you've typed.
+    /// Put Moss's guess in the field, quietly selected, unless you've typed.
     private func prefill() {
-        guard let fill = Suggestion.prefill(text: text, touched: touched, suggestion: model.mossSuggestion) else { return }
-        prefilled = fill
+        guard let fill = guess.offer(model.mossSuggestion, text: text) else { return }
         text = fill
-        FieldSelection.selectAllSoon()
+        FieldSelection.selectAllQuietly()
+    }
+
+    private func engage() {
+        guard guess.untouched else { return }
+        guess.engaged()
+        FieldSelection.showHighlight()
     }
 
     /// Commands matching what's typed: a slash and no space yet.
@@ -1253,6 +1257,10 @@ private struct MossInputBar: View {
             TextField(L.t("Message Moss…", "和 Moss 说…"), text: $model.mossDraft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: MossCommand.looksLikeCommand(text) ? .monospaced : .default))
+                // Moss's untouched guess is as quiet as a placeholder.
+                .foregroundStyle(guess.untouched ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                .simultaneousGesture(TapGesture().onEnded { engage() })
+                .onKeyPress(keys: [.leftArrow, .rightArrow]) { _ in engage(); return .ignored }
                 .lineLimit(1...5)
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
@@ -1299,12 +1307,16 @@ private struct MossInputBar: View {
         }
         .onAppear {
             focused = true
-            touched = !text.isEmpty
+            if !text.isEmpty { guess.changed(to: text) }
             prefill()
             model.fetchMossSuggestion()
         }
         .onChange(of: model.mossSuggestion) { _, _ in prefill() }
-        .onChange(of: text) { _, new in if new != prefilled { touched = !new.isEmpty || touched } }
+        .onChange(of: text) { _, new in
+            let was = guess.untouched
+            guess.changed(to: new)
+            if was && !guess.untouched { FieldSelection.showHighlight() }
+        }
     }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1332,8 +1344,7 @@ private struct MossInputBar: View {
         model.sayToMoss(text)
         text = ""
         // A fresh field: Moss's next guess may fill it.
-        touched = false
-        prefilled = nil
+        guess.reset()
     }
 }
 
