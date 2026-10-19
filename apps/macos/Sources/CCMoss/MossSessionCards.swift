@@ -72,6 +72,11 @@ private struct MossSessionCardView: View {
     private var pinned: Bool { model.pins.contains(session.id) }
     private var restoring: Bool { card.main == .bringBack && model.restoreFlow.isRunning(session.id) }
     private var check: Message.RenameCheck { Message.checkRename(name, of: session, among: model.sessions) }
+    // The move into tmux shares the list's state: started here or there, both show it.
+    private var asking: Bool { model.adoptAsk?.id == session.id }
+    private var moving: Bool { model.adopting.contains(session.id) }
+    private var adoptProblem: String? { model.adoptProblems[session.id] }
+    private var note: String? { model.rowNote.flatMap { $0.id == session.id && !$0.adopt ? $0.text : nil } }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -103,6 +108,15 @@ private struct MossSessionCardView: View {
                 actions
             }
             if renaming { renameLine }
+            if asking {
+                AdoptConfirmView(model: model, session: session, inset: 0, trailing: 0)
+            } else if moving {
+                cardLine(L.t("Moving into tmux…", "正在移进 tmux…"), spinner: true)
+            } else if let adoptProblem {
+                cardLine(adoptProblem, icon: Icons.cannotRestore, tint: Theme.amber)
+            } else if let note {
+                cardLine(note, icon: "info.circle")
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -110,12 +124,30 @@ private struct MossSessionCardView: View {
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme), lineWidth: 1))
     }
 
+    /// A short line under the card: moving, why it couldn't, why it waits.
+    private func cardLine(_ text: String, icon: String? = nil, tint: Color? = nil, spinner: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if spinner {
+                ProgressView().controlSize(.mini)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.tertiary))
+            }
+            Text(text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .padding(.leading, 28)
+        .tip(text)
+    }
+
     @ViewBuilder private var actions: some View {
         HStack(spacing: 2) {
-            if card.canPin {
+            if card.canPin && !moving {
                 PinButton(pinned: pinned) { model.togglePin(session) }
             }
-            if card.canRename {
+            if card.canRename && !moving {
                 CardIconButton(icon: Icons.rename, help: L.t("Rename", "改名"), lit: renaming) {
                     if renaming {
                         model.mossCardRenaming = nil
@@ -136,6 +168,16 @@ private struct MossSessionCardView: View {
                     ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 24, height: 22)
                 } else {
                     CardTextButton(title: L.t("Bring back", "找回"), icon: Icons.restore) { model.restore(session) }
+                }
+            case .moveIntoTmux?:
+                if !moving {
+                    let wait = AppModel.adoptWait(session)
+                    CardTextButton(title: AppModel.adoptTitle(session, named: model.adoptAsk?.id == session.id ? model.adoptAsk?.named : nil),
+                                   icon: Icons.adopt, dimmed: wait != nil, lit: asking) {
+                        if asking { model.cancelAdopt() } else { model.askToAdopt(session) }
+                    }
+                    .tip(wait ?? L.t("Ends its process in its current terminal and carries on in tmux; the conversation is kept.",
+                                     "结束它在原终端里的进程，然后在 tmux 里接着跑，对话不会丢。"))
                 }
             case nil:
                 EmptyView()
@@ -243,6 +285,10 @@ private struct CardIconButton: View {
 private struct CardTextButton: View {
     let title: String
     let icon: String
+    /// Waits (a busy session): drawn faint; a click says why.
+    var dimmed = false
+    /// Its confirm line is open below.
+    var lit = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -254,9 +300,10 @@ private struct CardTextButton: View {
                 Text(title).font(.system(size: 11.5, weight: .medium))
             }
             .foregroundStyle(Theme.brand)
+            .opacity(dimmed ? 0.45 : 1)
             .padding(.horizontal, 8)
             .frame(height: 22)
-            .background(Capsule().fill(Theme.brand.opacity(hovering ? 0.2 : (scheme == .dark ? 0.16 : 0.1))))
+            .background(Capsule().fill(Theme.brand.opacity(dimmed ? 0.05 : lit ? 0.24 : hovering ? 0.2 : (scheme == .dark ? 0.16 : 0.1))))
             .contentShape(Capsule())
         }
         .buttonStyle(PressStyle())

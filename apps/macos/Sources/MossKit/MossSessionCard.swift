@@ -10,6 +10,9 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
         case open
         /// It was interrupted: bring it back.
         case bringBack
+        /// It runs outside tmux: move it in (`cc-moss adopt`), the same move
+        /// as its row in the list. A busy one shows it dimmed.
+        case moveIntoTmux
     }
 
     /// The slot id Moss named.
@@ -24,15 +27,22 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
 
     public var isGone: Bool { session == nil }
 
-    /// Open when it can be opened, "Bring back" when it was interrupted;
-    /// nothing for one that ended or runs outside tmux.
+    /// Open when it can be opened, "Bring back" when it was interrupted,
+    /// "Move into tmux" when it runs outside tmux; nothing for one that ended.
     public var main: Main? {
         guard let s = session else { return nil }
         switch s.state {
         case .interrupted: return s.isMoss ? nil : .bringBack
         case .closed: return nil
-        case .working, .waiting: return s.inTmux ? .open : nil
+        case .working, .waiting:
+            if s.inTmux { return .open }
+            return Adopt.availability(s) == .none ? nil : .moveIntoTmux
         }
+    }
+
+    /// Whether the move can go now, or why it waits (busy, waiting on you).
+    public var adopt: Adopt.Availability {
+        session.map(Adopt.availability) ?? .none
     }
 
     /// Renaming is a `/rename` message, so it needs a running session (and

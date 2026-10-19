@@ -37,11 +37,25 @@ import Testing
         #expect(card.canPin)
     }
 
-    @Test func aSessionOutsideTmuxCantBeOpenedOrRenamed() {
+    @Test func aSessionOutsideTmuxMovesInInsteadOfOpening() {
         let card = MossSessionCard.cards(["01A"], among: sessions([sessionJSON(id: "01A", tmux: false)]))[0]
-        #expect(card.main == nil)
+        #expect(card.main == .moveIntoTmux)
+        #expect(card.adopt == .ready)
         #expect(!card.canRename)
         #expect(card.canPin)
+    }
+
+    @Test func aBusySessionOutsideTmuxShowsTheMoveWaiting() {
+        let busy = MossSessionCard.cards(["01A"], among: sessions([sessionJSON(id: "01A", busy: true, tmux: false)]))[0]
+        #expect(busy.main == .moveIntoTmux)
+        #expect(busy.adopt == .working)
+        let asking = MossSessionCard.cards(["01A"], among: sessions([sessionJSON(id: "01A", tmux: false, attention: "question")]))[0]
+        #expect(asking.adopt == .waitingOnYou)
+    }
+
+    @Test func onlySessionsOutsideTmuxOfferTheMove() {
+        let list = sessions([sessionJSON(id: "01A"), sessionJSON(id: "01B", status: "interrupted", tmux: false)])
+        #expect(MossSessionCard.cards(["01A", "01B", "0ZZ"], among: list).allSatisfy { $0.adopt == .none })
     }
 
     @Test func aClosedSessionOnlyShowsWhatItWas() {

@@ -93,6 +93,10 @@ extension AppModel {
 struct AdoptConfirmView: View {
     @Bindable var model: AppModel
     let session: Session
+    /// Lined up with the row's text. A card has no inset and shows no keys:
+    /// Return and Esc on the Moss page belong to its text field.
+    var inset: CGFloat = 44
+    var trailing: CGFloat = 10
 
     private var ask: AdoptAsk? { model.adoptAsk?.id == session.id ? model.adoptAsk : nil }
 
@@ -110,14 +114,14 @@ struct AdoptConfirmView: View {
             .foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
-                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.cancelAdopt() }
-                SoftButton(title: AppModel.adoptTitle(session, named: ask?.named), icon: Icons.adopt, prominent: true, shortcut: "↵") {
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: inset == 0 ? nil : "esc") { model.cancelAdopt() }
+                SoftButton(title: AppModel.adoptTitle(session, named: ask?.named), icon: Icons.adopt, prominent: true, shortcut: inset == 0 ? nil : "↵") {
                     model.adopt(session)
                 }
             }
         }
-        .padding(.leading, 44)
-        .padding(.trailing, 10)
-        .padding(.bottom, 10)
+        .padding(.leading, inset)
+        .padding(.trailing, trailing)
+        .padding(.bottom, inset == 0 ? 2 : 10)
     }
 }
