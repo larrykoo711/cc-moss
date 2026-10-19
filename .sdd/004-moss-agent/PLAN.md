@@ -162,8 +162,8 @@ R1 ◄── 全部
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ✅ Done | done/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（AMEND-1～4，真机验收通过） |
 | **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
-| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟨 In Progress | in-progress/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
-| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟨 In Progress | in-progress/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
+| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟩 Review | in-progress/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
+| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟩 Review | in-progress/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -212,6 +212,8 @@ R1 ◄── 全部
 - 2026-10-20：其他设备升 0.3.0 时发现 `remember` 插件的 `claude -p` 摘要被 `claude agents` 报成 interactive、经对账收进 registry（一台 118 条、一台 19 条）；修复 `fix/headless-adopt`（对账读进程参数、跳过 `-p`/`--print`，自动名不分大小写）并入 0.3.1
 - 2026-10-20：用户新需求「cc-switch 换供应商后不用退出会话」→ 实测（`notes/provider-switch-probe.md`）：第三方之间热生效，删键 / 换固定模型要重开；立 T2.6，并入 0.3.1；T2.5、T2.6 过 G3
 - AMEND-1 T2.5 2026-10-20（加宽，不弱化）：App 会话行为「没在运行」的会话加「归档」行内操作（spec 只写了 CLI `archive`）；`ls --json` 列出全部会话并带 `archived_at`，由 App 过滤。接口契约统一写在派发纪律里，两路 agent 并行实施
+- 2026-10-20：T2.5、T2.6 实施完（Rust 305d615 / 91d16eb，App b6c4581 / 5cdd5d5，docs b279669）。verify 全有同名测试，spec 列出的变异全部变红；macOS Rust 864 + Swift 744 全绿；本地 Linux（rust:1.89 + tmux 3.5）除 moss_chat_e2e 4 项外全绿，这 4 项在 main 上同样失败，属本地镜像环境问题，另查。开发版已装本机，待真机验收（cc-switch 第三方↔第三方、切回官方各一次；归档与清理）
+- 行为变化（rust-031，controller 认可）：restore / restart 占位后 60 秒内进程退出只改状态、不记 `interrupted` 事件，避免重开时误报「断了」
 
 ## 反馈车道（真机反馈）
 
