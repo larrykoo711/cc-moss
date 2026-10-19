@@ -79,6 +79,26 @@ import Testing
         #expect(card.phase == .submitting)
     }
 
+    @Test func changeOneAnswerFromTheReviewAndComeStraightBack() {
+        var card = AskCard(ask(askJSON(questions: [questionJSON("First?", labels: ["a", "b"]),
+                                                   questionJSON("Second?", labels: ["x", "y"]),
+                                                   questionJSON("Third?", labels: ["p", "q"])])))
+        _ = card.choose("a"); _ = card.choose("x"); _ = card.choose("p")
+        #expect(card.reviewing)
+        card.revisit(0)
+        #expect(card.question?.text == "First?")
+        #expect(card.picked("a"))
+        #expect(card.choose("b") == nil)
+        #expect(card.reviewing, "back on the review, not on the second question")
+        #expect(card.sendAll() == .choices([["b"], ["x"], ["p"]]))
+    }
+
+    @Test func revisitOnlyFromTheReview() {
+        var card = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
+        card.revisit(1)
+        #expect(card.question?.text == "First?")
+    }
+
     @Test func writeYourOwnForASingleQuestion() {
         var card = AskCard(ask())
         #expect(card.canWrite)

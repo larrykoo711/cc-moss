@@ -19,6 +19,8 @@ public struct AskCard: Equatable, Sendable {
     public private(set) var step = 0
     /// The labels picked, one list per question.
     public private(set) var picks: [[String]]
+    /// Changing one answer from the review: the next pick goes back there.
+    private var revisiting = false
     /// "Write my own" is open (single questions only).
     public var writing = false
     public var draft = ""
@@ -82,7 +84,17 @@ public struct AskCard: Equatable, Sendable {
     public mutating func back() {
         guard phase == .choosing, step > 0 else { return }
         problem = nil
+        revisiting = false
         step -= 1
+    }
+
+    /// From the review, open question `i` to change its answer; answering it
+    /// comes straight back to the review.
+    public mutating func revisit(_ i: Int) {
+        guard phase == .choosing, reviewing, ask.questions.indices.contains(i) else { return }
+        problem = nil
+        step = i
+        revisiting = true
     }
 
     /// "Send" on the review step.
@@ -110,7 +122,8 @@ public struct AskCard: Equatable, Sendable {
 
     private mutating func advance() -> AskReply? {
         if !several { return submit(.choices(picks)) }
-        step += 1
+        step = revisiting ? count : step + 1
+        revisiting = false
         return nil
     }
 

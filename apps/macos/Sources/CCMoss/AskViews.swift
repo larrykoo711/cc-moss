@@ -127,19 +127,15 @@ struct AskCardBody: View {
     }
 
     private var review: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(L.t("Check your answers, then send them.", "看一眼答案，没问题就交给它。"))
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
-            ForEach(Array(card.ask.questions.enumerated()), id: \.offset) { i, q in
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(q.text)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text(card.picks[i].joined(separator: L.t(", ", "、")))
-                        .font(.system(size: 13, weight: .medium))
-                        .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(card.ask.questions.enumerated()), id: \.offset) { i, q in
+                    ReviewRow(index: i, question: q, answer: card.picks[i].joined(separator: L.t(", ", "、"))) {
+                        act { $0.revisit(i); return nil }
+                    }
                 }
             }
             HStack(spacing: 6) {
@@ -149,6 +145,7 @@ struct AskCardBody: View {
                 SoftButton(title: L.t("Back", "上一题"), icon: "chevron.left") { act { $0.back(); return nil } }
                     .focusable(false)
             }
+            .padding(.top, 2)
         }
     }
 
@@ -427,5 +424,70 @@ extension PetMessageText {
         var text = self
         text.primary = L.t("Open Panel", "打开面板")
         return text
+    }
+}
+
+/// One answered question on the review step: what was asked, small, and
+/// the answer as a quote under it. Click to change that answer.
+private struct ReviewRow: View {
+    let index: Int
+    let question: Ask.Question
+    let answer: String
+    let change: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: change) {
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(question.header ?? L.t("Question \(index + 1)", "第 \(index + 1) 题"))
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 1.5)
+                        .background(Capsule().fill(Theme.brand.opacity(scheme == .dark ? 0.18 : 0.10)))
+                    Spacer(minLength: 0)
+                    Text(L.t("Change", "改"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .opacity(hovering ? 1 : 0)
+                }
+                Text(question.text)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "checkmark")
+                        .font(.system(size: 9.5, weight: .bold))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.top, 2.5)
+                    Text(answer)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.leading, 9)
+                .padding(.vertical, 3)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.25).fill(Theme.brand.opacity(0.55)).frame(width: 2.5)
+                }
+            }
+            .padding(9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.10 : 0.05) : Theme.raised(scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(hovering ? Theme.brand.opacity(0.35) : Theme.hairline(scheme)))
+            .contentShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+        .tip(L.t("Change this answer", "改这一题的答案"))
     }
 }

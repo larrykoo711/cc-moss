@@ -21,12 +21,24 @@ public struct BubblePlacement: Equatable, Sendable {
     /// Kept between the bubble and the screen's edges.
     public static let edge: CGFloat = 8
 
+    /// Which side of Mo the bubble is on.
+    public struct Side: Equatable, Sendable {
+        public var onTop: Bool
+        public init(onTop: Bool) { self.onTop = onTop }
+    }
+
+    public var side: Side { Side(onTop: tailOnTop) }
+
     /// - size: the window (bubble plus margins).
     /// - inset: how far from the bubble's near side the tail sits.
     /// - above: the point the tail touches when the bubble is above Mo (its head).
     /// - below: the point it touches when the bubble is below Mo (its feet).
+    /// - keep: the side the same bubble is on now. A bubble that changes
+    ///   height (a question's next step) stays there while it still fits,
+    ///   instead of hopping over Mo each time.
     public static func place(size: CGSize, margin: CGFloat, inset: CGFloat, corner: CGFloat,
-                             above: CGPoint, below: CGPoint, visible: CGRect) -> BubblePlacement {
+                             above: CGPoint, below: CGPoint, visible: CGRect,
+                             keep: Side? = nil) -> BubblePlacement {
         let width = size.width - 2 * margin
         // Left of Mo first; to the right if the left side runs off the screen.
         var tailX = width - inset
@@ -38,13 +50,23 @@ public struct BubblePlacement: Equatable, Sendable {
         var x = above.x - margin - tailX
         x = min(max(x, visible.minX + edge - margin), visible.maxX - edge - margin - width)
 
-        // Above Mo, tip on its head; below when the top would leave the screen.
-        var y = above.y - margin
-        var onTop = false
-        if y + size.height - margin > visible.maxY - edge {
-            onTop = true
-            y = below.y + margin - size.height
+        // Above Mo, tip on its head; below when the top would leave the
+        // screen. Too tall for either: the side with more room.
+        let height = size.height - 2 * margin
+        let roomAbove = visible.maxY - edge - above.y
+        let roomBelow = below.y - (visible.minY + edge)
+        let fitsAbove = height <= roomAbove, fitsBelow = height <= roomBelow
+        var onTop: Bool
+        if let keep {
+            onTop = keep.onTop
+            if onTop && !fitsBelow && fitsAbove { onTop = false }
+            if !onTop && !fitsAbove && fitsBelow { onTop = true }
+        } else {
+            onTop = !fitsAbove && (fitsBelow || roomBelow > roomAbove)
         }
+        var y = onTop ? below.y + margin - size.height : above.y - margin
+        // Always whole on the screen, top and bottom.
+        y = min(y, visible.maxY - edge + margin - size.height)
         y = max(y, visible.minY + edge - margin)
 
         // After clamping, the tail still points at Mo, but never into a corner.

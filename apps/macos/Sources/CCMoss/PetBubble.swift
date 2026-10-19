@@ -717,7 +717,8 @@ final class PetBubbles {
         let before = panel.frame.size
         host.layoutSubtreeIfNeeded()
         guard host.fittingSize != before else { return }
-        layout(anchor, puff: false)
+        // The same bubble, a new size: it stays on Mo's side it was on.
+        layout(anchor, puff: false, keep: BubblePlacement.Side(onTop: stage.tail.onTop))
     }
 
     func menu(greeting: String, groups: [[PetMenuChoice]], anchor: BubbleAnchor, parent: NSWindow, reduceMotion: Bool) {
@@ -759,12 +760,12 @@ final class PetBubbles {
         }
     }
 
-    private func layout(_ anchor: BubbleAnchor, puff: Bool, inset: CGFloat? = nil) {
+    private func layout(_ anchor: BubbleAnchor, puff: Bool, inset: CGFloat? = nil, keep: BubblePlacement.Side? = nil) {
         self.anchor = anchor
         host.layoutSubtreeIfNeeded()
         let size = host.fittingSize
         let place = BubblePlacement.place(size: size, margin: Self.margin, inset: inset ?? (puff ? 12 : 34), corner: puff ? 4 : 18,
-                                          above: anchor.head, below: anchor.feet, visible: anchor.visible)
+                                          above: anchor.head, below: anchor.feet, visible: anchor.visible, keep: keep)
         let tail = BubbleTail(x: place.tailX, leansRight: place.leansRight, onTop: place.tailOnTop)
         if stage.tail != tail { stage.tail = tail }
         panel.setFrame(place.frame, display: true)

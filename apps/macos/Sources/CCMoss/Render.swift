@@ -68,6 +68,8 @@ enum Render {
             prepareAsks(model, args: args)
             OptionButton.renderHovered = value("--hover-option")
             if let id = value("--bubble") {
+                // With `--ask <id>` as well, `--choose` works on the bubble's card.
+                prepareAsks(model, args: args)
                 drawBubble(model: model, askId: id, dark: args.contains("--dark"), out: out)
                 exit(0)
             }
