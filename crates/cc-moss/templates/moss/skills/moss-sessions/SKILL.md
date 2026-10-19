@@ -14,6 +14,9 @@ last text reply of the turn is shown back to them in the panel. They read it on 
 
 - Answer first, in one to five short lines. Lists over paragraphs. Match the user's language.
 - Name sessions by their name in `SESSIONS.md`. No file paths, ids or settings unless asked.
+- Archived sessions (put away after weeks unused, or by the user) are not in the table: `SESSIONS.md` lists
+  them apart under "Archived". Don't count them among the open ones; mention them only when asked or when
+  the user wants to clean them up (the moss-doctor skill says how).
 - Say what you don't know rather than guess. If you need the user to choose, ask one question.
 - Basic Markdown shows (bold, lists, code). Tables and headings don't help in a chat bubble.
 

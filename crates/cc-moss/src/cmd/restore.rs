@@ -112,7 +112,16 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .into_iter()
         .map(|s| (s.effective_status(proc::is_alive), s))
         .collect();
-    let candidates = plan(&rows, only.as_ref(), now_ms(), |p: &Path| p.exists());
+    // Archived sessions come back only when named.
+    let pool = only.clone().or_else(|| {
+        Some(
+            rows.iter()
+                .filter(|(_, s)| !s.is_archived())
+                .map(|(_, s)| s.slot_id.clone())
+                .collect(),
+        )
+    });
+    let candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| p.exists());
     if args.json {
         return run_json(&config, &registry, &rows, only.as_ref(), &candidates);
     }

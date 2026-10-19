@@ -36,7 +36,10 @@ enum Command {
         /// Include sessions that were closed on purpose.
         #[arg(long)]
         all: bool,
-        /// Machine-readable output (schema 1).
+        /// Only archived sessions (they are left out otherwise).
+        #[arg(long)]
+        archived: bool,
+        /// Machine-readable output (schema 1); lists archived sessions too.
         #[arg(long)]
         json: bool,
     },
@@ -182,6 +185,24 @@ enum Command {
         /// Session names (Claude name, tmux name or id prefix).
         #[arg(required = true)]
         names: Vec<String>,
+    },
+    /// Put sessions that are not running away: out of the list, still restorable.
+    Archive {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Bring archived sessions back into the list.
+    Unarchive {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
     },
     /// Show or set a session's notes: what it is doing, where it stopped.
     Note {
@@ -378,10 +399,11 @@ enum MossCommand {
         json: bool,
     },
     /// What Moss asks the daemon to do for it (its sandbox can't reach your
-    /// sessions); `restore`, `forget` and `end` need your go-ahead.
+    /// sessions); `restore`, `forget`, `end` and `purge` need your go-ahead.
     #[command(hide = true)]
     Act {
-        /// setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end
+        /// setup-fix | sync-names | sync-name | name | forget-gone | archive | archive-idle
+        /// | restore | forget | end | purge | purge-archived
         action: String,
         /// The session, and for `name` the new name.
         args: Vec<String>,
@@ -553,7 +575,13 @@ fn main() -> std::process::ExitCode {
             safe,
             claude_args,
         })),
-        Command::Ls { all, json } => report(cmd::ls::run(all, json)),
+        Command::Ls {
+            all,
+            archived,
+            json,
+        } => report(cmd::ls::run(all, archived, json)),
+        Command::Archive { names, json } => exit(cmd::archive::archive(&names, json)),
+        Command::Unarchive { names, json } => exit(cmd::archive::unarchive(&names, json)),
         Command::Events { json, since, limit } => report(cmd::events::run(
             since,
             usize::try_from(limit).unwrap_or(usize::MAX),
@@ -740,6 +768,15 @@ fn explain(error: clap::Error, argv: &[std::ffi::OsString]) -> ! {
         }
     }
     error.exit()
+}
+
+/// Success when it worked, failure when it said no (exit 1).
+fn exit(result: anyhow::Result<bool>) -> std::process::ExitCode {
+    match result {
+        Ok(true) => std::process::ExitCode::SUCCESS,
+        Ok(false) => std::process::ExitCode::FAILURE,
+        Err(e) => report(Err(e)),
+    }
 }
 
 fn report(result: anyhow::Result<()>) -> std::process::ExitCode {

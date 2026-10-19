@@ -75,8 +75,8 @@ const MIN_PREFIX: usize = 6;
 /// closed in the last 30 days count, Moss never; an item that names none or
 /// several is dropped.
 pub fn resolve_sessions(items: &[String], slots: &[crate::slot::Slot], now_ms: i64) -> Vec<String> {
-    use crate::slot::{Slot, Status};
-    let known: Vec<&Slot> = slots
+    use crate::slot::Status;
+    let known: Vec<&crate::slot::Slot> = slots
         .iter()
         .filter(|s| !s.is_moss())
         .filter(|s| {
@@ -84,6 +84,21 @@ pub fn resolve_sessions(items: &[String], slots: &[crate::slot::Slot], now_ms: i
                 || s.ended_at_ms.unwrap_or(s.last_active_at_ms) >= now_ms - CLOSED_WITHIN_MS
         })
         .collect();
+    resolve_among(items, &known)
+}
+
+/// [`resolve_sessions`] among archived sessions only, however long ago
+/// they closed: what `purge` may name.
+pub fn resolve_archived(items: &[String], slots: &[crate::slot::Slot]) -> Vec<String> {
+    let known: Vec<&crate::slot::Slot> = slots
+        .iter()
+        .filter(|s| !s.is_moss() && s.is_archived())
+        .collect();
+    resolve_among(items, &known)
+}
+
+fn resolve_among(items: &[String], known: &[&crate::slot::Slot]) -> Vec<String> {
+    use crate::slot::{Slot, Status};
     let mut out: Vec<String> = Vec::new();
     for item in items {
         let q = item.as_str();
@@ -123,7 +138,11 @@ pub fn resolve_sessions(items: &[String], slots: &[crate::slot::Slot], now_ms: i
 const MAX_BUTTONS: usize = 6;
 
 /// The actions that need the user's go-ahead (`cc-moss moss act`).
-pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end"];
+pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end", "purge", "purge-archived"];
+
+/// The one consent action that names no session: it covers every archived
+/// session there is when Moss asks.
+pub const PURGE_ARCHIVED: &str = "purge-archived";
 
 /// `cwd` as a yes button shows it: the last one or two folders, from `~`
 /// when it is in `home` (`~/code/foo`, `…/srv/app`).
@@ -166,12 +185,24 @@ pub fn yes_label(action: &str, names: &[String], chinese: bool) -> String {
         ("restore", true) => ("找回", "、"),
         ("forget", true) => ("不再提示", "、"),
         ("end", true) => ("结束", "、"),
+        ("purge", true) => ("删除", "、"),
         ("restore", false) => ("Bring back", ", "),
         ("forget", false) => ("Stop offering", ", "),
         ("end", false) => ("End", ", "),
+        ("purge", false) => ("Delete", ", "),
         (other, _) => (other, ", "),
     };
     format!("{verb} {}", names.join(sep))
+}
+
+/// The yes button for `purge-archived`, from the real number of archived
+/// sessions it covers («删除 12 个归档会话», "Delete 12 archived sessions").
+pub fn purge_archived_label(count: usize, chinese: bool) -> String {
+    match (chinese, count) {
+        (true, n) => format!("删除 {n} 个归档会话"),
+        (false, 1) => "Delete 1 archived session".to_string(),
+        (false, n) => format!("Delete {n} archived sessions"),
+    }
 }
 
 /// At most this many pinned on the quick bar.
@@ -233,12 +264,25 @@ pub fn parse(reply: &str) -> Parsed {
                 .unwrap_or("")
                 .split_whitespace()
                 .collect();
-            if let [action, session] = head.as_slice() {
+            if let [action] = head.as_slice() {
+                // `purge-archived`: every archived session, none named.
+                let confirm = Confirm {
+                    action: action.to_string(),
+                    session: String::new(),
+                };
+                if *action == PURGE_ARCHIVED
+                    && out.confirms.len() < MAX_CONFIRMS
+                    && !out.confirms.contains(&confirm)
+                {
+                    out.confirms.push(confirm);
+                }
+            } else if let [action, session] = head.as_slice() {
                 let confirm = Confirm {
                     action: action.to_string(),
                     session: session.to_string(),
                 };
                 if CONSENT_ACTIONS.contains(action)
+                    && *action != PURGE_ARCHIVED
                     && out.confirms.len() < MAX_CONFIRMS
                     && !out.confirms.contains(&confirm)
                 {
@@ -338,6 +382,7 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: 0,
             ended_at_ms: None,
+            archived_at_ms: None,
         }
     }
 
@@ -448,6 +493,37 @@ mod tests {
                 },
             ],
             "only consent actions, each with a session, once"
+        );
+    }
+
+    #[test]
+    fn reply_markers_confirm_purge() {
+        let p = parse(
+            "Clean up? [[confirm: purge api]][[confirm: purge-archived]][[confirm: purge-archived api]][[confirm: purge]]",
+        );
+        assert_eq!(
+            p.confirms,
+            [
+                Confirm {
+                    action: "purge".into(),
+                    session: "api".into(),
+                },
+                Confirm {
+                    action: "purge-archived".into(),
+                    session: String::new(),
+                },
+            ],
+            "purge names one session, purge-archived none"
+        );
+        assert_eq!(purge_archived_label(12, true), "删除 12 个归档会话");
+        assert_eq!(
+            purge_archived_label(12, false),
+            "Delete 12 archived sessions"
+        );
+        assert_eq!(purge_archived_label(1, false), "Delete 1 archived session");
+        assert_eq!(
+            yes_label("purge", &["api".into(), "db".into()], true),
+            "删除 api、db"
         );
     }
 

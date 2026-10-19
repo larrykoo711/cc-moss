@@ -244,6 +244,21 @@ fn event_loop(
                 let (sessions, interrupted) = load(tmux)?;
                 app.set_items(sessions, interrupted);
             }
+            Action::Unarchive(r) => {
+                let back = registry()?.unarchive(std::slice::from_ref(&r.slot_id), "you", now_ms());
+                app.message = Some(match back {
+                    Ok(_) => tr!(
+                        format!("{} is back in the list.", r.label()),
+                        format!("{} 回到列表里了。", r.label())
+                    ),
+                    Err(e) => tr!(
+                        format!("Could not bring it back: {e:#}"),
+                        format!("没能拿回来：{e:#}")
+                    ),
+                });
+                let (sessions, interrupted) = load(tmux)?;
+                app.set_items(sessions, interrupted);
+            }
             Action::SetNote { slot_id, text } => {
                 let notes = Notes {
                     state: Some(text.clone()).filter(|t| !t.is_empty()),
@@ -310,7 +325,10 @@ fn load(tmux: &Tmux<ProcessRunner>) -> Result<(Vec<Item>, Vec<Item>)> {
     };
     Ok((
         source::sessions(&tmux.session_infos(), tmux.socket_path().as_deref(), &rows),
-        source::interrupted(&rows),
+        source::interrupted(&rows)
+            .into_iter()
+            .chain(source::archived(&rows))
+            .collect(),
     ))
 }
 

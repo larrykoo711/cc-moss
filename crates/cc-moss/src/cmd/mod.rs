@@ -2,6 +2,7 @@ pub mod act;
 pub mod adopt;
 pub mod alias;
 pub mod app;
+pub mod archive;
 pub mod ask;
 pub mod ask_hook;
 pub mod attach;

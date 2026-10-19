@@ -65,6 +65,8 @@ pub enum Item {
     New,
     Session(SessionRow),
     Interrupted(SlotRow),
+    /// In the archive: listed only while searching, in a group of its own.
+    Archived(SlotRow),
 }
 
 impl Item {
@@ -98,7 +100,7 @@ impl Item {
                 ]),
                 None => join(&[Some(&s.tmux_name), Some(&folder(&s.path))]),
             },
-            Item::Interrupted(r) => join(&[
+            Item::Interrupted(r) | Item::Archived(r) => join(&[
                 Some(&r.label()),
                 r.note.as_deref(),
                 r.preview.as_deref(),
@@ -116,7 +118,7 @@ impl Item {
                     .as_ref()
                     .map_or(s.path.as_str(), |c| c.cwd.as_str()),
             ),
-            Item::Interrupted(r) => Some(&r.cwd),
+            Item::Interrupted(r) | Item::Archived(r) => Some(&r.cwd),
         }
     }
 
@@ -128,7 +130,7 @@ impl Item {
                 .claude
                 .as_ref()
                 .map_or_else(|| s.tmux_name.clone(), |c| c.label()),
-            Item::Interrupted(r) => r.label(),
+            Item::Interrupted(r) | Item::Archived(r) => r.label(),
         }
     }
 }
@@ -177,11 +179,22 @@ pub fn sessions(
 pub fn interrupted(rows: &[(Status, Slot)]) -> Vec<Item> {
     let mut out: Vec<SlotRow> = rows
         .iter()
-        .filter(|(st, s)| *st == Status::Interrupted && !s.is_moss())
+        .filter(|(st, s)| *st == Status::Interrupted && !s.is_moss() && !s.is_archived())
         .map(|(_, s)| SlotRow::from_slot(s))
         .collect();
     out.sort_by_key(|r| std::cmp::Reverse(r.last_active_ms));
     out.into_iter().map(Item::Interrupted).collect()
+}
+
+/// Archived sessions that are not running, most recently active first.
+pub fn archived(rows: &[(Status, Slot)]) -> Vec<Item> {
+    let mut out: Vec<SlotRow> = rows
+        .iter()
+        .filter(|(st, s)| *st != Status::Running && !s.is_moss() && s.is_archived())
+        .map(|(_, s)| SlotRow::from_slot(s))
+        .collect();
+    out.sort_by_key(|r| std::cmp::Reverse(r.last_active_ms));
+    out.into_iter().map(Item::Archived).collect()
 }
 
 #[cfg(test)]
@@ -222,6 +235,7 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: 5_000,
             ended_at_ms: None,
+            archived_at_ms: None,
         }
     }
 
@@ -262,6 +276,22 @@ mod tests {
             rows[1].claude.as_ref().unwrap().note.as_deref(),
             Some("waiting")
         );
+    }
+
+    #[test]
+    fn archived_sessions_are_kept_apart() {
+        let mut old = slot("old", "$0", "/s");
+        old.archived_at_ms = Some(1);
+        let rows = vec![
+            (Status::Interrupted, old.clone()),
+            (Status::Interrupted, slot("new", "$1", "/s")),
+        ];
+        let items = interrupted(&rows);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], Item::Interrupted(r) if r.label() == "new"));
+        let items = archived(&rows);
+        assert_eq!(items.len(), 1);
+        assert!(matches!(&items[0], Item::Archived(r) if r.label() == "old"));
     }
 
     #[test]

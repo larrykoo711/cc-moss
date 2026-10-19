@@ -211,7 +211,7 @@ pub fn report() -> Result<Value> {
     let mut sessions = Vec::new();
     let open: Vec<(&Slot, Status)> = slots
         .iter()
-        .filter(|s| !s.is_moss())
+        .filter(|s| !s.is_moss() && !s.is_archived())
         .map(|s| (s, s.effective_status(moss_core::proc::is_alive)))
         .filter(|(_, st)| *st != Status::Closed)
         .collect();
@@ -234,8 +234,35 @@ pub fn report() -> Result<Value> {
     Ok(json!({
         "schema": 1,
         "sessions": sessions,
+        "archived": archived_facts(&slots, now),
         "install": install_facts(),
     }))
+}
+
+/// The archive, apart from the open sessions: how many, which (name and
+/// id), how many went in the last day on their own, and after how many
+/// idle days they do.
+pub fn archived_facts(slots: &[Slot], now_ms: i64) -> Value {
+    let archived: Vec<&Slot> = slots
+        .iter()
+        .filter(|s| s.is_archived() && !s.is_moss())
+        .collect();
+    let day_ago = now_ms - 24 * 60 * 60 * 1000;
+    let days = moss_core::config::Config::load()
+        .map(|c| c.sessions.archive_after_days)
+        .unwrap_or(moss_core::archive::DEFAULT_AFTER_DAYS);
+    json!({
+        "count": archived.len(),
+        "archived_last_day": archived
+            .iter()
+            .filter(|s| s.archived_at_ms.is_some_and(|at| at >= day_ago))
+            .count(),
+        "archive_after_days": days,
+        "sessions": archived
+            .iter()
+            .map(|s| json!({ "name": s.name, "session_id": s.session_id }))
+            .collect::<Vec<_>>(),
+    })
 }
 
 /// Whether the hooks and the alias links are in place.
@@ -427,6 +454,13 @@ pub fn table(facts: &Value, zh: bool) -> String {
             notes.join(if zh { "；" } else { "; " })
         ));
     }
+    if let Some(n) = facts["archived"]["count"].as_u64().filter(|n| *n > 0) {
+        out.push_str(&if zh {
+            format!("另有 {n} 个归档的会话（cc-moss ls --archived）\n")
+        } else {
+            format!("Plus {n} archived (cc-moss ls --archived)\n")
+        });
+    }
     out
 }
 
@@ -516,6 +550,7 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: 1_000,
             ended_at_ms: None,
+            archived_at_ms: None,
         }
     }
 

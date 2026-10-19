@@ -654,12 +654,26 @@ impl Talk {
         }
         let slots = self.slots();
         let mut found: Vec<(String, String, String)> = Vec::new();
+        // `purge-archived`: every archived session there is now, under one
+        // yes worded with their number; one archived later is not covered.
+        let mut purge_all: Vec<String> = Vec::new();
         for c in &parsed.confirms {
-            let Some(slot_id) =
+            if c.action == markers::PURGE_ARCHIVED {
+                purge_all = slots
+                    .iter()
+                    .filter(|s| s.is_archived() && !s.is_moss())
+                    .map(|s| s.slot_id.clone())
+                    .collect();
+                continue;
+            }
+            let resolved = if c.action == "purge" {
+                // Only an archived session can be deleted, however long ago
+                // it closed.
+                markers::resolve_archived(std::slice::from_ref(&c.session), &slots)
+            } else {
                 markers::resolve_sessions(std::slice::from_ref(&c.session), &slots, now_ms)
-                    .into_iter()
-                    .next()
-            else {
+            };
+            let Some(slot_id) = resolved.into_iter().next() else {
                 continue;
             };
             let Some(slot) = slots.iter().find(|s| s.slot_id == slot_id) else {
@@ -699,8 +713,17 @@ impl Talk {
             }
         }
         let chinese = tr!(false, true);
+        let everything = (!purge_all.is_empty()).then(|| {
+            let yes = markers::purge_archived_label(purge_all.len(), chinese);
+            purge_all.iter().map(move |slot_id| chat::Proposal {
+                action: markers::PURGE_ARCHIVED.to_string(),
+                slot_id: slot_id.clone(),
+                yes: vec![yes.clone()],
+            })
+        });
         markers::CONSENT_ACTIONS
             .iter()
+            .filter(|action| **action != markers::PURGE_ARCHIVED)
             .flat_map(|action| {
                 let these: Vec<&(String, String, String)> =
                     found.iter().filter(|(a, _, _)| a == action).collect();
@@ -715,6 +738,7 @@ impl Talk {
                     })
                     .collect::<Vec<_>>()
             })
+            .chain(everything.into_iter().flatten())
             .collect()
     }
 
@@ -1046,6 +1070,46 @@ mod tests {
         );
         assert_eq!(line.buttons, ["不要".to_string(), yes]);
         assert_eq!(line.text.as_deref(), Some("Bring them back?"));
+    }
+
+    #[test]
+    fn purge_proposals_cover_archived_sessions_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api", "db", "web"]);
+        let reg = Registry::open(&dir.path().join("registry.db")).unwrap();
+        reg.archive(&ids[..2], "you", &|_| false, 5).unwrap();
+        let line = talk.reply_line(
+            &sent_by_you(),
+            "Delete them? [[confirm: purge-archived]][[confirm: purge web]][[confirm: purge api]]",
+            6,
+        );
+        let chinese = tr!(false, true);
+        let all = markers::purge_archived_label(2, chinese);
+        let one = markers::yes_label("purge", &["api · /w/api".into()], chinese);
+        // web is not archived: no yes for it. The yes for all of them says
+        // how many it deletes.
+        let mut got = line.proposals.clone();
+        got.sort_by(|a, b| (&a.action, &a.slot_id).cmp(&(&b.action, &b.slot_id)));
+        let mut want = vec![
+            chat::Proposal {
+                action: "purge".into(),
+                slot_id: ids[0].clone(),
+                yes: vec![one.clone()],
+            },
+            chat::Proposal {
+                action: "purge-archived".into(),
+                slot_id: ids[0].clone(),
+                yes: vec![all.clone()],
+            },
+            chat::Proposal {
+                action: "purge-archived".into(),
+                slot_id: ids[1].clone(),
+                yes: vec![all.clone()],
+            },
+        ];
+        want.sort_by(|a, b| (&a.action, &a.slot_id).cmp(&(&b.action, &b.slot_id)));
+        assert_eq!(got, want);
+        assert_eq!(line.buttons, [one, all]);
     }
 
     #[test]

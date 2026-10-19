@@ -66,9 +66,17 @@ pub struct Slot {
     pub created_at_ms: i64,
     pub last_active_at_ms: i64,
     pub ended_at_ms: Option<i64>,
+    /// When it was put away in the archive (out of the list, still
+    /// restorable); none while it is in the list.
+    pub archived_at_ms: Option<i64>,
 }
 
 impl Slot {
+    /// Whether it is in the archive.
+    pub fn is_archived(&self) -> bool {
+        self.archived_at_ms.is_some()
+    }
+
     /// Whether this is Moss, the session cc-moss looks after itself.
     pub fn is_moss(&self) -> bool {
         self.role.as_deref() == Some(crate::moss::ROLE)

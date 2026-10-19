@@ -5,6 +5,7 @@ compile_error!("cc-moss supports macOS and Linux only");
 
 pub mod agent;
 pub mod aliases;
+pub mod archive;
 pub mod ask;
 pub mod command;
 pub mod config;
@@ -23,5 +24,6 @@ pub mod slot;
 pub mod store_dir;
 pub mod tmux;
 pub mod transcript;
+pub mod trash;
 pub mod update;
 pub mod worktree;

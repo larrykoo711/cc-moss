@@ -345,6 +345,7 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: 0,
             ended_at_ms: None,
+            archived_at_ms: None,
         }
     }
 

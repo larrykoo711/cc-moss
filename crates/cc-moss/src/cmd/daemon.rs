@@ -97,11 +97,13 @@ pub fn run() -> Result<bool> {
     let mut next = Instant::now() + beat;
     let say = |line: &str| log(&paths, line);
     let mut moss = super::moss::Looker::new(&moss_core::store_dir::state_dir(), &say);
+    let mut tidy = super::archive::Tidy::new(&moss_core::store_dir::state_dir());
     while !stop.load(Ordering::Relaxed) {
         std::thread::sleep(Duration::from_millis(100));
         if let Some(moss) = moss.as_mut() {
             moss.tick(Instant::now(), &say);
         }
+        tidy.tick(Instant::now(), &say);
         if Instant::now() >= next {
             stored.heartbeat_ms = now_ms();
             if let Err(e) = status::write(&paths.status, &stored) {
