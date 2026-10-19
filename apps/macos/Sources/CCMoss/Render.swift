@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--restore working|done|partial] [--failure <id>:<reason>]
-///          [--form new|note|close|message|rename [--form-name <name>]]
+///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
@@ -196,6 +196,7 @@ enum Render {
                     if args.contains("--sending") { _ = model.sendFlow.begin() }
                 }
             case "rename": if let s = model.selected { model.startRename(s) }
+            case "end-archive": if let s = model.selected { model.askToEndAndArchive(s) }
             default: break
             }
             let command = model.selected.map(model.attachCommand) ?? ""

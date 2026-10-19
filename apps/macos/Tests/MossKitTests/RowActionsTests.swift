@@ -12,7 +12,7 @@ import Testing
     @Test func aLiveSessionShowsRenameMessageAndOpen() {
         let a = RowActions(list[0], hopeless: false)
         #expect(a.inline == [.message, .open, .rename])
-        #expect(a.more == [[.note], [.copyCommand, .copyPath]])
+        #expect(a.more == [[.note], [.copyCommand, .copyPath], [.endAndArchive]])
     }
 
     @Test func aBrokenSessionLeadsWithBringBack() {
@@ -31,7 +31,7 @@ import Testing
     @Test func outsideTmuxItCanMoveInOrGiveItsFolder() {
         let a = RowActions(list[2], hopeless: false)
         #expect(a.inline == [.adopt, .copyPath])
-        #expect(a.more == [[.adopt], [.note]])
+        #expect(a.more == [[.adopt], [.note], [.endAndArchive]])
     }
 
     @Test func theFullMenuHasEveryActionOnce() {
@@ -96,5 +96,36 @@ import Testing
             #expect(a.all.first?.first == a.primary)
             #expect(a.inline.count <= RowActions.inlineLimit)
         }
+    }
+
+    let running = sessions([
+        sessionJSON(id: "I", name: "idle"),
+        sessionJSON(id: "W", name: "working", busy: true),
+        sessionJSON(id: "Y", name: "asking", attention: "permission"),
+    ])
+
+    @Test func rowActionsEndAndArchiveAnIdleRunningSession() {
+        let a = RowActions(running[0], hopeless: false)
+        #expect(a.more.joined().contains(.endAndArchive))
+        #expect(!a.all.joined().contains(.archive))
+    }
+
+    @Test func rowActionsDontEndAndArchiveABusySession() {
+        #expect(!RowActions(running[1], hopeless: false).all.joined().contains(.endAndArchive))
+    }
+
+    @Test func rowActionsDontEndAndArchiveOneWaitingOnYou() {
+        #expect(!RowActions(running[2], hopeless: false).all.joined().contains(.endAndArchive))
+    }
+
+    @Test func rowActionsDontEndAndArchiveMoss() {
+        var moss = running[0]
+        moss.role = "moss"
+        #expect(!RowActions(moss, hopeless: false).all.joined().contains(.endAndArchive))
+    }
+
+    @Test func rowActionsPlainArchiveForInterruptedStays() {
+        let all = RowActions(list[1], hopeless: false).all.joined()
+        #expect(all.contains(.archive) && !all.contains(.endAndArchive))
     }
 }

@@ -125,4 +125,23 @@ import Testing
         let items = SessionList.searchItems(query: "older", live: [], archived: archived, closed: [])
         #expect(items.map(\.id) == ["ask-moss", "header:archived-results", "C"])
     }
+
+    @Test func endAndArchiveRunsArchiveEnd() async throws {
+        #expect(Archive.endArguments(targets: ["-odd"]) == ["archive", "--end", "--json", "--", "-odd"])
+        let runner = Recorder(status: 1, stdout: #"{"schema":1,"results":[{"name":"x","session_id":"s","result":"refused","reason":"busy"}]}"#)
+        let r = try await MossClient(executable: "/bin/cc-moss", runner: runner).archiveEnding(["x"])
+        #expect(await runner.calls == [["archive", "--end", "--json", "--", "x"]])
+        L.$override.withValue(.zh) { #expect(Archive.summary(r) == "它正在干活，等这轮做完再归档") }
+        L.$override.withValue(.en) { #expect(Archive.summary(r) == "It's working right now. Archive it when this turn is done.") }
+    }
+
+    @Test func endAndArchiveAsksInPlainWords() {
+        L.$override.withValue(.zh) {
+            #expect(Archive.endQuestion("api") + Archive.endHint == "结束「api」并收进归档？对话会留着，拿回来后可以找回接着聊。")
+        }
+        L.$override.withValue(.en) {
+            #expect(Archive.endQuestion("api") + " " + Archive.endHint
+                == "End “api” and put it in Archived? The conversation stays; bring it back to pick it up again.")
+        }
+    }
 }

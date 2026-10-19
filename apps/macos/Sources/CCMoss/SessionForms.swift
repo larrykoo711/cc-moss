@@ -31,6 +31,7 @@ extension AppModel {
         // A name no open session has, so the form doesn't start on a clash.
         newDraft = NewDraft(directory: dir, name: NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions))
         closeGate.cancel()
+        endArchiveGate.cancel()
         form = .newSession
     }
 
@@ -97,16 +98,19 @@ extension AppModel {
 
     func editNote(_ s: Session) {
         closeGate.cancel()
+        endArchiveGate.cancel()
         form = .note(s)
     }
 
     func writeMessage(_ s: Session) {
         closeGate.cancel()
+        endArchiveGate.cancel()
         form = .message(s)
     }
 
     func startRename(_ s: Session) {
         closeGate.cancel()
+        endArchiveGate.cancel()
         form = .rename(s)
     }
 
@@ -263,6 +267,7 @@ extension AppModel {
         let allowed = list.filter(Close.allowed)
         guard !allowed.isEmpty else { return }
         form = nil
+        endArchiveGate.cancel()
         closeGate.request(allowed)
     }
 

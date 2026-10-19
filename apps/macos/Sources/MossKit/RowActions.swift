@@ -18,6 +18,8 @@ public enum RowAction: Hashable, Sendable {
     case adopt
     /// Not running: put it away in Archived (`cc-moss archive`).
     case archive
+    /// Running but idle: end it and archive it (`cc-moss archive --end`), asked first.
+    case endAndArchive
     /// Archived: back into the list (`cc-moss unarchive`).
     case unarchive
     /// Archived: ask Moss to delete it for good (Moss asks you first).
@@ -78,7 +80,7 @@ public struct RowActions: Equatable, Sendable {
         let adopt: [RowAction] = Adopt.availability(s) == .none ? [] : [.adopt]
         // After a provider switch it can't pick up: restart it where it is.
         let restart: [RowAction] = Restart.allowed(s) ? [.restart] : []
-        let archive: [RowAction] = Archive.allowed(s) ? [.archive] : []
+        let archive: [RowAction] = Archive.allowed(s) ? [.archive] : Archive.endAllowed(s) ? [.endAndArchive] : []
 
         // Left to right (user 2026-10-19): move into tmux, restart, send a
         // message, open, rename. Too many: rename waits in "⋯".

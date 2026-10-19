@@ -33,6 +33,27 @@ extension AppModel {
         }
     }
 
+    /// First click on "End and Archive": ask.
+    func askToEndAndArchive(_ s: Session) {
+        guard Archive.endAllowed(s) else { return }
+        form = nil
+        closeGate.cancel()
+        endArchiveGate.request(s)
+    }
+
+    /// Second click: end it, then archive it.
+    func confirmEndAndArchive() {
+        guard let s = endArchiveGate.confirm(), let client else { return }
+        Task {
+            do {
+                say(Archive.summary(try await client.archiveEnding([s.target])))
+            } catch {
+                say(Self.describe(error))
+            }
+            refresh()
+        }
+    }
+
     /// Back into the list, at once.
     func unarchive(_ s: Session) {
         guard let client else { return }
@@ -84,6 +105,25 @@ extension AppModel {
             }
             restartingAll = false
             refresh()
+        }
+    }
+}
+
+/// "End “name” and put it in Archived?" with End and Archive / Cancel.
+struct EndArchiveConfirmCard: View {
+    @Bindable var model: AppModel
+    let session: Session
+
+    var body: some View {
+        FormCard(title: Archive.endQuestion(session.title), icon: Icons.archive) {
+            FormHint(text: Archive.endHint)
+            HStack(spacing: 8) {
+                Spacer()
+                SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.endArchiveGate.cancel() }
+                SoftButton(title: L.t("End and Archive", "结束并归档"), icon: Icons.archive, prominent: true, shortcut: "↵") {
+                    model.confirmEndAndArchive()
+                }
+            }
         }
     }
 }

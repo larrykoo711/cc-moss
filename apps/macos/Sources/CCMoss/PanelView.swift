@@ -122,7 +122,7 @@ struct PanelView: View {
         .tooltipLayer()
         .background(Theme.surface(scheme))
         .overlay {
-            if model.form != nil || model.closeGate.asking {
+            if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
                 ZStack(alignment: .bottom) {
                     FormScrim { dismissForm() }
                     Group {
@@ -133,6 +133,7 @@ struct PanelView: View {
                         case .rename(let s): RenameForm(model: model, session: s)
                         case nil:
                             if let list = model.closeGate.pending { CloseConfirmCard(model: model, sessions: list) }
+                            else if let s = model.endArchiveGate.pending { EndArchiveConfirmCard(model: model, session: s) }
                         }
                     }
                     .padding(.bottom, 54)
@@ -152,6 +153,7 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
+        .animation(.easeOut(duration: 0.15), value: model.endArchiveGate.asking)
         // A form takes the keyboard from the search field, and gives it back when it closes.
         .onChange(of: model.form) { _, form in searchFocused = form == nil }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
@@ -227,6 +229,8 @@ struct PanelView: View {
                     // and runs the lit item when a menu is.
                     if model.closeGate.asking {
                         model.confirmClose()
+                    } else if model.endArchiveGate.asking {
+                        model.confirmEndAndArchive()
                     } else if menu != nil {
                         runMenuItem()
                     } else if model.page == .sessions, case let .noMatch(q)? = model.listItems.first {
@@ -612,6 +616,11 @@ struct PanelView: View {
                                help: L.t("Put it away in Archived. Bring it back any time.", "收进已归档，随时可以拿回来。")) {
                 model.archive(s)
             }
+        case .endAndArchive:
+            return PanelAction(title: L.t("End and Archive…", "结束并归档…"), icon: Icons.archive, shortcut: "",
+                               help: L.t("End it and put it in Archived. The conversation stays.", "结束它并收进归档，对话会留着。")) {
+                model.askToEndAndArchive(s)
+            }
         case .unarchive:
             return PanelAction(title: L.t("Bring Back", "拿回来"), icon: Icons.unarchive, shortcut: "↵",
                                help: L.t("Put it back in the list.", "放回列表里。")) {
@@ -731,6 +740,7 @@ struct PanelView: View {
         guard !model.sendFlow.isSending else { return }
         model.form = nil
         model.closeGate.cancel()
+        model.endArchiveGate.cancel()
     }
 
     private func perform(_ action: PanelAction?) {
@@ -776,7 +786,7 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if model.form != nil || model.closeGate.asking {
+        if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
             dismissForm()
         } else if menu != nil {
             closeMenu()

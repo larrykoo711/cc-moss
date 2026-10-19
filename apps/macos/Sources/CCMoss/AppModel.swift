@@ -205,6 +205,8 @@ final class AppModel {
     var newDraft = NewDraft()
     /// "Stop reminding" waits for a second, deliberate click.
     var closeGate = Confirmation<[Session]>()
+    /// "End and archive" waits for a second, deliberate click too.
+    var endArchiveGate = Confirmation<Session>()
 
     /// Questions sessions are waiting on (T1.4), from `cc-moss ask list`,
     /// and the cards that answer them.
