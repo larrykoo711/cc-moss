@@ -23,6 +23,7 @@ import Testing
         #expect(split("权限，等你") == ["权", "限，等", "你"])
         #expect(split("（括号）里") == ["（括", "号）里"])
         #expect(split("好了。") == ["好", "了。"], "at the end it stays")
+        #expect(split("意见，5 条") == ["意", "见，5 ", "条"], "a word after it comes along whole")
     }
 
     @Test func openingPunctuationGoesWithWhatFollows() {

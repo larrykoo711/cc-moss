@@ -83,6 +83,8 @@ enum Render {
                     await model.loadMoss()
                 }
                 model.mossStartAtTop = args.contains("--moss-top")
+                // `--moss-new-below N`: scrolled up, N new messages below.
+                model.demoNewBelow = value("--moss-new-below").flatMap(Int.init)
                 // `--moss-suggestion "<text>"`: Claude Code's guess at your reply to Moss.
                 if let guess = value("--moss-suggestion") {
                     model.demoMossSuggestion = guess

@@ -183,6 +183,9 @@ final class AppModel {
     var mossGuessHiddenFor: String?
     /// What cc-moss suggest said per session and turn (memory only).
     @ObservationIgnored var suggestionCache = SuggestionCache()
+    /// Screenshots only: the conversation as if scrolled up while this many
+    /// of Moss's messages came in.
+    @ObservationIgnored var demoNewBelow: Int?
     /// Screenshots only: Moss's suggestion, never asked of cc-moss.
     @ObservationIgnored var demoMossSuggestion: String?
     /// The new-session form's fields; kept here so they survive the panel

@@ -97,10 +97,11 @@ public enum MentionFlow {
             // Closers and spaces stay on this line.
             while end < chars.count, noBreakBefore.contains(chars[end]) || chars[end] == " " { end += 1 }
             // Full-width punctuation ending a unit is set half-width (it would
-            // end a line): the Chinese character after it comes along.
+            // end a line): the Chinese character, or the word, after it comes along.
             if end > i, end < chars.count, wide(chars[end - 1]), noBreakBefore.contains(chars[end - 1]),
-               wide(chars[end]), !noBreakAfter.contains(chars[end]), !noBreakBefore.contains(chars[end]) {
-                end += 1
+               chars[end] != " ", !noBreakAfter.contains(chars[end]), !noBreakBefore.contains(chars[end]) {
+                end = wide(chars[end]) ? end + 1 : wordEnd(chars, from: end)
+                while end < chars.count, chars[end] == " " { end += 1 }
             }
             out.append(i..<max(end, i + 1))
             i = max(end, i + 1)
