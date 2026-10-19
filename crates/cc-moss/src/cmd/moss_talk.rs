@@ -566,13 +566,15 @@ impl Talk {
     /// Moss's reply as a chat line, its markers read.
     fn reply_line(&self, sent: &InFlight, text: &str, now_ms: i64) -> Line {
         let parsed = markers::parse(text);
+        let sessions = self.sessions(&parsed.sessions, now_ms);
         let routine = sent.from == chat::FROM_EVENTS && self.quiet.contains(&sent.id);
         Line {
             reply_to: Some(sent.id.clone()),
             silent: parsed.silent || routine,
             buttons: parsed.buttons,
             quick: parsed.quick,
-            sessions: self.sessions(&parsed.sessions, now_ms),
+            sessions: sessions.iter().map(|(id, _)| id.clone()).collect(),
+            session_states: sessions.into_iter().collect(),
             ..Line::message(
                 &inbox::new_id(now_ms),
                 &rfc3339(now_ms),
@@ -582,8 +584,9 @@ impl Talk {
         }
     }
 
-    /// The sessions Moss pointed at, checked against the registry.
-    fn sessions(&self, items: &[String], now_ms: i64) -> Vec<String> {
+    /// The sessions Moss pointed at, checked against the registry, each
+    /// with what it is doing now.
+    fn sessions(&self, items: &[String], now_ms: i64) -> Vec<(String, String)> {
         if items.is_empty() {
             return Vec::new();
         }
@@ -596,6 +599,13 @@ impl Talk {
             Vec::new()
         };
         markers::resolve_sessions(items, &slots, now_ms)
+            .into_iter()
+            .filter_map(|id| {
+                let slot = slots.iter().find(|s| s.slot_id == id)?;
+                let status = slot.effective_status(moss_core::proc::is_alive);
+                Some((id, markers::session_state(slot, status).to_string()))
+            })
+            .collect()
     }
 
     /// `<home>/input-busy` while text that could not be cleared blocks

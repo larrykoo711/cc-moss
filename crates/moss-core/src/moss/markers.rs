@@ -17,6 +17,24 @@ pub struct Parsed {
     pub sessions: Vec<String>,
 }
 
+/// What a session was doing when Moss pointed at it, so a card does not
+/// keep looking urgent after the fact: from its status as shown (a gone
+/// process is dropped), what it waits on, and whether it is in a turn.
+pub fn session_state(slot: &crate::slot::Slot, status: crate::slot::Status) -> &'static str {
+    use crate::slot::Status;
+    match status {
+        Status::Closed => "closed",
+        Status::Interrupted => "dropped",
+        Status::Running => match slot.attention.as_deref() {
+            Some("permission") => "needs-you-permission",
+            Some("question") => "needs-you-question",
+            Some(_) => "needs-you-input",
+            None if slot.busy => "working",
+            None => "idle",
+        },
+    }
+}
+
 /// At most this many sessions in one reply.
 const MAX_SESSIONS: usize = 6;
 
@@ -261,6 +279,23 @@ mod tests {
             ["SLOTAPI1", "SLOTWEB1", "SLOTDONE"]
         );
         assert!(resolve_sessions(&["nobody".into()], &slots, now).is_empty());
+        // Each card keeps what the session was doing when Moss said it.
+        use crate::slot::Status;
+        let mut s = slot("S", "s", Some("x"));
+        let state = |s: &crate::slot::Slot, st: Status| session_state(s, st);
+        assert_eq!(state(&s, Status::Running), "idle");
+        s.busy = true;
+        assert_eq!(state(&s, Status::Running), "working");
+        for (why, want) in [
+            ("permission", "needs-you-permission"),
+            ("question", "needs-you-question"),
+            ("input", "needs-you-input"),
+        ] {
+            s.attention = Some(why.into());
+            assert_eq!(state(&s, Status::Running), want);
+        }
+        assert_eq!(state(&s, Status::Interrupted), "dropped");
+        assert_eq!(state(&s, Status::Closed), "closed");
         // At most six, and with silent too.
         let p = parse("[[silent]][[sessions: a|b|c|d|e|f|g|h]]");
         assert!(p.silent);
