@@ -124,6 +124,8 @@ enum Render {
             // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
             model.pinsPersist = false
             model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
+            // `--moss-card-rename <message id>/<session id>`: that card's name field open.
+            model.mossCardRenaming = value("--moss-card-rename")
             // `--sessions-count N`: the panel's size for that many sessions (on a
             // 1000-pt-tall screen, or `--screen-height`); `--panel-height`: exactly that.
             if let n = value("--sessions-count").flatMap(Int.init) {

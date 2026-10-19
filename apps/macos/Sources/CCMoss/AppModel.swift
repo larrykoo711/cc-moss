@@ -142,6 +142,9 @@ final class AppModel {
     var pins = Pins.load()
     /// Off for screenshots: their pins are never saved.
     @ObservationIgnored var pinsPersist = true
+    /// The session card in Moss's reply whose name field is open
+    /// ("<message id>/<session id>").
+    var mossCardRenaming: String?
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
     /// Claude Code's guess at what you'd say to Moss next (its own input box).
