@@ -35,12 +35,15 @@ private func moss(id: String, status: String = "running", lastActive: String = "
         #expect(!projects.flatMap(\.sessions).contains { $0.isMoss })
     }
 
-    @Test func thePinnedRowFollowsTheSearch() {
-        let m = list[2]
-        #expect(Filter.keeps(m, label: "Moss", query: ""))
-        #expect(Filter.keeps(m, label: "Moss", query: "mo"))
-        #expect(!Filter.keeps(m, label: "Moss", query: "billing"))
-        #expect(!Filter.keeps(m, label: "Moss", query: "", state: .interrupted))
+    @Test func theSessionListNeverHasMoss() {
+        // The Sessions page lists your pins, then the folders, from the
+        // sessions without Moss (user 2026-10-19: Moss has its own page).
+        let others = Grouping.splitMoss(list).others
+        let pins = Pins(["M3", "A"]).split(others)
+        #expect(pins.pinned.map(\.id) == ["A"], "pinning Moss's id does nothing")
+        let listed = pins.pinned + Grouping.projects(pins.rest, home: "/home/u").flatMap(\.sessions)
+        #expect(!listed.contains { $0.isMoss })
+        #expect(StateCounts(others).interrupted == 1, "Moss never counts")
     }
 
     @Test func noRunningMossNoPinnedRow() {

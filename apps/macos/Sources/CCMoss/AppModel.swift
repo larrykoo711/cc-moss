@@ -234,16 +234,11 @@ final class AppModel {
         if pinsPersist { pins.save() }
     }
 
-    /// Moss's pinned row, unless the search or the state filter hides it.
-    var pinnedMoss: Session? {
-        guard let moss, Filter.keeps(moss, label: "Moss", query: query, state: stateFilter) else { return nil }
-        return moss
-    }
-
-    /// Sessions in the order the arrow keys walk them (Moss first, the
-    /// folded group only while it is open).
+    /// Sessions in the order the arrow keys walk them: your pins, the
+    /// folders, the folded group only while it is open. Never Moss: it has
+    /// its own page (user 2026-10-19).
     var visible: [Session] {
-        (pinnedMoss.map { [$0] } ?? []) + pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+        pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
     }
 
     var selected: Session? {

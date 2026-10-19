@@ -55,7 +55,7 @@ enum Render {
         var askData = value("--asks").flatMap { FileManager.default.contents(atPath: $0) }
         if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
         let mossChat = value("--moss-chat").flatMap { FileManager.default.contents(atPath: $0) }
-        let runner = DemoRunner(sessions: value("--page") == "moss" || args.contains("--with-moss") ? DemoRunner.withMoss(data) : data, asks: askData,
+        let runner = DemoRunner(sessions: value("--page") == "moss" || args.contains("--moss") ? DemoRunner.withMoss(data) : data, asks: askData,
                                 answer: value("--answer"), mossChat: mossChat, moss: value("--moss"))
         ClickTargets.shared.enabled = args.contains("--click")
         let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
@@ -703,7 +703,7 @@ struct DemoRunner: CommandRunner {
         moss["status"] = "running"
         moss["busy"] = false
         moss["attention"] = NSNull()
-        moss["last_prompt"] = "[Update] release-notes finished its turn" // what the daemon typed into it
+        moss["last_prompt"] = "[Update] release-notes finished its turn" // never shown: Moss isn't in the list
         moss["cwd"] = "/Users/demo/.local/state/cc-moss/moss"
         if var tmux = moss["tmux"] as? [String: Any] {
             tmux["session_name"] = "moss"

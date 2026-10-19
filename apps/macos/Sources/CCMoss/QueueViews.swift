@@ -42,7 +42,14 @@ struct NavRail: View {
     private var mossDot: RailDot? {
         guard model.page != .moss else { return nil }
         if model.mossDesk.unread { return .unread }
-        return model.mossDesk.activity == .thinking ? .busy : nil
+        // Moss isn't in the session list any more: a broken or switched-off
+        // Moss still shows, quietly, here.
+        switch model.mossDesk.activity {
+        case .thinking: return .busy
+        case .offline: return .trouble
+        case .off: return .off
+        default: return nil
+        }
     }
 }
 
@@ -51,6 +58,18 @@ enum RailDot: Equatable {
     case unread
     /// Breathes.
     case busy
+    /// Something's wrong there (Moss can't start): amber.
+    case trouble
+    /// Switched off: grey.
+    case off
+
+    var color: Color {
+        switch self {
+        case .unread, .busy: Theme.brand
+        case .trouble: Theme.amber
+        case .off: Color.secondary
+        }
+    }
 }
 
 /// One page in the rail: its symbol over a short name; the page you're on
@@ -91,7 +110,7 @@ struct RailButton: View {
                                 .offset(x: 6, y: -5)
                                 .transition(.scale.combined(with: .opacity))
                         } else if let dot {
-                            MossDot(color: Theme.brand, breathing: dot == .busy, size: 8)
+                            MossDot(color: dot.color, breathing: dot == .busy, size: 8)
                                 .padding(2)
                                 .background(Circle().fill(Theme.surface(scheme)))
                                 .offset(x: 3, y: -3)

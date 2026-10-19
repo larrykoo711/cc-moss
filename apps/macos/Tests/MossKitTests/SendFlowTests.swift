@@ -24,21 +24,4 @@ import Testing
         let again = flow.begin()
         #expect(again, "after a failure you can try again")
     }
-
-    @Test func theMossRowShowsItsNewestReply() {
-        let messages = [
-            MossMessage(id: "1", from: .moss, text: "older reply"),
-            MossMessage(id: "2", from: .you, text: "hi"),
-            MossMessage(id: "3", from: .moss, text: "**api-review** is waiting for you.\nMore below."),
-        ]
-        #expect(MossRowLine.of(messages) == "api-review is waiting for you.")
-    }
-
-    @Test func neverADigestOrACommand() {
-        #expect(MossRowLine.of([MossMessage(id: "1", from: .events, text: "[动态] 97-stage5-app 做完了")]) == nil)
-        #expect(MossRowLine.of([MossMessage(id: "1", from: .moss, text: "/usage", command: "/usage")]) == nil)
-        #expect(MossRowLine.of([MossMessage(id: "1", from: .moss, text: "[Update] x\n- Two things left")]) == "Two things left")
-        #expect(MossRowLine.of([MossMessage(id: "1", from: .moss, text: "", fallback: true)]) == nil)
-        #expect(MossRowLine.of([]) == nil)
-    }
 }

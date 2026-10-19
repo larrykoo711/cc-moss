@@ -264,7 +264,7 @@ struct PanelView: View {
                 command: "cc-moss update",
                 copy: copy
             )
-        case .ready where model.sessions.isEmpty && model.moss == nil:
+        case .ready where model.sessions.isEmpty:
             GuideCard(
                 symbol: "sparkles",
                 title: L.t("No sessions yet", "还没有会话"),
@@ -273,7 +273,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedMoss == nil && model.pinnedShown.isEmpty:
+        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -290,10 +290,6 @@ struct PanelView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    if let moss = model.pinnedMoss {
-                        MossHeader()
-                        row(moss)
-                    }
                     let pinned = model.pinnedShown
                     if !pinned.isEmpty {
                         PinnedHeader()
@@ -340,11 +336,7 @@ struct PanelView: View {
         // A button, not a tap gesture: inside the scrolling list a tap
         // gesture never fired once the panel had the keyboard, so a click
         // selected nothing (user 2026-10-18). Its own buttons still win.
-        // Moss's second line is its newest reply, not what was last typed into it.
-        var shownSession = s
-        if s.isMoss {
-            shownSession.lastPrompt = MossRowLine.of(model.mossDesk.messages)
-        }
+        let shownSession = s
         let lineOpen = model.replyOpenID == s.id
         return VStack(spacing: 0) {
             rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions, lineOpen: lineOpen)
