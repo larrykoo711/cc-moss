@@ -363,7 +363,7 @@
   </section>
 
   <section id="lane">
-    <h2>反馈车道 <span class="badge info">19 条 · 15 已修</span></h2>
+    <h2>反馈车道 <span class="badge info">21 条 · 16 已修</span></h2>
     <table><thead><tr><th>#</th><th>反馈</th><th>状态</th></tr></thead><tbody>
       <tr><td>F1</td><td>设置 › Moss「在 Finder 中打开」Moss 的家</td><td><span class="badge mut">待排期</span></td></tr>
       <tr><td>F2</td><td>设置 › Moss 文案太技术，按 C 端重做</td><td><span class="badge mut">待排期</span></td></tr>
@@ -384,6 +384,8 @@
       <tr><td>F17</td><td>小莫气泡多题时不能自己写</td><td><span class="badge ok">已修</span></td></tr>
       <tr><td>F18</td><td>会话图标上的加载圈漂到左下角</td><td><span class="badge ok">已修</span> <span class="badge mut">待真机确认</span></td></tr>
       <tr><td>F19</td><td>会话归档：30 天不用自动归档、经 Moss 清理</td><td><span class="badge mut">T2.5 · 0.3.1</span></td></tr>
+      <tr><td>F20</td><td>插件的后台 <code>claude -p</code> 被当成会话收进列表</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F21</td><td>cc-switch 换供应商后要退出会话、重进 tmux</td><td><span class="badge mut">T2.6 · 0.3.1</span></td></tr>
     </tbody></table>
   </section>
 
@@ -437,7 +439,8 @@ const TASKS = [
   {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'done/T2.2-moss-resident.spec.md', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
   {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'done', sdd:'done/T2.3-talk-to-moss.spec.md', ac:'面板发一句、看到回复（AMEND-1～4，真机验收通过）', steps:[]},
   {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'done', sdd:'done/T2.4-moss-fixes.spec.md', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
-  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'backlog', sdd:'draft/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
+  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'ready', sdd:'todo/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
+  {id:'T2.6', t:'换供应商后原地重开', repo:'cc-moss', dep:'T2.4', st:'ready', sdd:'todo/T2.6-provider-switch.spec.md', ac:'能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -445,7 +448,7 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题（MVP · 0.3.0）', ids:['T1.1','T1.2','T1.3','T1.4']},
-  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
+  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6']},
   {k:'P3', name:'Moss 派活（0.4.0）', ids:['T3.1']},
   {k:'P4', name:'Slack 与路由（0.5.0）', ids:['T4.1','T4.2']},
   {k:'R', name:'收口', ids:['R1']},

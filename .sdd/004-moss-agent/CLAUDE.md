@@ -32,6 +32,7 @@
 | `PLAN.md` ⭐ | 4 Phase × 11 Task + R1、依赖图、Kanban |
 | `playground.html` | 可视化档案（背景、缺口、方案、锚点、进展、反馈车道、Kanban） |
 | `notes/session-names.md` | 会话名与 tmux 名的调研与规则（2026-10-19） |
+| `notes/provider-switch-probe.md` | 运行中切换 API 供应商的实测（2026-10-20） |
 
 ## 依赖链 & 推进
 - S0 立项 ✅（2026-10-18）

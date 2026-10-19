@@ -20,7 +20,7 @@
 | Phase | 主题 | Task | 版本 | 价值 |
 |-------|------|------|------|------|
 | P1 | 放手干 + 替你接住问题（MVP） | T1.1–T1.4 | 0.3.0（与 P2 合发） | 新会话不再卡权限；选择题不用进会话就能答 |
-| P2 | Moss 住进来 | T2.1–T2.5 | 0.3.0；T2.5 → 0.3.1 | 常驻守护、能和 Moss 对话、一键体检、会话归档 |
+| P2 | Moss 住进来 | T2.1–T2.6 | 0.3.0；T2.5、T2.6 → 0.3.1 | 常驻守护、能和 Moss 对话、一键体检、会话归档、换供应商原地重开 |
 | P3 | Moss 派活 | T3.1 | 0.4.0 | Moss 自己挑目录起 bypass 会话、做完回报 |
 | P4 | Slack 与路由 | T4.1–T4.2 | 0.5.0 | 团队在频道里用 Moss；人不在时问题转到 Slack |
 | R | 收口 | R1 | — | 整迭代重型评审 |
@@ -162,7 +162,8 @@ R1 ◄── 全部
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ✅ Done | done/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（AMEND-1～4，真机验收通过） |
 | **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
-| **T2.5** 会话归档与清理 | cc-moss | T2.4 | ⬜ Backlog | draft/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
+| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟦 Ready | todo/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
+| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟦 Ready | todo/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -208,6 +209,8 @@ R1 ◄── 全部
 - 2026-10-19 收尾期真机反馈并入 0.3.0：冷启动链接面板（激活 + 屏外定位）、历史会话卡片缩成回执、多题问题每题可自写（`--text N:TEXT`）、「推荐」标签、加载圈漂移
 - STAGE-CLEAN: 2026-10-19 commits=[cc-moss:分支内保留，PR #35 squash 合入 main] review=[fixed:R1 全部 + R2 代码 10 + R2 安全 5+2 held:0] artifacts=0 kanban=ok
 - 反馈车道 F1–F3（Moss 设置：Finder 打开家目录、去技术化文案、引导去快捷操作）延后到下一轮
+- 2026-10-20：其他设备升 0.3.0 时发现 `remember` 插件的 `claude -p` 摘要被 `claude agents` 报成 interactive、经对账收进 registry（一台 118 条、一台 19 条）；修复 `fix/headless-adopt`（对账读进程参数、跳过 `-p`/`--print`，自动名不分大小写）并入 0.3.1
+- 2026-10-20：用户新需求「cc-switch 换供应商后不用退出会话」→ 实测（`notes/provider-switch-probe.md`）：第三方之间热生效，删键 / 换固定模型要重开；立 T2.6，并入 0.3.1；T2.5、T2.6 过 G3
 
 ## 反馈车道（真机反馈）
 
