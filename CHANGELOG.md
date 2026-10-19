@@ -17,8 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   `moss/` under the state directory with its own persona (`IDENTITY.md`, `SOUL.md`, `USER.md`), journal and memory;
   install refreshes cc-moss's files there and never touches those. Its file tools write only inside its home (a guard
   hook checks every tool call and refuses tools it doesn't know, MCP tools included), and its shell commands run in
-  Claude Code's sandbox, which lets them write only there and in cc-moss's session records; like any session it can
-  still read files and reach the network. The picker and `cc-moss close` can't end it, and the panel's session list
+  Claude Code's sandbox, which lets them write only there. It has no network, can't read Claude Code's folder
+  (`~/.claude`) or cc-moss's records outside its home, and learns about your sessions from the overview
+  (`SESSIONS.md`) and checkup facts (`facts.json`) the daemon writes there; it loads only its own project settings
+  (`--setting-sources project`), not yours. The picker and `cc-moss close` can't end it, and the panel's session list
   leaves it out; turn it off in Settings › Moss, with `cc-moss moss stop`, or with `[moss] enabled = false`.
   `cc-moss daemon stop` stops it too. `cc-moss moss status [--json]` says how long it has run, how often it
   restarted, and why it isn't running when it isn't; `ls --json` marks it `"role": "moss"`. When it needs you, the
@@ -40,9 +42,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   your next message floats above the bar.
 - **Checkup (macOS).** Checkup and Tidy up on the Moss page: Moss fixes what doesn't need you (tmux names, hooks and
   aliases, names for sessions without one, dropped sessions whose folder is gone), sends a short brief, and asks with
-  buttons before bringing back, forgetting or ending anything. It acts through the daemon (`cc-moss moss act`), which
-  needs your tap from the last 10 minutes for those, logs every action to `audit.jsonl`, and can be switched off
-  (`moss.actions`). Once a day it runs by itself; Settings › Moss has Daily checkup and Daily brief
+  yes/no buttons before bringing back, forgetting or ending anything. It acts through the daemon
+  (`cc-moss moss act`), which for those needs your tap on a yes-button under that very question, for that action on
+  that session, in the last 10 minutes, and counts each tap once; it logs every action to `audit.jsonl`, and can be
+  switched off (`moss.actions`). It runs by itself the first time you open the panel each day; Settings › Moss has Daily checkup and Daily brief
   (`moss.daily_checkup`, `moss.daily_brief`). `cc-moss doctor --sessions --json` lists the facts it reads.
 - **Sessions page: pins, replies and search (macOS).** Pin sessions to a Pinned section (the pin after the name, or
   ⌘P). Click a session waiting on you to reply on the spot, with Claude Code's own suggestion already typed (also in

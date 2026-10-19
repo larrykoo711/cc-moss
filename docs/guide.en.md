@@ -396,13 +396,17 @@ keeps trying.
     home, never its settings, hooks, `SECURITY.md` or `CLAUDE.md`. Tools the guard doesn't know, MCP tools included,
     are refused. When the guard can't tell, the answer is no.
   - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
-    only in its home, a temporary folder and cc-moss's session records (so cc-moss's own commands such as
-    `cc-moss ls` work), never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
+    only in its home, never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
+  - Your other sessions stay private: neither its tools nor its shell can read Claude Code's folder (`~/.claude`,
+    where your conversations are) or cc-moss's records outside its home. What Moss knows about your sessions is
+    the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
+    updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
+  - No network: web fetch and web search are refused, and its shell can't reach the internet.
   - `IDENTITY.md`, `SOUL.md` and `USER.md` change only through `/moss-profile`, which saves with
     `cc-moss moss profile <name> --from <draft>`: the one command allowed outside the sandbox, and only on its own
     (it keeps the old file in `.snapshots/`).
-  - What the fence doesn't cover: like any Claude Code session, Moss can read files and reach the network.
+  - What the fence doesn't cover: Moss can still read other files on your Mac, such as your project folders.
     `SECURITY.md` tells it to keep away from secrets, but that is a rule it follows, not a wall. If your shell's
     startup files write somewhere when a shell starts (some version managers do), each of its commands prints an
     "Operation not permitted" line about that; the command itself still runs.
@@ -412,8 +416,9 @@ keeps trying.
   Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click Open in Terminal on
   the panel's Moss page. Only the session the daemon started is Moss: a window you open next to it, or
   `claude --resume` of its id elsewhere, is an ordinary session.
-- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`), so the ones you set up for Claude
-  Code don't come along. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
+- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only its own project
+  settings (`--setting-sources project`), so the MCP servers, hooks and settings you set up for Claude Code don't
+  come along. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
   model's window when that's smaller); at the cap Claude Code compacts it, so the conversation doesn't keep growing.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
   Anthropic like any session you start. While it waits it sends nothing and uses none of your plan; each start begins
@@ -511,8 +516,8 @@ ones dropped or idle for a long time.
 | Waiting on your answer or reply | Leaves it, and tells you how many are in To Do |
 
 **Daily checkup.** Settings › Moss › Checkup has two switches, both on by default:
-- **Daily checkup**: once a day, the first time the daemon sees the menubar app running, it sends Moss the same
-  request as the Checkup button (it doesn't show as something you said).
+- **Daily checkup**: the first time you open the panel each day, cc-moss sends Moss the same request as the
+  Checkup button (it doesn't show as something you said).
 - **Daily brief**: off, the daily checkup still runs, but its brief is kept quietly in the conversation; you hear
   about it only when you need to decide something.
 
@@ -522,10 +527,10 @@ works too.
 **How Moss acts.** Moss's sandbox can't reach your sessions, so it asks the daemon to act for it
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
-it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: the daemon
-checks the message id Moss gives it, which has to be something you said in the conversation, in the last 10 minutes,
-in answer to a Moss message with buttons. Otherwise it refuses. Moss can't write the conversation file, so it can't
-make up your answer. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
+it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
+first, with yes and no buttons under its message. Only your tap on a yes-button under that very message counts, for
+that action on that session, within 10 minutes, and only once; anything else, typed words included, doesn't. The
+daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
 say), the action is skipped with a reason. Each one is written to `audit.jsonl` in the state directory (when, what,
 on which session, on the strength of which message, and how it went). For a Moss that only says what to do, set
 `[moss] actions = false` (or `cc-moss config set moss.actions false`).

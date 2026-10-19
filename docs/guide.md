@@ -256,11 +256,13 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
   - 家里的东西从不顺着链接往外走：如果 `.claude`（或任何 cc-moss 要写的文件）变成了指向别处的链接，cc-moss 会换掉链接本身，不碰它指向的地方，卸载时也一样。`.claude/` 下不是 cc-moss 的东西，每次布置家目录时都会清掉。
 - **它能碰什么。** Moss 不弹权限确认（bypass），所以有两道围栏：
   - 工具：项目设置里的防护钩子检查每一次工具调用。文件工具只能写它自己家里的文件，不许改自己的设置、钩子、`SECURITY.md` 和 `CLAUDE.md`。防护钩子不认识的工具（包括 MCP 工具）一律拒绝；判断不了的时候也拒绝。
-  - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它的家、一个临时文件夹和 cc-moss 的会话记录（这样 `cc-moss ls` 之类 cc-moss 自己的命令能用），不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
+  - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它自己的家，不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
+  - 你别的会话归你自己：它的工具和命令行都读不了 Claude Code 的文件夹（`~/.claude`，你的对话都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
+  - 不联网：网页抓取和网页搜索一律拒绝，命令行也连不上网。
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
-  - 围栏管不到的：和任何 Claude Code 会话一样，Moss 能读文件、能联网。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
+  - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
 - **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 会话上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板的 Moss 页点「在终端打开」。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
-- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），你给 Claude Code 配的 MCP 不会跟着它跑。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
+- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己的项目设置（`--setting-sources project`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
 - **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
 - Moss 需要你的时候（要权限、有问题要问），菜单栏图标和数字会像别的会话一样提醒你；但 Moss 本身从不算进你的会话数。
 - `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程（按它自己的 PATH）找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 先停掉守护进程，再结束 Moss、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
@@ -306,12 +308,12 @@ cc-moss moss chat --json                    # 最近 200 条对话（--limit N �
 | 在等你回答或回话 | 不动，告诉你「待处理」里有几件 |
 
 **每天体检。** 设置 ›「Moss」›「体检」里有两个开关，默认都开：
-- **每天体检**：每天一次，守护进程当天第一次看到菜单栏 App 开着时，替你发一次和「体检」按钮一模一样的请求（这条请求在对话里不算你说的）。
+- **每天体检**：每天你第一次打开面板时，cc-moss 替你发一次和「体检」按钮一模一样的请求（这条请求在对话里不算你说的）。
 - **每天发体检简报**：关掉后每天照样体检，简报安静地记在对话里，只有要你拿主意时才提醒你。
 
 配置里是 `[moss] daily_checkup`、`daily_brief`，也可以 `cc-moss config set moss.daily_checkup false`。
 
-**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：守护进程核对 Moss 带来的消息 id，必须是你在对话里说的、10 分钟以内的、而且是在回答 Moss 一条带按钮的消息，否则拒绝。对话记录 Moss 写不了，所以它伪造不了你的回答。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
+**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：Moss 先问你，消息下面放「是」和「否」按钮。只有你点了那条消息下面的「是」才算数，而且只管那一件事、那一个会话，10 分钟内有效，只能用一次；别的都不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
 
 体检看的是 `cc-moss doctor --sessions --json` 给的事实：每个会话的名字是不是自动起的、文件夹在不在、断了多久、多久没动、在不在干活或等你、tmux 名对不对得上，以及建议的名字；还有钩子和别名链接好不好。判断不了的写 `"unknown"`，不当成坏了。里面没有会话的对话内容。
 
