@@ -137,7 +137,7 @@ enum Render {
             // `--mention-hover <id>`: the card of that session's mention in Moss's words.
             if let id = value("--mention-hover") {
                 model.mentionHover = MentionHover(id: id, anchor: .zero)
-                model.mentionPointer = id
+                model.mentionPointer.enter(id)
             }
             if let p = value("--adopt-problem"), let cut = p.firstIndex(of: ":") {
                 model.adoptProblems[String(p[..<cut])] = String(p[p.index(after: cut)...])

@@ -36,7 +36,7 @@ extension AppModel {
     /// search for its name, so the Closed section shows it.
     func goToSession(_ id: String) {
         mentionHover = nil
-        mentionPointer = nil
+        mentionPointer.clear()
         mentionShow?.cancel()
         if let s = sessions.first(where: { $0.id == id }) {
             page = .sessions
@@ -53,7 +53,7 @@ extension AppModel {
 
     /// The pointer came onto a mention: its card after a moment.
     func mentionEntered(_ id: String, anchor: CGRect) {
-        mentionPointer = id
+        mentionPointer.enter(id)
         mentionHide?.cancel()
         if mentionHover?.id == id {
             mentionHover?.anchor = anchor
@@ -67,11 +67,17 @@ extension AppModel {
         }
     }
 
-    /// The pointer left a mention or its card: close after a short grace,
-    /// unless it comes back onto either.
-    func mentionLeft() {
-        mentionPointer = nil
+    /// The pointer left mention `id`. Only the one lit counts: another
+    /// paragraph's view may already have lit the next one.
+    func mentionLeft(_ id: String) {
+        guard mentionPointer.leave(id) else { return }
         mentionShow?.cancel()
+        hideMentionCard()
+    }
+
+    /// Close the card after a short grace, unless the pointer comes back
+    /// onto the mention or the card.
+    private func hideMentionCard() {
         mentionHide?.cancel()
         mentionHide = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 250_000_000)
@@ -81,7 +87,7 @@ extension AppModel {
     }
 
     func mentionCardHovered(_ inside: Bool) {
-        if inside { mentionHide?.cancel() } else { mentionLeft() }
+        if inside { mentionHide?.cancel() } else if mentionPointer.id == nil { hideMentionCard() }
     }
 }
 
@@ -126,7 +132,7 @@ struct MentionText: NSViewRepresentable {
     func makeNSView(context: Context) -> MentionTextView {
         let view = MentionTextView()
         view.onEnter = { [model] id, rect in model.mentionEntered(id, anchor: rect) }
-        view.onLeave = { [model] in model.mentionLeft() }
+        view.onLeave = { [model] id in model.mentionLeft(id) }
         view.onClick = { [model] id in model.goToSession(id) }
         return view
     }
@@ -169,7 +175,7 @@ struct MentionText: NSViewRepresentable {
                 // A mention reads as part of the sentence: its own colour and
                 // weight, a light dotted underline, a small soft state dot.
                 // Under the pointer the name and a solid underline turn brand.
-                let lit = model.mentionPointer == id
+                let lit = model.mentionPointer.id == id
                 let brand = NSColor(Theme.brand)
                 let state = model.mentioned(id).map { Theme.color($0.needsYou ? .working : $0.state) } ?? .secondary
                 let mention: [NSAttributedString.Key: Any] = [.mossMention: id]
@@ -214,7 +220,7 @@ private extension Font.Weight {
 /// Read-only, selectable text that knows which mention the pointer is on.
 final class MentionTextView: NSTextView {
     var onEnter: (String, CGRect) -> Void = { _, _ in }
-    var onLeave: () -> Void = {}
+    var onLeave: (String) -> Void = { _ in }
     var onClick: (String) -> Void = { _ in }
     /// Screenshots: a hover card asked for this mention; say where it is.
     var wantsAnchor: String?
@@ -274,23 +280,33 @@ final class MentionTextView: NSTextView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+        // Its own bounds, not `.inVisibleRect`: with clipping off (the
+        // default since macOS 14) the visible rect reaches past the view, so
+        // every paragraph's area covered its neighbours and a view the
+        // pointer wasn't on said "left", switching off the mention that was
+        // just lit in the next paragraph.
+        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow],
                                        owner: self))
     }
 
     override func mouseMoved(with event: NSEvent) {
-        let id = mention(at: convert(event.locationInWindow, from: nil))
-        if id != nil { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
-        guard id != current else { return }
-        current = id
-        if let id, let rect = windowRect(of: id) { onEnter(id, rect) } else { onLeave() }
+        let point = convert(event.locationInWindow, from: nil)
+        let id = bounds.contains(point) ? mention(at: point) : nil
+        if bounds.contains(point) {
+            if id != nil { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
+        }
+        move(to: id)
     }
 
     override func mouseExited(with event: NSEvent) {
-        if current != nil {
-            current = nil
-            onLeave()
-        }
+        move(to: nil)
+    }
+
+    private func move(to id: String?) {
+        guard id != current else { return }
+        if let left = current { onLeave(left) }
+        current = id
+        if let id, let rect = windowRect(of: id) { onEnter(id, rect) }
     }
 
     override func mouseDown(with event: NSEvent) {

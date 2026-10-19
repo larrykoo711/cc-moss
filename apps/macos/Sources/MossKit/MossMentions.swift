@@ -26,6 +26,39 @@ public enum MossMentions {
         }
     }
 
+    /// Which mention the pointer is on, across every paragraph's text. A
+    /// "left" only counts from the mention that was entered: with several
+    /// paragraphs (several text views), one view's leaving must not undo
+    /// another view's entering, whatever order their events come in.
+    public struct Pointer: Equatable, Sendable {
+        public private(set) var id: String?
+
+        public init(id: String? = nil) {
+            self.id = id
+        }
+
+        /// The pointer came onto `id`. True when that's a change.
+        @discardableResult
+        public mutating func enter(_ id: String) -> Bool {
+            guard self.id != id else { return false }
+            self.id = id
+            return true
+        }
+
+        /// The pointer left `id`. True when it was the one lit; a stale
+        /// leave (another mention is lit now) changes nothing.
+        @discardableResult
+        public mutating func leave(_ id: String) -> Bool {
+            guard self.id == id else { return false }
+            self.id = nil
+            return true
+        }
+
+        public mutating func clear() {
+            id = nil
+        }
+    }
+
     /// The link scheme a mention carries in rendered text.
     public static let scheme = "ccmoss-mention"
 
