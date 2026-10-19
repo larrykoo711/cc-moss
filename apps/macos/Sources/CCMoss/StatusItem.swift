@@ -63,8 +63,23 @@ final class KeyPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func close() {
+        linkLog.debug("panel close() called")
         orderOut(nil)
         onClose?()
+    }
+
+    override func orderOut(_ sender: Any?) {
+        if isVisible {
+            let caller = Thread.callStackSymbols.dropFirst().prefix(6).joined(separator: " | ")
+            linkLog.debug("panel ordered out; from: \(caller, privacy: .public)")
+        }
+        super.orderOut(sender)
+    }
+
+    override func resignKey() {
+        super.resignKey()
+        let next = NSApp.keyWindow.map { "\(type(of: $0)) \($0.title)" } ?? "none"
+        linkLog.debug("panel resigned key; key window now: \(next, privacy: .public), app active: \(NSApp.isActive)")
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -112,7 +127,7 @@ final class PanelController {
 
     func toggle() {
         if isShown {
-            hide()
+            hide("toggled")
         } else if ProcessInfo.processInfo.systemUptime - hiddenAt > 0.25 {
             show()
         }
@@ -139,10 +154,23 @@ final class PanelController {
         onVisibilityChange?(true)
     }
 
-    func hide() {
+    func hide(_ reason: String = "asked") {
         guard isShown else { return }
+        linkLog.debug("panel hidden: \(reason, privacy: .public)")
         window?.orderOut(nil)
         didHide()
+    }
+
+    /// Show it again when it is meant to be up but isn't on screen (ordered
+    /// out by something that didn't go through `hide`).
+    func showAgain(holding seconds: TimeInterval) {
+        if isShown, window?.isVisible != true {
+            linkLog.debug("panel was shown but not on screen: resetting")
+            isShown = false
+            stopWatching()
+        }
+        show(holding: seconds)
+        linkLog.debug("panel shown again; visible: \(self.isVisible)")
     }
 
     private func didHide() {
@@ -179,7 +207,7 @@ final class PanelController {
         glass.maskImage = Self.roundedMask(radius: Self.cornerRadius)
         glass.autoresizingMask = [.width, .height]
         let host = NSHostingView(rootView: PanelView(model: model)
-            .environment(\.closePanel) { [weak self] in self?.hide() }
+            .environment(\.closePanel) { [weak self] in self?.hide("closed from inside (Esc, opened something)") }
             .followsLanguage())
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
@@ -215,9 +243,9 @@ final class PanelController {
             MainActor.assumeIsolated {
                 // A dropdown open over the panel closes on the same click;
                 // look again once it has.
-                guard PanelHold.active else { self?.hide(); return }
+                guard PanelHold.active else { self?.hide("a click in another app"); return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                    if !PanelHold.active { self?.hide() }
+                    if !PanelHold.active { self?.hide("a click in another app") }
                 }
             }
         }) {
@@ -230,14 +258,14 @@ final class PanelController {
             MainActor.assumeIsolated {
                 guard let self, !PanelHold.active else { return }
                 if self.steady { linkLog.debug("resign key ignored (just opened by a link)"); return }
-                self.hide()
+                self.hide("resigned key")
             }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !PanelHold.active else { return }
                 if self.steady { linkLog.debug("resign active ignored (just opened by a link)"); return }
-                self.hide()
+                self.hide("app resigned active")
             }
         })
     }
@@ -322,6 +350,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
         if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)
+        watchFocusForLinks()
         if let link = pendingLink {
             pendingLink = nil
             linkLog.debug("pending link handled")
@@ -388,6 +417,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showForLink(tries: 10)
     }
 
+    /// Debug (category "link"): who takes the keyboard and the app's
+    /// activation around a launch, to find what hides a link's panel.
+    private func watchFocusForLinks() {
+        let center = NotificationCenter.default
+        let describe: (Any?) -> String = { object in
+            guard let w = object as? NSWindow else { return "?" }
+            return "\(type(of: w)) \"\(w.title)\" visible: \(w.isVisible)"
+        }
+        for name in [NSWindow.didBecomeKeyNotification, NSWindow.willCloseNotification] {
+            _ = center.addObserver(forName: name, object: nil, queue: .main) { note in
+                linkLog.debug("\(note.name.rawValue, privacy: .public): \(describe(note.object), privacy: .public)")
+            }
+        }
+        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
+                     NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
+            _ = center.addObserver(forName: name, object: nil, queue: .main) { note in
+                linkLog.debug("\(note.name.rawValue, privacy: .public)")
+            }
+        }
+    }
+
     /// Show the panel for a link: once the status button is in the menu bar
     /// (right after a cold launch it may not be yet; tried every 0.1 s for
     /// about a second), held through the launch's focus changes, and shown
@@ -404,7 +454,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let panel = self?.statusItem?.panel else { return }
             linkLog.debug("panel still visible after a link: \(panel.isVisible)")
-            if !panel.isVisible { panel.show(holding: 1.0) }
+            if !panel.isVisible { panel.showAgain(holding: 1.5) }
         }
     }
 
