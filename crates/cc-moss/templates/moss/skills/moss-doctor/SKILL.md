@@ -7,6 +7,9 @@ description: Give the user's sessions a checkup (体检) or tidy them up (整理
 
 # The checkup
 
+Everything here goes through the shell: cc-moss commands, and `cat`/`>>` for your journal. The file tools
+are off for you.
+
 ## 1. Read the facts
 
 ```sh

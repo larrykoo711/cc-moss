@@ -392,9 +392,10 @@ keeps trying.
     to somewhere else, cc-moss replaces the link and leaves what it points to alone, also when uninstalling.
     Anything else under `.claude/` is cleared away whenever the home is laid out.
 - **What it may touch.** Moss runs without permission prompts (bypass), so it is fenced in two ways:
-  - Its tools: a guard hook in its project settings checks every tool call. Its file tools may write only inside its
-    home, never its settings, hooks, `SECURITY.md` or `CLAUDE.md`. Tools the guard doesn't know, MCP tools included,
-    are refused. When the guard can't tell, the answer is no.
+  - Its tools: a guard hook in its project settings checks every tool call. Claude Code's file tools (Read, Write,
+    Edit, Grep, Glob) are off for Moss, so it reads and writes files only with shell commands, inside the sandbox
+    below. Tools the guard doesn't know, MCP tools included, are refused. When the guard can't tell, the answer is
+    no.
   - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
     only in its home, never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.

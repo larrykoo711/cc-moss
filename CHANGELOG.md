@@ -15,9 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Moss, a Claude Code session cc-moss keeps running (macOS).** The daemon starts it at login and brings it back,
   fresh, if it's killed or crashes (after 30 s, 2 min, 10 min, then hourly), on a tmux server of its own. It lives in
   `moss/` under the state directory with its own persona (`IDENTITY.md`, `SOUL.md`, `USER.md`), journal and memory;
-  install refreshes cc-moss's files there and never touches those. Its file tools write only inside its home (a guard
-  hook checks every tool call and refuses tools it doesn't know, MCP tools included), and its shell commands run in
-  Claude Code's sandbox, which lets them write only there. It has no network, can't read Claude Code's folder
+  install refreshes cc-moss's files there and never touches those. It works on files only through shell commands,
+  which run in Claude Code's sandbox and can write only there; Claude Code's file tools are off for it, and a guard
+  hook checks every tool call and refuses tools it doesn't know, MCP tools included. It has no network, can't read Claude Code's folder
   (`~/.claude`) or cc-moss's records outside its home, and learns about your sessions from the overview
   (`SESSIONS.md`) and checkup facts (`facts.json`) the daemon writes there; it loads only its own project settings
   (`--setting-sources project`), not yours. The picker and `cc-moss close` can't end it, and the panel's session list

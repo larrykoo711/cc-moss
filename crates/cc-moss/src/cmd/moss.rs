@@ -130,10 +130,12 @@ fn settings_json(exe: &str, state: &Path) -> String {
                 "hooks": [{ "type": "command", "command": stop }]
             }]
         },
-        // Other sessions' conversations are not Moss's to read: not with
-        // its file tools (a deny rule holds in bypass mode too) ...
+        // No file tools at all (a deny rule holds in bypass mode too): they
+        // check a path and open it later, outside the sandbox, so a link
+        // swapped in between leads them anywhere. Moss reads and writes
+        // with the shell, where the sandbox decides at the moment of use.
         "permissions": {
-            "deny": [format!("Read({PRIVATE_READS}/**)")]
+            "deny": guard::FILE_TOOLS
         },
         "sandbox": {
             "enabled": true,
@@ -144,8 +146,8 @@ fn settings_json(exe: &str, state: &Path) -> String {
             "filesystem": {
                 "allowWrite": allow_write,
                 "denyWrite": deny_write,
-                // ... nor from the shell: not Claude Code's folder, not
-                // cc-moss's state (the registry, other sessions' questions),
+                // Other sessions' conversations are not Moss's to read: not
+                // Claude Code's folder, not cc-moss's state (the registry, other sessions' questions),
                 // except its own home (the working directory) inside it.
                 "denyRead": [PRIVATE_READS, state.to_string_lossy()],
                 "allowRead": ["."]
@@ -698,8 +700,9 @@ fn home_arg(args: &[std::ffi::OsString]) -> Option<PathBuf> {
 }
 
 fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
-    let home =
-        home.context("no --home in the guard's command (settings from an older cc-moss?)")?;
+    // Settings without it are from an older cc-moss: refuse until they are
+    // rewritten.
+    home.context("no --home in the guard's command (settings from an older cc-moss?)")?;
     let mut payload = String::new();
     std::io::stdin().read_to_string(&mut payload)?;
     let input: serde_json::Value =
@@ -710,23 +713,7 @@ fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
         .context("no tool_name")?;
     let empty = serde_json::Value::Object(Default::default());
     let tool_input = input.get("tool_input").unwrap_or(&empty);
-    let cwd = input
-        .get("cwd")
-        .and_then(serde_json::Value::as_str)
-        .map(PathBuf::from)
-        .unwrap_or_else(|| home.clone());
-    let private = guard::private_reads(
-        std::env::var_os("HOME").as_deref().map(Path::new),
-        std::env::var_os("CLAUDE_CONFIG_DIR")
-            .as_deref()
-            .map(Path::new),
-        home.parent(),
-        &home,
-    );
-    match guard::decide_read(&private, &cwd, tool, tool_input) {
-        Decision::Allow => Ok(guard::decide(&home, &cwd, tool, tool_input)),
-        deny => Ok(deny),
-    }
+    Ok(guard::decide(tool, tool_input))
 }
 
 // ---------------------------------------------------------------- install / uninstall
@@ -1430,15 +1417,16 @@ mod tests {
         );
         assert!(deny.contains(&"./input-busy".into()));
         // Claude Code's folder and cc-moss's state are not for its shell,
-        // except its own home; nor for Read.
+        // except its own home.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
             serde_json::json!(["~/.claude", "/s"])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
+        // No file tools: Moss reads and writes through the sandboxed shell.
         assert_eq!(
             v["permissions"]["deny"],
-            serde_json::json!(["Read(~/.claude/**)"])
+            serde_json::json!(["Read", "Write", "Edit", "NotebookEdit", "Grep", "Glob"])
         );
         // Offline: no network from its shell.
         assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
