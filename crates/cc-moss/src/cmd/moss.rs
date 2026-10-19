@@ -13,6 +13,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use moss_core::command::{run_with_timeout, RunError};
 use moss_core::config::Config;
+use moss_core::moss::dir::Dir;
 use moss_core::moss::guard::{self, Decision};
 use moss_core::moss::home::{self, File, Kind};
 use moss_core::moss::keeper::{self, Action, Keeper};
@@ -610,26 +611,31 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
     let mut text = String::new();
     match from {
         Some(path) => {
-            // It runs outside Moss's sandbox: only a draft in Moss's own
-            // home, links followed, may become its profile.
+            // It runs outside Moss's sandbox: only a plain file in Moss's
+            // own home may become its profile, opened folder by folder from
+            // the home and never through a link, so a link swapped in while
+            // it runs leads nowhere.
             let home = moss::home_dir(&state());
-            let inside = guard::resolve(&std::path::absolute(path)?)
-                .zip(guard::resolve(&home))
-                .is_some_and(|(p, h)| p.starts_with(&h));
-            if !inside {
-                bail!(tr!(
-                    format!(
-                        "{} is not in Moss's home; save the draft there (drafts/) first",
-                        path.display()
-                    ),
-                    format!(
-                        "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
-                        path.display()
-                    )
-                ));
-            }
-            text = std::fs::read_to_string(path)
-                .with_context(|| format!("cannot read {}", path.display()))?
+            let read = in_home(&home, path).and_then(|rel| {
+                Dir::home(&home)
+                    .and_then(|d| d.read_at(&rel))
+                    .with_context(|| format!("cannot read {}", path.display()))
+            });
+            text = match read {
+                Ok(text) => text,
+                Err(e) => {
+                    return Err(e.context(tr!(
+                        format!(
+                            "{} is not in Moss's home; save the draft there (drafts/) first",
+                            path.display()
+                        ),
+                        format!(
+                            "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
+                            path.display()
+                        )
+                    )))
+                }
+            };
         }
         None => {
             std::io::stdin()
@@ -647,24 +653,40 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
         text.push('\n');
     }
     let home = moss::home_dir(&state());
-    let path = home.join(file);
-    if let Ok(old) = std::fs::read_to_string(&path) {
-        // Never through a link: `.snapshots` and the file are replaced, not
-        // followed.
+    home::ensure_real_dir(&home, ".snapshots")?;
+    let dir = Dir::home(&home).with_context(|| format!("{}", home.display()))?;
+    if let Ok(old) = dir.read(file) {
+        // Never through a link: `.snapshots` is opened as a real folder
+        // and written through that, and the file is replaced, not followed.
         let stamp = rfc3339(now_ms()).replace(':', "-");
         let stem = file.trim_end_matches(".md");
-        home::write_generated(
-            &home.join(".snapshots"),
-            &format!("{stem}-{stamp}.md"),
-            &old,
-        )?;
+        dir.sub(".snapshots")?
+            .write(&format!("{stem}-{stamp}.md"), &old)?;
     }
-    home::write_generated(&home, file, &text)?;
+    dir.write(file, &text)?;
     println!(
         "{}",
         tr!(format!("Saved {file}."), format!("已保存 {file}。"))
     );
     Ok(())
+}
+
+/// `path` as a path inside `home` (plain names only), or why not.
+fn in_home(home: &Path, path: &Path) -> Result<PathBuf> {
+    let absolute = std::path::absolute(path)?;
+    // The home as named, or as the system names it (/var is /private/var).
+    let real = std::fs::canonicalize(home).unwrap_or_else(|_| home.to_path_buf());
+    let rel = absolute
+        .strip_prefix(home)
+        .or_else(|_| absolute.strip_prefix(&real))
+        .map_err(|_| anyhow::anyhow!("{} is outside the home", path.display()))?;
+    if !rel
+        .components()
+        .all(|c| matches!(c, std::path::Component::Normal(_)))
+    {
+        bail!("{} is not a plain path inside the home", path.display());
+    }
+    Ok(rel.to_path_buf())
 }
 
 // ---------------------------------------------------------------- guard hook

@@ -95,6 +95,43 @@ impl Dir {
         )))
     }
 
+    /// The folder `name` in this one as it is: never made, never through a
+    /// link.
+    pub fn child(&self, name: &str) -> io::Result<Dir> {
+        Ok(Dir {
+            fd: open_dir_at(self.raw(), &c_name(name)?)?,
+        })
+    }
+
+    /// The plain file at `rel` (plain names only, no `..`), each folder on
+    /// the way opened from the one before and never through a link.
+    pub fn read_at(&self, rel: &Path) -> io::Result<String> {
+        let mut names = Vec::new();
+        for part in rel.components() {
+            match part {
+                std::path::Component::Normal(n) => names.push(
+                    n.to_str()
+                        .ok_or_else(|| io::Error::other("a name that is not UTF-8"))?,
+                ),
+                _ => {
+                    return Err(io::Error::other(format!(
+                        "{} is not a plain path",
+                        rel.display()
+                    )))
+                }
+            }
+        }
+        let Some((file, folders)) = names.split_last() else {
+            return Err(io::Error::other("no file named"));
+        };
+        let mut at: Option<Dir> = None;
+        for folder in folders {
+            let next = at.as_ref().unwrap_or(self).child(folder)?;
+            at = Some(next);
+        }
+        at.as_ref().unwrap_or(self).read(file)
+    }
+
     fn raw(&self) -> RawFd {
         self.fd.as_raw_fd()
     }
@@ -280,6 +317,31 @@ mod tests {
             .unwrap()
             .is_dir());
         assert!(outside.join("secret.json").exists());
+    }
+
+    #[test]
+    fn moss_dir_reads_a_path_without_links_on_the_way() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("moss");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(home.join("drafts/deep")).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("soul.md"), "secret").unwrap();
+        std::fs::write(home.join("drafts/deep/soul.md"), "mine").unwrap();
+        let dir = Dir::home(&home).unwrap();
+        assert_eq!(
+            dir.read_at(Path::new("drafts/deep/soul.md")).unwrap(),
+            "mine"
+        );
+        // A folder on the way that is a link, and a file that is one.
+        symlink(&outside, home.join("drafts/out")).unwrap();
+        assert!(dir.read_at(Path::new("drafts/out/soul.md")).is_err());
+        symlink(outside.join("soul.md"), home.join("drafts/l.md")).unwrap();
+        assert!(dir.read_at(Path::new("drafts/l.md")).is_err());
+        assert!(dir
+            .read_at(Path::new("drafts/../../outside/soul.md"))
+            .is_err());
+        assert!(dir.read_at(Path::new("/etc/hosts")).is_err());
     }
 
     #[test]

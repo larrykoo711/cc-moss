@@ -126,6 +126,16 @@ fn moss_profile_reads_only_from_its_home() {
     std::os::unix::fs::symlink(&outside, home.join("drafts/link.md")).unwrap();
     assert!(!run(&home.join("drafts/link.md")).status.success());
     assert!(!home.join("SOUL.md").exists());
+    // A folder on the way that leads out, and `..`.
+    let away = dir.path().join("away");
+    std::fs::create_dir_all(&away).unwrap();
+    std::fs::write(away.join("soul.md"), "other sessions' words\n").unwrap();
+    std::os::unix::fs::symlink(&away, home.join("drafts/away")).unwrap();
+    assert!(!run(&home.join("drafts/away/soul.md")).status.success());
+    assert!(!run(&home.join("drafts/../../away/soul.md"))
+        .status
+        .success());
+    assert!(!home.join("SOUL.md").exists());
     // A draft in its home is fine.
     std::fs::write(home.join("drafts/soul.md"), "# Soul\nCalm.\n").unwrap();
     let out = run(&home.join("drafts/soul.md"));
@@ -134,6 +144,21 @@ fn moss_profile_reads_only_from_its_home() {
         std::fs::read_to_string(home.join("SOUL.md")).unwrap(),
         "# Soul\nCalm.\n"
     );
+    // The old one is kept in .snapshots, never through a link put there.
+    std::fs::remove_dir_all(home.join(".snapshots")).ok();
+    std::os::unix::fs::symlink(&away, home.join(".snapshots")).unwrap();
+    std::fs::write(home.join("drafts/soul.md"), "# Soul\nBold.\n").unwrap();
+    let out = run(&home.join("drafts/soul.md"));
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        std::fs::read_dir(&away).unwrap().count(),
+        1,
+        "nothing written out"
+    );
+    let kept: Vec<_> = std::fs::read_dir(home.join(".snapshots"))
+        .unwrap()
+        .collect();
+    assert_eq!(kept.len(), 1);
 }
 
 #[test]

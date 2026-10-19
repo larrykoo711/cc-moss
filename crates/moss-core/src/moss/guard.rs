@@ -18,10 +18,6 @@
 //! Whoever calls this denies on any error of their own (fail closed): a
 //! guard that cannot tell must not let the tool through.
 
-use std::collections::VecDeque;
-use std::ffi::OsString;
-use std::path::{Component, Path, PathBuf};
-
 use serde_json::Value;
 
 /// Allowed, or denied with the reason Moss is told.
@@ -299,54 +295,6 @@ fn conversation_path(word: &str) -> bool {
 
 fn own_dir_name(word: &str) -> bool {
     word.to_lowercase().split('/').any(|part| part == ".claude")
-}
-
-/// `path` (absolute) with every symlink followed, also dangling ones and
-/// ones in the middle, and `..` taken the way the system takes it (after the
-/// link before it). Parts that do not exist yet are kept as written. `None`
-/// for a relative path or a symlink loop.
-pub fn resolve(path: &Path) -> Option<PathBuf> {
-    if !path.is_absolute() {
-        return None;
-    }
-    let mut todo: VecDeque<OsString> = parts(path).into();
-    let mut current = PathBuf::from("/");
-    let mut hops = 0;
-    while let Some(part) = todo.pop_front() {
-        if part == ".." {
-            current.pop();
-            continue;
-        }
-        let next = current.join(&part);
-        match std::fs::symlink_metadata(&next) {
-            Ok(meta) if meta.file_type().is_symlink() => {
-                hops += 1;
-                if hops > 40 {
-                    return None;
-                }
-                let target = std::fs::read_link(&next).ok()?;
-                if target.is_absolute() {
-                    current = PathBuf::from("/");
-                }
-                for p in parts(&target).into_iter().rev() {
-                    todo.push_front(p);
-                }
-            }
-            _ => current = next,
-        }
-    }
-    Some(current)
-}
-
-/// Names and `..`, without `/` and `.`.
-fn parts(path: &Path) -> Vec<OsString> {
-    path.components()
-        .filter_map(|c| match c {
-            Component::Normal(n) => Some(n.to_os_string()),
-            Component::ParentDir => Some("..".into()),
-            Component::RootDir | Component::CurDir | Component::Prefix(_) => None,
-        })
-        .collect()
 }
 
 #[cfg(test)]
