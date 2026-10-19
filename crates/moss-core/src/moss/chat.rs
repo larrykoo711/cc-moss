@@ -59,6 +59,9 @@ pub struct Line {
     /// Sessions Moss points at (`[[sessions:]]`), as slot ids it checked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<String>,
+    /// What each of those was doing when Moss said it, by slot id.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub session_states: std::collections::BTreeMap<String, String>,
     /// A Claude Code command's result: which command (`/usage`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -150,6 +153,9 @@ pub struct Shown {
     /// Session cards: slot ids; left out when none.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<String>,
+    /// Each card's session state when Moss said it, by slot id.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub session_states: std::collections::BTreeMap<String, String>,
     /// A Claude Code command's result (its screen, or why it was not run).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -207,6 +213,7 @@ fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
             buttons: l.buttons.clone(),
             quick: l.quick.clone(),
             sessions: l.sessions.clone(),
+            session_states: l.session_states.clone(),
             command: l.command.clone(),
             refused: l.refused,
         });
@@ -376,6 +383,7 @@ mod tests {
             &Line {
                 quick: vec!["/usage".into(), "stuck".into()],
                 sessions: vec!["SLOT1".into()],
+                session_states: [("SLOT1".to_string(), "needs-you-permission".to_string())].into(),
                 ..moss("m3", "2", "pinned")
             },
         )
@@ -384,6 +392,11 @@ mod tests {
         let m = v["messages"].as_array().unwrap();
         assert_eq!(m[4]["quick"], serde_json::json!(["/usage", "stuck"]));
         assert_eq!(m[4]["sessions"], serde_json::json!(["SLOT1"]));
+        assert_eq!(
+            m[4]["session_states"],
+            serde_json::json!({"SLOT1": "needs-you-permission"})
+        );
+        assert!(m[1].get("session_states").is_none());
         assert!(m[1].get("sessions").is_none());
         assert!(m[1].get("quick").is_none());
         assert_eq!(m[0]["state"], "replied");
