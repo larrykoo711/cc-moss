@@ -72,21 +72,22 @@ import Testing
     }
 
     @Test func phraseIsTheTitleOnly() {
-        L.lang = .en
-        defer { L.lang = .detect() }
-        let alert = SessionAlert(id: 1, slotId: "A", kind: .needsYou, name: "job-a", reason: "question",
-                                 at: Date(timeIntervalSince1970: 0))
-        let phrase = VoicePolicy.phrase(PetMessage(alert), names: ["job-a"])
-        #expect(phrase == "job-a has a question")
-        #expect(!phrase.contains("answer")) // the body is never read
+        L.$override.withValue(.en) {
+            let alert = SessionAlert(id: 1, slotId: "A", kind: .needsYou, name: "job-a", reason: "question",
+                                     at: Date(timeIntervalSince1970: 0))
+            let phrase = VoicePolicy.phrase(PetMessage(alert), names: ["job-a"])
+            #expect(phrase == "job-a has a question")
+            #expect(!phrase.contains("answer")) // the body is never read
+        }
     }
 
     @Test func phraseFollowsLanguage() {
         let alert = SessionAlert(id: 1, slotId: "A", kind: .interrupted, name: "job-a", at: Date(timeIntervalSince1970: 0))
-        defer { L.lang = .detect() }
-        L.lang = .zh
-        #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a 断了")
-        L.lang = .en
-        #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a dropped")
+        L.$override.withValue(.zh) {
+            #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a 断了")
+        }
+        L.$override.withValue(.en) {
+            #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a dropped")
+        }
     }
 }
