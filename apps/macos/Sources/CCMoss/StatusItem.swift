@@ -224,14 +224,22 @@ final class PanelController {
         return NSScreen.screens.first { s in button.map { s.frame.intersects($0) } ?? false } ?? NSScreen.main
     }
 
+    /// Placed by `PanelPlacement`: under the icon when it's laid out, else
+    /// the top right of the screen under the pointer; always on a screen.
     private func position(_ panel: NSPanel) {
-        let size = panel.frame.size
-        let button = anchor?()
-        guard let visible = screen()?.visibleFrame else { return }
-        let top = (button?.minY ?? visible.maxY) - 5
-        var x = button?.minX ?? (visible.maxX - size.width - 8)
-        x = min(max(x, visible.minX + 8), visible.maxX - size.width - 8)
-        panel.setFrameTopLeftPoint(NSPoint(x: x, y: top))
+        let screens = ([NSScreen.main].compactMap { $0 } + NSScreen.screens.filter { $0 != NSScreen.main })
+            .map { PanelPlacement.Screen(frame: $0.frame, visible: $0.visibleFrame) }
+        let frame = PanelPlacement.frame(anchor: anchor?(), screens: screens, mouse: NSEvent.mouseLocation,
+                                         size: panel.frame.size)
+        panel.setFrame(frame, display: false)
+        linkLog.debug("panel placed at \(frame.debugDescription, privacy: .public); icon: \((self.anchor?()).map { $0.debugDescription } ?? "none", privacy: .public)")
+    }
+
+    /// The icon got a real place after the panel opened without one (a cold
+    /// launch): put the panel under it.
+    func reanchor() {
+        guard isShown, let window else { return }
+        position(window)
     }
 
     private func startWatching(_ panel: NSPanel) {
@@ -464,6 +472,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible), app active: \(NSApp.isActive)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let panel = self?.statusItem?.panel else { return }
+            // By now the icon is laid out: under it, if it's somewhere real.
+            panel.reanchor()
             linkLog.debug("panel still visible after a link: \(panel.isVisible)")
             if !panel.isVisible { panel.showAgain(holding: 1.5) }
         }

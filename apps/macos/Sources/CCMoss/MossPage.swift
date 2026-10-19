@@ -256,6 +256,8 @@ private struct MossConversation: View {
         let desk = model.mossDesk
         let messages = desk.messages
         let groups = MossThread.groups(messages)
+        // Only the newest card of a session is live; older ones are receipts.
+        let cardRoles = MossCardHistory.roles(groups)
         let lastMoss = messages.last { $0.from == .moss }?.id
         let waiting = desk.waiting
         let thinking = waiting != nil
@@ -273,7 +275,8 @@ private struct MossConversation: View {
                                 .padding(.top, i == 0 ? 0 : 4)
                         }
                         MossMessageView(model: model, group: group,
-                                        buttons: group.last.id == lastMoss && desk.canTalk ? group.last.buttons : [])
+                                        buttons: group.last.id == lastMoss && desk.canTalk ? group.last.buttons : [],
+                                        cardRoles: cardRoles[group.id] ?? [:])
                     }
                     if let waiting {
                         MossThinking(waiting: waiting)
@@ -427,6 +430,8 @@ private struct MossMessageView: View {
     @Bindable var model: AppModel
     let group: MossGroup
     let buttons: [String]
+    /// Each card's role by session id: live, or a receipt of an older moment.
+    var cardRoles: [String: MossCardHistory.Role] = [:]
     @Environment(\.colorScheme) private var scheme
 
     /// The message that speaks for the group: the last one (its buttons, its
@@ -443,7 +448,12 @@ private struct MossMessageView: View {
 
     private var cards: [MossSessionCard] { model.mossCards(group) }
     private var mentionNames: [MossMentions.Name] { model.mentionNames(group) }
-    private var allHandled: Bool { MossSessionCard.allHandled(cards) }
+    /// The live cards: the newest of each session.
+    private var liveCards: [MossSessionCard] { cards.filter { (cardRoles[$0.id] ?? .live) == .live } }
+    /// Everything it pointed at is behind it: handled now, or only receipts left.
+    private var allHandled: Bool {
+        liveCards.isEmpty ? !cards.isEmpty : MossSessionCard.allHandled(liveCards)
+    }
 
     private var moss: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -476,7 +486,7 @@ private struct MossMessageView: View {
                 }
                 // One stack for the whole bubble: every session its messages name.
                 if !cards.isEmpty {
-                    MossSessionCards(model: model, messageID: group.id, cards: cards)
+                    MossSessionCards(model: model, messageID: group.id, cards: cards, roles: cardRoles)
                 }
                 if message.refused, model.canOpenMoss {
                     QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
