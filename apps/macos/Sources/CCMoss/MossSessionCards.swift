@@ -180,7 +180,9 @@ struct MossSessionCardView: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised(scheme)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme), lineWidth: 1))
-        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.45 : 0.16) : 0), radius: hover ? 10 : 0, y: hover ? 4 : 0)
+        // Over a mention it floats: a soft shadow lifts it off the page.
+        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.5 : 0.14) : 0), radius: hover ? 14 : 0, y: hover ? 6 : 0)
+        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.3 : 0.06) : 0), radius: hover ? 2 : 0, y: hover ? 1 : 0)
     }
 
     private var folderLine: some View {

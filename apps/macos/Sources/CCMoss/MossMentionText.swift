@@ -2,8 +2,9 @@ import AppKit
 import MossKit
 import SwiftUI
 
-// Sessions named in Moss's words as mentions (user 2026-10-19): the name in
-// brand colour on a faint tint, a small state dot before it. Click goes to
+// Sessions named in Moss's words as mentions (user 2026-10-19): part of the
+// sentence, in its own colour, marked by a light dotted underline and a
+// small soft state dot; coloured only under the pointer. Click goes to
 // the session; hovering a moment shows its card. SwiftUI's Text can't tell
 // which words the pointer is over, so a paragraph with mentions is drawn by
 // a read-only text view that can.
@@ -35,6 +36,7 @@ extension AppModel {
     /// search for its name, so the Closed section shows it.
     func goToSession(_ id: String) {
         mentionHover = nil
+        mentionPointer = nil
         mentionShow?.cancel()
         if let s = sessions.first(where: { $0.id == id }) {
             page = .sessions
@@ -51,6 +53,7 @@ extension AppModel {
 
     /// The pointer came onto a mention: its card after a moment.
     func mentionEntered(_ id: String, anchor: CGRect) {
+        mentionPointer = id
         mentionHide?.cancel()
         if mentionHover?.id == id {
             mentionHover?.anchor = anchor
@@ -67,6 +70,7 @@ extension AppModel {
     /// The pointer left a mention or its card: close after a short grace,
     /// unless it comes back onto either.
     func mentionLeft() {
+        mentionPointer = nil
         mentionShow?.cancel()
         mentionHide?.cancel()
         mentionHide = Task { @MainActor in
@@ -94,12 +98,13 @@ struct MentionHoverLayer: View {
                 let page = geo.frame(in: .global)
                 let anchor = hover.anchor.offsetBy(dx: -page.minX, dy: -page.minY)
                 // Below the name when there's room, else above; inside the page.
-                let below = anchor.maxY + 96 < geo.size.height
+                let below = anchor.maxY + 110 < geo.size.height
                 let x = min(max(anchor.minX - 12, 8), geo.size.width - Self.width - 8)
                 MossSessionCardView(model: model, card: card, session: session, hover: true, key: "mention/\(hover.id)")
                     .frame(width: Self.width)
                     .onHover { model.mentionCardHovered($0) }
-                    .alignmentGuide(.top) { d in below ? -(anchor.maxY + 4) : -(anchor.minY - 4 - d.height) }
+                    // 6 pt off the line, never over the name itself.
+                    .alignmentGuide(.top) { d in below ? -(anchor.maxY + 6) : -(anchor.minY - 6 - d.height) }
                     .alignmentGuide(.leading) { _ in -x }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     .transition(.opacity)
@@ -161,19 +166,23 @@ struct MentionText: NSViewRepresentable {
             }
             attrs[.font] = font
             if let url = run.link, let id = MossMentions.id(of: url) {
-                // A mention: its state dot, then the name in brand on a faint tint.
+                // A mention reads as part of the sentence: its own colour and
+                // weight, a light dotted underline, a small soft state dot.
+                // Under the pointer the name and a solid underline turn brand.
+                let lit = model.mentionPointer == id
+                let brand = NSColor(Theme.brand)
                 let state = model.mentioned(id).map { Theme.color($0.needsYou ? .working : $0.state) } ?? .secondary
                 let mention: [NSAttributedString.Key: Any] = [.mossMention: id]
                 out.append(NSAttributedString(string: "●\u{2009}", attributes: mention.merging([
-                    .font: NSFont.systemFont(ofSize: size * 0.55),
-                    .baselineOffset: size * 0.18,
-                    .foregroundColor: NSColor(state),
-                    .backgroundColor: NSColor(Theme.brand).withAlphaComponent(scheme == .dark ? 0.16 : 0.09),
+                    .font: NSFont.systemFont(ofSize: size * 0.45),
+                    .baselineOffset: size * 0.22,
+                    .foregroundColor: NSColor(state).withAlphaComponent(0.7),
                 ]) { a, _ in a }))
                 var name = attrs.merging(mention) { _, b in b }
-                name[.foregroundColor] = NSColor(Theme.brand).withAlphaComponent(secondary ? 0.7 : 1)
-                name[.backgroundColor] = NSColor(Theme.brand).withAlphaComponent(scheme == .dark ? 0.16 : 0.09)
-                if !intent.contains(.stronglyEmphasized) { name[.font] = NSFont.systemFont(ofSize: size, weight: .medium) }
+                name[.underlineStyle] = lit ? NSUnderlineStyle.single.rawValue
+                                            : (NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue)
+                name[.underlineColor] = lit ? brand : brand.withAlphaComponent(0.35)
+                if lit { name[.foregroundColor] = brand }
                 out.append(NSAttributedString(string: piece, attributes: name))
             } else {
                 if let url = run.link {
