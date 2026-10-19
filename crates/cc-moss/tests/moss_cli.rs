@@ -152,6 +152,22 @@ fn guard_hook_blocks_with_exit_2_and_fails_closed() {
     });
     assert_eq!(guard(&home, &mcp.to_string()).status.code(), Some(2));
 
+    // Other sessions' transcripts stay unread (bin() sets HOME).
+    let read = |path: &str| {
+        serde_json::json!({
+            "tool_name": "Read",
+            "cwd": home,
+            "tool_input": { "file_path": path }
+        })
+        .to_string()
+    };
+    let peek = guard(
+        &home,
+        &read("/nonexistent/cc-moss-test-home/.claude/projects/-work/a.jsonl"),
+    );
+    assert_eq!(peek.status.code(), Some(2), "{peek:?}");
+    assert_eq!(guard(&home, &read("SESSIONS.md")).status.code(), Some(0));
+
     // Without --home (settings of an older cc-moss): no, even for a write
     // inside the home the state directory would point to.
     let mut child = bin()
@@ -197,6 +213,13 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
         serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0,
             "daemon_running":false,"activity":"offline","queued":0})
     );
+    // Text stuck in Moss's input is said, not silent.
+    std::fs::create_dir_all(state.join("moss")).unwrap();
+    std::fs::write(state.join("moss/input-busy"), "").unwrap();
+    let st: serde_json::Value =
+        serde_json::from_slice(&run(&["moss", "status", "--json"]).stdout).unwrap();
+    assert_eq!(st["input_busy"], true, "{st}");
+    std::fs::remove_file(state.join("moss/input-busy")).unwrap();
     start(&state, "moss-0000-1111", "moss", true);
     let out = run(&["moss", "stop"]);
     assert!(out.status.success(), "{out:?}");

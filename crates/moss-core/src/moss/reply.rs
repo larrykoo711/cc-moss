@@ -110,26 +110,62 @@ struct Record {
     meta: bool,
     stop: Option<String>,
     text: String,
+    /// A user entry that only carries a tool's result.
+    tool_result: bool,
+}
+
+impl Record {
+    /// Something a person (or cc-moss) said, not a tool result or meta.
+    fn spoken(&self) -> bool {
+        self.kind == "user" && !self.meta && !self.sidechain && !self.tool_result
+    }
+
+    /// Claude Code's own mark that a turn ended.
+    fn turn_end(&self) -> bool {
+        self.kind == "turn_end"
+    }
 }
 
 fn record(line: &str) -> Option<Record> {
     let v: Value = serde_json::from_str(line).ok()?;
     let kind = v.get("type")?.as_str()?.to_string();
+    let at_ms = parse_ms(v.get("timestamp")?.as_str()?)?;
+    let sidechain = v.get("isSidechain").and_then(Value::as_bool) == Some(true);
+    if kind == "system" {
+        let subtype = v.get("subtype")?.as_str()?;
+        if subtype != "turn_duration" && subtype != "stop_hook_summary" {
+            return None;
+        }
+        return Some(Record {
+            kind: "turn_end".into(),
+            at_ms,
+            sidechain,
+            meta: false,
+            stop: None,
+            text: String::new(),
+            tool_result: false,
+        });
+    }
     if kind != "user" && kind != "assistant" {
         return None;
     }
-    let at_ms = parse_ms(v.get("timestamp")?.as_str()?)?;
     let message = v.get("message")?;
+    let content = message.get("content")?;
     Some(Record {
         kind,
         at_ms,
-        sidechain: v.get("isSidechain").and_then(Value::as_bool) == Some(true),
+        sidechain,
         meta: v.get("isMeta").and_then(Value::as_bool) == Some(true),
         stop: message
             .get("stop_reason")
             .and_then(Value::as_str)
             .map(String::from),
-        text: text_of(message.get("content")?),
+        text: text_of(content),
+        tool_result: content.as_array().is_some_and(|parts| {
+            parts
+                .iter()
+                .any(|p| p.get("type").and_then(Value::as_str) == Some("tool_result"))
+        }),
     })
 }
 
@@ -183,22 +219,40 @@ pub fn find(path: &Path, from: u64, tail: &str, sent_ms: i64) -> Found {
     let records: Vec<Record> = lines.iter().filter_map(|l| record(l)).collect();
     let asked = records
         .iter()
-        .filter(|r| r.kind == "user" && !r.meta && !r.sidechain && r.at_ms >= sent_ms - SKEW_MS)
-        .filter(|r| squeezed(&r.text).contains(tail))
+        .filter(|r| r.spoken() && r.at_ms >= sent_ms - SKEW_MS)
+        .filter(|r| inbox::squeeze(&r.text).contains(tail))
         .map(|r| r.at_ms)
         .min();
     let Some(asked) = asked else {
         return Found::NoUser;
     };
+    // Up to the next thing said: what follows answers that, not this.
+    let until = records
+        .iter()
+        .filter(|r| r.spoken() && r.at_ms > asked && !r.text.trim().is_empty())
+        .map(|r| r.at_ms)
+        .min()
+        .unwrap_or(i64::MAX);
+    let within = |r: &&Record| r.at_ms >= asked && r.at_ms < until && !r.sidechain;
+    // Text only: a thinking block can end a turn, too.
+    let said: Vec<&Record> = records
+        .iter()
+        .filter(within)
+        .filter(|r| r.kind == "assistant" && !r.text.trim().is_empty())
+        .collect();
+    let ends_turn = |r: &&&Record| matches!(r.stop.as_deref(), Some("end_turn" | "stop_sequence"));
+    let ended = records.iter().filter(within).any(Record::turn_end);
     let mut best: Option<&Record> = None;
-    for r in &records {
-        let ends_turn = matches!(r.stop.as_deref(), Some("end_turn" | "stop_sequence"));
-        if r.kind != "assistant" || r.sidechain || !ends_turn || r.at_ms < asked {
-            continue;
-        }
-        if r.text.trim().is_empty() {
-            continue;
-        }
+    // The text that ended the turn; failing that, once Claude Code marked
+    // the turn's end, its last text.
+    let pick: Vec<&&Record> = if said.iter().any(|r| ends_turn(&r)) {
+        said.iter().filter(ends_turn).collect()
+    } else if ended {
+        said.iter().collect()
+    } else {
+        Vec::new()
+    };
+    for r in pick {
         // By time, not by place in the file; a tie goes to the later line.
         if best.is_none_or(|b| r.at_ms >= b.at_ms) {
             best = Some(r);
@@ -211,10 +265,6 @@ pub fn find(path: &Path, from: u64, tail: &str, sent_ms: i64) -> Found {
         },
         None => Found::NoReply,
     }
-}
-
-fn squeezed(text: &str) -> String {
-    text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
 /// After `/clear`: the newest other transcript in the same folder written
@@ -247,17 +297,23 @@ fn millis(t: SystemTime) -> i64 {
         .unwrap_or(0)
 }
 
-/// Claude Code waiting on a choice: its permission or question prompt.
+/// Claude Code waiting on a choice: its permission or question prompt at
+/// the bottom of the screen, where the input box would be. The same words
+/// higher up, with the input box below them, are only conversation.
 pub fn confirm_prompt(screen: &str) -> bool {
-    let text = inbox::plain(screen);
-    text.contains("Do you want to")
-        || text.contains("Would you like to")
-        || text.lines().any(|l| {
-            l.trim_start()
-                .trim_start_matches('│')
-                .trim_start()
-                .starts_with("❯ 1.")
-        })
+    let lines: Vec<String> = inbox::plain(screen).lines().map(String::from).collect();
+    let asks = |l: &String| l.contains("Do you want to") || l.contains("Would you like to");
+    match (0..lines.len())
+        .rev()
+        .find(|i| inbox::prompt_line(&lines[*i]))
+    {
+        // The last prompt is a dialog's first choice.
+        Some(i) => {
+            let after = lines[i].split_once('❯').map_or("", |(_, a)| a);
+            after.trim_start().starts_with("1.") || lines[i + 1..].iter().any(asks)
+        }
+        None => lines.iter().any(asks),
+    }
 }
 
 /// Claude Code working on a turn.
@@ -380,12 +436,14 @@ impl Claim {
             return Verdict::Wait;
         }
         let screen = pane.screen().unwrap_or_default();
-        self.waiting = confirm_prompt(&screen);
+        let in_turn = crate::transcript::turn_open(&self.transcript) == Some(true);
+        let late = elapsed >= ms(self.timing.late);
+        self.waiting = in_turn && !late && confirm_prompt(&screen);
         if self.waiting {
             // Its choice to make, or yours in its terminal: no Esc.
             return Verdict::Wait;
         }
-        if working(&screen) && elapsed < ms(self.timing.late) {
+        if working(&screen) && !late {
             return Verdict::Wait;
         }
         match found {
@@ -562,18 +620,99 @@ mod tests {
         assert_eq!(c.tick(past_turn + 3_000, false, &mut pane), Verdict::Wait);
         assert!(c.waiting());
         assert_eq!(
-            c.tick(SENT + ms(t.late) + 60_000, false, &mut pane),
-            Verdict::Wait,
-            "a question to you is not a timeout"
+            c.tick(SENT + ms(t.late) - 1_000, false, &mut pane),
+            Verdict::Wait
         );
-        assert!(pane.calls.is_empty(), "{:?}", pane.calls);
-        // Working on past the late limit: received.
+        assert!(pane.calls.is_empty(), "never an Esc: {:?}", pane.calls);
+        // Waiting has the same limit as a late reply.
+        assert!(matches!(
+            c.tick(SENT + ms(t.late) + 60_000, false, &mut pane),
+            Verdict::Received(_)
+        ));
+        assert!(!c.waiting());
+        // Working on past the late limit: received too.
+        let mut c = Claim::new(c.transcript().to_path_buf(), 0, &tail(), SENT, t);
         pane.screen_override = Some("(esc to interrupt)\n".into());
+        assert_eq!(c.tick(past_turn, false, &mut pane), Verdict::Wait);
         assert!(matches!(
             c.tick(SENT + ms(t.late) + 70_000, false, &mut pane),
             Verdict::Received(_)
         ));
+    }
+
+    #[test]
+    fn confirm_prompt_counts_only_at_the_bottom_while_in_a_turn() {
+        assert!(confirm_prompt(
+            "Do you want to proceed?\n❯ 1. Yes\n  2. No\n"
+        ));
+        assert!(confirm_prompt(
+            "│ Do you want to make this edit?        │\n│ ❯ 1. Yes                │\n"
+        ));
+        // The same words earlier in the conversation, the input box below.
+        assert!(!confirm_prompt(
+            "Do you want to proceed?\n❯ 1. Yes\n  2. No\n────\n❯ \n────\n"
+        ));
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        // The turn is over (and left no text): a dialog on screen is not Moss's.
+        let user = std::fs::read_to_string(fixture("sidechain.jsonl")).unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n",
+                user.lines().next().unwrap(),
+                r#"{"type":"system","subtype":"turn_duration","timestamp":"2026-10-19T08:00:09.000Z"}"#
+            ),
+        )
+        .unwrap();
+        let t = Timing::default();
+        let mut c = Claim::new(path, 0, &tail(), SENT, t);
+        let mut pane = FakePane {
+            screen_override: Some("Do you want to proceed?\n❯ 1. Yes\n".into()),
+            ..FakePane::default()
+        };
+        assert!(matches!(
+            c.tick(SENT + ms(t.turn) + 1_000, false, &mut pane),
+            Verdict::Received(_)
+        ));
         assert!(!c.waiting());
+    }
+
+    #[test]
+    fn claim_takes_text_never_thinking() {
+        assert_eq!(
+            find(&fixture("thinking-last.jsonl"), 0, &tail(), SENT),
+            reply("Only api needs you.", "2026-10-19T08:00:05.000Z")
+        );
+    }
+
+    #[test]
+    fn claim_after_a_turn_end_without_stop_reason() {
+        assert_eq!(
+            find(&fixture("no-stop-reason.jsonl"), 0, &tail(), SENT),
+            reply(
+                "api is waiting on a permission.",
+                "2026-10-19T08:00:06.000Z"
+            )
+        );
+        // Without the turn's end the reply is not taken yet.
+        let text = std::fs::read_to_string(fixture("no-stop-reason.jsonl")).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.jsonl");
+        let open: Vec<&str> = text
+            .lines()
+            .filter(|l| !l.contains("turn_duration"))
+            .collect();
+        std::fs::write(&path, open.join("\n")).unwrap();
+        assert_eq!(find(&path, 0, &tail(), SENT), Found::NoReply);
+    }
+
+    #[test]
+    fn claim_stops_at_the_next_question() {
+        assert_eq!(
+            find(&fixture("next-question.jsonl"), 0, &tail(), SENT),
+            reply("None right now.", "2026-10-19T08:00:05.000Z")
+        );
     }
 
     #[test]
