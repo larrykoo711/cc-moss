@@ -127,10 +127,14 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
     public var quick: [String]
     /// Sessions Moss points at (slot ids), shown as cards below the text.
     public var sessions: [String]
+    /// Each card session's state when Moss replied (`needs-you-permission`,
+    /// `working`, …); empty from an older cc-moss.
+    public var sessionStates: [String: String]
 
     public init(id: String, at: Date? = nil, from: Sender, text: String, delivery: Delivery? = nil, error: String? = nil,
                 replyTo: String? = nil, fallback: Bool = false, buttons: [String] = [], command: String? = nil,
-                refused: Bool = false, quick: [String] = [], sessions: [String] = []) {
+                refused: Bool = false, quick: [String] = [], sessions: [String] = [],
+                sessionStates: [String: String] = [:]) {
         self.id = id
         self.at = at
         self.from = from
@@ -144,6 +148,7 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
         self.refused = refused
         self.quick = quick
         self.sessions = sessions
+        self.sessionStates = sessionStates
     }
 
     /// What the bubble says: a fallback reads as a receipt.
@@ -202,6 +207,7 @@ public struct MossChat: Equatable, Sendable {
         var refused: Bool?
         var quick: [String]?
         var sessions: [String]?
+        var session_states: [String: String]?
     }
 
     public static func decode(_ data: Data) throws -> MossChat {
@@ -223,7 +229,8 @@ public struct MossChat: Equatable, Sendable {
                         buttons: (line.buttons ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
                         command: line.command.flatMap { $0.isEmpty ? nil : $0 }, refused: line.refused ?? false,
                         quick: (line.quick ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
-                        sessions: unique((line.sessions ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }))
+                        sessions: unique((line.sessions ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }),
+                        sessionStates: line.session_states ?? [:])
         })
     }
 

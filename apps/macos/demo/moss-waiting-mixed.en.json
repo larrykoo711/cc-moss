@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792141000000-x00000",
+   "at": "2026-10-16T09:52:00Z",
+   "from": "moss",
+   "text": "**api-review** is waiting for you to approve a permission.",
+   "buttons": [],
+   "sessions": [
+    "01B"
+   ],
+   "session_states": {
+    "01B": "needs-you-permission"
+   }
+  },
+  {
+   "id": "1792141240000-x00001",
+   "at": "2026-10-16T09:56:00Z",
+   "from": "moss",
+   "text": "**fix-invoice** dropped; it can be brought back.",
+   "buttons": [],
+   "sessions": [
+    "01C"
+   ],
+   "session_states": {
+    "01C": "dropped"
+   }
+  }
+ ]
+}
