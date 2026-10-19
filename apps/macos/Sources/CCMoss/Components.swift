@@ -207,16 +207,45 @@ struct SessionRow: View {
     var pin: (() -> Void)?
     /// On its way back right now.
     var restoring = false
+    /// While searching: the name's matched characters, lit.
+    var highlight: [Range<Int>] = []
+    /// While searching: its folder, small, after the name.
+    var folder: String?
+    /// While searching: why it matched, in place of the second line.
+    var reason: String?
     @Environment(\.colorScheme) private var scheme
+
+    /// The name, with the matched characters in bold brand.
+    private var title: AttributedString {
+        var out = AttributedString(session.title)
+        guard !highlight.isEmpty else { return out }
+        let chars = Array(session.title)
+        out = AttributedString()
+        for (i, ch) in chars.enumerated() {
+            var piece = AttributedString(String(ch))
+            if highlight.contains(where: { $0.contains(i) }) {
+                piece.foregroundColor = Theme.brand
+                piece.font = .system(size: 13, weight: .bold)
+            }
+            out += piece
+        }
+        return out
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             stateIcon
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(session.title)
+                    Text(title)
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
+                    if let folder {
+                        Text(folder)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
                     if let pin, pinned || hovered {
                         PinButton(pinned: pinned, action: pin)
                     }
@@ -229,7 +258,16 @@ struct SessionRow: View {
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
                 }
-                if let problem {
+                if let reason {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                        Text(reason).lineLimit(1).truncationMode(.tail)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                } else if let problem {
                     HStack(spacing: 4) {
                         Image(systemName: Icons.cannotRestore)
                             .font(.system(size: 10, weight: .semibold))
