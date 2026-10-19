@@ -1,0 +1,70 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792143665000-3f9a1c",
+   "at": "2026-10-16T09:41:05Z",
+   "from": "events",
+   "text": "[Events] api-review is waiting for your OK; fix-invoice dropped",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792143730000-a7c204",
+   "at": "2026-10-16T09:42:10Z",
+   "from": "you",
+   "text": "Which sessions are waiting on me? Most urgent first.",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792143758000-51be0d",
+   "at": "2026-10-16T09:42:38Z",
+   "from": "moss",
+   "text": "Two things are waiting on you:\n\n1. **api-review** wants to run a test command and has been waiting for your OK for 6 minutes.\n2. **fix-invoice** dropped. Nothing's lost; bring it back to carry on.",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792143730000-a7c204"
+  },
+  {
+   "id": "1792143782000-c0ffee",
+   "at": "2026-10-16T09:43:02Z",
+   "from": "you",
+   "text": "Where is api-review stuck?",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792143811000-9d2e47",
+   "at": "2026-10-16T09:43:31Z",
+   "from": "moss",
+   "text": "It finished the refund logic in `billing/refund.rs` and wants to run the tests to make sure nothing broke:\n\n```\ncargo test -p billing refund\n```\n\nLocal tests only, no file changes. Want me to check back once it's done?",
+   "fallback": false,
+   "buttons": [
+    "Yes, keep an eye on it",
+    "No thanks"
+   ],
+   "reply_to": "1792143782000-c0ffee"
+  },
+  {
+   "id": "1792144720000-6b1f03",
+   "at": "2026-10-16T09:58:40Z",
+   "from": "events",
+   "text": "[Events] release-notes finished its turn",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792144812000-e41a9b",
+   "at": "2026-10-16T10:00:12Z",
+   "from": "you",
+   "text": "What did the sessions finish today? Keep it short.",
+   "fallback": false,
+   "buttons": [],
+   "state": "failed",
+   "error": "Someone was typing in Moss's terminal, so it couldn't go in."
+  }
+ ]
+}

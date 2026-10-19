@@ -314,9 +314,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         feed.start()
         model.onAsks = { alerts.handleAsks($0) }
+        model.onMossReplies = { alerts.handleMossReplies($0) }
         let highlight = panel?.onVisibilityChange
-        panel?.onVisibilityChange = { shown in
+        panel?.onVisibilityChange = { [weak self] shown in
             highlight?(shown)
+            self?.model.panelShown = shown
             if !shown { alerts.panelClosed() }
         }
         self.alerts = alerts

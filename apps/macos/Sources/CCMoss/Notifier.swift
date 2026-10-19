@@ -141,6 +141,7 @@ final class AlertCenter {
     private var plan = NotificationPlan()
     private var router = AlertRouter()
     private var askAlerts = AskAlerts()
+    private var mossSerial = 0
 
     /// `notifier` is nil where Notification Center can't be used; alerts
     /// due there are then dropped (the panel and the icon still show them).
@@ -196,6 +197,24 @@ final class AlertCenter {
         let back = askAlerts.gone(change.gone).filter { $0.destination == .notification }
         if let gate, !back.isEmpty {
             gate.withdraw(back.compactMap { $0.alert.askId.map(NotificationPlan.askNoteID) })
+        }
+    }
+
+    /// Moss answered something you sent from the panel (T2.3): told once,
+    /// where `MossReplyRouter` says (nowhere while you're on the Moss page).
+    /// Several at once are one alert, for the newest; the rail's dot has the rest.
+    func handleMossReplies(_ replies: [MossMessage]) {
+        guard let reply = replies.last else { return }
+        let now = Date()
+        switch MossReplyRouter.destination(in: context(), onMossPage: model.page == .moss) {
+        case .pet:
+            mossSerial += 1
+            // Ids below every event's sequence number, the questions' and the startup reminder's.
+            toPet(MossReplyRouter.alert(for: reply, id: Int.min / 4 + mossSerial, at: now))
+        case .notification:
+            if let gate { Task { await gate.deliver(MossReplyRouter.note(for: reply)) } }
+        case .none:
+            break
         }
     }
 
@@ -262,6 +281,12 @@ final class AlertCenter {
         if slot == NotificationPlan.allInterrupted {
             model.query = ""
             model.stateFilter = .interrupted
+            showPanel()
+            return
+        }
+        // Moss answered: the panel, on the Moss page.
+        if slot == MossReplyRouter.slot {
+            model.showMoss()
             showPanel()
             return
         }

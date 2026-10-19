@@ -13,9 +13,17 @@ public struct MossStatus: Equatable, Sendable {
     public var daemonRunning: Bool
     /// Why the last start failed, while Moss is on and not running.
     public var lastError: String?
+    /// What Moss is doing right now (T2.3); worked out from the rest when an
+    /// older cc-moss does not say.
+    public var activity: MossActivity
+    /// Messages from the panel still waiting to be handed to Moss.
+    public var queued: Int
+    /// When Moss last answered something sent from the panel.
+    public var lastReplyAt: Date?
 
     public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
-                daemonRunning: Bool = true, lastError: String? = nil) {
+                daemonRunning: Bool = true, lastError: String? = nil, activity: MossActivity? = nil,
+                queued: Int = 0, lastReplyAt: Date? = nil) {
         self.enabled = enabled
         self.running = running
         self.since = since
@@ -23,6 +31,9 @@ public struct MossStatus: Equatable, Sendable {
         self.sessionId = sessionId
         self.daemonRunning = daemonRunning
         self.lastError = lastError
+        self.activity = activity ?? MossActivity.derived(enabled: enabled, running: running, daemonRunning: daemonRunning)
+        self.queued = queued
+        self.lastReplyAt = lastReplyAt
     }
 
     private struct Wire: Decodable {
@@ -34,6 +45,9 @@ public struct MossStatus: Equatable, Sendable {
         var session_id: String?
         var daemon_running: Bool?
         var last_error: String?
+        var activity: String?
+        var queued: Int?
+        var last_reply_at: String?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -48,7 +62,10 @@ public struct MossStatus: Equatable, Sendable {
                           since: wire.since.flatMap(parseTimestamp),
                           restarts: wire.restarts ?? 0, sessionId: wire.session_id,
                           daemonRunning: wire.daemon_running ?? true,
-                          lastError: wire.last_error.flatMap { $0.isEmpty ? nil : $0 })
+                          lastError: wire.last_error.flatMap { $0.isEmpty ? nil : $0 },
+                          activity: wire.activity.flatMap(MossActivity.init(rawValue:)),
+                          queued: max(0, wire.queued ?? 0),
+                          lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp))
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the

@@ -45,6 +45,12 @@ struct PanelView: View {
             if model.page == .queue {
                 QueuePage(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.page == .moss {
+                MossPage(model: model, settings: showMossSettings) { press in
+                    if press.key == .escape { escape(); return .handled }
+                    return shortcut(press)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 searchBar
                 Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
@@ -595,6 +601,11 @@ struct PanelView: View {
         SettingsWindow.bringToFront()
     }
 
+    private func showMossSettings() {
+        SettingsView.show(.moss)
+        showSettings()
+    }
+
     private func escape() {
         if model.form != nil || model.closeGate.asking {
             dismissForm()
@@ -624,6 +635,7 @@ struct PanelView: View {
             }
         case "1": model.page = .sessions
         case "2": model.showQueue()
+        case "3": model.showMoss()
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):
