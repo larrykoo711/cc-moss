@@ -362,7 +362,7 @@ enum MossCommand {
     /// sessions); `restore`, `forget` and `end` need your go-ahead.
     #[command(hide = true)]
     Act {
-        /// setup-fix | sync-name | name | forget-gone | restore | forget | end
+        /// setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end
         action: String,
         /// The session, and for `name` the new name.
         args: Vec<String>,

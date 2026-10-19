@@ -223,6 +223,29 @@ fn act_names_a_nameless_session() {
 }
 
 #[test]
+fn act_syncs_names() {
+    let w = World::new("act-sync-names");
+    let _d = daemon(&w);
+    moss_up(&w);
+    w.new_session("api");
+    wait_until("its tmux name", 10, || {
+        w.session_names()
+            .contains(&"host_api".to_string())
+            .then_some(())
+    });
+    // Renamed in tmux by hand; Moss's own stays as it is.
+    w.tmux(&["rename-session", "-t", "=host_api", "scratch"]);
+    let (out, ok) = act(&w, &["sync-names"]);
+    assert!(ok, "{out}");
+    assert_eq!(out["outcome"], "done", "{out}");
+    let names = w.session_names();
+    assert!(names.contains(&"host_api".to_string()), "{names:?}");
+    assert!(names.contains(&"moss".to_string()), "{names:?}");
+    assert!(!names.contains(&"scratch".to_string()), "{names:?}");
+    assert_eq!(audit(&w)[0]["action"], "sync-names");
+}
+
+#[test]
 fn act_forgets_a_gone_folder() {
     let w = World::new("act-forget-gone");
     let _d = daemon(&w);

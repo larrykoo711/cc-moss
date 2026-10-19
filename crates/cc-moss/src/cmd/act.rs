@@ -34,6 +34,7 @@ const WAIT: Duration = Duration::from_secs(120);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
     SetupFix,
+    SyncNames,
     SyncName(String),
     Name(String, String),
     ForgetGone(String),
@@ -51,6 +52,8 @@ impl Action {
         match action {
             "setup-fix" if args.is_empty() => Ok(Action::SetupFix),
             "setup-fix" => Err("setup-fix takes nothing".into()),
+            "sync-names" if args.is_empty() => Ok(Action::SyncNames),
+            "sync-names" => Err("sync-names takes nothing: it looks at every session".into()),
             "sync-name" => one(Action::SyncName),
             "forget-gone" => one(Action::ForgetGone),
             "restore" => one(Action::Restore),
@@ -84,7 +87,7 @@ impl Action {
 
     fn session(&self) -> Option<&str> {
         match self {
-            Action::SetupFix => None,
+            Action::SetupFix | Action::SyncNames => None,
             Action::SyncName(s)
             | Action::Name(s, _)
             | Action::ForgetGone(s)
@@ -151,7 +154,7 @@ pub fn check(
     }
     let now = status(slot);
     let fits = match action {
-        Action::SetupFix => true,
+        Action::SetupFix | Action::SyncNames => true,
         Action::SyncName(_) => now != Status::Closed,
         Action::Name(..) | Action::End(_) => now == Status::Running,
         Action::Restore(_) | Action::Forget(_) => now == Status::Interrupted,
@@ -328,6 +331,15 @@ impl Hands {
         if action == Action::SetupFix {
             return self.setup_fix();
         }
+        if action == Action::SyncNames {
+            return match sync_names(&self.state) {
+                Ok(n) => (
+                    "done",
+                    format!("renamed {n} tmux session(s) after their names"),
+                ),
+                Err(e) => ("failed", format!("{e:#}")),
+            };
+        }
         let db = self.state.join("registry.db");
         let registry = match Registry::open(&db) {
             Ok(r) => r,
@@ -358,7 +370,7 @@ impl Hands {
                 .map(|()| "it won't be offered for restore again".to_string()),
             Action::End(_) => end(&registry, &slot),
             Action::Restore(_) => self.restore(&slot),
-            Action::SetupFix => unreachable!(),
+            Action::SetupFix | Action::SyncNames => unreachable!(),
         };
         match result {
             Ok(said) => ("done", said),
@@ -414,6 +426,34 @@ impl Hands {
             None => bail!("there was nothing to restore (it left nothing to resume)"),
         }
     }
+}
+
+/// Every running session whose tmux name is not its derived name (a `-2`
+/// style suffix counts as matching) gets it back, by session id. Moss keeps
+/// its own. How many were renamed.
+fn sync_names(state: &Path) -> Result<usize> {
+    let registry = Registry::open(&state.join("registry.db"))?;
+    let prefix = super::checkup::prefix();
+    let mut servers = std::collections::HashMap::new();
+    let mut renamed = 0;
+    for slot in registry.slots()? {
+        if slot.is_moss() || slot.effective_status(moss_core::proc::is_alive) != Status::Running {
+            continue;
+        }
+        let Some(loc) = slot.tmux.as_ref() else {
+            continue;
+        };
+        let live = servers
+            .entry(loc.socket.clone())
+            .or_insert_with(|| super::checkup::live_names(&loc.socket));
+        if super::checkup::tmux_fact(&slot, prefix.as_deref(), live)
+            == Some(super::checkup::Fact::No)
+        {
+            super::hook::sync_tmux_name_of(&registry, &slot)?;
+            renamed += 1;
+        }
+    }
+    Ok(renamed)
 }
 
 /// The session is in the middle of something; try again later.
@@ -695,6 +735,9 @@ mod tests {
     fn act_parses_its_actions() {
         let a = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         assert_eq!(Action::parse("setup-fix", &[]), Ok(Action::SetupFix));
+        assert_eq!(Action::parse("sync-names", &[]), Ok(Action::SyncNames));
+        assert!(Action::parse("sync-names", &a(&["x"])).is_err());
+        assert!(!Action::SyncNames.needs_consent());
         assert_eq!(
             Action::parse("name", &a(&["abc123", "ofoxai"])),
             Ok(Action::Name("abc123".into(), "ofoxai".into()))

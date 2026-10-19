@@ -213,7 +213,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "moss act",
         "action",
-        "setup-fix | sync-name | name | forget-gone | restore | forget | end",
+        "setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end",
     ),
     ("moss act", "args", "会话；`name` 还要跟上新名字"),
     ("moss act", "because", "你那条点头的消息的 id"),

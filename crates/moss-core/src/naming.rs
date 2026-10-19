@@ -127,3 +127,123 @@ pub fn cached_host_prefix(state_dir: &std::path::Path) -> Option<String> {
     }
     prefix
 }
+
+/// The longest standard session name, in characters.
+pub const STANDARD_CHARS: usize = 24;
+
+/// Whether `name` is a session id or its first letters rather than a name:
+/// eight or more hex digits (with a digit among them) before any `-`, and
+/// nothing but hex digits and `-`.
+pub fn looks_like_id(name: &str) -> bool {
+    let head = name.split('-').next().unwrap_or("");
+    head.len() >= 8
+        && head.chars().any(|c| c.is_ascii_digit())
+        && name.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+}
+
+/// `name` cut to [`STANDARD_CHARS`] characters, at a `-` when there is one
+/// to cut at, with no `-` left at the end.
+fn cut(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    if chars.len() <= STANDARD_CHARS {
+        return name.to_string();
+    }
+    let mut kept: String = chars[..STANDARD_CHARS].iter().collect();
+    // Cut mid-word: back to the last `-`, if any.
+    if chars[STANDARD_CHARS] != '-' {
+        if let Some(at) = kept.rfind('-').filter(|at| *at > 0) {
+            kept.truncate(at);
+        }
+    }
+    kept.trim_end_matches('-').to_string()
+}
+
+/// `None` when `name` is a standard session name: as tmux takes it
+/// ([`sanitize`] keeps it as it is), at most [`STANDARD_CHARS`] characters.
+/// Else the standard name. An id is no name to correct: it gets a name from
+/// its folder ([`short_name`]), so `None` here too.
+pub fn standard_name(name: &str) -> Option<String> {
+    if looks_like_id(name) {
+        return None;
+    }
+    let standard = cut(&sanitize(name));
+    (standard != name).then_some(standard)
+}
+
+/// A short name for a session from its folder: the folder's own name (a
+/// worktree's too), made standard. Never the session id. The caller makes
+/// it unique ([`unique`]).
+pub fn short_name(folder: &str) -> String {
+    let last = folder
+        .trim_end_matches('/')
+        .rsplit('/')
+        .next()
+        .unwrap_or("");
+    cut(&sanitize(last))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn standard_names_stay() {
+        for name in ["api", "接口评审", "API-Review", "修复-12", "emoji🚀"] {
+            assert_eq!(standard_name(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn standard_name_corrects_what_tmux_cannot_take() {
+        assert_eq!(standard_name("接口 评审").as_deref(), Some("接口-评审"));
+        assert_eq!(
+            standard_name("API Review v1.2").as_deref(),
+            Some("API-Review-v1-2")
+        );
+        assert_eq!(standard_name(" fix: login ").as_deref(), Some("fix-login"));
+    }
+
+    #[test]
+    fn standard_name_cuts_long_names_at_a_dash() {
+        let long = "the-new-billing-page-for-enterprise-customers";
+        let fixed = standard_name(long).unwrap();
+        assert_eq!(fixed, "the-new-billing-page-for");
+        assert!(fixed.chars().count() <= STANDARD_CHARS);
+        // No dash to cut at: cut at 24 characters, never mid-character.
+        let han = "一二三四五六七八九十一二三四五六七八九十一二三四五六";
+        let fixed = standard_name(han).unwrap();
+        assert_eq!(fixed.chars().count(), STANDARD_CHARS);
+        assert!(han.starts_with(&fixed));
+        // Exactly 24 is fine.
+        assert_eq!(standard_name(&"a".repeat(24)), None);
+    }
+
+    #[test]
+    fn ids_are_not_names() {
+        assert!(looks_like_id("a1b2c3d4"));
+        assert!(looks_like_id("a1b2c3d4-0000-4000-8000-000000000001"));
+        assert!(!looks_like_id("api"));
+        assert!(!looks_like_id("deadbeef-notes"));
+        assert!(!looks_like_id("cafe"));
+        // An id is not "corrected": it gets a name from its folder instead.
+        assert_eq!(standard_name("a1b2c3d4-0000-4000-8000-000000000001"), None);
+    }
+
+    #[test]
+    fn short_names_come_from_the_folder() {
+        assert_eq!(short_name("/Users/me/work/ofoxai"), "ofoxai");
+        assert_eq!(short_name("/Users/me/work/ofoxai/"), "ofoxai");
+        assert_eq!(
+            short_name("/r/cc-moss/.claude/worktrees/97-t7.1"),
+            "97-t7-1"
+        );
+        assert_eq!(short_name("/Users/me/项目 资料"), "项目-资料");
+        assert_eq!(short_name("/"), "session");
+        assert!(
+            short_name("/w/an-extremely-long-folder-name-for-a-project")
+                .chars()
+                .count()
+                <= STANDARD_CHARS
+        );
+    }
+}

@@ -50,9 +50,10 @@ pub fn auto_named(slot: &Slot) -> bool {
     match slot.name.as_deref().map(str::trim) {
         None | Some("") => true,
         Some(name) => {
-            name.len() >= 6
-                && name.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
-                && slot.session_id.starts_with(name)
+            naming::looks_like_id(name)
+                || (name.len() >= 6
+                    && name.chars().all(|c| c.is_ascii_hexdigit() || c == '-')
+                    && slot.session_id.starts_with(name))
         }
     }
 }
@@ -85,6 +86,32 @@ pub fn tmux_fact(slot: &Slot, prefix: Option<&str>, live: &TmuxNames) -> Option<
     })
 }
 
+/// Per slot id: the corrected name of a named session that is not
+/// standard, and a name for one without (from its folder), each unique
+/// among the names there are.
+pub fn name_facts(slots: &[&Slot]) -> HashMap<String, (Option<String>, Option<String>)> {
+    let mut taken: Vec<String> = slots.iter().filter_map(|s| s.name.clone()).collect();
+    let mut out = HashMap::new();
+    for s in slots {
+        let (fix, suggestion) = if auto_named(s) {
+            let want = naming::short_name(&s.cwd);
+            (None, Some(naming::unique(&want, &taken, None)))
+        } else {
+            let fix = s
+                .name
+                .as_deref()
+                .and_then(naming::standard_name)
+                .map(|want| naming::unique(&want, &taken, s.name.as_deref()));
+            (fix, None)
+        };
+        if let Some(n) = fix.as_ref().or(suggestion.as_ref()) {
+            taken.push(n.clone());
+        }
+        out.insert(s.slot_id.clone(), (fix, suggestion));
+    }
+    out
+}
+
 /// The facts about one session.
 pub fn session_facts(
     slot: &Slot,
@@ -92,6 +119,7 @@ pub fn session_facts(
     now_ms: i64,
     folder: Fact,
     tmux_matches: Option<Fact>,
+    names: (Option<String>, Option<String>),
 ) -> Value {
     let secs = |since: i64| ((now_ms - since).max(0)) / 1000;
     let dropped = (status == Status::Interrupted)
@@ -111,10 +139,12 @@ pub fn session_facts(
         "working": status == Status::Running && slot.busy,
         "waiting_on_you": slot.attention.as_deref().filter(|_| status == Status::Running),
         "tmux_name_matches": tmux_matches.map(Fact::json),
+        "name_fix": names.0,
+        "name_suggestion": names.1,
     })
 }
 
-fn live_names(socket: &str) -> TmuxNames {
+pub(super) fn live_names(socket: &str) -> TmuxNames {
     let out = moss_core::command::run_with_timeout(
         Command::new("tmux")
             .args(Socket::Path(socket.to_string()).args())
@@ -137,6 +167,15 @@ fn live_names(socket: &str) -> TmuxNames {
     )
 }
 
+/// The machine's prefix in tmux names, when the config uses one.
+pub(super) fn prefix() -> Option<String> {
+    moss_core::config::Config::load()
+        .map(|c| c.naming.host_prefix)
+        .unwrap_or(true)
+        .then(|| naming::cached_host_prefix(&store_dir::state_dir()))
+        .flatten()
+}
+
 /// `cc-moss doctor --sessions --json`.
 pub fn print_sessions_json() -> Result<()> {
     println!("{}", serde_json::to_string_pretty(&report()?)?);
@@ -151,18 +190,17 @@ pub fn report() -> Result<Value> {
     } else {
         Vec::new()
     };
-    let prefix = moss_core::config::Config::load()
-        .map(|c| c.naming.host_prefix)
-        .unwrap_or(true)
-        .then(|| naming::cached_host_prefix(&store_dir::state_dir()))
-        .flatten();
+    let prefix = prefix();
     let mut servers: HashMap<String, TmuxNames> = HashMap::new();
     let mut sessions = Vec::new();
-    for slot in slots.iter().filter(|s| !s.is_moss()) {
-        let status = slot.effective_status(moss_core::proc::is_alive);
-        if status == Status::Closed {
-            continue;
-        }
+    let open: Vec<(&Slot, Status)> = slots
+        .iter()
+        .filter(|s| !s.is_moss())
+        .map(|s| (s, s.effective_status(moss_core::proc::is_alive)))
+        .filter(|(_, st)| *st != Status::Closed)
+        .collect();
+    let names = name_facts(&open.iter().map(|(s, _)| *s).collect::<Vec<_>>());
+    for (slot, status) in open {
         let folder = folder_fact(&std::fs::metadata(&slot.cwd));
         let live = slot.tmux.as_ref().map(|loc| {
             servers
@@ -174,7 +212,8 @@ pub fn report() -> Result<Value> {
             (Status::Running, Some(live)) => tmux_fact(slot, prefix.as_deref(), &live),
             _ => None,
         };
-        sessions.push(session_facts(slot, status, now, folder, tmux));
+        let named = names.get(&slot.slot_id).cloned().unwrap_or_default();
+        sessions.push(session_facts(slot, status, now, folder, tmux, named));
     }
     Ok(json!({
         "schema": 1,
@@ -317,6 +356,7 @@ mod tests {
             now,
             Fact::Yes,
             tmux_fact(&s, Some("host"), &live),
+            (None, None),
         );
         assert_eq!(f["auto_named"], false);
         assert_eq!(f["idle_for_secs"], 3 * 86_400);
@@ -333,7 +373,7 @@ mod tests {
         // Dropped two days ago, folder gone.
         let mut d = slot(Some("old"));
         d.ended_at_ms = Some(now - 2 * 86_400_000);
-        let f = session_facts(&d, Status::Interrupted, now, Fact::No, None);
+        let f = session_facts(&d, Status::Interrupted, now, Fact::No, None, (None, None));
         assert_eq!(f["dropped_for_secs"], 2 * 86_400);
         assert_eq!(f["idle_for_secs"], Value::Null);
         assert_eq!(f["folder_exists"], false);
@@ -341,11 +381,42 @@ mod tests {
         // Waiting on you is not idle.
         let mut w = slot(Some("web"));
         w.attention = Some("permission".into());
-        let f = session_facts(&w, Status::Running, now, Fact::Yes, None);
+        let f = session_facts(&w, Status::Running, now, Fact::Yes, None, (None, None));
         assert_eq!(f["waiting_on_you"], "permission");
         assert_eq!(f["idle_for_secs"], Value::Null);
         let missing = std::fs::metadata("/nonexistent/cc-moss/checkup");
         assert_eq!(folder_fact(&missing), Fact::No);
+    }
+
+    #[test]
+    fn checkup_names() {
+        let mut nameless = slot(None);
+        nameless.cwd = "/work/ofoxai".into();
+        let mut id_named = slot(Some("0123abcd"));
+        id_named.slot_id = "s2".into();
+        id_named.cwd = "/r/.claude/worktrees/97-t7.1".into();
+        let mut taken = slot(Some("ofoxai"));
+        taken.slot_id = "s3".into();
+        let mut spaced = slot(Some("接口 评审 v1.2"));
+        spaced.slot_id = "s4".into();
+        let mut fine = slot(Some("接口评审"));
+        fine.slot_id = "s5".into();
+        let mut twin = slot(None);
+        twin.slot_id = "s6".into();
+        twin.cwd = "/elsewhere/ofoxai".into();
+        let all = [nameless, id_named, taken, spaced, fine, twin];
+        let refs: Vec<&Slot> = all.iter().collect();
+        let names = name_facts(&refs);
+        let get = |id: &str| names.get(id).cloned().unwrap();
+        // Unnamed: from the folder, unique among the names there are.
+        assert_eq!(get("s1"), (None, Some("ofoxai-2".to_string())));
+        assert_eq!(get("s6"), (None, Some("ofoxai-3".to_string())));
+        assert_eq!(get("s2"), (None, Some("97-t7-1".to_string())));
+        // Named but not standard: corrected.
+        assert_eq!(get("s4"), (Some("接口-评审-v1-2".to_string()), None));
+        // Standard: nothing to do.
+        assert_eq!(get("s5"), (None, None));
+        assert_eq!(get("s3"), (None, None));
     }
 
     #[test]
@@ -360,6 +431,7 @@ mod tests {
             5_000,
             Fact::Unknown,
             None,
+            (None, None),
         );
         assert_eq!(f["folder_exists"], "unknown");
         // tmux that does not answer, or a session it does not list.
