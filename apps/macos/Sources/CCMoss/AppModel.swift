@@ -222,6 +222,8 @@ final class AppModel {
         didSet {
             if panelShown && page == .moss { mossDesk.markRead() }
             if !panelShown { resetMentionHover() }
+            // The daemon's "first panel open of the day" checkup reads this.
+            if panelShown && !oldValue, let dir = watchedDir { try? PanelOpenedMark.touch(stateDir: dir) }
         }
     }
     /// Talking to Moss (T2.3): its status and the conversation.

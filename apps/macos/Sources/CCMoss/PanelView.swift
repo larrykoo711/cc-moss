@@ -675,7 +675,7 @@ struct PanelView: View {
     }
 
     /// Under its row, right edges lined up (above it when there's no room
-    /// below); cc-moss's own sits over the logo.
+    /// below).
     private func menuOffset(_ menu: PanelMenu, sections: [[PanelAction]], row: CGRect?, in size: CGSize) -> CGSize {
         let height = ActionsMenu.height(sections), width = ActionsMenu.width
         let floor = size.height - 50 // the action bar
@@ -779,7 +779,7 @@ struct PanelView: View {
 }
 
 /// A menu in the panel: one session's ("⋯" shows what its row doesn't;
-/// right-click and ⌘K show everything), or cc-moss's own on the logo.
+/// right-click and ⌘K show everything), or cc-moss's own behind the rail's gear.
 enum PanelMenu: Equatable {
     case session(String, full: Bool)
     case app

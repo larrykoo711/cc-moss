@@ -819,7 +819,7 @@ struct FormScrim: View {
     }
 }
 
-/// The "+" beside the logo in the action bar: start a new session (⌘N).
+/// The "+" in the footer: start a new session (⌘N).
 struct NewSessionButton: View {
     let action: () -> Void
     @State private var hovering = false
