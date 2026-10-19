@@ -1,6 +1,11 @@
 import AppKit
 import MossKit
+import OSLog
 import SwiftUI
+
+/// Pointer events on mentions, for watching hover on a real Mac:
+/// `log stream --level debug --predicate 'subsystem == "io.github.larrykoo711.cc-moss" && category == "mention"'`
+private let mentionLog = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "mention")
 
 // Sessions named in Moss's words as mentions (user 2026-10-19): part of the
 // sentence, in its own colour, marked by a light dotted underline and a
@@ -277,21 +282,40 @@ final class MentionTextView: NSTextView {
         reportAnchor()
     }
 
+    /// Ours only: the text view keeps its own areas (its cursor) too.
+    private var area: NSTrackingArea?
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach(removeTrackingArea)
+        if let area { removeTrackingArea(area) }
         // Its own bounds, not `.inVisibleRect`: with clipping off (the
         // default since macOS 14) the visible rect reaches past the view, so
         // every paragraph's area covered its neighbours and a view the
         // pointer wasn't on said "left", switching off the mention that was
-        // just lit in the next paragraph.
-        addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeInKeyWindow],
-                                       owner: self))
+        // just lit in the next paragraph. Active always: the panel doesn't
+        // activate the app and often isn't key.
+        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways], owner: self)
+        addTrackingArea(area)
+        self.area = area
+        mentionLog.debug("area \(self.bounds.debugDescription, privacy: .public) in window: \(self.window != nil)")
+    }
+
+    /// An area added at zero size stays zero: lay it out again whenever the
+    /// view's size changes.
+    override func setFrameSize(_ newSize: NSSize) {
+        let changed = newSize != frame.size
+        super.setFrameSize(newSize)
+        if changed { updateTrackingAreas() }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        mentionLog.debug("entered view \(self.bounds.debugDescription, privacy: .public)")
     }
 
     override func mouseMoved(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let id = bounds.contains(point) ? mention(at: point) : nil
+        mentionLog.debug("moved \(point.debugDescription, privacy: .public) mention: \(id ?? "-", privacy: .public)")
         if bounds.contains(point) {
             if id != nil { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
         }
@@ -299,11 +323,13 @@ final class MentionTextView: NSTextView {
     }
 
     override func mouseExited(with event: NSEvent) {
+        mentionLog.debug("left view")
         move(to: nil)
     }
 
     private func move(to id: String?) {
         guard id != current else { return }
+        mentionLog.debug("mention \(self.current ?? "-", privacy: .public) -> \(id ?? "-", privacy: .public)")
         if let left = current { onLeave(left) }
         current = id
         if let id, let rect = windowRect(of: id) { onEnter(id, rect) }
