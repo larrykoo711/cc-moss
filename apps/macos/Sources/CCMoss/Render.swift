@@ -55,7 +55,7 @@ enum Render {
         var askData = value("--asks").flatMap { FileManager.default.contents(atPath: $0) }
         if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
         let mossChat = value("--moss-chat").flatMap { FileManager.default.contents(atPath: $0) }
-        let runner = DemoRunner(sessions: value("--page") == "moss" ? DemoRunner.withMoss(data) : data, asks: askData,
+        let runner = DemoRunner(sessions: value("--page") == "moss" || args.contains("--with-moss") ? DemoRunner.withMoss(data) : data, asks: askData,
                                 answer: value("--answer"), mossChat: mossChat, moss: value("--moss"))
         ClickTargets.shared.enabled = args.contains("--click")
         let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
@@ -119,7 +119,12 @@ enum Render {
                 if let name = value("--form-name") { model.newDraft.name = name; model.newDraft.nameEdited = true }
             case "note": if let s = model.selected { model.editNote(s) }
             case "close": if let s = model.selected { model.askToClose([s]) }
-            case "message": if let s = model.selected { model.writeMessage(s) }
+            case "message":
+                if let s = model.selected {
+                    model.writeMessage(s)
+                    // `--sending`: as it looks while the message is on its way.
+                    if args.contains("--sending") { _ = model.sendFlow.begin() }
+                }
             case "rename": if let s = model.selected { model.startRename(s) }
             default: break
             }
@@ -668,7 +673,7 @@ struct DemoRunner: CommandRunner {
         moss["status"] = "running"
         moss["busy"] = false
         moss["attention"] = NSNull()
-        moss["last_prompt"] = NSNull()
+        moss["last_prompt"] = "[Update] release-notes finished its turn" // what the daemon typed into it
         moss["cwd"] = "/Users/demo/.local/state/cc-moss/moss"
         if var tmux = moss["tmux"] as? [String: Any] {
             tmux["session_name"] = "moss"

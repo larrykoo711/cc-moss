@@ -303,6 +303,14 @@ struct PanelView: View {
                 guard let id else { return }
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(id) }
             }
+            // The row you just wrote to moved: bring it into view, once the
+            // refreshed order is drawn.
+            .onChange(of: model.revealTick) { _, _ in
+                guard let id = model.selectedID else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) }
+                }
+            }
         }
     }
 
@@ -317,8 +325,13 @@ struct PanelView: View {
         // A button, not a tap gesture: inside the scrolling list a tap
         // gesture never fired once the panel had the keyboard, so a click
         // selected nothing (user 2026-10-18). Its own buttons still win.
+        // Moss's second line is its newest reply, not what was last typed into it.
+        var shownSession = s
+        if s.isMoss {
+            shownSession.lastPrompt = MossRowLine.of(model.mossDesk.messages)
+        }
         return Button { model.selectedID = s.id } label: {
-            SessionRow(session: s, selected: s.id == model.selected?.id, hovered: shown,
+            SessionRow(session: shownSession, selected: s.id == model.selected?.id, hovered: shown,
                        actions: shown ? actions.inline.map { action($0, for: s) } : [],
                        more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
                        menuOpen: menuOpen,
@@ -563,6 +576,8 @@ struct PanelView: View {
     }
 
     private func dismissForm() {
+        // A message on its way can't be called back: Esc and the scrim wait.
+        guard !model.sendFlow.isSending else { return }
         model.form = nil
         model.closeGate.cancel()
     }

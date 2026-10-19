@@ -59,7 +59,14 @@ final class AppModel {
     var notice: String?
 
     /// The form floating over the panel: new session or a note (T2.5).
-    var form: PanelForm?
+    var form: PanelForm? { didSet { if form != oldValue { sendFlow = .idle } } }
+    /// A message to a session on its way (idle, sending, failed).
+    var sendFlow = SendFlow()
+    /// After a send, a note or a rename the session moves in the list: keep
+    /// it selected and in view as the refreshed order arrives.
+    @ObservationIgnored var reveal: (id: String, until: Date)?
+    /// Bumped to scroll the selected row into view.
+    var revealTick = 0
     /// The new-session form's fields; kept here so they survive the panel
     /// closing while the folder chooser is open.
     var newDraft = NewDraft()
@@ -237,7 +244,12 @@ final class AppModel {
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }
-            if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) { selectFirst() }
+            if let reveal, reveal.until > Date(), visible.contains(where: { $0.id == reveal.id }) {
+                selectedID = reveal.id
+                revealTick += 1
+            } else if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) {
+                selectFirst()
+            }
             await loadAsks()
             await loadMoss()
         } catch MossClient.Failure.newerSchema {

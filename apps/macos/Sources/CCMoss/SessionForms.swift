@@ -110,19 +110,31 @@ extension AppModel {
         form = .rename(s)
     }
 
-    /// Type `text` into the session, as if in its terminal.
+    /// Type `text` into the session, as if in its terminal. One at a time:
+    /// the form stays, locked, until it went; on failure it keeps the text.
     func sendMessage(_ s: Session, text: String, done: String) {
-        guard let client else { return }
-        form = nil
+        guard let client, sendFlow.begin() else { return }
         Task {
             do {
                 try await client.send(target: s.target, text: text)
+                form = nil
+                sendFlow.finish(error: nil)
                 say(done)
+                follow(s)
             } catch {
+                sendFlow.finish(error: Self.describe(error))
                 say(Self.describe(error))
             }
             refresh()
         }
+    }
+
+    /// The session just written to will move up the list: keep it selected
+    /// and in view for the next few refreshes.
+    func follow(_ s: Session) {
+        selectedID = s.id
+        reveal = (s.id, Date().addingTimeInterval(6))
+        revealTick += 1
     }
 
     func saveNote(_ s: Session, text: String) {
@@ -134,6 +146,7 @@ extension AppModel {
                 say(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? L.t("Note cleared.", "便条已清除。")
                     : L.t("Noted.", "记下了。"))
+                follow(s)
             } catch {
                 say(Self.describe(error))
             }
@@ -437,18 +450,34 @@ struct MessageForm: View {
     var body: some View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
                  aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
-            MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
+            MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text,
+                           locked: sending) { send() }
+            if let failure = model.sendFlow.failure {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.red)
+                    Text(failure).font(.system(size: 11)).foregroundStyle(Theme.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 2)
+            }
             HStack(spacing: 8) {
                 Spacer()
                 SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+                    .disabled(sending)
+                    .opacity(sending ? 0.5 : 1)
+                // Locked while sending, but still the Send button.
                 SoftButton(title: L.t("Send", "发送"), icon: Icons.message, prominent: true, shortcut: "⌘↩") { send() }
-                    .disabled(empty)
+                    .disabled(empty || sending)
+                    .allowsHitTesting(!sending)
             }
         }
     }
 
+    private var sending: Bool { model.sendFlow.isSending }
+
     private func send() {
-        guard !empty else { return }
+        guard !empty, !sending else { return }
         model.sendMessage(session, text: text, done: L.t("Sent to \(session.title).", "已发给 \(session.title)。"))
     }
 }
@@ -523,7 +552,7 @@ struct RenameForm: View {
     }
 
     private func submit() {
-        guard check == .ok else { return }
+        guard check == .ok, !model.sendFlow.isSending else { return }
         let new = name.trimmingCharacters(in: .whitespaces)
         model.sendMessage(session, text: Message.renameText(new),
                           done: L.t("Renaming to \(new)…", "正在改名为 \(new)…"))
@@ -535,6 +564,8 @@ struct RenameForm: View {
 struct MultilineField: View {
     let placeholder: String
     @Binding var text: String
+    /// On its way: covered by "Sending…", no typing, no focus.
+    var locked = false
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -565,9 +596,31 @@ struct MultilineField: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.selection(scheme).opacity(0.8)))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
+                .strokeBorder(focused && !locked ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused && !locked ? 1.5 : 1)
         )
+        .disabled(locked)
+        .overlay {
+            if locked {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(Theme.raised(scheme).opacity(0.94))
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme))
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Image(systemName: Icons.message)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.brand)
+                        Text(L.t("Sending…", "发送中…"))
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle()) // takes the clicks: nothing reaches the field
+                .transition(.opacity)
+            }
+        }
         .animation(.easeOut(duration: 0.12), value: focused)
+        .animation(.easeOut(duration: 0.15), value: locked)
+        .onChange(of: locked) { _, now in if now { focused = false } else { focused = true } }
         .onAppear { focused = true }
     }
 }
