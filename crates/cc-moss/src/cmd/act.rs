@@ -427,11 +427,6 @@ impl Hands {
             ) {
                 return ("refused", e);
             }
-            self.use_consent(&consent_key(
-                r.because.as_deref().unwrap_or_default(),
-                &r.action,
-                &slot.slot_id,
-            ));
         }
         let result = match &action {
             Action::SyncName(_) => sync_name(&registry, &slot),
@@ -443,11 +438,15 @@ impl Hands {
             Action::Restore(_) => self.restore(&slot),
             Action::SetupFix | Action::SyncNames => unreachable!(),
         };
-        match result {
-            Ok(said) => ("done", said),
-            Err(e) if e.downcast_ref::<Busy>().is_some() => ("skipped", format!("{e}")),
-            Err(e) => ("failed", format!("{e:#}")),
-        }
+        settle(result, || {
+            if action.needs_consent() {
+                self.use_consent(&consent_key(
+                    r.because.as_deref().unwrap_or_default(),
+                    &r.action,
+                    &slot.slot_id,
+                ));
+            }
+        })
     }
 
     /// `cc-moss setup --yes`, then `cc-moss doctor --fix`.
@@ -525,6 +524,19 @@ fn sync_names(state: &Path) -> Result<usize> {
         }
     }
     Ok(renamed)
+}
+
+/// The outcome of an action. The user's go-ahead is spent (`spend`) only
+/// when it was done: a busy session or a failure leaves it for a retry.
+fn settle(result: Result<String>, spend: impl FnOnce()) -> (&'static str, String) {
+    match result {
+        Ok(said) => {
+            spend();
+            ("done", said)
+        }
+        Err(e) if e.downcast_ref::<Busy>().is_some() => ("skipped", format!("{e}")),
+        Err(e) => ("failed", format!("{e:#}")),
+    }
 }
 
 /// The session is in the middle of something; try again later.
@@ -653,6 +665,21 @@ impl Pane for SessionPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn act_spends_the_go_ahead_only_when_done() {
+        let spent = std::cell::Cell::new(0);
+        let busy: Result<String> = Err(Busy("busy").into());
+        assert_eq!(settle(busy, || spent.set(spent.get() + 1)).0, "skipped");
+        let failed: Result<String> = Err(anyhow::anyhow!("restore: no"));
+        assert_eq!(settle(failed, || spent.set(spent.get() + 1)).0, "failed");
+        assert_eq!(spent.get(), 0, "a busy or failed action keeps the go-ahead");
+        assert_eq!(
+            settle(Ok("ended".into()), || spent.set(spent.get() + 1)).0,
+            "done"
+        );
+        assert_eq!(spent.get(), 1);
+    }
 
     fn slot(id: &str, name: &str, role: Option<&str>) -> Slot {
         Slot {
