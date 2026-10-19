@@ -226,7 +226,7 @@ final class AppModel {
             if panelShown && page == .moss { mossDesk.markRead() }
             if !panelShown { resetMentionHover() }
             // The daemon's "first panel open of the day" checkup reads this.
-            if panelShown && !oldValue, let dir = watchedDir { try? PanelOpenedMark.touch(stateDir: dir) }
+            if panelShown && !oldValue { PanelOpenedMark.touchIfShown(true, stateDir: watchedDir) }
         }
     }
     /// Talking to Moss (T2.3): its status and the conversation.
@@ -453,6 +453,8 @@ final class AppModel {
             Task { @MainActor in self?.changed() }
         }
         watchedDir = dir
+        // Opened before the folder was known (a cold launch by a link): mark it now.
+        PanelOpenedMark.touchIfShown(panelShown, stateDir: dir)
     }
 
     func selectFirst() { selectedID = visible.first?.id }

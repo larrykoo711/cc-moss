@@ -28,6 +28,17 @@ import Testing
         #expect(modified == Date(timeIntervalSince1970: 2_000_000))
     }
 
+    /// A cold launch: the panel opens before the state folder is known, and
+    /// is marked once it is.
+    @Test func thePanelIsMarkedOnceTheFolderIsKnown() throws {
+        let dir = try stateDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(!PanelOpenedMark.touchIfShown(true, stateDir: nil), "not known yet")
+        #expect(PanelOpenedMark.touchIfShown(true, stateDir: dir.path))
+        #expect(FileManager.default.fileExists(atPath: PanelOpenedMark.path(stateDir: dir.path)))
+        #expect(!PanelOpenedMark.touchIfShown(false, stateDir: dir.path), "closed: nothing to mark")
+    }
+
     @Test func mossCanPinTheCheckupAndTidy() {
         #expect(MossQuick.id(fromMoss: "checkup") == "action:checkup")
         #expect(MossQuick.id(fromMoss: "tidy") == "action:tidy")

@@ -8,6 +8,15 @@ public enum PanelOpenedMark {
         (stateDir as NSString).appendingPathComponent("desktop/panel-opened")
     }
 
+    /// The panel is open and the state folder is known now: mark it. Either
+    /// can come first (a cold launch opens the panel before the first read).
+    /// True when it marked.
+    @discardableResult
+    public static func touchIfShown(_ panelShown: Bool, stateDir: String?, now: Date = Date()) -> Bool {
+        guard panelShown, let stateDir else { return false }
+        return (try? touch(stateDir: stateDir, now: now)) != nil
+    }
+
     /// Make it (only you can read it) or move its time to `now`.
     public static func touch(stateDir: String, now: Date = Date()) throws {
         let fm = FileManager.default
