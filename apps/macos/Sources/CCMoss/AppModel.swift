@@ -160,8 +160,13 @@ final class AppModel {
     @ObservationIgnored var mentionHide: Task<Void, Never>?
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
-    /// Claude Code's guess at what you'd say to Moss next (its own input box).
-    var mossSuggestion: String?
+    /// Claude Code's guess at what you'd say to Moss next, tied to the reply
+    /// it answers (a late answer after you sent something is dropped).
+    var mossGuess = MossGuess()
+    /// The guess to offer now: for Moss's newest reply, while it isn't thinking.
+    var mossSuggestion: String? {
+        mossGuess.shown(newestReply: mossDesk.chat.last { $0.from == .moss }?.id ?? "none", waiting: mossDesk.waiting != nil)
+    }
     /// The badge for that guess was closed: hidden until Moss's next reply (its id).
     var mossGuessHiddenFor: String?
     /// What cc-moss suggest said per session and turn (memory only).

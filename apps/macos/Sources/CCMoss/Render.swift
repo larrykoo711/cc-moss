@@ -86,7 +86,7 @@ enum Render {
                 // `--moss-suggestion "<text>"`: Claude Code's guess at your reply to Moss.
                 if let guess = value("--moss-suggestion") {
                     model.demoMossSuggestion = guess
-                    model.mossSuggestion = guess
+                    model.fetchMossSuggestion()
                 }
                 model.mossTyping = args.contains("--moss-typing")
                 // `--moss-typing "/"`: with that typed (a slash shows the command list).

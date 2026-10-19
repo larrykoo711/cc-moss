@@ -58,8 +58,9 @@ extension AppModel {
     /// has it, so the message shows as logged.
     func sayToMoss(_ text: String) {
         noteQuickUse(text)
-        // The guess was for what you'd say now; you've said something.
-        mossSuggestion = nil
+        // The guess was for what you'd say now; you've said something, and
+        // an answer still on its way is for the old turn.
+        mossGuess.sent()
         Task {
             await mossDesk.send(text)
             refresh()
@@ -85,16 +86,17 @@ extension AppModel {
     /// Ask Claude Code (through cc-moss) what you'd likely say to Moss next:
     /// off the main thread, 1.5 s at most; nothing if it has no guess.
     func fetchMossSuggestion() {
+        // Moss's turn is its newest reply; mid-turn there's nothing to ask.
+        let marker = mossDesk.chat.last { $0.from == .moss }?.id ?? "none"
+        let ticket = mossGuess.begin(marker: marker)
         if let demo = demoMossSuggestion {
-            mossSuggestion = demo
+            mossGuess.offer(demo, for: ticket)
             return
         }
         guard let moss else { return }
-        // Moss's turn is its newest reply; mid-turn there's nothing to ask.
-        let marker = mossDesk.chat.last { $0.from == .moss }?.id ?? "none"
         let busy = mossDesk.activity == .thinking
         let handle = moss.handle
-        Task { mossSuggestion = await suggestion(key: "moss", marker: marker, busy: busy, handle: handle) }
+        Task { mossGuess.offer(await suggestion(key: "moss", marker: marker, busy: busy, handle: handle), for: ticket) }
     }
 
     /// Claude Code's suggestion for a session, through the cache: asked only
