@@ -3,8 +3,9 @@ import Testing
 @testable import MossKit
 
 @Suite struct OsascriptTests {
-    @Test func aScriptIsReadFromStandardInput() {
-        #expect(Osascript.arguments == ["-"])
+    @Test func theScriptIsAnArgument() {
+        #expect(Osascript.arguments("tell application \"Terminal\" to activate")
+            == ["-e", "tell application \"Terminal\" to activate"])
     }
 
     @Test func automationRefusedIsTold() {

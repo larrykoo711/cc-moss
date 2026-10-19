@@ -7,8 +7,10 @@ import Foundation
 /// responsible for osascript.
 public enum Osascript {
     public static let executable = "/usr/bin/osascript"
-    /// The script comes on standard input.
-    public static let arguments = ["-"]
+
+    /// The script as an argument (`-e`): nothing to write to a pipe that
+    /// could break if osascript quits early.
+    public static func arguments(_ source: String) -> [String] { ["-e", source] }
 
     public enum Result: Equatable, Sendable {
         case opened

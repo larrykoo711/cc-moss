@@ -202,10 +202,9 @@ enum Opener {
             // supported on the main thread, which must never wait on it.
             let process = Process()
             process.executableURL = URL(fileURLWithPath: Osascript.executable)
-            process.arguments = Osascript.arguments
-            let input = Pipe()
+            process.arguments = Osascript.arguments(source)
             let err = Pipe()
-            process.standardInput = input
+            process.standardInput = FileHandle.nullDevice
             process.standardOutput = FileHandle.nullDevice
             process.standardError = err
             do {
@@ -213,10 +212,10 @@ enum Opener {
             } catch {
                 return .failed(error.localizedDescription)
             }
-            input.fileHandleForWriting.write(Data(source.utf8))
-            try? input.fileHandleForWriting.close()
-            process.waitUntilExit()
+            // Read what it says before waiting: a full pipe would otherwise
+            // keep it from ever exiting.
             let why = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            process.waitUntilExit()
             switch Osascript.result(status: process.terminationStatus, stderr: why) {
             case .opened: return .opened
             // -1743: the user (or an MDM profile) said no to Automation.
@@ -239,9 +238,10 @@ enum Opener {
             // `open` hands over and exits at once; a terminal binary started
             // directly (WezTerm) keeps running, so only `open` is waited on.
             guard executable == "/usr/bin/open" else { return .opened }
+            // Its error line first, then its exit: a full pipe can't hold it up.
+            let why = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             process.waitUntilExit()
             if process.terminationStatus == 0 { return .opened }
-            let why = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
             return .failed(why.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
