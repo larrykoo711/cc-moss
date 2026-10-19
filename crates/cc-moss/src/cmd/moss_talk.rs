@@ -461,7 +461,7 @@ impl Talk {
         match command {
             Slash::Display(_) => {
                 pane.fit(inbox::COLUMNS, inbox::ROWS);
-                match slash::show(pane, &message.text, timing) {
+                match slash::show(pane, &inbox::printable(&message.text), timing) {
                     Ok(text) if !text.trim().is_empty() => answer(self, &text, false, false),
                     Ok(_) => answer(
                         self,
@@ -472,7 +472,7 @@ impl Talk {
                     Err(e) => failed(self, &e),
                 }
             }
-            Slash::Clear => match slash::run(pane, &message.text) {
+            Slash::Clear => match slash::run(pane, &inbox::printable(&message.text)) {
                 Ok(()) => {
                     let back = slash::Timing {
                         back: Duration::from_secs(10),
@@ -491,7 +491,7 @@ impl Talk {
                 }
                 Err(e) => failed(self, &e),
             },
-            Slash::Compact => match slash::run(pane, &message.text) {
+            Slash::Compact => match slash::run(pane, &inbox::printable(&message.text)) {
                 Ok(()) => {
                     self.compacting = Some(Compacting {
                         id: message.id.clone(),
