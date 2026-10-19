@@ -609,6 +609,12 @@ impl Talk {
     }
 
     /// Session news for Moss: into its inbox, and into the chat.
+    /// A request of cc-moss's own for Moss (the daily checkup): queued like
+    /// session news, so it is not shown as something the user said.
+    pub fn ask(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
+        self.tell(text, now_ms, log);
+    }
+
     fn tell(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
         let message = inbox::Message {
             schema: 1,

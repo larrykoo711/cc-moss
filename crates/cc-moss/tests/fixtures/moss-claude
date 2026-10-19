@@ -11,10 +11,13 @@
 # [[buttons:]] marker; session news ([Update] / [动态]) gets [[silent]].
 # Every message it hears is appended to $CC_MOSS_FAKE_DIR/moss-heard.txt.
 [ "$1" = agents ] && { echo '[]'; exit 0; }
-sid="" boot=""
+sid="" boot="" name="" source=startup
 while [ $# -gt 0 ]; do
   case "$1" in
     --session-id) sid="$2"; shift 2 ;;
+    --resume) sid="$2"; source=resume; shift 2 ;;
+    -n) name="$2"; shift 2 ;;
+    --name=*) name="${1#--name=}"; shift ;;
     -*) shift ;;
     *) boot="$1"; shift ;;
   esac
@@ -36,7 +39,7 @@ assistant() {
 }
 stop_hook() {
   local cmd
-  cmd=$(sed -n 's/.*"command": "\(.*hook moss-stop.*\)".*/\1/p' .claude/settings.json)
+  cmd=$(sed -n 's/.*"command": "\(.*hook moss-stop.*\)".*/\1/p' .claude/settings.json 2>/dev/null)
   [ -n "$cmd" ] && sh -c "$cmd" < /dev/null
 }
 # The input box: a rule, the prompt, a rule; the cursor goes back after ❯.
@@ -67,7 +70,7 @@ turn() {
 }
 
 session_start() {
-  printf '%s' "{\"session_id\":\"$sid\",\"cwd\":\"$PWD\",\"source\":\"$1\",\"transcript_path\":\"$transcript\"}" \
+  printf '%s' "{\"session_id\":\"$sid\",\"cwd\":\"$PWD\",\"source\":\"$1\",\"session_title\":\"$name\",\"transcript_path\":\"$transcript\"}" \
     | "$CC_MOSS_BIN" hook session-start > /dev/null
 }
 
@@ -100,6 +103,10 @@ slash() {
     # Nothing new at all.
     /stats)
       printf '\n> /stats\n' ;;
+    # Like Claude Code: the new name goes into the transcript.
+    /rename\ *)
+      name="${1#/rename }"
+      printf '{"type":"custom-title","customTitle":"%s","sessionId":"%s"}\n' "$(esc "$name")" "$sid" >> "$transcript" ;;
     /clear)
       sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")
       transcript="$CC_MOSS_FAKE_DIR/$sid.jsonl"
@@ -112,7 +119,7 @@ slash() {
   printf '%s\n' "$1" >> "$CC_MOSS_FAKE_DIR/moss-commands.txt"
 }
 
-session_start startup
+session_start "$source"
 [ -n "$boot" ] && turn "$boot"
 
 # Raw input, no echo: it draws what it takes in itself. (macOS ships bash

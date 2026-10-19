@@ -3,6 +3,7 @@
 //! it (tmux) is the binary's job; the rules are here.
 
 pub mod account;
+pub mod act;
 pub mod chat;
 pub mod digest;
 pub mod guard;

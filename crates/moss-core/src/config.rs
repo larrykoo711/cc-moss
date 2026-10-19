@@ -123,6 +123,13 @@ pub struct MossConfig {
     pub enabled: bool,
     /// Tell Moss when other sessions need you, drop or finish (on by default).
     pub digest: bool,
+    /// Let Moss have the daemon carry out its fixes (`moss act`).
+    pub actions: bool,
+    /// A checkup once a day, the first time the desktop is seen.
+    pub daily_checkup: bool,
+    /// The daily checkup's brief is shown (off: kept quiet unless something
+    /// needs a decision).
+    pub daily_brief: bool,
 }
 
 impl Default for MossConfig {
@@ -130,6 +137,9 @@ impl Default for MossConfig {
         MossConfig {
             enabled: true,
             digest: true,
+            actions: true,
+            daily_checkup: true,
+            daily_brief: true,
         }
     }
 }
@@ -201,6 +211,9 @@ pub const KEYS: &[&str] = &[
     "ask.enabled",
     "moss.enabled",
     "moss.digest",
+    "moss.actions",
+    "moss.daily_checkup",
+    "moss.daily_brief",
 ];
 
 /// What `ui.language` may be set to.
@@ -213,7 +226,14 @@ pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
 pub const BOOLS: &[&str] = &["true", "false"];
 
 /// Keys stored as TOML booleans rather than strings.
-const BOOL_KEYS: &[&str] = &["ask.enabled", "moss.enabled", "moss.digest"];
+const BOOL_KEYS: &[&str] = &[
+    "ask.enabled",
+    "moss.enabled",
+    "moss.digest",
+    "moss.actions",
+    "moss.daily_checkup",
+    "moss.daily_brief",
+];
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -229,7 +249,8 @@ pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
-        "ask.enabled" | "moss.enabled" | "moss.digest" => BOOLS,
+        "ask.enabled" | "moss.enabled" | "moss.digest" | "moss.actions" | "moss.daily_checkup"
+        | "moss.daily_brief" => BOOLS,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -254,6 +275,9 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
         "ask.enabled" => Ok(config.ask.enabled.to_string()),
         "moss.enabled" => Ok(config.moss.enabled.to_string()),
         "moss.digest" => Ok(config.moss.digest.to_string()),
+        "moss.actions" => Ok(config.moss.actions.to_string()),
+        "moss.daily_checkup" => Ok(config.moss.daily_checkup.to_string()),
+        "moss.daily_brief" => Ok(config.moss.daily_brief.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }

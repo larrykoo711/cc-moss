@@ -226,6 +226,13 @@ pub fn unanswered(home: &Path) -> Vec<String> {
         .collect()
 }
 
+/// Every line of the conversation kept (the old file's first), unfolded.
+pub fn lines(home: &Path) -> Vec<Line> {
+    let mut all = read_lines(&old_path(home));
+    all.extend(read_lines(&path(home)));
+    all
+}
+
 /// When Moss last replied (shown or silent), as written.
 pub fn last_reply_at(home: &Path) -> Option<String> {
     let mut lines = read_lines(&path(home));

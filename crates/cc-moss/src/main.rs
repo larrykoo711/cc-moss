@@ -123,6 +123,12 @@ enum Command {
         /// Recreate alias links that are missing or broken.
         #[arg(long)]
         fix: bool,
+        /// Facts about every session and the install, for Moss's checkup.
+        #[arg(long, requires = "json", conflicts_with = "fix")]
+        sessions: bool,
+        /// Machine-readable output (schema 1); with --sessions.
+        #[arg(long, requires = "sessions")]
+        json: bool,
     },
     /// Your own names for cc-moss commands, usable in any shell (`t` is one).
     Alias {
@@ -352,6 +358,21 @@ enum MossCommand {
         #[arg(long)]
         json: bool,
     },
+    /// What Moss asks the daemon to do for it (its sandbox can't reach your
+    /// sessions); `restore`, `forget` and `end` need your go-ahead.
+    #[command(hide = true)]
+    Act {
+        /// setup-fix | sync-name | name | forget-gone | restore | forget | end
+        action: String,
+        /// The session, and for `name` the new name.
+        args: Vec<String>,
+        /// The id of your message that said yes.
+        #[arg(long)]
+        because: Option<String>,
+        /// Wait for the result and print it as JSON.
+        #[arg(long)]
+        wait: bool,
+    },
     /// Say something to Moss; its reply shows in `moss chat` and the panel.
     Say {
         /// Print the message's id as JSON (schema 1).
@@ -541,7 +562,8 @@ fn main() -> std::process::ExitCode {
                 cmd::install::run(opts)
             })
         }
-        Command::Doctor { fix } => match cmd::doctor::run(fix) {
+        Command::Doctor { sessions: true, .. } => report(cmd::checkup::print_sessions_json()),
+        Command::Doctor { fix, .. } => match cmd::doctor::run(fix) {
             Ok(true) => std::process::ExitCode::SUCCESS,
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
@@ -575,6 +597,19 @@ fn main() -> std::process::ExitCode {
             DaemonCommand::Stop => report(cmd::daemon::stop()),
             DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
         },
+        Command::Moss {
+            action:
+                MossCommand::Act {
+                    action,
+                    args,
+                    because,
+                    wait,
+                },
+        } => match cmd::act::run(&action, &args, because.as_deref(), wait) {
+            Ok(true) => std::process::ExitCode::SUCCESS,
+            Ok(false) => std::process::ExitCode::FAILURE,
+            Err(e) => report(Err(e)),
+        },
         Command::Moss { action } => report(match action {
             MossCommand::Start => cmd::moss::start(),
             MossCommand::Stop => cmd::moss::stop(),
@@ -582,6 +617,8 @@ fn main() -> std::process::ExitCode {
             MossCommand::Say { json, text } => cmd::moss::say(json, &text.join(" ")),
             MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),
             MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
+            // Taken above.
+            MossCommand::Act { .. } => Ok(()),
         }),
         Command::Ask { action } => report(cmd::ask::run(match action {
             AskCommand::List { json } => cmd::ask::Action::List { json },
