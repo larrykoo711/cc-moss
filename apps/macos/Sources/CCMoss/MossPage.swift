@@ -1092,8 +1092,8 @@ struct MossTerminalCard: View {
                 }
                 .buttonStyle(PressStyle())
                 .focusable(false)
-                .tip(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
-                .accessibilityLabel(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
+                .tip(raw ? L.t("Show as a card", "看卡片") : L.t("Show the terminal text", "看终端原文"))
+                .accessibilityLabel(raw ? L.t("Show as a card", "看卡片") : L.t("Show the terminal text", "看终端原文"))
             }
         }
         .padding(.horizontal, 10)
