@@ -345,7 +345,7 @@ impl Talk {
         }
         self.next_inbox = now + INBOX_EVERY;
         // The inbox is a real folder, never a link elsewhere.
-        if moss::home::ensure_real_dir(&self.home, "inbox").is_err()
+        if moss_core::moss::dir::Dir::open(&self.home, "inbox").is_err()
             || inbox::count(&self.home) == 0
         {
             return;
@@ -428,7 +428,7 @@ impl Talk {
             talk.record(&line, log);
         };
         if let Slash::Refused(_) = command {
-            let _ = moss::remove(path);
+            let _ = inbox::take(&self.home, path);
             let text = tr!(
                 "This one needs the terminal: click Open in Terminal at the top right.",
                 "这个命令要在终端里用：点右上角「在终端打开」。"
@@ -449,7 +449,7 @@ impl Talk {
         if !ready {
             return;
         }
-        let _ = moss::remove(path);
+        let _ = inbox::take(&self.home, path);
         let at = rfc3339(now_ms());
         self.record(&Line::state(&message.id, &at, "sent", None), log);
         let failed = |talk: &Talk, error: &str| {

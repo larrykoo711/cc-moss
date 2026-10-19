@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 use anyhow::{bail, Context, Result};
 use moss_core::moss::act::{audit_path, dir, result_path, Outcome, Request};
 use moss_core::moss::chat::{self, Line};
+use moss_core::moss::dir::Dir;
 use moss_core::moss::inbox::{self, Pane, Typed};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
@@ -277,26 +278,26 @@ impl Hands {
         if !self.home.exists() {
             return;
         }
-        // A real folder, never a link Moss put there.
-        let Ok(actions) = moss::home::ensure_real_dir(&self.home, "actions") else {
+        // A real folder, never a link Moss put there, held open: renaming
+        // it and putting a link in its place afterwards changes nothing.
+        let Ok(actions) = Dir::open(&self.home, "actions") else {
             return;
         };
         self.prune_results(&actions);
-        let pending: Vec<PathBuf> = inbox::plain_files(&actions, "json")
+        let pending: Vec<String> = actions
+            .files("json")
             .into_iter()
-            .filter(|p| !p.to_string_lossy().ends_with(".result.json"))
+            .filter(|n| !n.ends_with(".result.json"))
             .collect();
         // One a go: a long restore never holds up Moss's conversation more
         // than once in a row.
-        if let Some(path) = pending.into_iter().next() {
-            let id = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().into_owned())
-                .unwrap_or_default();
-            let request = std::fs::read_to_string(&path)
+        if let Some(name) = pending.into_iter().next() {
+            let id = name.trim_end_matches(".json").to_string();
+            let request = actions
+                .read(&name)
                 .ok()
                 .and_then(|t| serde_json::from_str::<Request>(&t).ok());
-            let _ = moss::remove(&path);
+            let _ = actions.remove(&name);
             let (outcome, message) = match &request {
                 None => ("refused", "the request could not be read".to_string()),
                 Some(_) if !enabled => (
@@ -311,8 +312,8 @@ impl Hands {
                 outcome: outcome.to_string(),
                 message: message.clone(),
             };
-            let _ = moss::home::write_if_changed(
-                &result_path(&self.home, &id),
+            let _ = actions.write(
+                &format!("{id}.result.json"),
                 &serde_json::to_string(&out).unwrap_or_default(),
             );
             self.audit(&id, request.as_ref(), outcome, &message);
@@ -348,15 +349,13 @@ impl Hands {
     }
 
     /// Results nobody read within an hour.
-    fn prune_results(&self, actions: &Path) {
+    fn prune_results(&self, actions: &Dir) {
         let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
-        for p in inbox::plain_files(actions, "json") {
-            let result = p.to_string_lossy().ends_with(".result.json");
-            let old = std::fs::metadata(&p)
-                .and_then(|m| m.modified())
-                .is_ok_and(|t| t < hour_ago);
+        for name in actions.files("json") {
+            let result = name.ends_with(".result.json");
+            let old = actions.modified(&name).is_ok_and(|t| t < hour_ago);
             if result && old {
-                let _ = std::fs::remove_file(&p);
+                let _ = actions.remove(&name);
             }
         }
     }

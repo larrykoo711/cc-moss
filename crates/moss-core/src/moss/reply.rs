@@ -37,25 +37,27 @@ pub fn waiting_path(home: &Path) -> PathBuf {
 
 /// Drop a marker (the Stop hook).
 pub fn mark_stop(home: &Path, now_ms: i64) -> std::io::Result<()> {
-    let dir = super::home::ensure_real_dir(home, "stop")?;
     let name = format!("{now_ms:013}-{}", std::process::id());
-    super::home::write_if_changed(&dir.join(name), "").map(drop)
+    // Made if missing (the home too); then used only through its descriptor.
+    super::home::ensure_real_dir(home, "stop")?;
+    super::dir::Dir::open(home, "stop")?.write(&name, "")
 }
 
 /// Take every marker there is. True when there was one.
 pub fn take_stops(home: &Path) -> bool {
-    // Never through a link: a linked folder is replaced, not emptied.
-    if std::fs::symlink_metadata(stop_dir(home)).is_ok_and(|m| !m.file_type().is_dir()) {
-        let _ = super::home::ensure_real_dir(home, "stop");
-        return false;
-    }
-    let Ok(entries) = std::fs::read_dir(stop_dir(home)) else {
+    // Never through a link: a linked folder is replaced, not emptied, and
+    // the folder is held open while it is emptied (see [`super::dir`]).
+    let linked = std::fs::symlink_metadata(stop_dir(home)).is_ok_and(|m| !m.file_type().is_dir());
+    let Ok(stop) = super::dir::Dir::open(home, "stop") else {
         return false;
     };
+    if linked {
+        return false;
+    }
     let mut any = false;
-    for e in entries.flatten() {
+    for name in stop.entries().unwrap_or_default() {
         // A link is removed (the link, not what it points at) and counts.
-        if std::fs::remove_file(e.path()).is_ok() {
+        if stop.remove(&name).is_ok() {
             any = true;
         }
     }
