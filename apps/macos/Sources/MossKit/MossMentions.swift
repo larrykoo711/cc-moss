@@ -26,39 +26,6 @@ public enum MossMentions {
         }
     }
 
-    /// Which mention the pointer is on, across every paragraph's text. A
-    /// "left" only counts from the mention that was entered: with several
-    /// paragraphs (several text views), one view's leaving must not undo
-    /// another view's entering, whatever order their events come in.
-    public struct Pointer: Equatable, Sendable {
-        public private(set) var id: String?
-
-        public init(id: String? = nil) {
-            self.id = id
-        }
-
-        /// The pointer came onto `id`. True when that's a change.
-        @discardableResult
-        public mutating func enter(_ id: String) -> Bool {
-            guard self.id != id else { return false }
-            self.id = id
-            return true
-        }
-
-        /// The pointer left `id`. True when it was the one lit; a stale
-        /// leave (another mention is lit now) changes nothing.
-        @discardableResult
-        public mutating func leave(_ id: String) -> Bool {
-            guard self.id == id else { return false }
-            self.id = nil
-            return true
-        }
-
-        public mutating func clear() {
-            id = nil
-        }
-    }
-
     /// The link scheme a mention carries in rendered text.
     public static let scheme = "ccmoss-mention"
 
@@ -171,5 +138,74 @@ public enum MossMentions {
             out.append(lo..<(lo + text[r].count))
         }
         return out
+    }
+}
+
+/// Hovering mentions and their card: which badge is lit, which card shows,
+/// and what the app should start or cancel. A card follows the pointer
+/// after a moment; another badge switches it at once; leaving the badge and
+/// the card closes it after a short grace.
+public struct MentionHoverMachine: Equatable, Sendable {
+    public enum Effect: Equatable, Sendable {
+        case none
+        /// Cancel any closing on its way; nothing else changes.
+        case keep
+        /// Show this card after a moment (cancel any other timer).
+        case showLater(String)
+        /// Showing this card now (cancel any other timer).
+        case showNow(String)
+        /// Close the card after a short grace.
+        case hideLater
+    }
+
+    public private(set) var lit: String?
+    public private(set) var card: String?
+    private var onCard = false
+
+    public init() {}
+
+    public mutating func entered(_ id: String) -> Effect {
+        if lit == id && (card == id || card == nil) { return .keep }
+        lit = id
+        if card == id { return .keep }
+        if card != nil {
+            card = id
+            return .showNow(id)
+        }
+        return .showLater(id)
+    }
+
+    /// Only the badge that is lit can be left: a late "left" from the
+    /// previous one changes nothing.
+    public mutating func left(_ id: String) -> Effect {
+        guard lit == id else { return .none }
+        lit = nil
+        return .hideLater
+    }
+
+    public mutating func cardHovered(_ inside: Bool) -> Effect {
+        onCard = inside
+        if inside { return .keep }
+        return lit == nil ? .hideLater : .none
+    }
+
+    /// The moment passed: show the card if the pointer is still on `id`.
+    public mutating func showFired(_ id: String) -> Bool {
+        guard lit == id else { return false }
+        card = id
+        return true
+    }
+
+    /// The grace passed: close, unless the pointer is back on a badge or on the card.
+    public mutating func hideFired() {
+        guard lit == nil, !onCard else { return }
+        card = nil
+    }
+
+    /// The page or panel went, or a badge was clicked: nothing is hovered.
+    public mutating func reset() {
+        lit = nil
+        card = nil
+        onCard = false
     }
 }

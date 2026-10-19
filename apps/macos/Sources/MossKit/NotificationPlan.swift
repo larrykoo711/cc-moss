@@ -233,6 +233,10 @@ extension Notifier {
 
     private let notifier: Notifier
     private var asked = false
+    /// Notes on their way (waiting on the system), and those of them taken
+    /// back meanwhile: never posted after that. Both empty when idle.
+    private var inFlight: Set<String> = []
+    private var withdrawn: Set<String> = []
 
     public init(notifier: Notifier) {
         self.notifier = notifier
@@ -251,6 +255,7 @@ extension Notifier {
 
     public func withdraw(_ ids: [String]) {
         guard !ids.isEmpty else { return }
+        withdrawn.formUnion(ids.filter(inFlight.contains))
         notifier.withdraw(ids)
     }
 
@@ -258,13 +263,26 @@ extension Notifier {
     /// when it was not posted; `auth` then says why.
     @discardableResult
     public func deliver(_ note: AlertNote) async -> Bool {
+        inFlight.insert(note.id)
+        defer {
+            inFlight.remove(note.id)
+            withdrawn.remove(note.id)
+        }
         var status = await notifier.authorization()
         if status == .notDetermined, !asked {
             asked = true
             status = await notifier.requestAuthorization()
         }
         auth = status
+        // Taken back while we waited for the system: it isn't posted at all.
+        if withdrawn.contains(note.id) { return false }
         guard status == .allowed else { return false }
-        return await notifier.post(note)
+        let posted = await notifier.post(note)
+        // Taken back while it was being posted: take it back again.
+        if withdrawn.contains(note.id) {
+            notifier.withdraw([note.id])
+            return false
+        }
+        return posted
     }
 }

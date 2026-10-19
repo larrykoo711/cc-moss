@@ -45,8 +45,19 @@ public enum LangChoice: String, CaseIterable, Sendable {
 }
 
 public enum L {
-    /// Decided once at launch; tests set it directly.
-    nonisolated(unsafe) public static var lang: Lang = .detect()
+    /// The app's language: decided at launch, changed by Settings.
+    nonisolated(unsafe) public static var current: Lang = .detect()
+
+    /// A language for one task and what it calls (tests:
+    /// `L.$override.withValue(.en) { … }`), so tests running side by side
+    /// never see each other's.
+    @TaskLocal public static var override: Lang?
+
+    /// The language words are picked in: the task's own, else the app's.
+    public static var lang: Lang {
+        get { override ?? current }
+        set { current = newValue }
+    }
 
     /// The current time; screenshots pin it so demo data reads the same every time.
     nonisolated(unsafe) public static var clock: () -> Date = Date.init

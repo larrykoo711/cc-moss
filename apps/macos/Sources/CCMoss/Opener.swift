@@ -184,8 +184,8 @@ enum Opener {
         return outcome
     }
 
-    /// One plan at a time, on a queue of its own: NSAppleScript is used from
-    /// one thread at a time, and the main thread is never the one waiting.
+    /// One plan at a time, on a queue of its own: the main thread is never
+    /// the one waiting.
     private nonisolated static let queue = DispatchQueue(label: "cc-moss.opener", qos: .userInitiated)
 
     nonisolated static func execute(_ plan: LaunchPlan) async -> Outcome {
@@ -198,15 +198,31 @@ enum Opener {
     nonisolated static func runBlocking(_ plan: LaunchPlan) -> Outcome {
         switch plan {
         case .appleScript(let source):
-            guard let script = NSAppleScript(source: source) else { return .failed("AppleScript") }
-            var error: NSDictionary?
-            script.executeAndReturnError(&error)
-            guard let error else { return .opened }
-            let number = error[NSAppleScript.errorNumber] as? Int ?? 0
+            // osascript, not NSAppleScript: AppleScript in the app is only
+            // supported on the main thread, which must never wait on it.
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: Osascript.executable)
+            process.arguments = Osascript.arguments
+            let input = Pipe()
+            let err = Pipe()
+            process.standardInput = input
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = err
+            do {
+                try process.run()
+            } catch {
+                return .failed(error.localizedDescription)
+            }
+            input.fileHandleForWriting.write(Data(source.utf8))
+            try? input.fileHandleForWriting.close()
+            process.waitUntilExit()
+            let why = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            switch Osascript.result(status: process.terminationStatus, stderr: why) {
+            case .opened: return .opened
             // -1743: the user (or an MDM profile) said no to Automation.
-            if number == -1743 { return .denied }
-            let message = error[NSAppleScript.errorMessage] as? String ?? "AppleScript"
-            return .failed("\(message) (\(number))")
+            case .denied: return .denied
+            case .failed(let message): return .failed(message)
+            }
         case .process(let executable, let arguments):
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)

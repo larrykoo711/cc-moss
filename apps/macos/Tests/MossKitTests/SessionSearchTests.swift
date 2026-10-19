@@ -72,7 +72,8 @@ import Testing
     @Test func searchingIsOneRankedListThenTheClosedOnes() {
         let live = index.search("api")
         let items = SessionList.searchItems(query: "api", live: live, closed: Array(live.prefix(1)))
-        #expect(items.first == .hit(live[0], closed: false))
+        #expect(items.first == .askMoss("api"), "not what you need? ask Moss, above the results")
+        #expect(items[1] == .hit(live[0], closed: false))
         #expect(items.contains(.closedHeader))
         #expect(!items.contains(.pinnedHeader), "no Pinned while searching")
         #expect(Set(items.map(\.id)).count == items.count)

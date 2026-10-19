@@ -144,11 +144,11 @@ extension AppModel {
             return
         }
         guard replyOpenID != s.id else { return }
-        guard !sendFlow.isSending else { return }
+        guard !replyFlow.isSending else { return }
         replyOpenID = s.id
         replyDraft = ""
         replyField = SuggestionField()
-        sendFlow = .idle
+        replyFlow = .idle
         // Mid-turn Claude Code shows no suggestion: nothing to ask for.
         guard !ReplyLine.busy(s) else { return }
         let handle = s.handle
@@ -196,18 +196,18 @@ extension AppModel {
     }
 
     func closeReply() {
-        guard !sendFlow.isSending else { return }
+        guard !replyFlow.isSending else { return }
         replyOpenID = nil
     }
 
     /// Return in the line: send what's in it. Then on to the next session
     /// waiting for you, its line open, so a run of replies is just Return.
     func sendReply(_ s: Session) {
-        guard let text = ReplyLine.toSend(replyDraft), let client, sendFlow.begin() else { return }
+        guard let text = ReplyLine.toSend(replyDraft), let client, replyFlow.begin() else { return }
         Task {
             do {
                 try await client.send(target: s.target, text: text)
-                sendFlow.finish(error: nil)
+                replyFlow.finish(error: nil)
                 say(L.t("Sent to \(s.title).", "已发给 \(s.title)。"))
                 let next = ReplyLine.next(after: s.id, in: visible)
                 replyOpenID = nil
@@ -219,7 +219,7 @@ extension AppModel {
                     follow(s)
                 }
             } catch {
-                sendFlow.finish(error: Self.describe(error))
+                replyFlow.finish(error: Self.describe(error))
             }
             refresh()
         }
@@ -227,7 +227,7 @@ extension AppModel {
 
     /// ↓/↑ in the line: the next (or previous) session waiting for you.
     func moveReply(from s: Session, backwards: Bool) {
-        guard !sendFlow.isSending, let n = ReplyLine.next(after: s.id, in: visible, backwards: backwards) else { return }
+        guard !replyFlow.isSending, let n = ReplyLine.next(after: s.id, in: visible, backwards: backwards) else { return }
         selectedID = n.id
         revealTick += 1
         openReply(n)
@@ -819,7 +819,7 @@ struct FormScrim: View {
     }
 }
 
-/// The "+" beside the logo in the action bar: start a new session (⌘N).
+/// The "+" in the footer: start a new session (⌘N).
 struct NewSessionButton: View {
     let action: () -> Void
     @State private var hovering = false

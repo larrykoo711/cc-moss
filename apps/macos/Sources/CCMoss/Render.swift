@@ -83,10 +83,12 @@ enum Render {
                     await model.loadMoss()
                 }
                 model.mossStartAtTop = args.contains("--moss-top")
+                // `--moss-new-below N`: scrolled up, N new messages below.
+                model.demoNewBelow = value("--moss-new-below").flatMap(Int.init)
                 // `--moss-suggestion "<text>"`: Claude Code's guess at your reply to Moss.
                 if let guess = value("--moss-suggestion") {
                     model.demoMossSuggestion = guess
-                    model.mossSuggestion = guess
+                    model.fetchMossSuggestion()
                 }
                 model.mossTyping = args.contains("--moss-typing")
                 // `--moss-typing "/"`: with that typed (a slash shows the command list).
@@ -136,8 +138,9 @@ enum Render {
             if let id = value("--adopting") { model.adopting = [id] }
             // `--mention-hover <id>`: the card of that session's mention in Moss's words.
             if let id = value("--mention-hover") {
+                _ = model.mentionMachine.entered(id)
+                _ = model.mentionMachine.showFired(id)
                 model.mentionHover = MentionHover(id: id, anchor: .zero)
-                model.mentionPointer.enter(id)
             }
             if let p = value("--adopt-problem"), let cut = p.firstIndex(of: ":") {
                 model.adoptProblems[String(p[..<cut])] = String(p[p.index(after: cut)...])
@@ -165,7 +168,7 @@ enum Render {
                 model.selectedID = id
                 model.openReply(s)
                 try? await Task.sleep(nanoseconds: 100_000_000)
-                if args.contains("--sending") { _ = model.sendFlow.begin() }
+                if args.contains("--sending") { _ = model.replyFlow.begin() }
             }
             switch value("--form") {
             case "new":

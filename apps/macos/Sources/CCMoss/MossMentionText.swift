@@ -35,9 +35,7 @@ extension AppModel {
     /// its reply line open when it waits for you to type. A closed one: a
     /// search for its name, so the Closed section shows it.
     func goToSession(_ id: String) {
-        mentionHover = nil
-        mentionPointer.clear()
-        mentionShow?.cancel()
+        resetMentionHover()
         if let s = sessions.first(where: { $0.id == id }) {
             page = .sessions
             query = ""
@@ -54,45 +52,57 @@ extension AppModel {
     /// The pointer came onto a mention: its card after a moment, or at once
     /// when another mention's card is already showing.
     func mentionEntered(_ id: String, anchor: CGRect) {
-        mentionPointer.enter(id)
-        mentionHide?.cancel()
-        if mentionHover?.id == id {
-            mentionHover?.anchor = anchor
-            return
-        }
-        mentionShow?.cancel()
-        if mentionHover != nil {
-            mentionHover = MentionHover(id: id, anchor: anchor)
-            return
-        }
-        mentionShow = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 350_000_000)
-            guard !Task.isCancelled else { return }
-            mentionHover = MentionHover(id: id, anchor: anchor)
-        }
+        mentionAnchors[id] = anchor
+        apply(mentionMachine.entered(id))
+        if mentionHover?.id == id { mentionHover?.anchor = anchor }
     }
 
-    /// The pointer left mention `id`. Only the one lit counts: the next
-    /// badge may already have been entered.
+    /// The pointer left mention `id` (or its badge went away).
     func mentionLeft(_ id: String) {
-        guard mentionPointer.leave(id) else { return }
-        mentionShow?.cancel()
-        hideMentionCard()
-    }
-
-    /// Close the card after a short grace, unless the pointer comes back
-    /// onto the mention or the card.
-    private func hideMentionCard() {
-        mentionHide?.cancel()
-        mentionHide = Task { @MainActor in
-            try? await Task.sleep(nanoseconds: 250_000_000)
-            guard !Task.isCancelled else { return }
-            mentionHover = nil
-        }
+        apply(mentionMachine.left(id))
     }
 
     func mentionCardHovered(_ inside: Bool) {
-        if inside { mentionHide?.cancel() } else if mentionPointer.id == nil { hideMentionCard() }
+        apply(mentionMachine.cardHovered(inside))
+    }
+
+    /// The page or the panel went, or a mention was clicked: nothing stays
+    /// lit or open, and nothing on its way shows up later.
+    func resetMentionHover() {
+        mentionShow?.cancel()
+        mentionHide?.cancel()
+        mentionMachine.reset()
+        mentionHover = nil
+    }
+
+    private func apply(_ effect: MentionHoverMachine.Effect) {
+        switch effect {
+        case .none:
+            break
+        case .keep:
+            mentionHide?.cancel()
+        case let .showNow(id):
+            mentionShow?.cancel()
+            mentionHide?.cancel()
+            mentionHover = MentionHover(id: id, anchor: mentionAnchors[id] ?? .zero)
+        case let .showLater(id):
+            mentionShow?.cancel()
+            mentionHide?.cancel()
+            mentionShow = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 350_000_000)
+                guard !Task.isCancelled, mentionMachine.showFired(id) else { return }
+                mentionHover = MentionHover(id: id, anchor: mentionAnchors[id] ?? .zero)
+            }
+        case .hideLater:
+            mentionShow?.cancel()
+            mentionHide?.cancel()
+            mentionHide = Task { @MainActor in
+                try? await Task.sleep(nanoseconds: 250_000_000)
+                guard !Task.isCancelled else { return }
+                mentionMachine.hideFired()
+                if mentionMachine.card == nil { mentionHover = nil }
+            }
+        }
     }
 }
 
@@ -227,7 +237,7 @@ private struct MentionBadge: View {
         return CGRect(x: frame.minX, y: block.minY, width: frame.width, height: block.height)
     }
 
-    private var lit: Bool { model.mentionPointer.id == id }
+    private var lit: Bool { model.mentionMachine.lit == id }
     private var session: Session? { model.mentioned(id) }
     private var stateColor: Color {
         guard let s = session else { return .secondary }
@@ -268,6 +278,9 @@ private struct MentionBadge: View {
             if inside { model.mentionEntered(id, anchor: anchor) } else { model.mentionLeft(id) }
         }
         .onChange(of: block) { _, _ in followAnchor() }
+        // Gone from the page (scrolled out of a lazy list, the reply folded):
+        // it can't stay lit or keep its card.
+        .onDisappear { model.mentionLeft(id) }
         .accessibilityLabel(name)
         .accessibilityHint(L.t("Go to this session", "去这个会话"))
         .animation(.easeOut(duration: 0.1), value: lit)

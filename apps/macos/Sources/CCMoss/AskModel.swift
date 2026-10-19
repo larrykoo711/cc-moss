@@ -10,17 +10,20 @@ extension AppModel {
     static let lateFor: TimeInterval = 4
 
     /// Read the questions again: on every refresh (the state folder changed,
-    /// the panel opened). A failure shows no cards and no error: the
-    /// terminal still has the question.
+    /// the panel opened). One failed read changes nothing (a draft, the
+    /// alerts given, Mo's bubble all stay); several in a row, or the
+    /// feature switched off, and the questions count as gone.
     func loadAsks() async {
-        guard askEnabled, let client, let list = try? await client.asks() else {
+        guard askEnabled, let client else {
             asks = []
+            askFeed = AskFeed()
             let change = askDesk.reset()
             if !change.isEmpty { onAsks?(change) }
             return
         }
-        asks = list
-        let change = askDesk.update(list)
+        let list = try? await client.asks()
+        guard let change = askFeed.apply(list, to: &askDesk) else { return }
+        asks = list ?? []
         if !change.isEmpty { onAsks?(change) }
     }
 

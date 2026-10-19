@@ -15,6 +15,8 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
     case closedHeader
     /// Nothing found, live or closed: offer to ask Moss.
     case noMatch(String)
+    /// Results, but maybe not the one: a quiet "ask Moss" line above them.
+    case askMoss(String)
 
     public var id: String {
         switch self {
@@ -26,16 +28,20 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
         case let .hit(h, closed): closed ? "closed:\(h.session.id)" : h.session.id
         case .closedHeader: "header:closed"
         case .noMatch: "no-match"
+        case .askMoss: "ask-moss"
         }
     }
 }
 
 public enum SessionList {
-    /// While a query is typed: one ranked list (no folders, no Pinned), then
-    /// the closed ones that match; nothing at all → the "ask Moss" row.
+    /// While a query is typed: a quiet "ask Moss" line, one ranked list (no
+    /// folders, no Pinned), then the closed ones that match; nothing at all
+    /// → the "ask Moss" card instead.
     public static func searchItems(query: String, live: [SearchHit], closed: [SearchHit]) -> [SessionListItem] {
-        if live.isEmpty && closed.isEmpty { return [.noMatch(query.trimmingCharacters(in: .whitespaces))] }
-        var out = live.map { SessionListItem.hit($0, closed: false) }
+        let q = query.trimmingCharacters(in: .whitespaces)
+        if live.isEmpty && closed.isEmpty { return [.noMatch(q)] }
+        var out: [SessionListItem] = [.askMoss(q)]
+        out += live.map { SessionListItem.hit($0, closed: false) }
         if !closed.isEmpty {
             out.append(.closedHeader)
             out += closed.map { .hit($0, closed: true) }

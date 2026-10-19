@@ -73,13 +73,15 @@ public struct AskAlerts: Sendable {
     public mutating func gone(_ ids: [String]) -> [Told] {
         ids.compactMap { id in
             heldByPanel[id] = nil
-            guard let t = told[id] else { return nil }
-            // Remember it was decided (a question never comes back with the
-            // same id), but there is nothing left to take back.
-            told[id] = Told(alert: t.alert, destination: .none)
+            // Forgotten once taken back: a long-running app doesn't keep every
+            // question it ever saw (a question never comes back with its id).
+            guard let t = told.removeValue(forKey: id) else { return nil }
             return t.destination == .none ? nil : t
         }
     }
+
+    /// How many questions are remembered (tests: it stays small).
+    var remembered: Int { told.count }
 
     /// An event alert is about to be routed. False when a question already
     /// told you about the same session just now: skip the event's alert.

@@ -246,6 +246,8 @@ private struct MossConversation: View {
     /// (that pushed-out moment used to read as "you scrolled up", so a long
     /// reply arrived and the page stayed put).
     @State private var following = true
+    /// Moss's messages that came while you were scrolled up.
+    @State private var newBelow = 0
     /// When the conversation last grew, to tell that apart from scrolling.
     @State private var grewAt = Date.distantPast
     @State private var loadingEarlier = false
@@ -278,7 +280,11 @@ private struct MossConversation: View {
                             .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
-                        .onAppear { following = true }
+                        .onAppear {
+                            guard model.demoNewBelow == nil else { return }
+                            following = true
+                            newBelow = 0
+                        }
                         .onDisappear {
                             // Out of view because something grew: still following.
                             if Date().timeIntervalSince(grewAt) > 0.8 { following = false }
@@ -289,6 +295,21 @@ private struct MossConversation: View {
                 .padding(.bottom, 6)
             }
             .scrollIndicators(.never)
+            // Scrolled up: a way back to the newest, floating over the
+            // conversation (above the guess), so nothing moves.
+            .overlay(alignment: .bottomTrailing) {
+                if !following {
+                    JumpToLatest(count: newBelow) {
+                        following = true
+                        newBelow = 0
+                        toEnd(proxy)
+                    }
+                    .padding(.trailing, 14)
+                    .padding(.bottom, 10)
+                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                }
+            }
+            .animation(.easeOut(duration: 0.18), value: following)
             // Moss's guess sits under the conversation, which ends above it:
             // it never covers the last reply or card (user 2026-10-19).
             .safeAreaInset(edge: .bottom, spacing: 0) { MossGuessInset(model: model) }
@@ -299,13 +320,22 @@ private struct MossConversation: View {
             .defaultScrollAnchor(model.mossStartAtTop ? .top : .bottom)
             .onAppear {
                 if !model.mossStartAtTop { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                // Screenshots: as if scrolled up while this many came in.
+                if let n = model.demoNewBelow {
+                    following = false
+                    newBelow = n
+                }
             }
             .onChange(of: messages.last?.id) { _, _ in
                 // New at the end: follow it if you were following, or if it's yours.
                 grewAt = Date()
                 guard !loadingEarlier else { return }
                 if messages.last?.from == .you { following = true }
-                if following { toEnd(proxy) }
+                if following {
+                    toEnd(proxy)
+                } else if messages.last?.from == .moss {
+                    newBelow += 1
+                }
             }
             .onChange(of: thinking) { _, _ in
                 grewAt = Date()
@@ -847,6 +877,7 @@ private struct MossQuickRow: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
         .tip(L.t("Everything Moss can do", "全部快捷指令"))
+        .accessibilityLabel(L.t("Everything Moss can do", "全部快捷指令"))
     }
 
     private func rank() {
@@ -1050,6 +1081,7 @@ struct MossTerminalCard: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
                 .tip(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
+                .accessibilityLabel(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
             }
         }
         .padding(.horizontal, 10)
@@ -1331,6 +1363,7 @@ private struct MossInputBar: View {
             .focusable(false)
             .disabled(empty)
             .tip(L.t("Send  ↵", "发送  ↵"))
+            .accessibilityLabel(L.t("Send", "发送"))
             .padding(.bottom, 1)
             MossIconButton(symbol: "square.grid.2x2", tip: L.t("Back to actions", "回到常用操作")) { model.mossTyping = false }
                 .padding(.bottom, 1)
@@ -1456,6 +1489,48 @@ private struct MossGuessInset: View {
     }
 }
 
+/// "Jump to latest": a small round button over the conversation's end, with
+/// how many of Moss's messages came while you were scrolled up.
+private struct JumpToLatest: View {
+    let count: Int
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if count > 0 {
+                    Text(L.t("\(count) new", "\(count) 条新消息"))
+                        .font(.system(size: 11.5, weight: .semibold))
+                        .foregroundStyle(Theme.brand)
+                        .padding(.leading, 4)
+                }
+                Image(systemName: "arrow.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(hovering ? .primary : .secondary)
+            }
+            .padding(.horizontal, count > 0 ? 10 : 0)
+            .frame(minWidth: 32, minHeight: 32)
+            .background(Capsule().fill(Theme.raised(scheme)))
+            .overlay(Capsule().strokeBorder(Theme.hairline(scheme)))
+            .overlay(alignment: .topTrailing) {
+                if count > 0 {
+                    Circle().fill(Theme.brand).frame(width: 7, height: 7).offset(x: -2, y: 2)
+                }
+            }
+            .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 8, y: 3)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .tip(L.t("Jump to latest", "回到最新"))
+        .accessibilityLabel(L.t("Jump to latest", "回到最新"))
+    }
+}
+
 private struct MossGuessBadge: View {
     let text: String
     let open: () -> Void
@@ -1489,6 +1564,7 @@ private struct MossGuessBadge: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
                 .tip(L.t("Hide until Moss's next reply", "先收起，等 Moss 下次回复"))
+                .accessibilityLabel(L.t("Hide the guess", "收起猜测"))
             }
         }
         .padding(.horizontal, 9)

@@ -8,31 +8,24 @@ extension AppModel {
     /// every few seconds while the Moss page is on screen (Moss thinking
     /// doesn't touch the state folder). A failure keeps what was shown.
     func loadMoss() async {
-        guard let client else { return }
         // One read at a time: a refresh during a poll (or the other way
-        // round) waits for it and has it go round once more, never alongside.
-        if let running = mossLoad {
-            mossLoadAgain = true
-            await running.value
-            return
-        }
-        let task = Task { @MainActor in
-            repeat {
-                mossLoadAgain = false
-                if let status = try? await client.mossStatus() { mossDesk.update(status: status) }
-                guard let chat = try? await client.mossChat(limit: mossLimit) else { break }
-                mossLoaded = chat.messages.count
-                let newestBefore = mossDesk.chat.last { $0.from == .moss }?.id
-                let replies = mossDesk.update(chat: chat)
-                // Moss said something new: Claude Code has a new guess at your answer.
-                if mossOnScreen, mossDesk.chat.last(where: { $0.from == .moss })?.id != newestBefore { fetchMossSuggestion() }
-                if mossOnScreen { mossDesk.markRead() }
-                if !replies.isEmpty { onMossReplies?(replies) }
-            } while mossLoadAgain
-        }
-        mossLoad = task
-        await task.value
-        mossLoad = nil
+        // round) is served by one more read that starts after it, never
+        // alongside and never dropped (JoinedFlight).
+        await mossFlight.request()
+    }
+
+    /// One read of Moss's status and conversation.
+    func readMoss() async {
+        guard let client else { return }
+        if let status = try? await client.mossStatus() { mossDesk.update(status: status) }
+        guard let chat = try? await client.mossChat(limit: mossLimit) else { return }
+        mossLoaded = chat.messages.count
+        let newestBefore = mossDesk.chat.last { $0.from == .moss }?.id
+        let replies = mossDesk.update(chat: chat)
+        // Moss said something new: Claude Code has a new guess at your answer.
+        if mossOnScreen, mossDesk.chat.last(where: { $0.from == .moss })?.id != newestBefore { fetchMossSuggestion() }
+        if mossOnScreen { mossDesk.markRead() }
+        if !replies.isEmpty { onMossReplies?(replies) }
     }
 
     /// What the top of the conversation offers.
@@ -58,11 +51,13 @@ extension AppModel {
     /// has it, so the message shows as logged.
     func sayToMoss(_ text: String) {
         noteQuickUse(text)
-        // The guess was for what you'd say now; you've said something.
-        mossSuggestion = nil
+        // The guess was for what you'd say now; you've said something, and
+        // an answer still on its way is for the old turn.
+        mossGuess.sent()
         Task {
             await mossDesk.send(text)
-            refresh()
+            // Only Moss changed: read it, not the sessions and questions too.
+            await loadMoss()
         }
     }
 
@@ -70,7 +65,7 @@ extension AppModel {
         noteQuickUse(reply)
         Task {
             await mossDesk.choose(reply, on: message)
-            refresh()
+            await loadMoss()
         }
     }
 
@@ -78,23 +73,24 @@ extension AppModel {
         noteQuickUse(action.text())
         Task {
             await mossDesk.perform(action)
-            refresh()
+            await loadMoss()
         }
     }
 
     /// Ask Claude Code (through cc-moss) what you'd likely say to Moss next:
     /// off the main thread, 1.5 s at most; nothing if it has no guess.
     func fetchMossSuggestion() {
+        // Moss's turn is its newest reply; mid-turn there's nothing to ask.
+        let marker = mossDesk.chat.last { $0.from == .moss }?.id ?? "none"
+        let ticket = mossGuess.begin(marker: marker)
         if let demo = demoMossSuggestion {
-            mossSuggestion = demo
+            mossGuess.offer(demo, for: ticket)
             return
         }
         guard let moss else { return }
-        // Moss's turn is its newest reply; mid-turn there's nothing to ask.
-        let marker = mossDesk.chat.last { $0.from == .moss }?.id ?? "none"
         let busy = mossDesk.activity == .thinking
         let handle = moss.handle
-        Task { mossSuggestion = await suggestion(key: "moss", marker: marker, busy: busy, handle: handle) }
+        Task { mossGuess.offer(await suggestion(key: "moss", marker: marker, busy: busy, handle: handle), for: ticket) }
     }
 
     /// Claude Code's suggestion for a session, through the cache: asked only
@@ -102,22 +98,12 @@ extension AppModel {
     /// at 2 s and 6 s after the turn's first try.
     func suggestion(key: String, marker: String, busy: Bool, handle: String) async -> String? {
         guard let client else { return nil }
-        for _ in 0..<6 {
-            switch suggestionCache.lookup(key, marker: marker, busy: busy, now: Date()) {
-            case let .known(value):
-                return value
-            case .skip:
-                suggestionCache.forget(key)
-                return nil
-            case .ask:
-                let value = await client.suggest(handle)
-                suggestionCache.store(key, marker: marker, value: value, now: Date())
-                if value != nil { return value }
-            case let .askAt(due):
-                try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
-            }
-        }
-        return nil
+        return await SuggestionAsk.run(
+            lookup: { suggestionCache.lookup(key, marker: marker, busy: busy, now: Date()) },
+            ask: { await client.suggest(handle) },
+            store: { suggestionCache.store(key, marker: marker, value: $0, now: Date()) },
+            forget: { suggestionCache.forget(key) },
+            waitUntil: { due in try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow))) })
     }
 
     /// A session's turn marker: its last activity.

@@ -33,13 +33,20 @@ final class AppModel {
             guard query != oldValue else { return }
             selectFirst()
             // A search starts: read the closed sessions once, for its last section.
-            if !searching { closedPool = nil } else if closedPool == nil { loadClosed() }
+            if !searching {
+                closedPool = nil
+                closedRead += 1 // a read still on its way is for a search that ended
+            } else if closedPool == nil {
+                loadClosed()
+            }
         }
     }
     /// A query is typed: the Sessions page is one ranked list.
     var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
     /// Sessions closed in the last 30 days, read when a search starts.
     var closedPool: [Session]?
+    /// Which read of the closed sessions counts: a late answer to an older one is dropped.
+    @ObservationIgnored var closedRead = 0
     @ObservationIgnored let searchIndexes = SearchIndexes()
     /// Set from the summary strip: show only sessions in this state.
     var stateFilter: SessionState? { didSet { if stateFilter != oldValue { selectFirst() } } }
@@ -74,6 +81,9 @@ final class AppModel {
     var form: PanelForm? { didSet { if form != oldValue { sendFlow = .idle } } }
     /// A message to a session on its way (idle, sending, failed).
     var sendFlow = SendFlow()
+    /// The reply line's own send: a form opening or closing must never
+    /// unlock a reply still on its way (that sent it twice).
+    var replyFlow = SendFlow()
     /// After a send, a note or a rename the session moves in the list: keep
     /// it selected and in view as the refreshed order arrives.
     @ObservationIgnored var reveal: (id: String, until: Date)?
@@ -155,17 +165,27 @@ final class AppModel {
     /// The session mention in Moss's words whose card is showing.
     var mentionHover: MentionHover?
     /// The mention under the pointer right now: lit at once, before its card.
-    var mentionPointer = MossMentions.Pointer()
+    var mentionMachine = MentionHoverMachine()
+    /// Where each hovered mention is, for its card.
+    @ObservationIgnored var mentionAnchors: [String: CGRect] = [:]
     @ObservationIgnored var mentionShow: Task<Void, Never>?
     @ObservationIgnored var mentionHide: Task<Void, Never>?
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
-    /// Claude Code's guess at what you'd say to Moss next (its own input box).
-    var mossSuggestion: String?
+    /// Claude Code's guess at what you'd say to Moss next, tied to the reply
+    /// it answers (a late answer after you sent something is dropped).
+    var mossGuess = MossGuess()
+    /// The guess to offer now: for Moss's newest reply, while it isn't thinking.
+    var mossSuggestion: String? {
+        mossGuess.shown(newestReply: mossDesk.chat.last { $0.from == .moss }?.id ?? "none", waiting: mossDesk.waiting != nil)
+    }
     /// The badge for that guess was closed: hidden until Moss's next reply (its id).
     var mossGuessHiddenFor: String?
     /// What cc-moss suggest said per session and turn (memory only).
     @ObservationIgnored var suggestionCache = SuggestionCache()
+    /// Screenshots only: the conversation as if scrolled up while this many
+    /// of Moss's messages came in.
+    @ObservationIgnored var demoNewBelow: Int?
     /// Screenshots only: Moss's suggestion, never asked of cc-moss.
     @ObservationIgnored var demoMossSuggestion: String?
     /// The new-session form's fields; kept here so they survive the panel
@@ -178,6 +198,8 @@ final class AppModel {
     /// and the cards that answer them.
     var asks: [Ask] = []
     var askDesk = AskDesk()
+    /// Failed `ask list` reads in a row (one alone changes nothing).
+    @ObservationIgnored var askFeed = AskFeed()
     /// Everything waiting on you, worked through on the panel's "To Do" page.
     var askQueue = AskQueue()
     /// The panel page the side rail has picked.
@@ -187,18 +209,25 @@ final class AppModel {
             if page != .moss {
                 mossTyping = false
                 mossQuickOpen = false
+                if oldValue == .moss { resetMentionHover() }
             } else if oldValue != .moss {
                 fetchMossSuggestion()
-                // Opened again: the latest 30, every reply folded.
+                // Opened again: the latest 30, every reply folded, read now.
                 mossLimit = MossPaging.page
                 mossExpanded = []
+                Task { await loadMoss() }
             }
             if page == .moss && panelShown { mossDesk.markRead() }
         }
     }
     /// The panel is on screen (the Moss page counts as read only then).
     var panelShown = false {
-        didSet { if panelShown && page == .moss { mossDesk.markRead() } }
+        didSet {
+            if panelShown && page == .moss { mossDesk.markRead() }
+            if !panelShown { resetMentionHover() }
+            // The daemon's "first panel open of the day" checkup reads this.
+            if panelShown && !oldValue, let dir = watchedDir { try? PanelOpenedMark.touch(stateDir: dir) }
+        }
     }
     /// Talking to Moss (T2.3): its status and the conversation.
     let mossDesk = MossDesk { _ in throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
@@ -214,9 +243,8 @@ final class AppModel {
     var mossLimit = MossPaging.page
     /// Moss's replies you unfolded, while the page is open.
     var mossExpanded: Set<String> = []
-    /// A Moss read is under way; another one waits for it instead of piling up.
-    @ObservationIgnored var mossLoad: Task<Void, Never>?
-    @ObservationIgnored var mossLoadAgain = false
+    /// Moss reads, one at a time; a request waits for a read that starts after it.
+    @ObservationIgnored lazy var mossFlight = JoinedFlight { [weak self] in await self?.readMoss() }
     /// Screenshots only: the conversation opens scrolled to its top.
     @ObservationIgnored var mossStartAtTop = false
     /// How many messages the last read returned (before digests are hidden).
@@ -300,8 +328,10 @@ final class AppModel {
     func loadClosed() {
         guard let client else { return }
         closedPool = []
+        closedRead += 1
+        let read = closedRead
         Task {
-            guard let snap = try? await client.snapshotAll() else { return }
+            guard let snap = try? await client.snapshotAll(), read == closedRead else { return }
             let since = Date().addingTimeInterval(-30 * 86_400)
             closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && $0.lastActiveAt > since }
         }
@@ -388,6 +418,8 @@ final class AppModel {
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
+            // Suggestions of sessions that ended or went: forgotten.
+            suggestionCache.keep(only: Set(sessions.filter { $0.state != .closed }.map(\.id)).union(["moss"]))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }
             if let reveal, reveal.until > Date(), visible.contains(where: { $0.id == reveal.id }) {
@@ -396,8 +428,10 @@ final class AppModel {
             } else if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) {
                 selectFirst()
             }
-            await loadAsks()
-            await loadMoss()
+            // The questions and Moss side by side: each can take a while.
+            async let asks: Void = loadAsks()
+            async let moss: Void = loadMoss()
+            _ = await (asks, moss)
         } catch MossClient.Failure.newerSchema {
             phase = .needsUpgrade
         } catch MossClient.Failure.command(let message) {

@@ -52,28 +52,6 @@ import Testing
         #expect(found("改", [.init("改", id: "x")]).isEmpty)
     }
 
-    @Test func leavingOneMentionDoesntUndoEnteringAnother() {
-        // Two paragraphs, two text views: the second view's "entered" can
-        // arrive before the first view's "left".
-        var pointer = MossMentions.Pointer()
-        pointer.enter("A")
-        pointer.enter("B")
-        let stale = pointer.leave("A")
-        #expect(!stale, "a stale leave")
-        #expect(pointer.id == "B")
-        let left = pointer.leave("B")
-        #expect(left)
-        #expect(pointer.id == nil)
-    }
-
-    @Test func enteringTheSameMentionAgainIsNoChange() {
-        var pointer = MossMentions.Pointer()
-        let first = pointer.enter("A")
-        let again = pointer.enter("A")
-        #expect(first)
-        #expect(!again)
-    }
-
     @Test func otherLinksAreNotMentions() {
         #expect(MossMentions.id(of: URL(string: "https://example.com/x")!) == nil)
         #expect(MossMentions.url("01B").flatMap(MossMentions.id(of:)) == "01B")
