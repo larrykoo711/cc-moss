@@ -80,6 +80,12 @@ struct PanelView: View {
                         .padding(.top, 10)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                if model.phase == .ready, case let state = model.providerState, state != .hidden {
+                    ProviderBannerView(model: model, state: state)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 if model.phase == .ready && !model.sessions.isEmpty {
                     StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
                         .padding(.horizontal, 10)
@@ -151,6 +157,7 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
+        .animation(.easeOut(duration: 0.2), value: model.providerState)
         .animation(.easeOut(duration: 0.2), value: model.askDesk)
         .animation(.easeOut(duration: 0.15), value: model.page)
         .animation(.easeOut(duration: 0.2), value: QueueNudge.shows(model))
@@ -277,7 +284,7 @@ struct PanelView: View {
                 command: "cc-moss update",
                 copy: copy
             )
-        case .ready where model.sessions.isEmpty:
+        case .ready where model.sessions.isEmpty && model.archived.isEmpty:
             GuideCard(
                 symbol: "sparkles",
                 title: L.t("No sessions yet", "还没有会话"),
@@ -286,7 +293,8 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
+        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty
+            && model.archivedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -313,6 +321,8 @@ struct PanelView: View {
                         case let .row(s, pinned): row(s, pinned: pinned)
                         case let .hit(h, closed): row(h.session, pinned: model.pins.contains(h.session.id), hit: h, closed: closed)
                         case .closedHeader: ClosedHeader()
+                        case let .archivedHeader(count): ArchivedGroupHeader(model: model, count: count)
+                        case .archivedResultsHeader: ArchivedResultsHeader()
                         case let .noMatch(q): AskMossCard(query: q) { model.askMossToFind(q) }
                         case let .askMoss(q): AskMossLine(query: q) { model.askMossToFind(q) }
                         }
@@ -412,12 +422,13 @@ struct PanelView: View {
                        problem: model.restoreProblem(s) ?? (closed ? nil : model.adoptProblems[s.id]),
                        pinned: pinned,
                        lineOpen: lineOpen,
-                       pin: s.isMoss ? nil : { model.togglePin(s) },
+                       pin: s.isMoss || s.isArchived ? nil : { model.togglePin(s) },
                        restoring: (s.state == .interrupted || closed) && model.restoreFlow.isRunning(s.id),
                        highlight: hit?.nameRanges ?? [],
                        folder: hit.map { _ in Self.folderName(s) },
                        reason: hit?.reason.map(Self.reasonText),
-                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…") : nil)
+                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…")
+                           : model.restarting.contains(s.id) ? L.t("Restarting…", "正在重开…") : nil)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -596,6 +607,28 @@ struct PanelView: View {
                                disabled: wait != nil) {
                 model.askToAdopt(s)
             }
+        case .archive:
+            return PanelAction(title: L.t("Archive", "归档"), icon: Icons.archive, shortcut: "",
+                               help: L.t("Put it away in Archived. Bring it back any time.", "收进已归档，随时可以拿回来。")) {
+                model.archive(s)
+            }
+        case .unarchive:
+            return PanelAction(title: L.t("Bring Back", "拿回来"), icon: Icons.unarchive, shortcut: "↵",
+                               help: L.t("Put it back in the list.", "放回列表里。")) {
+                model.unarchive(s)
+            }
+        case .cleanUp:
+            return PanelAction(title: L.t("Clean Up", "清理"), icon: Icons.cleanUp, shortcut: "",
+                               help: L.t("Ask Moss to delete it. Moss asks you first, and the chat goes to the Trash.",
+                                         "让 Moss 删掉它。Moss 会先问你，对话记录进废纸篓。")) {
+                model.cleanUp(s)
+            }
+        case .restart:
+            return PanelAction(title: L.t("Restart", "重开"), icon: Icons.restart, shortcut: "",
+                               help: L.t("Restart it right where it is to use the new provider. The conversation carries on.",
+                                         "在原地重开，用上新供应商，对话接着来。")) {
+                model.restart(s)
+            }
         }
     }
 
@@ -625,11 +658,12 @@ struct PanelView: View {
         case .app:
             return appSections
         case let .session(id, full):
-            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
+            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.archived.first(where: { $0.id == id })
+                ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
             let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
             var sections = (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
-            // Moss is pinned already, above everything.
-            if !s.isMoss { sections.append([pinAction(for: s)]) }
+            // Moss is pinned already, above everything; archived ones aren't in the list.
+            if !s.isMoss && !s.isArchived { sections.append([pinAction(for: s)]) }
             return sections
         }
     }

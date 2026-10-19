@@ -93,6 +93,18 @@ enum Icons {
     /// The folded group of sessions that stopped long ago.
     static let older = "clock.arrow.circlepath"
     static let expand = "chevron.right"
+    /// Archived sessions, and putting one there.
+    static let archive = "archivebox"
+    /// Back out of Archived.
+    static let unarchive = "tray.and.arrow.up"
+    /// Ask Moss to delete archived sessions.
+    static let cleanUp = "trash"
+    /// Restart in place to use the new provider.
+    static let restart = "arrow.clockwise.circle"
+    /// A provider switch that just works.
+    static let provider = "arrow.left.arrow.right"
+    /// One that needs a restart.
+    static let providerRestart = "arrow.clockwise.circle.fill"
     /// Start a new named session.
     static let newSession = "plus"
     /// Pick another folder for it.

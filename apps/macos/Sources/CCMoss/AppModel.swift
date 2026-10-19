@@ -21,6 +21,17 @@ final class AppModel {
     /// Moss, kept apart from `sessions`: pinned on top of the list, never
     /// counted, restored or dismissed.
     var moss: Session? { didSet { if moss != oldValue { syncIcon() } } }
+    /// Archived sessions (T2.5), kept apart from `sessions` like Moss: never
+    /// counted, offered for restore or shown in the folders.
+    var archived: [Session] = []
+    /// The "Archived" group is open.
+    var archivedExpanded = false
+    /// The line after a provider switch (T2.6), fed by the event stream.
+    var providerBanner = ProviderBanner()
+    /// Sessions being restarted from their row right now.
+    var restarting: Set<String> = []
+    /// "Restart All" is running.
+    var restartingAll = false
 
     /// The session with this id, Moss included (alerts name and open it).
     func session(_ id: String) -> Session? {
@@ -106,8 +117,9 @@ final class AppModel {
     /// The Sessions page, flat: headings and rows, each row once, its pin
     /// taken from the section it's in.
     var listItems: [SessionListItem] {
-        if searching { return SessionList.searchItems(query: query, live: searchHits, closed: closedHits) }
-        return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded)
+        if searching { return SessionList.searchItems(query: query, live: searchHits, archived: archivedHits, closed: closedHits) }
+        return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded,
+                                 archived: archivedShown, archivedExpanded: archivedExpanded)
     }
     /// You typed in the line: a suggestion arriving later leaves it alone.
     /// Claude Code's suggestion in that line: quiet until you touch it.
@@ -307,8 +319,9 @@ final class AppModel {
     /// folders, the folded group only while it is open. Never Moss: it has
     /// its own page (user 2026-10-19).
     var visible: [Session] {
-        if searching { return searchHits.map(\.session) }
+        if searching { return (searchHits + archivedHits).map(\.session) }
         return pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+            + (archivedExpanded ? archivedShown : [])
     }
 
     /// Ranked results for the query, the state filter applied.
@@ -333,7 +346,7 @@ final class AppModel {
         Task {
             guard let snap = try? await client.snapshotAll(), read == closedRead else { return }
             let since = Date().addingTimeInterval(-30 * 86_400)
-            closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && $0.lastActiveAt > since }
+            closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && !$0.isArchived && $0.lastActiveAt > since }
         }
     }
 
@@ -413,7 +426,10 @@ final class AppModel {
             let snap = try await client.snapshot()
             let split = Grouping.splitMoss(snap.sessions)
             moss = split.moss
-            sessions = split.others
+            // Archived ones live in their own group, out of every count.
+            let shelf = Archive.split(split.others)
+            if archived != shelf.archived { archived = shelf.archived }
+            sessions = shelf.open
             // Pins of sessions that are gone or closed go (saved with the next pin).
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
@@ -523,6 +539,8 @@ final class SearchIndexes {
     private var liveIndex = SearchIndex([])
     private var closedKey: [String] = []
     private var closedIndex = SearchIndex([])
+    private var archivedKey: [String] = []
+    private var archivedIndex = SearchIndex([])
 
     private static func key(_ list: [Session]) -> [String] {
         list.map { "\($0.id)|\($0.title)|\($0.cwd)|\($0.lastActiveAt.timeIntervalSince1970)|\($0.lastPrompt ?? "")|\($0.notes.note ?? "")|\($0.state)" }
@@ -535,6 +553,15 @@ final class SearchIndexes {
             liveIndex = SearchIndex(sessions, folders: folders)
         }
         return liveIndex
+    }
+
+    func archived(_ sessions: [Session]) -> SearchIndex {
+        let k = Self.key(sessions)
+        if k != archivedKey {
+            archivedKey = k
+            archivedIndex = SearchIndex(sessions)
+        }
+        return archivedIndex
     }
 
     func closed(_ sessions: [Session]) -> SearchIndex {

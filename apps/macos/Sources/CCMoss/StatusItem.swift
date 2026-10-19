@@ -488,6 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }, toPet: { [weak self] alert in self?.pet?.take(alert) })
         let feed = EventFeed(model: model)
         feed.listen { [weak self] events in
+            self?.model.providerBanner.take(events)
             self?.pet?.received(events)
             alerts.handle(events)
         }
