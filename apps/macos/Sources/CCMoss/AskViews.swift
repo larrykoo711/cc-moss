@@ -135,7 +135,7 @@ struct AskCardBody: View {
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(card.ask.questions.enumerated()), id: \.offset) { i, q in
-                    ReviewRow(index: i, question: q, answer: card.picks[i].joined(separator: L.t(", ", "、"))) {
+                    ReviewRow(index: i, question: q, answer: card.picks[i].map { OptionLabel.split($0).title }.joined(separator: L.t(", ", "、"))) {
                         act { $0.revisit(i); return nil }
                     }
                 }
@@ -204,10 +204,22 @@ struct OptionButton: View {
             HStack(alignment: .top, spacing: 10) {
                 mark.padding(.top, 1)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(option.label)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(.primary)
-                        .fixedSize(horizontal: false, vertical: true)
+                    let label = OptionLabel.split(option.label)
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(label.title)
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if label.recommended {
+                            // Claude's "(Recommended)", as a small tag.
+                            Text(L.t("Recommended", "推荐"))
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Theme.brand)
+                                .padding(.horizontal, 5)
+                                .padding(.vertical, 1)
+                                .background(Capsule().fill(Theme.brand.opacity(scheme == .dark ? 0.2 : 0.1)))
+                        }
+                    }
                     if let d = option.description {
                         Text(d)
                             .font(.system(size: 11.5))
