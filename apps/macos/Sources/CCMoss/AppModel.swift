@@ -230,9 +230,8 @@ final class AppModel {
     var mossLimit = MossPaging.page
     /// Moss's replies you unfolded, while the page is open.
     var mossExpanded: Set<String> = []
-    /// A Moss read is under way; another one waits for it instead of piling up.
-    @ObservationIgnored var mossLoad: Task<Void, Never>?
-    @ObservationIgnored var mossLoadAgain = false
+    /// Moss reads, one at a time; a request waits for a read that starts after it.
+    @ObservationIgnored lazy var mossFlight = JoinedFlight { [weak self] in await self?.readMoss() }
     /// Screenshots only: the conversation opens scrolled to its top.
     @ObservationIgnored var mossStartAtTop = false
     /// How many messages the last read returned (before digests are hidden).
@@ -404,6 +403,8 @@ final class AppModel {
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
+            // Suggestions of sessions that ended or went: forgotten.
+            suggestionCache.keep(only: Set(sessions.filter { $0.state != .closed }.map(\.id)).union(["moss"]))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }
             if let reveal, reveal.until > Date(), visible.contains(where: { $0.id == reveal.id }) {
@@ -412,8 +413,10 @@ final class AppModel {
             } else if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) {
                 selectFirst()
             }
-            await loadAsks()
-            await loadMoss()
+            // The questions and Moss side by side: each can take a while.
+            async let asks: Void = loadAsks()
+            async let moss: Void = loadMoss()
+            _ = await (asks, moss)
         } catch MossClient.Failure.newerSchema {
             phase = .needsUpgrade
         } catch MossClient.Failure.command(let message) {

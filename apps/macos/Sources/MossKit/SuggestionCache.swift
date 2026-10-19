@@ -62,4 +62,38 @@ public struct SuggestionCache: Sendable {
     public mutating func forget(_ key: String) {
         entries[key] = nil
     }
+
+    /// Forget every key but these (sessions that closed or went).
+    public mutating func keep(only keys: Set<String>) {
+        entries = entries.filter { keys.contains($0.key) }
+    }
+}
+
+/// Asking `cc-moss suggest` through the cache: a known answer is used, a
+/// busy session asks nothing, and "none" is asked again when the cache says
+/// (2 s and 6 s after the first try) before it's believed.
+public enum SuggestionAsk {
+    public static func run(lookup: () -> SuggestionCache.Lookup,
+                           ask: () async -> String?,
+                           store: (String?) -> Void,
+                           forget: () -> Void,
+                           waitUntil: (Date) async -> Void,
+                           tries: Int = 6) async -> String? {
+        for _ in 0..<tries {
+            switch lookup() {
+            case let .known(value):
+                return value
+            case .skip:
+                forget()
+                return nil
+            case .ask:
+                let value = await ask()
+                store(value)
+                if value != nil { return value }
+            case let .askAt(due):
+                await waitUntil(due)
+            }
+        }
+        return nil
+    }
 }

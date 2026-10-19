@@ -112,3 +112,43 @@ public actor SingleFlight {
         running = false
     }
 }
+
+/// Like `SingleFlight`, but every request waits for a run that started
+/// after it was made: a burst shares one more run, and nobody's request is
+/// answered by a run that began before it (and may have missed its change).
+public actor JoinedFlight {
+    private let work: @Sendable () async -> Void
+    private var running = false
+    private var again = false
+    private var started = 0
+    private var finished = 0
+    private var waiters: [(run: Int, done: CheckedContinuation<Void, Never>)] = []
+
+    public init(_ work: @escaping @Sendable () async -> Void) {
+        self.work = work
+    }
+
+    public func request() async {
+        let run = started + 1
+        if running {
+            again = true
+        } else {
+            running = true
+            Task { await loop() }
+        }
+        await withCheckedContinuation { waiters.append((run, $0)) }
+    }
+
+    private func loop() async {
+        repeat {
+            again = false
+            started += 1
+            await work()
+            finished += 1
+            let ready = waiters.filter { $0.run <= finished }
+            waiters.removeAll { $0.run <= finished }
+            ready.forEach { $0.done.resume() }
+        } while again
+        running = false
+    }
+}
