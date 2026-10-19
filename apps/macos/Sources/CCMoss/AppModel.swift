@@ -67,6 +67,10 @@ final class AppModel {
     @ObservationIgnored var reveal: (id: String, until: Date)?
     /// Bumped to scroll the selected row into view.
     var revealTick = 0
+    /// Sessions pinned to the top of the list (this Mac only).
+    var pins = Pins.load()
+    /// Off for screenshots: their pins are never saved.
+    @ObservationIgnored var pinsPersist = true
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
     /// Claude Code's guess at what you'd say to Moss next (its own input box).
@@ -163,7 +167,21 @@ final class AppModel {
     /// Projects after the search, in display order. Sessions that stopped
     /// long ago are left out: they fold into `olderShown`.
     var projects: [Project] {
-        Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups.listed(sessions)))
+        Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups.listed(unpinned)))
+    }
+
+    /// Sessions you pinned, in pin order, after the search and the state filter.
+    var pinnedShown: [Session] {
+        pins.split(sessions).pinned.filter { Filter.keeps($0, label: $0.title, query: query, state: stateFilter) }
+    }
+
+    /// Everything not pinned: the folder groups and the older group.
+    var unpinned: [Session] { pins.split(sessions).rest }
+
+    /// Pin a session to the top of the list, or unpin it.
+    func togglePin(_ s: Session) {
+        pins.toggle(s.id)
+        if pinsPersist { pins.save() }
     }
 
     /// Moss's pinned row, unless the search or the state filter hides it.
@@ -175,7 +193,7 @@ final class AppModel {
     /// Sessions in the order the arrow keys walk them (Moss first, the
     /// folded group only while it is open).
     var visible: [Session] {
-        (pinnedMoss.map { [$0] } ?? []) + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+        (pinnedMoss.map { [$0] } ?? []) + pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
     }
 
     var selected: Session? {
@@ -248,6 +266,9 @@ final class AppModel {
             let split = Grouping.splitMoss(snap.sessions)
             moss = split.moss
             sessions = split.others
+            // Pins of sessions that are gone or closed go (saved with the next pin).
+            let kept = pins.pruned(keeping: sessions)
+            if kept != pins { pins = kept }
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
             phase = .ready
             if let dir = snap.stateDir { watch(dir) }

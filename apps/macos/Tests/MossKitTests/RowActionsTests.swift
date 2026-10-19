@@ -11,7 +11,7 @@ import Testing
 
     @Test func aLiveSessionShowsRenameMessageAndOpen() {
         let a = RowActions(list[0], hopeless: false)
-        #expect(a.inline == [.rename, .message, .open])
+        #expect(a.inline == [.message, .open, .rename])
         #expect(a.more == [[.note], [.copyCommand, .copyPath]])
     }
 

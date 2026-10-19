@@ -117,6 +117,9 @@ enum Render {
                 _ = model.restoreFlow.begin(.one(id))
                 model.restoreFlow.finish(.one(id), report: RestoreReport(results: [RestoreResult(id: id, name: id, ok: false, reason: reason)]))
             }
+            // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
+            model.pinsPersist = false
+            model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
             if let id = value("--select") { model.selectedID = id }
             switch value("--form") {
             case "new":

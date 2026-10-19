@@ -263,7 +263,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedMoss == nil:
+        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedMoss == nil && model.pinnedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -283,6 +283,11 @@ struct PanelView: View {
                     if let moss = model.pinnedMoss {
                         MossHeader()
                         row(moss)
+                    }
+                    let pinned = model.pinnedShown
+                    if !pinned.isEmpty {
+                        PinnedHeader()
+                        ForEach(pinned) { s in row(s) }
                     }
                     ForEach(model.projects) { project in
                         SectionHeader(project: project)
@@ -337,6 +342,8 @@ struct PanelView: View {
                        menuOpen: menuOpen,
                        perform: { perform($0) },
                        problem: model.restoreProblem(s),
+                       pinned: model.pins.contains(s.id),
+                       pin: s.isMoss ? nil : { model.togglePin(s) },
                        restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
                 .contentShape(Rectangle())
         }
@@ -427,6 +434,15 @@ struct PanelView: View {
     }
 
     /// What one row action looks like and does.
+    /// Pin to the top of the list, or unpin (⌘P).
+    private func pinAction(for s: Session) -> PanelAction {
+        let pinned = model.pins.contains(s.id)
+        return PanelAction(title: pinned ? L.t("Unpin", "取消置顶") : L.t("Pin", "置顶"),
+                           icon: pinned ? "pin.slash" : "pin", shortcut: "⌘P") {
+            model.togglePin(s)
+        }
+    }
+
     private func action(_ kind: RowAction, for s: Session) -> PanelAction {
         switch kind {
         case .open:
@@ -514,7 +530,10 @@ struct PanelView: View {
         case let .session(id, full):
             guard let s = model.sessions.first(where: { $0.id == id }) ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
             let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
-            return (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
+            var sections = (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
+            // Moss is pinned already, above everything.
+            if !s.isMoss { sections.append([pinAction(for: s)]) }
+            return sections
         }
     }
 
@@ -644,6 +663,8 @@ struct PanelView: View {
         switch press.characters.lowercased() {
         case "k": commandK()
         case "r": model.refresh()
+        case "p":
+            if let s = model.selected, !s.isMoss, model.page == .sessions { model.togglePin(s) }
         case "n" where model.phase == .ready: model.startNewSession()
         case "e":
             // Say something to the session; one that can't take input gets a note instead.

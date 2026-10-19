@@ -55,7 +55,8 @@ public struct RowActions: Equatable, Sendable {
         // Moss is never dismissed: only switching it off in Settings stops it.
         let close: [RowAction] = Close.allowed(s) && primary != .stopReminding && !s.isMoss ? [.close] : []
 
-        let inline = talk + [primary]
+        // Left to right (user 2026-10-19): send a message, open, rename.
+        let inline = talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
         let all = [[primary] + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
             .filter { !$0.isEmpty }
         self.primary = primary

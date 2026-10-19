@@ -165,6 +165,23 @@ struct SectionHeader: View {
     }
 }
 
+/// Above the sessions you pinned.
+struct PinnedHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(L.t("Pinned", "已置顶"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+}
+
 /// Above Moss's pinned row: it is cc-moss's own and always there.
 struct MossHeader: View {
     var body: some View {
@@ -203,6 +220,11 @@ struct SessionRow: View {
     var perform: (PanelAction) -> Void = { _ in }
     /// Why it could not be brought back; replaces the second line.
     var problem: String?
+    /// Pinned to the top: a filled pin after the name, always.
+    var pinned = false
+    /// Pin or unpin; nil where there's no pin (Moss). On hover an outline
+    /// pin offers it.
+    var pin: (() -> Void)?
     /// On its way back right now.
     var restoring = false
     @Environment(\.colorScheme) private var scheme
@@ -215,6 +237,9 @@ struct SessionRow: View {
                     Text(session.title)
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
+                    if let pin, pinned || hovered {
+                        PinButton(pinned: pinned, action: pin)
+                    }
                     if !session.inTmux {
                         Image(systemName: Icons.outsideTmux)
                             .font(.system(size: 10, weight: .semibold))
@@ -498,5 +523,29 @@ struct RowActionButton: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
         .tip(action.help ?? action.title)
         .accessibilityLabel(action.title)
+    }
+}
+
+/// The pin after a session's name: outline on hover to pin it, filled while
+/// it's pinned (click again to unpin).
+struct PinButton: View {
+    let pinned: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(45))
+                .foregroundStyle(pinned ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(hovering ? .secondary : .tertiary))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .tip(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
+        .accessibilityLabel(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
     }
 }
