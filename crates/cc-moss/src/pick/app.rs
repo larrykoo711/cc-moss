@@ -104,10 +104,23 @@ impl Choice {
     fn for_item(item: &Item) -> Vec<Choice> {
         match item {
             Item::New => vec![],
+            // cc-moss keeps Moss running: there is no ending it here.
+            Item::Session(s) if s.claude.as_ref().is_some_and(|c| c.moss) => {
+                vec![Choice::Open, Choice::Note]
+            }
             Item::Session(s) if s.claude.is_some() => vec![Choice::Open, Choice::Note, Choice::End],
             Item::Session(_) => vec![Choice::Open, Choice::End],
             Item::Interrupted(_) => vec![Choice::Restore, Choice::Note, Choice::Remove],
         }
+    }
+}
+
+/// Whether `item` is Moss's session.
+fn is_moss(item: &Item) -> bool {
+    match item {
+        Item::Session(s) => s.claude.as_ref().is_some_and(|c| c.moss),
+        Item::Interrupted(r) => r.moss,
+        Item::New => false,
     }
 }
 
@@ -467,6 +480,9 @@ impl App {
             }
             KeyCode::Right => {
                 if let Some(item) = self.selected().filter(|i| *i != Item::New) {
+                    if is_moss(&item) {
+                        self.message = Some(crate::cmd::moss::protected_hint());
+                    }
                     self.mode = Mode::Menu {
                         choices: Choice::for_item(&item),
                         cursor: 0,
@@ -537,7 +553,13 @@ impl App {
     fn confirm(&mut self, key: KeyEvent, yes: bool) -> Action {
         let end = |app: &mut App| {
             app.mode = Mode::Browse;
-            app.selected().map_or(Action::None, Action::End)
+            match app.selected() {
+                Some(item) if is_moss(&item) => {
+                    app.message = Some(crate::cmd::moss::protected_hint());
+                    Action::None
+                }
+                selected => selected.map_or(Action::None, Action::End),
+            }
         };
         match key.code {
             KeyCode::Left | KeyCode::Right | KeyCode::Tab => {
@@ -605,6 +627,7 @@ mod tests {
             last_active_ms: at,
             busy: false,
             preview: None,
+            moss: false,
         }
     }
 
@@ -795,6 +818,35 @@ mod tests {
         assert!(
             matches!(&a.mode, Mode::Menu { choices, .. } if choices == &[Choice::Restore, Choice::Note, Choice::Remove])
         );
+    }
+
+    #[test]
+    fn moss_cannot_be_ended_from_pick() {
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        let mut moss = claude("moss", "/s/moss", 20, false);
+        if let Item::Session(s) = &mut moss {
+            s.claude.as_mut().unwrap().moss = true;
+        }
+        let mut a = App::new(vec![moss, claude("web", "/p/acme", 9, true)], vec![]);
+        assert_eq!(a.selected().unwrap().title(), "moss");
+        a.handle(key(KeyCode::Right));
+        assert!(
+            matches!(&a.mode, Mode::Menu { choices, .. } if choices == &[Choice::Open, Choice::Note]),
+            "no End for Moss: {:?}",
+            a.mode
+        );
+        assert!(
+            a.message.as_deref().is_some_and(|m| m.contains("Settings")),
+            "{:?}",
+            a.message
+        );
+        // Even a confirmation reached some other way ends nothing.
+        a.mode = Mode::Confirm { yes: true };
+        assert_eq!(a.handle(key(KeyCode::Enter)), Action::None);
+        assert!(a
+            .message
+            .as_deref()
+            .is_some_and(|m| m.contains("cc-moss moss stop")));
     }
 
     #[test]

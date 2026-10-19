@@ -8,6 +8,7 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: AppModel
     @FocusState private var searchFocused: Bool
+    @FocusState private var replyFocused: Bool
     /// The open menu: one session's, or cc-moss's own.
     @State var menu: PanelMenu?
     @State private var toast: String?
@@ -30,45 +31,23 @@ struct PanelView: View {
     @State private var hoverGate = HoverGate()
 
     var body: some View {
-        VStack(spacing: 0) {
-            searchBar
-            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
-            if AccessLostBanner.shows() {
-                AccessLostBanner()
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-            if model.phase == .ready && !model.sessions.isEmpty {
-                StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
-                    .padding(.horizontal, 10)
-                    .padding(.top, 10)
-                    .padding(.bottom, 2)
-                if RestoreBanner.shows(model) {
-                    RestoreBanner(model: model)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 8)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
-                }
-            }
-            content
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            actionBar
+        HStack(spacing: 0) {
+            NavRail(model: model, appMenu: { toggleMenu(.app) }, appMenuOpen: menu == .app)
+            page
         }
-        .frame(width: Theme.panelWidth, height: Theme.panelHeight)
-        // Keyboard focus lives in the search field; buttons never take it,
-        // so no focus ring lands on the filter or the action pill.
-        .focusEffectDisabled()
-        .tooltipLayer()
-        .background(Theme.surface(scheme))
+        .frame(width: Theme.panelWidth, height: model.panelHeight)
         .overlayPreferenceValue(MenuAnchorKey.self) { anchor in
             if let menu {
                 // Opened without a click (screenshots start with it open): build the items now.
                 let sections = menuSections.isEmpty ? sections(for: menu) : menuSections
                 GeometryReader { geo in
                     ZStack(alignment: .topLeading) {
-                        // A click anywhere else closes it, as a menu does.
-                        Color.clear.contentShape(Rectangle()).onTapGesture { closeMenu() }
+                        // A click anywhere else closes it, as a menu does: a button,
+                        // since tap gestures don't fire here once the panel has
+                        // the keyboard, and over the whole panel, rail included.
+                        Button { closeMenu() } label: { Color.clear.contentShape(Rectangle()) }
+                            .buttonStyle(.plain)
+                            .focusable(false)
                         ActionsMenu(sections: sections, highlighted: $menuIndex) { closeMenu() }
                             .offset(menuOffset(menu, sections: sections, row: anchor.map { geo[$0] }, in: geo.size))
                     }
@@ -76,6 +55,66 @@ struct PanelView: View {
                 .transition(.opacity)
             }
         }
+        .background(Theme.surface(scheme))
+        .onChange(of: model.queueItems.isEmpty) { _, empty in if empty { model.askQueue.emptied() } }
+        .onChange(of: model.page) { _, page in if page == .sessions { searchFocused = true } }
+    }
+
+    private var page: some View {
+        VStack(spacing: 0) {
+            if model.page == .queue {
+                QueuePage(model: model)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.page == .moss {
+                MossPage(model: model, settings: showMossSettings) { press in
+                    if press.key == .escape { escape(); return .handled }
+                    return shortcut(press)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                searchBar
+                Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+                if AccessLostBanner.shows() {
+                    AccessLostBanner()
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+                if model.phase == .ready && !model.sessions.isEmpty {
+                    StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .padding(.bottom, 2)
+                    if RestoreBanner.shows(model) {
+                        RestoreBanner(model: model)
+                            .padding(.horizontal, 10)
+                            .padding(.top, 8)
+                            .transition(.opacity.combined(with: .move(edge: .top)))
+                    }
+                }
+                content
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    // Room under the last row for the nudge floating over it.
+                    .safeAreaPadding(.bottom, QueueNudge.shows(model) ? 56 : 0)
+                    .overlay(alignment: .bottom) {
+                        if QueueNudge.shows(model) {
+                            QueueNudge(model: model)
+                                .padding(.horizontal, 10)
+                                .padding(.bottom, 8)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
+                    }
+                // The session list's own bar (cc-moss's menu, new session);
+                // To Do and Moss end with their own controls.
+                actionBar
+            }
+        }
+        .frame(width: Theme.pageWidth, height: model.panelHeight)
+        // Keyboard focus lives in the search field; buttons never take it,
+        // so no focus ring lands on the filter or the action pill.
+        .focusEffectDisabled()
+        .tooltipLayer()
+        .background(Theme.surface(scheme))
         .overlay {
             if model.form != nil || model.closeGate.asking {
                 ZStack(alignment: .bottom) {
@@ -107,11 +146,27 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
-        .onChange(of: model.form) { _, form in if form == nil { searchFocused = true } }
+        // A form takes the keyboard from the search field, and gives it back when it closes.
+        .onChange(of: model.form) { _, form in searchFocused = form == nil }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
-        .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
+        .animation(.easeOut(duration: 0.2), value: model.askDesk)
+        .animation(.easeOut(duration: 0.15), value: model.page)
+        .animation(.easeOut(duration: 0.2), value: QueueNudge.shows(model))
+        .onChange(of: model.selectedID) { _, id in
+            model.openProblem = nil
+            // Selecting another row (the keyboard, a click) closes a reply line.
+            if let open = model.replyOpenID, open != id { model.closeReply() }
+        }
+        .onChange(of: model.pins) { _, _ in hoveredID = nil }
+        .onChange(of: model.listItems.map(\.id)) { _, ids in
+            // The hovered row went away (filtered, closed): drop its buttons.
+            if let h = hoveredID, !ids.contains(h) { hoveredID = nil }
+        }
+        .onChange(of: model.replyOpenID) { _, id in
+            if id != nil { replyFocused = true } else if model.form == nil { searchFocused = true }
+        }
         .onAppear {
             searchFocused = true
             model.terminals.rescan()
@@ -137,10 +192,13 @@ struct PanelView: View {
                 }
             }
         }
+        .onAppear { model.checkForUpdate() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            // Only the panel's own window; back from a dropdown or the folder
-            // picker, an open form keeps the keyboard.
-            if note.object is KeyPanel, model.form == nil { searchFocused = true }
+            // Only the panel's own window (not Settings, a dropdown or the
+            // folder picker); an open form keeps the keyboard.
+            guard note.object is KeyPanel else { return }
+            model.checkForUpdate()
+            if model.form == nil { searchFocused = true }
             model.refresh()
         }
     }
@@ -164,6 +222,9 @@ struct PanelView: View {
                         model.confirmClose()
                     } else if menu != nil {
                         runMenuItem()
+                    } else if model.page == .sessions, case let .noMatch(q)? = model.listItems.first {
+                        // Nothing found: Return asks Moss.
+                        model.askMossToFind(q)
                     } else {
                         perform(primaryAction)
                     }
@@ -225,7 +286,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty && model.olderShown.isEmpty:
+        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -241,15 +302,19 @@ struct PanelView: View {
     private var sessionList: some View {
         ScrollViewReader { proxy in
             ScrollView {
+                // One flat list (user 2026-10-19): a row moving into Pinned
+                // is the same row moving, not a copy left behind still lit.
                 LazyVStack(alignment: .leading, spacing: 0, pinnedViews: []) {
-                    ForEach(model.projects) { project in
-                        SectionHeader(project: project)
-                        ForEach(project.sessions) { s in row(s) }
-                    }
-                    if !model.olderShown.isEmpty {
-                        OlderGroupHeader(model: model)
-                        if model.olderExpanded {
-                            ForEach(model.olderShown) { s in row(s) }
+                    ForEach(model.listItems) { item in
+                        switch item {
+                        case .pinnedHeader: PinnedHeader()
+                        case let .projectHeader(project): SectionHeader(project: project)
+                        case .olderHeader: OlderGroupHeader(model: model)
+                        case let .row(s, pinned): row(s, pinned: pinned)
+                        case let .hit(h, closed): row(h.session, pinned: model.pins.contains(h.session.id), hit: h, closed: closed)
+                        case .closedHeader: ClosedHeader()
+                        case let .noMatch(q): AskMossCard(query: q) { model.askMossToFind(q) }
+                        case let .askMoss(q): AskMossLine(query: q) { model.askMossToFind(q) }
                         }
                     }
                 }
@@ -258,13 +323,21 @@ struct PanelView: View {
             }
             .scrollIndicators(.never)
             .onChange(of: model.selectedID) { _, id in
-                guard let id, hoverGate.shouldScrollToSelection() else { return }
+                guard let id else { return }
                 withAnimation(.easeOut(duration: 0.1)) { proxy.scrollTo(id) }
+            }
+            // The row you just wrote to moved: bring it into view, once the
+            // refreshed order is drawn.
+            .onChange(of: model.revealTick) { _, _ in
+                guard let id = model.selectedID else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) }
+                }
             }
         }
     }
 
-    private func row(_ s: Session) -> some View {
+    private func row(_ s: Session, pinned: Bool = false, hit: SearchHit? = nil, closed: Bool = false) -> some View {
         // A click only selects; opening is deliberate: the button that
         // appears at the end of the hovered row, the action pill below, or
         // Return (user 2026-10-16). The row carries its own actions: the
@@ -272,33 +345,99 @@ struct PanelView: View {
         let menuOpen = menuRow == s.id
         let shown = s.id == hoveredID || menuOpen
         let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
-        return SessionRow(session: s, selected: s.id == model.selected?.id,
-                          actions: shown ? actions.inline.map { action($0, for: s) } : [],
-                          more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
-                          menuOpen: menuOpen,
-                          perform: { perform($0) },
-                          problem: model.restoreProblem(s),
-                          restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
-            .id(s.id)
-            .contentShape(Rectangle())
-            .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
-            .onContinuousHover { phase in
-                switch phase {
-                case .active:
-                    // Rows under an open menu stay put, and rows sliding
-                    // under a still pointer during a scroll aren't hovered.
-                    guard menu == nil, hoveredID != s.id, hoverGate.allowsHover(pointer: NSEvent.mouseLocation) else { return }
-                    hoveredID = s.id
-                    if model.selectedID != s.id {
-                        hoverGate.selectingByHover()
-                        model.selectedID = s.id
-                    }
-                case .ended:
-                    if hoveredID == s.id { hoveredID = nil }
-                }
+        // A button, not a tap gesture: inside the scrolling list a tap
+        // gesture never fired once the panel had the keyboard, so a click
+        // selected nothing (user 2026-10-18). Its own buttons still win.
+        let shownSession = s
+        let lineOpen = model.replyOpenID == s.id
+        let rowNote = model.rowNote.flatMap { $0.id == s.id ? $0 : nil }
+        let note = rowNote?.text
+        let asking = !closed && model.adoptAsk?.id == s.id
+        let open = lineOpen || asking
+        return VStack(spacing: 0) {
+            rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
+                      lineOpen: open, pinned: pinned, hit: hit, closed: closed)
+            if lineOpen {
+                ReplyLineView(model: model, session: s, focused: $replyFocused)
+                    .transition(.opacity)
             }
-            .onTapGesture { model.selectedID = s.id }
-            .handCursor()
+            if asking {
+                AdoptConfirmView(model: model, session: s)
+                    .transition(.opacity)
+            }
+            if let note {
+                HStack(spacing: 5) {
+                    Image(systemName: "info.circle").font(.system(size: 10, weight: .semibold))
+                    Text(note).font(.system(size: 11.5)).lineLimit(1)
+                    if rowNote?.adopt == true {
+                        Text("·")
+                        Button { model.askToAdopt(s) } label: {
+                            Text(L.t("Move into tmux →", "移进 tmux →"))
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Theme.brand)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .handCursor()
+                    }
+                }
+                .foregroundStyle(.tertiary)
+                .padding(.leading, 44)
+                .padding(.bottom, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(open ? Theme.selection(scheme) : .clear))
+        .clipped()
+        .animation(.easeOut(duration: 0.18), value: open)
+        .animation(.easeOut(duration: 0.18), value: note)
+        // A hairline of air between rows: two lit neighbours never merge into one block.
+        .padding(.vertical, 1)
+    }
+
+    private func rowButton(_ s: Session, shownSession: Session, menuOpen: Bool, shown: Bool, actions: RowActions,
+                           lineOpen: Bool, pinned: Bool, hit: SearchHit? = nil, closed: Bool = false) -> some View {
+        Button {
+            model.selectedID = s.id
+            // Waiting for you: a reply line opens right under it.
+            model.openReply(s)
+        } label: {
+            let moving = !closed && model.adopting.contains(s.id)
+            SessionRow(session: shownSession, selected: !closed && s.id == model.selected?.id, hovered: shown,
+                       actions: closed ? [bringBackClosed(s)] : shown && !moving ? actions.inline.map { action($0, for: s) } : [],
+                       more: !closed && shown && !moving && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
+                       menuOpen: menuOpen,
+                       perform: { perform($0) },
+                       problem: model.restoreProblem(s) ?? (closed ? nil : model.adoptProblems[s.id]),
+                       pinned: pinned,
+                       lineOpen: lineOpen,
+                       pin: s.isMoss ? nil : { model.togglePin(s) },
+                       restoring: (s.state == .interrupted || closed) && model.restoreFlow.isRunning(s.id),
+                       highlight: hit?.nameRanges ?? [],
+                       folder: hit.map { _ in Self.folderName(s) },
+                       reason: hit?.reason.map(Self.reasonText),
+                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…") : nil)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                // Rows under an open menu stay put, and rows sliding
+                // under a still pointer during a scroll aren't hovered.
+                // Hover only shows the row's buttons; a click or the
+                // keyboard selects (user 2026-10-18: passing over rows on
+                // the way to a button changed what it would open).
+                guard menu == nil, hoveredID != s.id, hoverGate.allowsHover(pointer: NSEvent.mouseLocation) else { return }
+                hoveredID = s.id
+            case .ended:
+                if hoveredID == s.id { hoveredID = nil }
+            }
+        }
+        .handCursor()
     }
 
     // MARK: Action bar
@@ -319,22 +458,12 @@ struct PanelView: View {
                     .tip(notice)
                     .transition(.opacity)
             } else {
-                // The version gives way first when the main action is long.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 4) {
-                        LogoButton(version: model.version, open: menu == .app) { toggleMenu(.app) }
-                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
-                    }
-                    HStack(spacing: 4) {
-                        LogoButton(version: model.version, compact: true, open: menu == .app) { toggleMenu(.app) }
-                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
-                    }
-                }
+                if model.phase == .ready { NewSessionButton { model.startNewSession() } }
             }
             Spacer()
             // Raycast's floating pill with the main action; the rest live on
             // each session's row (user 2026-10-18).
-            if let primary = primaryAction {
+            if model.page == .sessions, let primary = primaryAction {
                 PillButton(action: { perform(primary) }) {
                     HStack(spacing: 6) {
                         ActionIcon(action: primary, symbolSize: 11)
@@ -363,10 +492,43 @@ struct PanelView: View {
 
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
+        // Asking "Move into tmux?": Return says yes, and the pill says so.
+        if let ask = model.adoptAsk, ask.id == s.id {
+            return PanelAction(title: AppModel.adoptTitle(s, named: ask.named), icon: Icons.adopt, shortcut: "↵") { model.adopt(s) }
+        }
+        if model.adopting.contains(s.id) { return nil }
         return action(RowActions(s, hopeless: model.restoreIsHopeless(s)).primary, for: s)
     }
 
     /// What one row action looks like and does.
+    /// A closed session found by the search: bring it back.
+    private func bringBackClosed(_ s: Session) -> PanelAction {
+        PanelAction(title: L.t("Bring Back", "找回"), icon: Icons.restore, shortcut: "",
+                    help: L.t("Start it again, right where the conversation left off.", "重新开起来，接着上次的对话。")) {
+            model.restore(s)
+        }
+    }
+
+    static func folderName(_ s: Session) -> String { (s.cwd as NSString).lastPathComponent }
+
+    /// Why a result matched, when its name doesn't show it.
+    static func reasonText(_ r: SearchHit.Reason) -> String {
+        switch r {
+        case let .path(q): L.t("in path: \(q)", "路径里有 \(q)")
+        case let .note(text): L.t("note: \(text)", "便条：\(text)")
+        case let .prompt(text): L.t("last said: \(text)", "最后说：\(text)")
+        }
+    }
+
+    /// Pin to the top of the list, or unpin (⌘P).
+    private func pinAction(for s: Session) -> PanelAction {
+        let pinned = model.pins.contains(s.id)
+        return PanelAction(title: pinned ? L.t("Unpin", "取消置顶") : L.t("Pin", "置顶"),
+                           icon: pinned ? "pin.slash" : "pin", shortcut: "⌘P") {
+            model.togglePin(s)
+        }
+    }
+
     private func action(_ kind: RowAction, for s: Session) -> PanelAction {
         switch kind {
         case .open:
@@ -426,21 +588,32 @@ struct PanelView: View {
             return PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
                 model.askToClose([s])
             }
+        case .adopt:
+            let wait = AppModel.adoptWait(s)
+            return PanelAction(title: AppModel.adoptTitle(s), icon: Icons.adopt, shortcut: "",
+                               help: wait ?? L.t("Ends its process in its current terminal and carries on in tmux; the conversation is kept.",
+                                                 "结束它在原终端里的进程，然后在 tmux 里接着跑，对话不会丢。"),
+                               disabled: wait != nil) {
+                model.askToAdopt(s)
+            }
         }
     }
 
-    /// cc-moss's own menu, on the logo: what isn't about one session.
+    /// cc-moss's own menu, behind the rail's gear: what isn't about one
+    /// session. (New Session is in the footer, and ⌘N.)
     private var appSections: [[PanelAction]] {
-        var first: [PanelAction] = []
-        if model.phase == .ready {
-            first.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
-                model.startNewSession()
-            })
+        let version: PanelAction = if let update = model.update {
+            PanelAction(title: L.t("Update to \(update.latest)", "更新到 \(update.latest)"), icon: Icons.update, shortcut: "",
+                        help: L.t("Runs cc-moss update in your terminal.", "在终端里运行 cc-moss update。"), dot: true) {
+                model.runUpdate()
+            }
+        } else {
+            PanelAction(title: "cc-moss \(model.version)", icon: Icons.about, shortcut: "") { showSettings(.about) }
         }
-        first.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
         return [
-            first,
-            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() }],
+            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() },
+             PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() }],
+            [version],
             [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
                 NSApplication.shared.terminate(nil)
             }],
@@ -452,9 +625,12 @@ struct PanelView: View {
         case .app:
             return appSections
         case let .session(id, full):
-            guard let s = model.sessions.first(where: { $0.id == id }) else { return [] }
+            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
             let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
-            return (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
+            var sections = (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
+            // Moss is pinned already, above everything.
+            if !s.isMoss { sections.append([pinAction(for: s)]) }
+            return sections
         }
     }
 
@@ -503,12 +679,13 @@ struct PanelView: View {
     }
 
     /// Under its row, right edges lined up (above it when there's no room
-    /// below); cc-moss's own sits over the logo.
+    /// below).
     private func menuOffset(_ menu: PanelMenu, sections: [[PanelAction]], row: CGRect?, in size: CGSize) -> CGSize {
         let height = ActionsMenu.height(sections), width = ActionsMenu.width
         let floor = size.height - 50 // the action bar
         guard case .session = menu, let row else {
-            return CGSize(width: 10, height: floor - height)
+            // cc-moss's own, from the gear at the rail's foot: up and to the right.
+            return CGSize(width: Theme.railWidth + 6, height: size.height - height - 10)
         }
         let below = row.maxY - 2
         let y = below + height <= floor ? below : max(row.minY - height + 2, 8)
@@ -516,6 +693,8 @@ struct PanelView: View {
     }
 
     private func dismissForm() {
+        // A message on its way can't be called back: Esc and the scrim wait.
+        guard !model.sendFlow.isSending else { return }
         model.form = nil
         model.closeGate.cancel()
     }
@@ -529,7 +708,7 @@ struct PanelView: View {
     /// stay and say what to do instead.
     private func open(_ s: Session) {
         let panel = NSApplication.shared.keyWindow
-        if model.open(s) { panel?.close() }
+        model.open(s) { opened in if opened { panel?.close() } }
     }
 
     private func copy(_ text: String) {
@@ -550,10 +729,16 @@ struct PanelView: View {
         }
     }
 
-    private func showSettings() {
+    private func showSettings(_ tab: SettingsView.Tab? = nil) {
+        if let tab { SettingsView.show(tab) }
         closePanel()
         openWindow(id: "settings")
         SettingsWindow.bringToFront()
+    }
+
+    private func showMossSettings() {
+        SettingsView.show(.moss)
+        showSettings()
     }
 
     private func escape() {
@@ -561,6 +746,8 @@ struct PanelView: View {
             dismissForm()
         } else if menu != nil {
             closeMenu()
+        } else if model.adoptAsk != nil {
+            model.cancelAdopt()
         } else if model.openProblem != nil {
             model.openProblem = nil
         } else if model.stateFilter != nil {
@@ -577,6 +764,8 @@ struct PanelView: View {
         switch press.characters.lowercased() {
         case "k": commandK()
         case "r": model.refresh()
+        case "p":
+            if let s = model.selected, !s.isMoss, model.page == .sessions { model.togglePin(s) }
         case "n" where model.phase == .ready: model.startNewSession()
         case "e":
             // Say something to the session; one that can't take input gets a note instead.
@@ -594,7 +783,7 @@ struct PanelView: View {
 }
 
 /// A menu in the panel: one session's ("⋯" shows what its row doesn't;
-/// right-click and ⌘K show everything), or cc-moss's own on the logo.
+/// right-click and ⌘K show everything), or cc-moss's own behind the rail's gear.
 enum PanelMenu: Equatable {
     case session(String, full: Bool)
     case app
@@ -609,12 +798,230 @@ struct MenuAnchorKey: PreferenceKey {
 }
 
 struct PanelAction: Identifiable {
-    let id = UUID()
+    /// Stable across redraws: a fresh id on every refresh made the row's
+    /// buttons drop and reappear (a blink every few seconds).
+    var id: String { "\(icon)|\(title)" }
     let title: String
     var icon: String = Icons.copy
     let shortcut: String
     /// Shown instead of `icon`: the chosen terminal's own app icon.
     var image: NSImage?
     var help: String?
+    /// A brand dot after the title: something new (an update).
+    var dot = false
+    /// Shown dimmed; clicking it says why it waits instead.
+    var disabled = false
     let perform: () -> Void
+}
+
+/// The line under a session's row for answering it in place: one line
+/// (up to three), Claude Code's suggestion already in it and selected.
+/// Return sends, ⇧Return makes a new line, Esc closes, ↓/↑ go to the next
+/// or previous session waiting for you.
+struct ReplyLineView: View {
+    @Bindable var model: AppModel
+    let session: Session
+    var focused: FocusState<Bool>.Binding
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var sending: Bool { model.replyFlow.isSending }
+    private var hasText: Bool { ReplyLine.toSend(model.replyDraft) != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 6) {
+                TextField(ReplyLine.busy(session) ? L.t("It's busy; this waits until it's done", "它在忙，发出去会排在这一轮后面")
+                                                  : L.t("Reply…", "回一句…"),
+                          text: $model.replyDraft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    // An untouched suggestion is as quiet as a placeholder.
+                    .foregroundStyle(model.replyField.untouched ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                    .simultaneousGesture(TapGesture().onEnded { model.replyEngaged() })
+                    .onKeyPress(keys: [.leftArrow, .rightArrow]) { _ in model.replyEngaged(); return .ignored }
+                    .lineLimit(1...3)
+                    .focused(focused)
+                    .disabled(sending)
+                    // On its way: the words step back for "Sending…".
+                    .opacity(sending ? 0 : 1)
+                    .onChange(of: model.replyDraft) { _, text in model.replyEdited(text) }
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) {
+                            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                        } else {
+                            model.sendReply(session)
+                        }
+                        return .handled
+                    }
+                    .onKeyPress(.escape) { model.closeReply(); return .handled }
+                    .onKeyPress(.downArrow) { move(backwards: false) }
+                    .onKeyPress(.upArrow) { move(backwards: true) }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 30)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(scheme == .dark ? 0.06 : 0.04)))
+                    .overlay {
+                        if sending {
+                            ZStack {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.mini)
+                                    Text(L.t("Sending…", "发送中…"))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .transition(.opacity)
+                        }
+                    }
+                Button { model.sendReply(session) } label: {
+                    Image(systemName: Icons.message)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(hasText && (hovering || !sending) ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                        .frame(width: 28, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+                .disabled(!hasText || sending)
+                .allowsHitTesting(!sending)
+                .onHover { hovering = $0 }
+                .tip(L.t("Send  ↵", "发送  ↵"))
+                .accessibilityLabel(L.t("Send", "发送"))
+            }
+            if let failure = model.replyFlow.failure {
+                Text(failure)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.caption)
+                    .lineLimit(2)
+                    .padding(.leading, 2)
+            }
+        }
+        // Under the session's name, inside the row's own background.
+        .padding(.leading, 44)
+        .padding(.trailing, 8)
+        .padding(.bottom, 9)
+        .animation(.easeOut(duration: 0.15), value: sending)
+        .onAppear { focused.wrappedValue = true }
+    }
+
+    /// ↓/↑ go to the next session waiting for you, unless you're moving
+    /// between lines of what you typed.
+    private func move(backwards: Bool) -> KeyPress.Result {
+        guard !model.replyDraft.contains("\n") else { return .ignored }
+        model.moveReply(from: session, backwards: backwards)
+        return .handled
+    }
+}
+
+/// Above the closed sessions a search found.
+struct ClosedHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(L.t("Closed", "已关闭"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(L.t("last 30 days", "最近 30 天"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+}
+
+/// Nothing found: a quiet way to ask Moss instead.
+struct AskMossCard: View {
+    let query: String
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                MossAvatar(size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L.t("No match for “\(query)”", "没找到「\(query)」"))
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(L.t("Ask Moss to find it", "让 Moss 帮你找找看"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 4) {
+                    Text(L.t("Ask Moss", "问 Moss"))
+                    Image(systemName: "arrow.right").font(.system(size: 10.5, weight: .bold))
+                    KeyCap(text: "↵")
+                }
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.leading, 12)
+                .padding(.trailing, 6)
+                .frame(height: 28)
+                .background(Capsule().fill(Theme.brand.opacity(hovering ? 1 : 0.92)))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.brand.opacity(scheme == .dark ? (hovering ? 0.2 : 0.14) : (hovering ? 0.12 : 0.08))))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.brand.opacity(hovering ? 0.45 : 0.25)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .padding(.horizontal, 4)
+        .padding(.top, 8)
+        .accessibilityLabel(L.t("Ask Moss to find “\(query)”", "让 Moss 帮你找「\(query)」"))
+    }
+}
+
+/// Results, but maybe not the one: a quiet line above them that asks Moss.
+/// Not a row the arrow keys walk to.
+struct AskMossLine: View {
+    let query: String
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.brand.opacity(0.85))
+                Text(L.t("Not what you need?", "不是你要找的？"))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Text(L.t("Ask Moss to find “\(query)” →", "让 Moss 帮你找「\(query)」→"))
+                    .foregroundStyle(Theme.brand)
+                    .fontWeight(hovering ? .semibold : .medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.12 : 0.07) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .padding(.top, 4)
+        .padding(.bottom, 2)
+    }
 }

@@ -1018,6 +1018,7 @@ mod tests {
                 last_active_ms: at,
                 busy,
                 preview: preview.map(Into::into),
+                moss: false,
             }),
         })
     }

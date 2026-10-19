@@ -6,7 +6,91 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
+Sessions start in bypass mode, questions can be answered from the panel or Mo, and Moss moves in: a Claude Code
+session that keeps your sessions tidy, runs a daily checkup and answers when you ask.
+
+### Added
+
+- **A cc-moss daemon that stays in the background (macOS).** `cc-moss install` sets it up: it starts when you log in,
+  comes back if it's killed, and only one ever runs. `cc-moss daemon status` says whether it's up, for how long and
+  which version; `daemon stop` and `daemon start` turn it off and on. Settings has a new Moss page showing the same,
+  with Start when it's not running, and `cc-moss doctor` checks it.
+- **Moss, a Claude Code session cc-moss keeps running (macOS).** The daemon starts it at login and brings it back,
+  fresh, if it's killed or crashes (after 30 s, 2 min, 10 min, then hourly), on a tmux server of its own. It lives in
+  `moss/` under the state directory with its own persona (`IDENTITY.md`, `SOUL.md`, `USER.md`), journal and memory;
+  install refreshes cc-moss's files there and never touches those. It works on files only through shell commands,
+  which run in Claude Code's sandbox and can write only there; Claude Code's file tools are off for it, and a guard
+  hook checks every tool call and refuses tools it doesn't know, MCP tools included. It has no network, can't read Claude Code's folder
+  (`~/.claude`) or cc-moss's records outside its home, and learns about your sessions from the overview
+  (`SESSIONS.md`) and checkup facts (`facts.json`) the daemon writes there; it loads only its own project settings
+  (`--setting-sources project`), not yours. The picker and `cc-moss close` can't end it, and the panel's session list
+  leaves it out; turn it off in Settings › Moss, with `cc-moss moss stop`, or with `[moss] enabled = false`.
+  `cc-moss daemon stop` stops it too. `cc-moss moss status [--json]` says how long it has run, how often it
+  restarted, and why it isn't running when it isn't; `ls --json` marks it `"role": "moss"`. When it needs you, the
+  menu bar icon says so. It uses your Claude Code sign-in and nothing while it waits. Going back to an older cc-moss
+  may show an old Moss as an interrupted session to bring back; `cc-moss close` it.
+- **Talk to Moss (macOS).** The panel's side rail has a Moss page (⌘3): how Moss is doing at the top (standing by,
+  thinking, waiting for you to confirm, restarting, off), your conversation below, and a quick bar at the bottom with
+  a keyboard button for writing your own. The daemon
+  pastes what you send into Moss's terminal when it's free, checks it arrived, and brings the reply back; when the
+  reply can't be read it says so instead of hanging. Moss also hears when a session needs you, drops or finishes
+  (batched, not repeated, checked again before it goes; `[moss] digest = false` turns it off), and its answers to
+  routine "turn finished" news stay quiet. A reply rings Mo or a notification unless you're on the Moss page.
+  `cc-moss moss say` and `cc-moss moss chat --json` do the same from the terminal.
+- **More on the Moss page.** The quick bar holds Checkup, Who's waiting on me, What's stuck, What got done today and
+  Tidy up, plus Claude Code's `/usage`, `/status`, `/context`, `/cost` and `/stats` as fits your account (drawn as
+  cards for `/usage` and `/status`), ranked by use and by what's going on, with the rest under ⋯ and Moss's own picks
+  first. Replies render Markdown, group within 10 minutes, fold when long and carry session cards (open, bring back,
+  move into tmux, rename, pin, Handle); session names in them are badges you can point at or click. Moss's guess at
+  your next message floats above the bar.
+- **Checkup (macOS).** Checkup and Tidy up on the Moss page: Moss fixes what doesn't need you (tmux names, hooks and
+  aliases, names for sessions without one, dropped sessions whose folder is gone), sends a short brief, and asks with
+  yes/no buttons before bringing back, forgetting or ending anything. It acts through the daemon
+  (`cc-moss moss act`), which for those needs your tap on the yes button cc-moss itself puts under the question
+  (worded with what it agrees to, such as "End work"), in the last 10 minutes, and counts each tap once; it logs every action to `audit.jsonl`, and can be
+  switched off (`moss.actions`). It runs by itself the first time you open the panel each day; Settings › Moss has Daily checkup and Daily brief
+  (`moss.daily_checkup`, `moss.daily_brief`). `cc-moss doctor --sessions --json` lists the facts it reads.
+- **Sessions page: pins, replies and search (macOS).** Pin sessions to a Pinned section (the pin after the name, or
+  ⌘P). Click a session waiting on you to reply on the spot, with Claude Code's own suggestion already typed (also in
+  ⌘E); after a send the next waiting session opens, and a busy one queues your message. Search ranks one list,
+  highlights matches and says why a row matched, reads abbreviations and pinyin initials, finds sessions closed in
+  the last 30 days, and offers to ask Moss when nothing matches. `cc-moss suggest` reads the suggestion.
+- **Move a session into tmux.** `cc-moss adopt NAME [--dry-run] [--json]`, or Move into tmux on its row: an idle
+  session started outside tmux ends in its old terminal and carries on in tmux, named after its folder if it had no
+  name.
+- **Open the panel from anywhere (macOS).** Opening the app again (Spotlight, `open -a cc-moss`, the Dock) opens the
+  panel, and so do `cc-moss://panel` links (`/sessions`, `/queue`, `/moss`). Settings › General has Appearance:
+  System, Light or Dark.
+- **Answer a session's question from elsewhere.** When a session asks a multiple-choice question, or a `--safe`
+  session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
+  `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`; with several questions `--choice N:LABEL` and `--text N:TEXT`, mixed freely) hands the answer back, and the session
+  carries on. The terminal dialog stays up meanwhile, and whoever answers first wins. Sessions only wait while someone
+  takes questions (`cc-moss ask take`; the menubar app does it while it's open, Slack will later), for at most 5 minutes
+  (`[ask] wait_secs`); otherwise, or if anything goes wrong, nothing changes. Two new hooks, `PreToolUse` and
+  `PermissionRequest`: run `cc-moss setup` after upgrading. Turn it off with `cc-moss config set ask.enabled false`.
+  Any program running as you can answer, permission requests included; previews hide things that look like keys. An
+  older `setup --uninstall` can't remove the two new hooks: uninstall with this version before downgrading.
+- **Answer from the panel or Mo (macOS).** While the menubar app is open, sessions wait for it. The panel has a side
+  rail: Sessions, and To Do with everything waiting on you, oldest first, one item open at a time with the session's
+  name, the whole question and its options as written; answer one and the next opens. A line at the bottom of
+  Sessions says when something new is waiting.
+  Click an option, tick several and click Done, Type something (2–5 lines, ⌘↩ sends, in Mo's bubble too, on every question of a several-question ask), or
+  Allow / Don't Allow a `--safe` session's request;
+  several questions are answered one by one and sent together. The card says whether it was answered, too late, or
+  saved for later, and disappears by itself when the question is answered in the terminal, times out or the session
+  ends. Mo's message box lists the options so a click answers there; otherwise a notification opens the panel on the
+  question, and both are taken back once it's gone. A question that arrived while the panel was open goes to Mo or a
+  notification when you close it unanswered. A session waiting for you to type gets a reply box in To Do. `cc-moss ask answer --json` says how an answer went in one line (`answered`, `too-late`, `not-waiting`). Switch it off
+  in Settings › Notifications › Answer questions here (`ask.enabled`).
+
 ### Changed
+
+- **The daemon runs at normal priority and with a PATH.** Its LaunchAgent now says `ProcessType` `Standard` (not
+  `Background`, which slowed Moss and everything it starts) and pins a `PATH` with your shell's folders plus where
+  Homebrew and Claude Code install, so it finds `claude` and `tmux`, and the config file it reads. Run
+  `cc-moss install` after upgrading.
 
 - **New sessions start in bypass mode.** Sessions from `cc-moss new` and the app no longer stop to ask for each
   permission. For normal mode once, use `cc-moss new NAME --safe`; to turn it off for good, run
@@ -14,6 +98,27 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   Install sets Claude Code's `skipDangerousModePermissionPrompt` only if you haven't set it, so sessions don't stall on
   the bypass warning, and uninstall takes out only that. A policy that disables bypass is respected, and `doctor`
   says so.
+- **The panel has a side rail and one app menu (macOS).** Sessions ⌘1, To Do ⌘2, Moss ⌘3; the gear at the foot holds
+  Settings, Refresh, the version or Update, and Quit. The footer has New Session and the selected row's Open. The
+  panel picks one of three heights as it opens, by how many sessions you have, and refreshes when sessions change
+  (`registry.changed`), at most every 1.5 s (5 s with the panel closed).
+- **Moss starts without MCP servers**, and its context is capped at 500k tokens
+  (`CLAUDE_CODE_AUTO_COMPACT_WINDOW`), so a session that never ends doesn't keep growing.
+- **tmux names keep the session's own name.** Chinese, capitals and emoji stay; only white space, `.`, `:` and shell
+  characters become `-`, up to 40 characters. Terminal tabs show the session's own name (run `cc-moss install` for
+  the new tmux config).
+- **A new session starts with a free name.** When a session already has the folder's name, the form suggests the next
+  one (`docs-2`). Typing a taken name outlines the field and says what Return will do (open it, or offer to bring a
+  stopped one back), with a free name one click away.
+
+### Fixed
+
+- **Clicking a session selects it.** Hovering no longer moves the selection, so passing over other rows on the way to
+  a button doesn't change what it acts on.
+- The buttons at the end of a row no longer blink every few seconds as the list refreshes.
+- A new session's name field has the keyboard as soon as the form opens.
+- A rename from the panel shows even while the session is idle.
+- A question's bubble stays put between steps, and the review shows each answer as a quote you can change.
 
 ## [0.2.2] - 2026-10-18
 
@@ -189,7 +294,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/larrykoo711/cc-moss/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...v0.2.0

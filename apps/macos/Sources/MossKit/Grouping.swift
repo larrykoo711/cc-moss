@@ -12,12 +12,31 @@ public struct Project: Equatable, Identifiable, Sendable {
 }
 
 public enum Grouping {
+    /// Moss apart from everything else. Moss is the one pinned row at the
+    /// top of the panel (the running one, newest if there are two); its old
+    /// records are nobody's business: they are never grouped, counted,
+    /// offered for restore or dismissed.
+    public static func splitMoss(_ sessions: [Session]) -> (moss: Session?, others: [Session]) {
+        let moss = sessions
+            .filter { $0.isMoss && $0.status == "running" }
+            .max { $0.lastActiveAt < $1.lastActiveAt }
+        return (moss, sessions.filter { !$0.isMoss })
+    }
+
+    /// What the menu bar icon and its count look at: the sessions, and Moss
+    /// while it needs you. Moss is never counted as a session, but a Moss
+    /// waiting on a permission or a question must reach you like any other.
+    public static func alerting(_ sessions: [Session], moss: Session?) -> [Session] {
+        guard let moss, moss.needsYou else { return sessions }
+        return sessions + [moss]
+    }
+
     /// Group open sessions by folder. Projects and the sessions in them are
-    /// ordered by most recent activity; closed sessions are left out.
+    /// ordered by most recent activity; closed sessions and Moss are left out.
     public static func projects(_ sessions: [Session], home: String? = NSHomeDirectory()) -> [Project] {
         var order: [String] = []
         var byPath: [String: [Session]] = [:]
-        for s in sessions where s.state != .closed {
+        for s in sessions where s.state != .closed && !s.isMoss {
             if byPath[s.cwd] == nil { order.append(s.cwd) }
             byPath[s.cwd, default: []].append(s)
         }

@@ -14,6 +14,8 @@ pub struct Config {
     pub tmux: TmuxConfig,
     pub ui: UiConfig,
     pub update: UpdateConfig,
+    pub ask: AskConfig,
+    pub moss: MossConfig,
     /// Native aliases: `name = "subcommand args…"` (see [`crate::aliases`]).
     /// An entry that is not a string is skipped (doctor names it) instead of
     /// making the whole file unreadable for every command.
@@ -28,6 +30,10 @@ pub struct ClaudeConfig {
     pub default_args: Vec<String>,
     /// How `cc-moss new` starts a session: in bypass mode unless set to `default`.
     pub permission_mode: PermissionMode,
+    /// Where Claude Code keeps its files when `CLAUDE_CONFIG_DIR` is set in
+    /// your shell: the daemon starts at login without your shell's
+    /// environment, so Moss's fence learns the folder from here.
+    pub config_dir: Option<String>,
 }
 
 /// `[claude] permission_mode`: whether new sessions ask before each action.
@@ -88,6 +94,57 @@ pub struct UpdateConfig {
 impl Default for UpdateConfig {
     fn default() -> Self {
         UpdateConfig { check: true }
+    }
+}
+
+/// `[ask]`: questions a session waits on can be answered from outside
+/// (the app, Slack, `cc-moss ask answer`).
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct AskConfig {
+    /// On by default; with nobody taking questions it changes nothing.
+    pub enabled: bool,
+    /// How long a question waits for an answer from outside, in seconds
+    /// (1 to [`crate::ask::MAX_WAIT_SECS`]). The session's own dialog stays
+    /// usable meanwhile.
+    pub wait_secs: u64,
+}
+
+impl Default for AskConfig {
+    fn default() -> Self {
+        AskConfig {
+            enabled: true,
+            wait_secs: crate::ask::DEFAULT_WAIT_SECS,
+        }
+    }
+}
+
+/// `[moss]`: the resident session the daemon looks after.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct MossConfig {
+    /// On by default; off means the daemon ends Moss and leaves it off.
+    pub enabled: bool,
+    /// Tell Moss when other sessions need you, drop or finish (on by default).
+    pub digest: bool,
+    /// Let Moss have the daemon carry out its fixes (`moss act`).
+    pub actions: bool,
+    /// A checkup once a day, the first time the desktop is seen.
+    pub daily_checkup: bool,
+    /// The daily checkup's brief is shown (off: kept quiet unless something
+    /// needs a decision).
+    pub daily_brief: bool,
+}
+
+impl Default for MossConfig {
+    fn default() -> Self {
+        MossConfig {
+            enabled: true,
+            digest: true,
+            actions: true,
+            daily_checkup: true,
+            daily_brief: true,
+        }
     }
 }
 
@@ -152,13 +209,35 @@ where
 
 /// The keys `cc-moss config get|set` may touch. Everything else in the file
 /// is the user's to edit by hand.
-pub const KEYS: &[&str] = &["ui.language", "claude.permission_mode"];
+pub const KEYS: &[&str] = &[
+    "ui.language",
+    "claude.permission_mode",
+    "ask.enabled",
+    "moss.enabled",
+    "moss.digest",
+    "moss.actions",
+    "moss.daily_checkup",
+    "moss.daily_brief",
+];
 
 /// What `ui.language` may be set to.
 pub const LANGUAGES: &[&str] = &["auto", "zh", "en"];
 
 /// What `claude.permission_mode` may be set to.
 pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
+
+/// What a true/false setting may be set to.
+pub const BOOLS: &[&str] = &["true", "false"];
+
+/// Keys stored as TOML booleans rather than strings.
+const BOOL_KEYS: &[&str] = &[
+    "ask.enabled",
+    "moss.enabled",
+    "moss.digest",
+    "moss.actions",
+    "moss.daily_checkup",
+    "moss.daily_brief",
+];
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -174,6 +253,8 @@ pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
+        "ask.enabled" | "moss.enabled" | "moss.digest" | "moss.actions" | "moss.daily_checkup"
+        | "moss.daily_brief" => BOOLS,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -195,11 +276,18 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "auto".into())),
         "claude.permission_mode" => Ok(config.claude.permission_mode.as_str().into()),
+        "ask.enabled" => Ok(config.ask.enabled.to_string()),
+        "moss.enabled" => Ok(config.moss.enabled.to_string()),
+        "moss.digest" => Ok(config.moss.digest.to_string()),
+        "moss.actions" => Ok(config.moss.actions.to_string()),
+        "moss.daily_checkup" => Ok(config.moss.daily_checkup.to_string()),
+        "moss.daily_brief" => Ok(config.moss.daily_brief.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }
 
-/// `text` with `key` (`table.name`) set to the string `value`. Comments,
+/// `text` with `key` (`table.name`) set to `value` (a string, or a boolean
+/// for true/false keys). Comments,
 /// order and every other table and key stay as they are; a missing table is
 /// added at the end. Check the key and value with [`check_setting`] first.
 pub fn set_in_text(text: &str, key: &str, value: &str) -> Result<String> {
@@ -212,7 +300,11 @@ pub fn set_in_text(text: &str, key: &str, value: &str) -> Result<String> {
         .or_insert_with(toml_edit::table)
         .as_table_like_mut()
         .with_context(|| format!("`{table_name}` in config.toml is not a table"))?;
-    let mut new = toml_edit::Value::from(value);
+    let mut new = match (BOOL_KEYS.contains(&key), value) {
+        (true, "true") => toml_edit::Value::from(true),
+        (true, "false") => toml_edit::Value::from(false),
+        _ => toml_edit::Value::from(value),
+    };
     if let Some(old) = table.get(name).and_then(toml_edit::Item::as_value) {
         *new.decor_mut() = old.decor().clone();
     }

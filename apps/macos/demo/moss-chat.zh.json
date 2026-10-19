@@ -1,0 +1,70 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792143665000-3f9a1c",
+   "at": "2026-10-16T09:41:05Z",
+   "from": "events",
+   "text": "[动态] 接口评审 在等你点头；修发票 断了",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792143730000-a7c204",
+   "at": "2026-10-16T09:42:10Z",
+   "from": "you",
+   "text": "现在哪些会话在等我？按急的先说。",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792143758000-51be0d",
+   "at": "2026-10-16T09:42:38Z",
+   "from": "moss",
+   "text": "有 2 件事等你：\n\n1. **接口评审** 想跑一条测试命令，在等你同意，已经等了 6 分钟。\n2. **修发票** 断了。进度都在，找回就能接着来。",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792143730000-a7c204"
+  },
+  {
+   "id": "1792143782000-c0ffee",
+   "at": "2026-10-16T09:43:02Z",
+   "from": "you",
+   "text": "接口评审那个会话卡在哪了？",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792143811000-9d2e47",
+   "at": "2026-10-16T09:43:31Z",
+   "from": "moss",
+   "text": "它改完了 `billing/refund.rs` 的退款逻辑，想跑一遍测试确认没改坏：\n\n```\ncargo test -p billing refund\n```\n\n只跑本地测试，不改文件。要我过一会儿再帮你看看它跑完没有吗？",
+   "fallback": false,
+   "buttons": [
+    "好，帮我盯着",
+    "不用了"
+   ],
+   "reply_to": "1792143782000-c0ffee"
+  },
+  {
+   "id": "1792144720000-6b1f03",
+   "at": "2026-10-16T09:58:40Z",
+   "from": "events",
+   "text": "[动态] 发版说明 这一轮做完了",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792144812000-e41a9b",
+   "at": "2026-10-16T10:00:12Z",
+   "from": "you",
+   "text": "今天各个会话做完了什么？简短列一下。",
+   "fallback": false,
+   "buttons": [],
+   "state": "failed",
+   "error": "Moss 那边正有人在打字，没能送进去。"
+  }
+ ]
+}

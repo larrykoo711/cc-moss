@@ -329,7 +329,7 @@ pub(super) fn default_settings_path() -> Result<PathBuf> {
 
 /// The cc-moss path the hooks run: the stable `PATH` entry for this binary
 /// when there is one, else the running binary itself.
-fn hook_exe() -> Result<String> {
+pub(super) fn hook_exe() -> Result<String> {
     let exe = std::env::current_exe().context("cannot locate the cc-moss executable")?;
     let exe = moss_core::aliases::stable_entry(&exe, std::env::var_os("PATH").as_deref());
     exe.into_os_string()

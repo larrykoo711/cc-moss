@@ -1,6 +1,11 @@
 import AppKit
 import MossKit
+import OSLog
 import SwiftUI
+
+/// cc-moss:// links on their way to the panel, for watching a cold start:
+/// `log stream --level debug --predicate 'subsystem == "io.github.larrykoo711.cc-moss" && category == "link"'`
+let linkLog = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "link")
 
 /// Owns the menu bar item. We drive an `NSStatusItem` ourselves rather than
 /// SwiftUI's `MenuBarExtra`: a label change there costs a full scene update
@@ -33,6 +38,10 @@ final class StatusItemController {
         let label = "cc-moss: " + icon.state.label
         if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
     }
+
+    /// The status button is in the menu bar (it has a window): the panel can
+    /// be placed under it.
+    var isPlaced: Bool { item.button?.window != nil }
 
     /// The button's rectangle on screen.
     private var buttonFrame: NSRect? {
@@ -79,6 +88,26 @@ final class PanelController {
     /// A click on the status button first takes the key away from the
     /// panel (hiding it), then toggles: don't reopen it straight away.
     private var hiddenAt: TimeInterval = 0
+    /// Until then, losing the key or the app's activation doesn't hide the
+    /// panel: a link that launched the app opens it while the launch is
+    /// still settling who's frontmost.
+    private var steadyUntil: TimeInterval = 0
+
+    /// Shown and visible on screen.
+    var isVisible: Bool { isShown && window?.isVisible == true }
+
+    /// Show it, and keep it through the next `seconds` of focus changes.
+    func show(holding seconds: TimeInterval) {
+        steadyUntil = ProcessInfo.processInfo.systemUptime + seconds
+        closedOnPurpose = false
+        show()
+    }
+
+    /// Closed on purpose (Esc, a click elsewhere, the icon, opening
+    /// something) since a link last showed it: a later check doesn't bring it back.
+    private(set) var closedOnPurpose = false
+
+    private var steady: Bool { ProcessInfo.processInfo.systemUptime < steadyUntil }
 
     static let cornerRadius: CGFloat = 14
 
@@ -88,7 +117,7 @@ final class PanelController {
 
     func toggle() {
         if isShown {
-            hide()
+            hide("toggled")
         } else if ProcessInfo.processInfo.systemUptime - hiddenAt > 0.25 {
             show()
         }
@@ -97,6 +126,13 @@ final class PanelController {
     func show() {
         let panel = window ?? makeWindow()
         window = panel
+        // Its size is picked as it opens, never while it's open.
+        if !isShown, let visible = screen()?.visibleFrame {
+            let height = model.sizePanel(visible: visible.height)
+            if abs(panel.frame.height - height) > 0.5 {
+                panel.setContentSize(NSSize(width: Theme.panelWidth, height: height))
+            }
+        }
         position(panel)
         // Key without activating the app: the search field takes typing at
         // once and the app you were in stays frontmost.
@@ -108,14 +144,28 @@ final class PanelController {
         onVisibilityChange?(true)
     }
 
-    func hide() {
+    func hide(_ reason: String = "asked") {
         guard isShown else { return }
+        linkLog.debug("panel hidden: \(reason, privacy: .public)")
         window?.orderOut(nil)
         didHide()
     }
 
+    /// Show it again when it is meant to be up but isn't on screen (ordered
+    /// out by something that didn't go through `hide`).
+    func showAgain(holding seconds: TimeInterval) {
+        if isShown, window?.isVisible != true {
+            linkLog.debug("panel was shown but not on screen: resetting")
+            isShown = false
+            stopWatching()
+        }
+        show(holding: seconds)
+        linkLog.debug("panel shown again; visible: \(self.isVisible)")
+    }
+
     private func didHide() {
         guard isShown else { return }
+        closedOnPurpose = true
         isShown = false
         hiddenAt = ProcessInfo.processInfo.systemUptime
         stopWatching()
@@ -123,7 +173,7 @@ final class PanelController {
     }
 
     private func makeWindow() -> KeyPanel {
-        let size = NSSize(width: Theme.panelWidth, height: Theme.panelHeight)
+        let size = NSSize(width: Theme.panelWidth, height: model.panelHeight)
         let panel = KeyPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -148,7 +198,7 @@ final class PanelController {
         glass.maskImage = Self.roundedMask(radius: Self.cornerRadius)
         glass.autoresizingMask = [.width, .height]
         let host = NSHostingView(rootView: PanelView(model: model)
-            .environment(\.closePanel) { [weak self] in self?.hide() }
+            .environment(\.closePanel) { [weak self] in self?.hide("closed from inside (Esc, opened something)") }
             .followsLanguage())
         host.frame = glass.bounds
         host.autoresizingMask = [.width, .height]
@@ -162,15 +212,28 @@ final class PanelController {
     }
 
     /// Under the status button, left edges aligned, kept on its screen.
-    private func position(_ panel: NSPanel) {
-        let size = panel.frame.size
+    /// The screen the status button is on.
+    private func screen() -> NSScreen? {
         let button = anchor?()
-        let screen = NSScreen.screens.first { s in button.map { s.frame.intersects($0) } ?? false } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return }
-        let top = (button?.minY ?? visible.maxY) - 5
-        var x = button?.minX ?? (visible.maxX - size.width - 8)
-        x = min(max(x, visible.minX + 8), visible.maxX - size.width - 8)
-        panel.setFrameTopLeftPoint(NSPoint(x: x, y: top))
+        return NSScreen.screens.first { s in button.map { s.frame.intersects($0) } ?? false } ?? NSScreen.main
+    }
+
+    /// Placed by `PanelPlacement`: under the icon when it's laid out, else
+    /// the top right of the screen under the pointer; always on a screen.
+    private func position(_ panel: NSPanel) {
+        let screens = ([NSScreen.main].compactMap { $0 } + NSScreen.screens.filter { $0 != NSScreen.main })
+            .map { PanelPlacement.Screen(frame: $0.frame, visible: $0.visibleFrame) }
+        let frame = PanelPlacement.frame(anchor: anchor?(), screens: screens, mouse: NSEvent.mouseLocation,
+                                         size: panel.frame.size)
+        panel.setFrame(frame, display: false)
+        linkLog.debug("panel placed at \(frame.debugDescription, privacy: .public); icon: \((self.anchor?()).map { $0.debugDescription } ?? "none", privacy: .public)")
+    }
+
+    /// The icon got a real place after the panel opened without one (a cold
+    /// launch): put the panel under it.
+    func reanchor() {
+        guard isShown, let window else { return }
+        position(window)
     }
 
     private func startWatching(_ panel: NSPanel) {
@@ -179,9 +242,9 @@ final class PanelController {
             MainActor.assumeIsolated {
                 // A dropdown open over the panel closes on the same click;
                 // look again once it has.
-                guard PanelHold.active else { self?.hide(); return }
+                guard PanelHold.active else { self?.hide("a click in another app"); return }
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                    if !PanelHold.active { self?.hide() }
+                    if !PanelHold.active { self?.hide("a click in another app") }
                 }
             }
         }) {
@@ -191,10 +254,28 @@ final class PanelController {
         // Another window of ours (Settings) or another app took the keyboard;
         // not our own dropdown or folder picker over the panel (PanelHold).
         observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
+            MainActor.assumeIsolated {
+                guard let self, !PanelHold.active else { return }
+                // Another window of ours has the key now, or the app is
+                // active (the keyboard went somewhere real); key going to
+                // nobody while the app isn't active took nothing from us.
+                let reason = PanelHide.Reason.resignedKey(keyTaken: NSApp.keyWindow != nil && NSApp.keyWindow !== panel)
+                guard PanelHide.shouldHide(reason, appActive: NSApp.isActive, justOpenedByLink: self.steady) else {
+                    linkLog.debug("resign key ignored (app active: \(NSApp.isActive), just opened by a link: \(self.steady))")
+                    return
+                }
+                self.hide("resigned key")
+            }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
+            MainActor.assumeIsolated {
+                guard let self, !PanelHold.active else { return }
+                guard PanelHide.shouldHide(.appResignedActive, appActive: NSApp.isActive, justOpenedByLink: self.steady) else {
+                    linkLog.debug("resign active ignored (just opened by a link)")
+                    return
+                }
+                self.hide("app resigned active")
+            }
         })
     }
 
@@ -245,11 +326,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The one reader of the event stream, and where its alerts go (T2.3).
     private var events: EventFeed?
+    /// A cc-moss:// link that arrived before the panel existed (a cold start).
+    private var pendingLink: PanelLink?
     private var alerts: AlertCenter?
     private var startup: StartupReminder?
 
+    /// Before SwiftUI sees any event: links come to us, and the chosen
+    /// appearance is on before the first window draws.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        AppAppearance.apply()
+        takeLinks()
+    }
+
+    /// `cc-moss://` links as an Apple Event, handled here. Left to SwiftUI,
+    /// a link went to the Settings window scene and opened Settings too.
+    private func takeLinks() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openLink(_:reply:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass),
+                                                     andEventID: AEEventID(kAEGetURL))
+        linkLog.debug("link handler installed")
+    }
+
+    @objc private func openLink(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue, let url = URL(string: raw) else { return }
+        linkLog.debug("link event received: \(raw, privacy: .public)")
+        application(NSApp, open: [url])
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI may set its own link handler while launching: ours again.
+        takeLinks()
+        // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
+        if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)
+        if let link = pendingLink {
+            pendingLink = nil
+            linkLog.debug("pending link handled")
+            DispatchQueue.main.async { [weak self] in self?.open(link) }
+        }
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
         startAlerts()
         // The global shortcut does what a click on the icon does.
@@ -280,6 +394,71 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await LanguageState.shared.load(from: client) }
     }
 
+    /// Opened again (Spotlight, `open -a cc-moss`, the Dock icon when it
+    /// shows): the panel, as a click on the menu bar icon would. Handy when
+    /// the icon is hidden behind the notch or other icons.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panel?.show()
+        return false
+    }
+
+    /// `cc-moss://panel[/sessions|queue|moss]`: the panel, on that page.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let link = urls.lazy.compactMap(PanelLink.init).first else { return }
+        // Launched by the link: it comes before the panel exists. Kept until
+        // the menu bar icon (and its panel) is up.
+        guard panel != nil else {
+            pendingLink = link
+            linkLog.debug("link kept until the panel exists")
+            return
+        }
+        open(link)
+    }
+
+    private func open(_ link: PanelLink) {
+        switch link {
+        case .panel: break
+        case .sessions: model.page = .sessions
+        case .queue: model.showQueue()
+        case .moss: model.showMoss()
+        }
+        showForLink(tries: 10)
+    }
+
+    /// Show the panel for a link: once the status button is in the menu bar
+    /// (right after a cold launch it may not be yet; tried every 0.1 s for
+    /// about a second), held through the launch's focus changes, and shown
+    /// again once if it didn't stay up.
+    private func showForLink(tries: Int) {
+        guard let statusItem else { return }
+        guard statusItem.isPlaced || tries <= 0 else {
+            linkLog.debug("status button not placed yet; trying again")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.showForLink(tries: tries - 1) }
+            return
+        }
+        // A link may have launched the app, which is then not active: make
+        // it active, as a click on the menu bar icon does, so the panel
+        // keeps the keyboard.
+        NSApp.activate()
+        statusItem.panel.show(holding: 1.5)
+        linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible), app active: \(NSApp.isActive)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let panel = self?.statusItem?.panel else { return }
+            // Closed by you meanwhile: it stays closed.
+            guard !panel.closedOnPurpose else {
+                linkLog.debug("panel closed meanwhile; left closed")
+                return
+            }
+            // By now the icon is laid out: under it, if it's somewhere real;
+            // shown again only if something else took it off screen.
+            if panel.isVisible {
+                panel.reanchor()
+            } else if panel.isShown {
+                panel.showAgain(holding: 1.5)
+            }
+        }
+    }
+
     /// A menu bar app lives on with no window open. SwiftUI otherwise answers
     /// yes here (Settings is its only window scene), so Mo hiding for a moment
     /// after a click, with Settings closed, quit the whole app.
@@ -292,6 +471,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         notifier?.onAction = { [weak self] action, slot in
             guard let self else { return }
             AlertCenter.perform(action, slot: slot, model: self.model) { self.panel?.show() }
+        }
+        notifier?.onAsk = { [weak self] id in
+            guard let self else { return }
+            self.model.focusAsk(id)
+            self.panel?.show()
         }
         let alerts = AlertCenter(model: model, notifier: notifier, context: { [weak self] in
             AlertContext(
@@ -308,6 +492,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alerts.handle(events)
         }
         feed.start()
+        model.onAsks = { alerts.handleAsks($0) }
+        model.onMossReplies = { alerts.handleMossReplies($0) }
+        let highlight = panel?.onVisibilityChange
+        panel?.onVisibilityChange = { [weak self] shown in
+            highlight?(shown)
+            self?.model.panelShown = shown
+            if !shown { alerts.panelClosed() }
+        }
         self.alerts = alerts
         self.events = feed
         let startup = StartupReminder(model: model) { alerts.remindMissed($0) }

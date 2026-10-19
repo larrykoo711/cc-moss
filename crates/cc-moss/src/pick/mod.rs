@@ -275,6 +275,9 @@ fn end(item: &Item, tmux: &Tmux<ProcessRunner>) -> String {
     let Item::Session(s) = item else {
         return String::new();
     };
+    if s.claude.as_ref().is_some_and(|c| c.moss) {
+        return crate::cmd::moss::protected_hint();
+    }
     let result = s
         .claude
         .as_ref()

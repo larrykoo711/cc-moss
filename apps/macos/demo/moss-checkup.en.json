@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608800000-ee0001",
+   "at": "2026-10-16T10:00:00Z",
+   "from": "you",
+   "text": "Give my sessions a checkup: fix what you can, then a short brief; give me options for what I need to decide.",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608890000-ee0002",
+   "at": "2026-10-16T10:01:30Z",
+   "from": "moss",
+   "text": "Checkup done, mostly fine.\n· Fixed: named 2 sessions, reinstalled the hooks\n· For you: 4 sessions dropped. Bring them back?",
+   "reply_to": "1760608800000-ee0001",
+   "fallback": false,
+   "buttons": [
+    "Bring all back",
+    "Only today's",
+    "Let them go"
+   ]
+  }
+ ]
+}

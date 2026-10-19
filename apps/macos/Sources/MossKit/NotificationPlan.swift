@@ -11,8 +11,12 @@ public enum AlertKind: String, CaseIterable, Sendable {
     case finished
     /// An interrupted session is back.
     case restored
+    /// Moss answered something you sent from the panel (T2.3). Never in the
+    /// event stream: the app makes it, and it never merges with a session's alert.
+    case mossReply = "moss_reply"
 
-    public var defaultOn: Bool { self != .finished }
+    /// Moss's replies have no switch of their own; the toggles never see them.
+    public var defaultOn: Bool { self != .finished && self != .mossReply }
 
     /// What the alert offers; clicking the alert itself does the same.
     public var action: AlertAction { self == .interrupted ? .restore : .open }
@@ -65,14 +69,19 @@ public struct SessionAlert: Equatable, Sendable {
     /// For `needsYou`: `permission`, `question` or `input`.
     public var reason: String?
     public var at: Date
+    /// The question this is about (T1.4), which can be answered right where
+    /// the alert shows; nil for alerts made from events.
+    public var askId: String?
 
-    public init(id: Int, slotId: String, kind: AlertKind, name: String? = nil, reason: String? = nil, at: Date) {
+    public init(id: Int, slotId: String, kind: AlertKind, name: String? = nil, reason: String? = nil, at: Date,
+                askId: String? = nil) {
         self.id = id
         self.slotId = slotId
         self.kind = kind
         self.name = name
         self.reason = reason
         self.at = at
+        self.askId = askId
     }
 }
 
@@ -86,6 +95,9 @@ public struct AlertNote: Equatable, Sendable {
     public var slotId: String
     /// Notifications of one session stack together.
     public var thread: String
+    /// A question's notification: clicking it opens the panel on that
+    /// question, and it is taken back once the question is gone.
+    public var askId: String? = nil
 }
 
 /// Turns new events into alerts: drops the kinds you switched off and folds
@@ -130,6 +142,21 @@ public struct NotificationPlan: Sendable {
                   action: .restore, slotId: allInterrupted, thread: allInterrupted)
     }
 
+    /// The notification for a question the panel can answer. Our own words,
+    /// as for any alert: the question itself is on the card it opens.
+    public static func askNote(for alert: SessionAlert, title: String) -> AlertNote {
+        let askId = alert.askId ?? ""
+        let (heading, body) = alert.reason == "permission"
+            ? (L.t("\(title) needs your OK", "\(title) 需要你点头"),
+               L.t("It wants to do something. Click to allow or deny it.", "它想做一件事，点开就能同意或拒绝。"))
+            : (L.t("\(title) has a question", "\(title) 有个问题"),
+               L.t("Click to answer it, no terminal needed.", "点开就能直接答，不用进终端。"))
+        return AlertNote(id: askNoteID(askId), title: heading, body: body, action: .open,
+                         slotId: alert.slotId, thread: alert.slotId, askId: askId)
+    }
+
+    public static func askNoteID(_ askId: String) -> String { "cc-moss.ask.\(askId)" }
+
     /// The notification for `alert`; `title` is the session's display name.
     /// The wording never promises "right now": a permission prompt reaches
     /// cc-moss some seconds after it appears.
@@ -157,6 +184,9 @@ public struct NotificationPlan: Sendable {
         case .restored:
             heading = L.t("\(title) is back", "\(title) 找回来了")
             body = L.t("Right where you left off.", "从上次停下的地方接着来。")
+        case .mossReply:
+            heading = L.t("Moss replied", "Moss 回你了")
+            body = L.t("The reply is on the Moss page.", "回复在面板的 Moss 页里。")
         }
         return AlertNote(id: "cc-moss.\(alert.id)", title: heading, body: body, action: alert.kind.action,
                          slotId: alert.slotId, thread: alert.slotId)
@@ -185,6 +215,12 @@ public enum NotificationAuth: Equatable, Sendable {
     func requestAuthorization() async -> NotificationAuth
     /// True when the system took it.
     func post(_ note: AlertNote) async -> Bool
+    /// Take notifications back (their question was answered elsewhere).
+    func withdraw(_ ids: [String])
+}
+
+extension Notifier {
+    public func withdraw(_ ids: [String]) {}
 }
 
 /// Asks for permission the first time a notification is due (not at
@@ -197,6 +233,10 @@ public enum NotificationAuth: Equatable, Sendable {
 
     private let notifier: Notifier
     private var asked = false
+    /// Notes on their way (waiting on the system), and those of them taken
+    /// back meanwhile: never posted after that. Both empty when idle.
+    private var inFlight: Set<String> = []
+    private var withdrawn: Set<String> = []
 
     public init(notifier: Notifier) {
         self.notifier = notifier
@@ -213,17 +253,36 @@ public enum NotificationAuth: Equatable, Sendable {
         auth = await notifier.requestAuthorization()
     }
 
+    public func withdraw(_ ids: [String]) {
+        guard !ids.isEmpty else { return }
+        withdrawn.formUnion(ids.filter(inFlight.contains))
+        notifier.withdraw(ids)
+    }
+
     /// Post `note` if macOS allows it, asking first if it never has. False
     /// when it was not posted; `auth` then says why.
     @discardableResult
     public func deliver(_ note: AlertNote) async -> Bool {
+        inFlight.insert(note.id)
+        defer {
+            inFlight.remove(note.id)
+            withdrawn.remove(note.id)
+        }
         var status = await notifier.authorization()
         if status == .notDetermined, !asked {
             asked = true
             status = await notifier.requestAuthorization()
         }
         auth = status
+        // Taken back while we waited for the system: it isn't posted at all.
+        if withdrawn.contains(note.id) { return false }
         guard status == .allowed else { return false }
-        return await notifier.post(note)
+        let posted = await notifier.post(note)
+        // Taken back while it was being posted: take it back again.
+        if withdrawn.contains(note.id) {
+            notifier.withdraw([note.id])
+            return false
+        }
+        return posted
     }
 }

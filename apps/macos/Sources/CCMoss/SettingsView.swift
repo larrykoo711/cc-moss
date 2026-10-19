@@ -15,6 +15,10 @@ struct SettingsView: View {
     @State var tab: Tab = .general
     /// Canned `alias ls --json` for screenshots.
     var aliasDemo: AliasList?
+    /// A canned daemon check for screenshots.
+    var daemonDemo: DaemonCheck?
+    /// A canned Moss check for screenshots.
+    var mossDemo: MossCheck?
     @State private var search = ""
     @FocusState private var searchFocused: Bool
     @State private var back: [Tab] = []
@@ -26,7 +30,7 @@ struct SettingsView: View {
     /// The sections, in the sidebar's order. Everyday things first, one
     /// subject per page; About stands apart at the bottom of the list.
     enum Tab: String, CaseIterable, Hashable {
-        case general, shortcuts, menuBar, mo, notifications, permissions, about
+        case general, shortcuts, menuBar, mo, notifications, permissions, moss, about
 
         var title: String {
             switch self {
@@ -36,6 +40,7 @@ struct SettingsView: View {
             case .notifications: L.t("Notifications", "通知")
             case .shortcuts: L.t("Shortcuts", "快捷键")
             case .permissions: L.t("Permissions", "权限")
+            case .moss: "Moss"
             case .about: L.t("About", "关于")
             }
         }
@@ -48,6 +53,7 @@ struct SettingsView: View {
             case .notifications: Icons.notifications
             case .shortcuts: Icons.shortcuts
             case .permissions: Icons.permissions
+            case .moss: "server.rack"
             case .about: "infinity"
             }
         }
@@ -58,8 +64,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup language english chinese new session bypass permission workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 语言 中文 英文 english 新会话 bypass 权限 放手 工作区 目录 文件夹 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup language english chinese appearance theme light dark mode new session bypass permission workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 语言 中文 英文 english 外观 主题 浅色 深色 暗色 theme 新会话 bypass 权限 放手 工作区 目录 文件夹 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
@@ -69,6 +75,8 @@ struct SettingsView: View {
                                                   "快捷键 热键 键盘 连按 唤出 面板 短命令 终端 别名 输入 alias")]
             case .permissions: [title, L.t("privacy security accessibility automation notifications allow system events terminal tab double tap",
                                            "隐私 安全 辅助功能 自动化 通知 允许 授权 system events 终端 标签页 连按")]
+            case .moss: [title, L.t("moss resident session always on off switch restart daemon background launchd login running start keep alive checkup daily brief",
+                                     "Moss 常驻 会话 一直开着 开关 关闭 重启 守护进程 后台 登录 运行 启动 launchd 体检 每天 简报")]
             case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }
@@ -123,9 +131,10 @@ struct SettingsView: View {
                         case .general: GeneralSettings(model: model)
                         case .menuBar: MenuBarSettings(model: model)
                         case .mo: PetSettings()
-                        case .notifications: NotificationSettings()
+                        case .notifications: NotificationSettings(model: model)
                         case .shortcuts: ShortcutsSettings(model: model, demo: aliasDemo)
                         case .permissions: PermissionsSettings(model: model)
+                        case .moss: MossSettings(model: model, demo: daemonDemo, mossDemo: mossDemo)
                         case .about: AboutSettings(model: model)
                         }
                     }
@@ -390,6 +399,8 @@ struct FilledField: View {
     /// The form's one field: taller, larger type, text selected on arrival
     /// so typing replaces it.
     var large = false
+    /// Outline colour for a value that needs a second look (a taken name).
+    var tint: Color?
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -405,12 +416,15 @@ struct FilledField: View {
             .background(RoundedRectangle(cornerRadius: 7).fill(Theme.selection(scheme).opacity(0.8)))
             .overlay(
                 RoundedRectangle(cornerRadius: 7)
-                    .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
+                    .strokeBorder(tint?.opacity(0.8) ?? (focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme)),
+                                  lineWidth: focused || tint != nil ? 1.5 : 1)
             )
             .animation(.easeOut(duration: 0.12), value: focused)
             .onAppear {
                 guard autofocus else { return }
-                focused = true
+                // A moment later: on appearing the field isn't in the window
+                // yet (the form is still fading in), so focus set now is lost.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { focused = true }
                 if large {
                     DispatchQueue.main.async { NSApp.sendAction(#selector(NSResponder.selectAll(_:)), to: nil, from: nil) }
                 }
@@ -477,6 +491,7 @@ struct GeneralSettings: View {
     @State private var loginError: String?
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
+    @State private var appearance = AppearanceChoice.load().rawValue
     /// `claude.permission_mode` as last read or saved (bypass until read).
     @State private var permissionMode = PermissionMode.bypass
     @State private var bypass = true
@@ -511,6 +526,23 @@ struct GeneralSettings: View {
                     (LangChoice.en.rawValue, "English"),
                 ])
                 .onChange(of: language) { _, new in setLanguage(new) }
+            }
+        }
+        SettingsCard(title: L.t("Appearance", "外观")) {
+            CardRow(
+                title: L.t("Appearance", "外观"),
+                detail: L.t("Follow your Mac, or keep it light or dark.",
+                            "跟随系统，也可以固定成浅色或深色。"),
+                divider: false
+            ) {
+                SlidingPicker(selection: $appearance, options: [
+                    (AppearanceChoice.system.rawValue, L.t("System", "跟随系统")),
+                    (AppearanceChoice.light.rawValue, L.t("Light", "浅色")),
+                    (AppearanceChoice.dark.rawValue, L.t("Dark", "深色")),
+                ])
+                .onChange(of: appearance) { _, new in
+                    AppAppearance.choose(AppearanceChoice(rawValue: new) ?? .system)
+                }
             }
         }
         SettingsCard(title: L.t("New sessions", "新会话")) {
@@ -820,10 +852,13 @@ struct AboutSettings: View {
     private func runUpdate() {
         guard let cli = model.cliPath else { return }
         let command = LaunchPlan.cliCommand(cli: cli, ["update"])
-        if let failure = Opener.run(command: command, in: model.terminals.current) {
-            model.copy(failure.command)
-            problem = L.t("Couldn't open \(failure.terminalName). The command is on your clipboard: paste it in a terminal.",
-                          "没能打开\(failure.terminalName)。命令已经复制好了，贴到终端里运行就行。")
+        let terminal = model.terminals.current
+        Task {
+            if let failure = await Opener.run(command: command, in: terminal) {
+                model.copy(failure.command)
+                problem = L.t("Couldn't open \(failure.terminalName). The command is on your clipboard: paste it in a terminal.",
+                              "没能打开\(failure.terminalName)。命令已经复制好了，贴到终端里运行就行。")
+            }
         }
     }
 }

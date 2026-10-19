@@ -165,10 +165,29 @@ struct SectionHeader: View {
     }
 }
 
+/// Above the sessions you pinned.
+struct PinnedHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "pin.fill")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(L.t("Pinned", "已置顶"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+}
+
 /// One session in two lines: state, name, when / your note or its last message.
 struct SessionRow: View {
     let session: Session
     let selected: Bool
+    /// Under the pointer: a lighter wash than the selection.
+    var hovered = false
     /// Buttons shown while the row is hovered, the main one last; empty
     /// otherwise.
     var actions: [PanelAction] = []
@@ -179,18 +198,60 @@ struct SessionRow: View {
     var perform: (PanelAction) -> Void = { _ in }
     /// Why it could not be brought back; replaces the second line.
     var problem: String?
+    /// Pinned to the top: a filled pin after the name, always.
+    var pinned = false
+    /// Its reply line is open: the row and the line share one background.
+    var lineOpen = false
+    /// Pin or unpin; nil where there's no pin (Moss). On hover an outline
+    /// pin offers it.
+    var pin: (() -> Void)?
     /// On its way back right now.
     var restoring = false
+    /// While searching: the name's matched characters, lit.
+    var highlight: [Range<Int>] = []
+    /// While searching: its folder, small, after the name.
+    var folder: String?
+    /// While searching: why it matched, in place of the second line.
+    var reason: String?
+    /// Something under way (moving into tmux): a spinner and these words in
+    /// place of the second line.
+    var progress: String?
     @Environment(\.colorScheme) private var scheme
+
+    /// The name, with the matched characters in bold brand.
+    private var title: AttributedString {
+        var out = AttributedString(session.title)
+        guard !highlight.isEmpty else { return out }
+        let chars = Array(session.title)
+        out = AttributedString()
+        for (i, ch) in chars.enumerated() {
+            var piece = AttributedString(String(ch))
+            if highlight.contains(where: { $0.contains(i) }) {
+                piece.foregroundColor = Theme.brand
+                piece.font = .system(size: 13, weight: .bold)
+            }
+            out += piece
+        }
+        return out
+    }
 
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             stateIcon
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(session.title)
+                    Text(title)
                         .font(.system(size: 13, weight: .medium))
                         .lineLimit(1)
+                    if let folder {
+                        Text(folder)
+                            .font(.system(size: 11))
+                            .foregroundStyle(.tertiary)
+                            .lineLimit(1)
+                    }
+                    if let pin, pinned || hovered {
+                        PinButton(pinned: pinned, action: pin)
+                    }
                     if !session.inTmux {
                         Image(systemName: Icons.outsideTmux)
                             .font(.system(size: 10, weight: .semibold))
@@ -200,7 +261,23 @@ struct SessionRow: View {
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
                 }
-                if let problem {
+                if let progress {
+                    HStack(spacing: 5) {
+                        ProgressView().controlSize(.mini)
+                        Text(progress).lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                } else if let reason {
+                    HStack(spacing: 4) {
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 9.5, weight: .semibold))
+                            .foregroundStyle(.tertiary)
+                        Text(reason).lineLimit(1).truncationMode(.tail)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                } else if let problem {
                     HStack(spacing: 4) {
                         Image(systemName: Icons.cannotRestore)
                             .font(.system(size: 10, weight: .semibold))
@@ -249,7 +326,7 @@ struct SessionRow: View {
         .frame(height: 48)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? Theme.selection(scheme) : .clear)
+                .fill(lineOpen ? .clear : selected ? Theme.selection(scheme) : hovered ? Theme.selection(scheme).opacity(0.5) : .clear)
         )
     }
 
@@ -281,16 +358,22 @@ struct SessionRow: View {
 
 /// A small turning arc in the brand colour: Claude is on it.
 struct WorkingRing: View {
-    @State private var turning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The angle comes from the clock, not from a repeating animation: a
+    /// `repeatForever` animation also carried along the ring's position when
+    /// its row appeared or moved, so it drifted off the icon's centre,
+    /// towards its bottom-left corner.
     var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.72)
-            .stroke(Theme.brand, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            .frame(width: 11, height: 11)
-            .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1
+            Circle()
+                .trim(from: 0, to: 0.72)
+                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                .frame(width: 11, height: 11)
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: 11, height: 11)
     }
 }
 
@@ -382,7 +465,10 @@ struct ActionsMenu: View {
         } label: {
             HStack(spacing: 9) {
                 ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
+                    .opacity(a.disabled ? 0.45 : 1)
                 Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
+                    .foregroundStyle(a.disabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                if a.dot { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
                 Spacer(minLength: 16)
                 if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
             }
@@ -463,6 +549,7 @@ struct RowActionButton: View {
                     Image(systemName: action.icon).font(.system(size: 13, weight: .medium))
                 }
             }
+            .opacity(action.disabled ? 0.35 : 1)
             .frame(width: 30, height: 30)
             .background(RoundedRectangle(cornerRadius: 8).fill(shown ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(shown ? Theme.hairline(scheme) : .clear))
@@ -474,5 +561,29 @@ struct RowActionButton: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
         .tip(action.help ?? action.title)
         .accessibilityLabel(action.title)
+    }
+}
+
+/// The pin after a session's name: outline on hover to pin it, filled while
+/// it's pinned (click again to unpin).
+struct PinButton: View {
+    let pinned: Bool
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: pinned ? "pin.fill" : "pin")
+                .font(.system(size: 10, weight: .semibold))
+                .rotationEffect(.degrees(45))
+                .foregroundStyle(pinned ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(hovering ? .secondary : .tertiary))
+                .frame(width: 16, height: 16)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .tip(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
+        .accessibilityLabel(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
     }
 }

@@ -20,7 +20,7 @@
 
     <div class="hero-copy relative mx-auto max-w-6xl px-5 text-center">
       <a href="https://github.com/larrykoo711/cc-moss/releases/latest" class="reveal inline-flex items-center gap-2 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] pl-2 pr-3 py-1 text-xs text-fg/75 hover:text-fg transition-colors">
-        <span class="rounded-full bg-coral/15 text-coral px-2 py-0.5 font-medium">0.2.2</span>
+        <span class="rounded-full bg-coral/15 text-coral px-2 py-0.5 font-medium">0.3.0</span>
         <span lang="zh">状态栏 App 来了</span><span lang="en">Now in your menu bar</span>
       </a>
       <h1 class="reveal mt-7 text-[clamp(2.75rem,7.2vw,5.75rem)] font-semibold tracking-[-0.045em] leading-[0.98]" style="--d:80ms">
@@ -253,7 +253,7 @@
           <li>
             <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>
             <p class="mt-4 font-medium"><span lang="zh">只在你的电脑上</span><span lang="en">Private by design</span></p>
-            <p class="mt-1 text-sm text-fg/45"><span lang="zh">你的会话和数据不出这台电脑。</span><span lang="en">Nothing about you leaves your Mac.</span></p>
+            <p class="mt-1 text-sm text-fg/45"><span lang="zh">会话记录只存在这台电脑上。</span><span lang="en">Your session records stay on your Mac.</span></p>
           </li>
           <li>
             <svg viewBox="0 0 24 24" class="w-6 h-6 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h9M8.5 4v2M6 6c.5 3 2.5 5.5 5 6.5M11 6c-.6 3.4-2.8 6-6 7.5"/><path d="M13 20l4-9 4 9M14.5 17h5"/></svg>
@@ -399,7 +399,7 @@
           </div>
           <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-5">
             <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">Claude 在等我确认时，我怎么知道？</span><span lang="en">How will I know when Claude needs me?</span></h3>
-            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">cc-moss 会提醒你：发一条系统通知，或者让小莫冒个泡。两者只会有一个，不会重复打扰。</span><span lang="en">cc-moss tells you, with a notification or a word from Mo. Only one of the two, never both.</span></p>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">cc-moss 会提醒你：发一条系统通知，或者让小莫冒个泡。两者只会有一个，不会重复打扰。要是它在问你选择题、或者要你同意一个操作，在面板或小莫那里点一下就能答，不用进终端。</span><span lang="en">cc-moss tells you, with a notification or a word from Mo. Only one of the two, never both. If it’s asking you to pick an option or wants your OK, you can answer right there in the panel or in Mo’s bubble, no terminal needed.</span></p>
           </div>
           <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-6">
             <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">小莫是谁？可以关掉吗？</span><span lang="en">Who is Mo? Can I turn it off?</span></h3>
@@ -407,7 +407,7 @@
           </div>
           <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-7">
             <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">会上传我的对话吗？</span><span lang="en">Does cc-moss upload my conversations?</span></h3>
-            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">不会。会话记录只存在你自己的电脑上。cc-moss 每天最多联网一次，只为检查有没有新版本，不带任何关于你的信息，也可以关掉。</span><span lang="en">No. Your session records stay on your own computer. cc-moss goes online at most once a day, only to check for a new version. It sends nothing about you, and you can turn it off.</span></p>
+            <p class="faq-a mt-2 text-fg/60 leading-relaxed [&amp;_code]:font-mono [&amp;_code]:text-[0.9em] [&amp;_code]:text-fg/80 [&amp;_a]:underline [&amp;_a]:underline-offset-4 [&amp;_a:hover]:text-fg"><span lang="zh">不会。会话记录只存在你自己的电脑上。cc-moss 自己每天最多联网一次，只为检查有没有新版本，不带任何关于你的信息，也可以关掉。Moss 是 cc-moss 替你一直开着的一个 Claude Code 会话，它用你的 Claude Code 登录和 Anthropic 通信，和你自己开的会话一样；闲着的时候什么都不发，每次启动会先用一轮很短的对话读一遍自己的笔记。不想要它，运行 <code>cc-moss moss stop</code>。</span><span lang="en">No. Your session records stay on your own computer. cc-moss itself goes online at most once a day, only to check for a new version. It sends nothing about you, and you can turn it off. Moss, the Claude Code session cc-moss keeps running for you, talks to Anthropic with your Claude Code sign-in, like any session you start. While it waits it sends nothing; each start begins with one short turn to read its notes. Don’t want it? Run <code>cc-moss moss stop</code>.</span></p>
           </div>
           <div class="faq-item py-6 border-t border-fg/[.07]" id="faq-8">
             <h3 class="faq-q text-lg font-semibold tracking-[-0.01em]"><span lang="zh">需要什么电脑？</span><span lang="en">What do I need?</span></h3>

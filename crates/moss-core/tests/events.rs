@@ -168,3 +168,19 @@ fn start_resume(id: &str) -> Event {
         transcript_path: None,
     }
 }
+
+#[test]
+fn batched_prune_waits_for_an_hours_worth() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    let hour = 60 * 60 * 1000;
+    let now = 100 * 24 * hour;
+    let cut = now - EVENT_RETENTION_MS;
+    reg.apply(&start("U1"), &ctx(cut - 11)).unwrap();
+    reg.apply(&prompt("U1"), &ctx(cut - 10)).unwrap();
+    reg.apply(&stop("U1"), &ctx(now - 1_000)).unwrap();
+    // Just past the cut: left for the next batch.
+    assert_eq!(reg.prune_events_batched(cut, hour).unwrap(), 0);
+    // An hour later it goes, with everything else past the cut.
+    assert_eq!(reg.prune_events_batched(cut + hour, hour).unwrap(), 2);
+    assert_eq!(reg.events(Some(0), 500).unwrap().len(), 1);
+}

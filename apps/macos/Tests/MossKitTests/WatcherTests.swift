@@ -1,3 +1,4 @@
+import CoreServices
 import Foundation
 import Testing
 @testable import MossKit
@@ -29,6 +30,38 @@ final class Counter: @unchecked Sendable {
         try await Task.sleep(nanoseconds: 300_000_000)
         try Data("x".utf8).write(to: dir.appendingPathComponent("registry.db-wal"))
         #expect(await waitUntil(2) { count.value >= 1 })
+    }
+
+    /// The temporary folder is under /var, a symlink to /private/var:
+    /// FSEvents reports the real path, and the filter still sees paths under
+    /// the folder it was given.
+    @Test func theFilterSeesPathsUnderTheFolderAsGiven() async throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ccmoss-watch-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        #expect(dir.path.hasPrefix("/var/"), "a folder behind a symlink")
+        let given = dir.path
+        let count = Counter()
+        let watcher = try #require(DirectoryWatcher(path: given, latency: 0.3,
+                                                    filter: { StateChange.matters($0, in: given) }) { count.bump() })
+        defer { watcher.stop() }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        try Data("x".utf8).write(to: dir.appendingPathComponent("registry.changed"))
+        #expect(await waitUntil(2) { count.value >= 1 })
+    }
+
+    @Test func eventsAreGivenUnderTheFolderAsGiven() {
+        #expect(DirectoryWatcher.rebase("/private/var/x/registry.changed", real: "/private/var/x", given: "/var/x")
+            == "/var/x/registry.changed")
+        #expect(DirectoryWatcher.rebase("/elsewhere/f", real: "/private/var/x", given: "/var/x") == "/elsewhere/f")
+        #expect(DirectoryWatcher.rebase("/private/var/x", real: "/private/var/x", given: "/var/x") == "/var/x")
+    }
+
+    @Test func droppedEventsCountAsAChange() {
+        #expect(DirectoryWatcher.mustRescan(FSEventStreamEventFlags(kFSEventStreamEventFlagMustScanSubDirs)))
+        #expect(DirectoryWatcher.mustRescan(FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped)))
+        #expect(DirectoryWatcher.mustRescan(FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped)))
+        #expect(!DirectoryWatcher.mustRescan(FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)))
     }
 
     @Test func coalescesBursts() async throws {

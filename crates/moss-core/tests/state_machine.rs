@@ -47,6 +47,24 @@ fn only_slot(reg: &Registry) -> Slot {
 }
 
 #[test]
+fn activity_refreshes_from_a_later_prompt_only() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    let id = only_slot(&reg).slot_id;
+    // The transcript says more happened since: taken.
+    assert!(reg
+        .refresh_activity(&id, "fix the login page\nand more", 5_000)
+        .unwrap());
+    let s = only_slot(&reg);
+    assert_eq!(s.last_prompt.as_deref(), Some("fix the login page"));
+    assert_eq!(s.last_active_at_ms, 5_000);
+    // Older than what the registry has: left alone.
+    assert!(!reg.refresh_activity(&id, "old", 2_000).unwrap());
+    assert_eq!(only_slot(&reg).last_active_at_ms, 5_000);
+}
+
+#[test]
 fn startup_creates_running_slot() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(
@@ -830,6 +848,7 @@ fn set_name_fills_a_missing_name() {
 #[test]
 fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
     use std::io::Write;
+    let mut scanned = std::collections::HashMap::new();
     let mut t = tempfile::NamedTempFile::new().unwrap();
     writeln!(t, r#"{{"type":"user","message":"hi"}}"#).unwrap();
     let mut reg = Registry::open_in_memory().unwrap();
@@ -841,10 +860,37 @@ fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
         transcript_path: Some(t.path().to_string_lossy().into_owned()),
     };
     reg.apply(&event, &ctx(100, 1_000)).unwrap();
-    assert_eq!(reg.backfill_names().unwrap(), 0);
+    assert_eq!(reg.backfill_names(&mut scanned).unwrap().len(), 0);
     writeln!(t, r#"{{"type":"custom-title","customTitle":"job-late"}}"#).unwrap();
-    assert_eq!(reg.backfill_names().unwrap(), 1);
+    assert_eq!(reg.backfill_names(&mut scanned).unwrap().len(), 1);
     assert_eq!(only_slot(&reg).name.as_deref(), Some("job-late"));
+}
+
+/// `/rename` fires no hook: a named session renamed while idle is picked up
+/// from its transcript at the next look (the panel's rename form relies on it).
+#[test]
+fn backfill_follows_a_rename_of_a_named_session() {
+    use std::io::Write;
+    let mut scanned = std::collections::HashMap::new();
+    let mut t = tempfile::NamedTempFile::new().unwrap();
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"webshop"}}"#).unwrap();
+    let mut reg = Registry::open_in_memory().unwrap();
+    let event = Event::Start {
+        source: StartSource::Startup,
+        session_id: "A".into(),
+        cwd: "/work".into(),
+        title: Some("webshop".into()),
+        transcript_path: Some(t.path().to_string_lossy().into_owned()),
+    };
+    reg.apply(&event, &ctx(100, 1_000)).unwrap();
+    assert!(
+        reg.backfill_names(&mut scanned).unwrap().is_empty(),
+        "same name: nothing to do"
+    );
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"azure-tier"}}"#).unwrap();
+    let renamed = reg.backfill_names(&mut scanned).unwrap();
+    assert_eq!(renamed, vec![only_slot(&reg).slot_id.clone()]);
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("azure-tier"));
 }
 
 // ---- Event stream and attention (T2.1) ----
@@ -1012,6 +1058,83 @@ fn events_interrupted_once_per_interruption() {
         kinds(&reg),
         ["started", "interrupted", "started", "interrupted"]
     );
+}
+
+#[test]
+fn moss_reads_the_registry_but_never_writes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("registry.db");
+    {
+        let mut reg = Registry::open(&path).unwrap();
+        reg.apply(
+            &start(StartSource::Startup, "U1", Some("api")),
+            &ctx(100, 1_000),
+        )
+        .unwrap();
+    }
+    let ro = Registry::open_read_only(&path).unwrap();
+    assert!(ro.read_only());
+    assert_eq!(ro.slots().unwrap().len(), 1, "reads work");
+    let id = ro.slots().unwrap()[0].slot_id.clone();
+    assert!(ro.set_name(&id, "evil").is_err(), "writes do not");
+    assert_eq!(
+        Registry::open(&path).unwrap().slots().unwrap()[0]
+            .name
+            .as_deref(),
+        Some("api")
+    );
+    // Who reads only: Moss's processes, except cc-moss's own hooks.
+    assert!(moss_core::registry::opens_read_only(Some("moss"), false));
+    assert!(!moss_core::registry::opens_read_only(Some("moss"), true));
+    assert!(!moss_core::registry::opens_read_only(None, false));
+}
+
+#[test]
+fn a_late_end_from_an_old_process_leaves_the_new_one_running() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "U1", Some("api")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    // Resumed elsewhere (adopt, restore): a new process runs the session.
+    reg.apply(
+        &start(StartSource::Resume, "U1", Some("api")),
+        &ctx(200, 2_000),
+    )
+    .unwrap();
+    // The old process's SessionEnd arrives late.
+    reg.apply(&end("U1", "other"), &ctx(100, 3_000)).unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(s.status, Status::Running, "{s:?}");
+    assert_eq!(s.pid, Some(200));
+    // Its own end still counts.
+    reg.apply(&end("U1", "other"), &ctx(200, 4_000)).unwrap();
+    assert_eq!(only_slot(&reg).status, Status::Interrupted);
+}
+
+#[test]
+fn events_between_look_back_at_one_slot_and_moment() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(
+        &attention("U1", AttentionReason::Permission),
+        &ctx(100, 5_000),
+    )
+    .unwrap();
+    let id = only_slot(&reg).slot_id;
+    let kinds = |from, to| -> Vec<String> {
+        reg.events_between(&id, from, to)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect()
+    };
+    assert_eq!(kinds(4_000, 6_000), ["needs_you"]);
+    assert_eq!(kinds(1_000, 6_000), ["started", "needs_you"]);
+    assert!(kinds(6_000, 9_000).is_empty());
+    assert!(reg.events_between("nobody", 0, 9_000).unwrap().is_empty());
 }
 
 #[test]

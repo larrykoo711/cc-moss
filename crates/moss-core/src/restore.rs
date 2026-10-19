@@ -33,7 +33,7 @@ pub struct Candidate<'a> {
 /// ids in `only`, each with a verdict. A conversation is restored at most
 /// once: never while it is open anywhere, and from one copy only: the most
 /// recently active copy that is itself restorable, among the selected ones.
-/// `exists` is injected so the rules are testable.
+/// Moss is never a candidate. `exists` is injected so the rules are testable.
 pub fn plan<'a>(
     rows: &'a [(Status, Slot)],
     only: Option<&HashSet<String>>,
@@ -49,6 +49,8 @@ pub fn plan<'a>(
         .iter()
         .filter(|(status, _)| *status == Status::Interrupted)
         .map(|(_, slot)| slot)
+        // The daemon brings Moss back itself; restoring it would make two.
+        .filter(|slot| !slot.is_moss())
         .filter(|slot| only.is_none_or(|ids| ids.contains(&slot.slot_id)))
         .map(|slot| Candidate {
             slot,

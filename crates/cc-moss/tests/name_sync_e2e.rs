@@ -41,6 +41,24 @@ fn prompt_title_renames_tmux_session() {
 }
 
 #[test]
+fn a_rename_without_a_prompt_shows_at_the_next_look() {
+    // The panel renames an idle session with `/rename`, which fires no hook:
+    // the next `ls` (the panel refreshing) picks it up from the transcript.
+    let w = World::new("idle-rename");
+    w.new_session("job-a");
+    let sid = w.session_id("job-a");
+    w.send(&sid, "prompt job-a");
+    let ls = || {
+        let out = w.cc_moss().args(["ls", "--json"]).output().unwrap();
+        assert!(out.status.success(), "ls failed: {out:?}");
+        serde_json::from_slice::<serde_json::Value>(&out.stdout).unwrap()["sessions"][0].clone()
+    };
+    wait_for(|| (ls()["name"] == "job-a").then_some(()));
+    w.send(&sid, "rename job-z");
+    wait_for(|| (ls()["name"] == "job-z" && w.session_names() == ["host_job-z"]).then_some(()));
+}
+
+#[test]
 fn single_window_and_primary_slot_owns_name() {
     let w = World::new("single");
     w.new_session("job-a");

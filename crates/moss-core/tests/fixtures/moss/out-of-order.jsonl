@@ -1,0 +1,5 @@
+{"type":"user","timestamp":"2026-10-19T08:00:01.000Z","isSidechain":false,"message":{"role":"user","content":"which sessions need me right now?"}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:02.000Z","isSidechain":false,"message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"tool_use","name":"Read","input":{"file_path":"SESSIONS.md"}}]}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:09.500Z","isSidechain":false,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Two need you: api and docs."}]}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:04.000Z","isSidechain":false,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Looking..."}]}}
+{"type":"system","subtype":"turn_duration","timestamp":"2026-10-19T08:00:09.600Z"}

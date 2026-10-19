@@ -1,8 +1,13 @@
 #!/bin/bash
 # Stand-in for Claude Code in e2e tests: emits the hook events cc-moss
 # listens to, then takes commands from a FIFO named after the current session
-# id: "prompt <title>", "clear", "exit". Like Claude Code, the transcript file
-# only appears with the first prompt (F8).
+# id: "prompt <title>", "clear", "exit", "ask", "answered". Like Claude Code,
+# the transcript file only appears with the first prompt (F8).
+# "ask" asks one AskUserQuestion the way 2.1.302 does (PreToolUse, then
+# PermissionRequest, which runs in the background so the terminal could still
+# answer); the PermissionRequest hook's output lands in <sid>.ask.out and
+# <sid>.ask.done appears when it exits. "answered" is the user answering in
+# the terminal first (PostToolUse for AskUserQuestion).
 # `claude agents --json`: no other sessions are running.
 [ "$1" = agents ] && { echo '[]'; exit 0; }
 name="" sid="" source=startup
@@ -18,6 +23,11 @@ done
 export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=cli
 hook() { printf '%s' "$2" | "$CC_MOSS_BIN" hook "$1" >/dev/null; }
 transcript() { echo "$CC_MOSS_FAKE_DIR/$1.jsonl"; }
+question='{"questions":[{"question":"Pick one?","header":"Pick","options":[{"label":"A","description":"first"},{"label":"B","description":"second"}],"multiSelect":false}]}'
+tool_event() {
+  printf '{"session_id":"%s","cwd":"%s","prompt_id":"prompt-%s","hook_event_name":"%s","tool_name":"AskUserQuestion","tool_input":%s%s}' \
+    "$sid" "$PWD" "$sid" "$1" "$question" "$2"
+}
 start() {
   rm -f "$CC_MOSS_FAKE_DIR/$sid.fifo"
   mkfifo "$CC_MOSS_FAKE_DIR/$sid.fifo"
@@ -32,10 +42,21 @@ while true; do
       [ -n "$arg" ] && name="$arg"
       echo '{}' >> "$(transcript "$sid")"
       hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+    rename)
+      # Claude Code's `/rename`: written to the transcript, no hook.
+      name="$arg"
+      echo "{\"type\":\"custom-title\",\"customTitle\":\"$arg\",\"sessionId\":\"$sid\"}" >> "$(transcript "$sid")" ;;
     clear)
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"clear\"}"
       sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")
       start clear ;;
+    ask)
+      out="$CC_MOSS_FAKE_DIR/$sid.ask"
+      rm -f "$out.out" "$out.done"
+      hook pre-tool-use "$(tool_event PreToolUse ',"tool_use_id":"toolu_fake"')"
+      ( tool_event PermissionRequest "" | "$CC_MOSS_BIN" hook permission-request > "$out.out"; touch "$out.done" ) & ;;
+    answered)
+      hook post-tool-use "$(tool_event PostToolUse ',"tool_use_id":"toolu_fake"')" ;;
     exit)
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"prompt_input_exit\"}"
       exit 0 ;;

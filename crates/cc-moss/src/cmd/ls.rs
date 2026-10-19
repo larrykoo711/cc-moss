@@ -68,6 +68,8 @@ fn to_json(st: Status, s: &Slot) -> Value {
         "last_active_at": rfc3339(s.last_active_at_ms),
         "ended_at": s.ended_at_ms.map(rfc3339),
         "worktree": worktree::of(&s.cwd).map(|w| json!({ "root": w.root, "repo": w.repo })),
+        // `moss` for Moss (added after schema 1 was set; null otherwise).
+        "role": s.role,
     })
 }
 

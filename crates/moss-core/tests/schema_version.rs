@@ -78,7 +78,7 @@ fn newer_schema_is_read_only() {
         .downcast_ref::<NewerSchema>()
         .is_some());
     assert!(reg.close_by_user(id, 2_000).is_err());
-    assert!(reg.backfill_names().is_err());
+    assert!(reg.backfill_names(&mut Default::default()).is_err());
     assert_eq!(reg.slots().unwrap()[0].name.as_deref(), Some("job-a"));
     assert_eq!(user_version(&path), 99, "never downgraded");
 }

@@ -86,6 +86,7 @@ impl Env {
             .env("CC_MOSS_STATE_DIR", self.path("state"))
             .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
             .env("CC_MOSS_NO_UPDATE_CHECK", "1")
+            .env("CC_MOSS_FORBID_LAUNCHCTL", "1")
             .stdin(Stdio::null());
         cmd
     }
