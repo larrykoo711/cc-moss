@@ -239,9 +239,13 @@ private struct MossConversation: View {
     private static let bottom = "moss-bottom"
     private static let topID = "moss-top"
 
-    /// The newest message is in view: new ones scroll in. Scrolled up to
-    /// read, the page stays where you are.
-    @State private var atBottom = true
+    /// Following the conversation: new messages scroll in. Only scrolling up
+    /// yourself stops it; a tall reply pushing the end out of view does not
+    /// (that pushed-out moment used to read as "you scrolled up", so a long
+    /// reply arrived and the page stayed put).
+    @State private var following = true
+    /// When the conversation last grew, to tell that apart from scrolling.
+    @State private var grewAt = Date.distantPast
     @State private var loadingEarlier = false
 
     var body: some View {
@@ -270,8 +274,11 @@ private struct MossConversation: View {
                             .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
-                        .onAppear { atBottom = true }
-                        .onDisappear { atBottom = false }
+                        .onAppear { following = true }
+                        .onDisappear {
+                            // Out of view because something grew: still following.
+                            if Date().timeIntervalSince(grewAt) > 0.8 { following = false }
+                        }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
@@ -283,17 +290,29 @@ private struct MossConversation: View {
                 if !model.mossStartAtTop { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             }
             .onChange(of: messages.last?.id) { _, _ in
-                // New at the end: follow it if you were there, or if it's yours.
-                guard !loadingEarlier, atBottom || messages.last?.from == .you else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                // New at the end: follow it if you were following, or if it's yours.
+                grewAt = Date()
+                guard !loadingEarlier else { return }
+                if messages.last?.from == .you { following = true }
+                if following { toEnd(proxy) }
             }
             .onChange(of: thinking) { _, _ in
-                guard atBottom else { return }
-                withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+                grewAt = Date()
+                if following { toEnd(proxy) }
             }
         }
         .animation(.easeOut(duration: 0.18), value: messages)
         .animation(.easeOut(duration: 0.18), value: thinking)
+    }
+
+    /// To the end, once now and once more after a tall reply (a drawn card,
+    /// a folded block) has finished laying out.
+    private func toEnd(_ proxy: ScrollViewProxy) {
+        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+            grewAt = Date()
+            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+        }
     }
 
     /// Above the oldest message: "Load earlier" while there may be more, or
