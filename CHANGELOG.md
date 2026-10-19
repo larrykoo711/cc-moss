@@ -43,8 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Checkup (macOS).** Checkup and Tidy up on the Moss page: Moss fixes what doesn't need you (tmux names, hooks and
   aliases, names for sessions without one, dropped sessions whose folder is gone), sends a short brief, and asks with
   yes/no buttons before bringing back, forgetting or ending anything. It acts through the daemon
-  (`cc-moss moss act`), which for those needs your tap on a yes-button under that very question, for that action on
-  that session, in the last 10 minutes, and counts each tap once; it logs every action to `audit.jsonl`, and can be
+  (`cc-moss moss act`), which for those needs your tap on the yes button cc-moss itself puts under the question
+  (worded with what it agrees to, such as "End work"), in the last 10 minutes, and counts each tap once; it logs every action to `audit.jsonl`, and can be
   switched off (`moss.actions`). It runs by itself the first time you open the panel each day; Settings › Moss has Daily checkup and Daily brief
   (`moss.daily_checkup`, `moss.daily_brief`). `cc-moss doctor --sessions --json` lists the facts it reads.
 - **Sessions page: pins, replies and search (macOS).** Pin sessions to a Pinned section (the pin after the name, or

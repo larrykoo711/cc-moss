@@ -511,7 +511,7 @@ ones dropped or idle for a long time.
 | Hooks or alias links broken or missing | Fixes them (like `cc-moss setup` plus `doctor --fix`) |
 | A session with no name (just an id) | Names it after its folder, with `-2` when taken; a name with spaces, punctuation tmux can't take, or too long, is tidied into a standard one (24 characters at most). Renaming types `/rename` into the session, only while it's idle with nothing typed |
 | Dropped, and its folder is gone | Stops offering it back (it can't come back), and tells you afterwards |
-| Dropped, and it could carry on | Asks: bring them all back, just today's, or drop them (bringing back starts sessions and uses your plan) |
+| Dropped, and it could carry on | Asks whether to bring them back, with one button naming which (bringing back starts sessions and uses your plan) |
 | Dropped more than 7 days ago | Asks: stop reminding, or keep it |
 | Open but untouched for 3 days | Asks: close it, or keep it (closing ends it) |
 | Waiting on your answer or reply | Leaves it, and tells you how many are in To Do |
@@ -529,9 +529,9 @@ works too.
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
 it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
-first, with yes and no buttons under its message. Only your tap on a yes-button under that very message counts, for
-that action on that session, within 10 minutes, and only once; anything else, typed words included, doesn't. The
-daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
+first, and cc-moss itself puts the yes button under the question, saying what it agrees to ("Bring back api, db",
+"End work"). Only your tap on that button counts, for exactly what it says, within 10 minutes, and only once;
+Moss's own buttons and anything typed don't. The daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
 say), the action is skipped with a reason. Each one is written to `audit.jsonl` in the state directory (when, what,
 on which session, on the strength of which message, and how it went). For a Moss that only says what to do, set
 `[moss] actions = false` (or `cc-moss config set moss.actions false`).

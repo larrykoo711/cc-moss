@@ -602,6 +602,23 @@ impl Talk {
         let parsed = markers::parse(text);
         let mut sessions = self.sessions(&parsed.sessions, now_ms);
         let proposals = self.proposals(&parsed, now_ms);
+        // The yes buttons are cc-moss's, after Moss's own (a label of Moss's
+        // that reads the same is dropped: there is one button per text).
+        let mut yes: Vec<String> = Vec::new();
+        for p in &proposals {
+            for y in &p.yes {
+                if !yes.contains(y) {
+                    yes.push(y.clone());
+                }
+            }
+        }
+        let mut buttons: Vec<String> = parsed
+            .buttons
+            .iter()
+            .filter(|b| !yes.contains(b))
+            .cloned()
+            .collect();
+        buttons.extend(yes);
         // An answer to news: the cards keep what the news said.
         if sent.from == chat::FROM_EVENTS {
             if let Some(told) = self.told.get(&sent.id) {
@@ -612,7 +629,7 @@ impl Talk {
         Line {
             reply_to: Some(sent.id.clone()),
             silent: parsed.silent || routine,
-            buttons: parsed.buttons,
+            buttons,
             quick: parsed.quick,
             proposals,
             sessions: sessions.iter().map(|(id, _)| id.clone()).collect(),
@@ -626,32 +643,56 @@ impl Talk {
         }
     }
 
-    /// What Moss asked the user to agree to: each `[[confirm:]]` with its
-    /// session found in the registry and its yes among the reply's buttons.
+    /// What Moss asked the user to agree to: each `[[confirm:]]` whose
+    /// session is in the registry. Its yes is a button cc-moss words from
+    /// the proposal itself, one per action naming every session it covers
+    /// («找回 api、db», "End work"), so a tap agrees to exactly what it
+    /// says. Moss's own button labels never count.
     fn proposals(&self, parsed: &markers::Parsed, now_ms: i64) -> Vec<chat::Proposal> {
         if parsed.confirms.is_empty() {
             return Vec::new();
         }
         let slots = self.slots();
-        parsed
-            .confirms
+        let mut found: Vec<(String, String, String)> = Vec::new();
+        for c in &parsed.confirms {
+            let Some(slot_id) =
+                markers::resolve_sessions(std::slice::from_ref(&c.session), &slots, now_ms)
+                    .into_iter()
+                    .next()
+            else {
+                continue;
+            };
+            let Some(slot) = slots.iter().find(|s| s.slot_id == slot_id) else {
+                continue;
+            };
+            let name = slot
+                .name
+                .clone()
+                .filter(|n| !n.trim().is_empty())
+                .unwrap_or_else(|| slot.session_id.chars().take(8).collect());
+            if !found
+                .iter()
+                .any(|(a, s, _)| *a == c.action && *s == slot_id)
+            {
+                found.push((c.action.clone(), slot_id, name));
+            }
+        }
+        let chinese = tr!(false, true);
+        markers::CONSENT_ACTIONS
             .iter()
-            .filter_map(|c| {
-                let slot_id =
-                    markers::resolve_sessions(std::slice::from_ref(&c.session), &slots, now_ms)
-                        .into_iter()
-                        .next()?;
-                let yes: Vec<String> = c
-                    .yes
-                    .iter()
-                    .filter(|y| parsed.buttons.contains(y))
-                    .cloned()
-                    .collect();
-                (!yes.is_empty()).then(|| chat::Proposal {
-                    action: c.action.clone(),
-                    slot_id,
-                    yes,
-                })
+            .flat_map(|action| {
+                let these: Vec<&(String, String, String)> =
+                    found.iter().filter(|(a, _, _)| a == action).collect();
+                let names: Vec<String> = these.iter().map(|(_, _, n)| n.clone()).collect();
+                let yes = markers::yes_label(action, &names, chinese);
+                these
+                    .into_iter()
+                    .map(|(a, slot_id, _)| chat::Proposal {
+                        action: a.clone(),
+                        slot_id: slot_id.clone(),
+                        yes: vec![yes.clone()],
+                    })
+                    .collect::<Vec<_>>()
             })
             .collect()
     }
@@ -903,50 +944,126 @@ mod tests {
         assert!(!went);
     }
 
-    #[test]
-    fn a_confirm_marker_becomes_a_checked_proposal() {
+    /// A Talk whose registry holds sessions with these names; their slot ids.
+    fn talk_with_sessions(dir: &Path, names: &[&str]) -> (Talk, Vec<String>) {
         use moss_core::event::{Context, Event, StartSource};
-        let dir = tempfile::tempdir().unwrap();
-        let talk = Talk::new(dir.path());
+        let talk = Talk::new(dir);
         std::fs::create_dir_all(&talk.home).unwrap();
-        let mut reg = Registry::open(&dir.path().join("registry.db")).unwrap();
-        let start = Event::Start {
-            source: StartSource::Startup,
-            session_id: "a1b2c3d4-0000".into(),
-            cwd: "/w".into(),
-            title: Some("api".into()),
-            transcript_path: None,
-        };
-        let ctx = Context {
-            pid: None,
-            pid_start: None,
-            tmux: None,
-            launch_args: None,
-            now_ms: 1,
-        };
-        reg.apply(&start, &ctx).unwrap();
-        let slot = reg.slots().unwrap()[0].slot_id.clone();
-        let sent = InFlight {
+        let mut reg = Registry::open(&dir.join("registry.db")).unwrap();
+        for (i, name) in names.iter().enumerate() {
+            let start = Event::Start {
+                source: StartSource::Startup,
+                session_id: format!("a1b2c3d{i}-0000"),
+                cwd: format!("/w/{name}"),
+                title: Some(name.to_string()),
+                transcript_path: None,
+            };
+            let ctx = Context {
+                pid: None,
+                pid_start: None,
+                tmux: None,
+                launch_args: None,
+                now_ms: 1,
+            };
+            reg.apply(&start, &ctx).unwrap();
+        }
+        let slots = reg.slots().unwrap();
+        let ids = names
+            .iter()
+            .map(|n| {
+                slots
+                    .iter()
+                    .find(|s| s.name.as_deref() == Some(*n))
+                    .unwrap()
+                    .slot_id
+                    .clone()
+            })
+            .collect();
+        (talk, ids)
+    }
+
+    fn sent_by_you() -> InFlight {
+        InFlight {
             id: "y0".into(),
             from: chat::FROM_YOU.into(),
             tail: String::new(),
             at_ms: 1,
-        };
+        }
+    }
+
+    #[test]
+    fn a_confirm_marker_becomes_a_checked_proposal() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api", "db"]);
         let line = talk.reply_line(
-            &sent,
-            "Bring api back? [[buttons: 找回 | 不要]][[confirm: restore api | 找回 | 好的]][[confirm: end nobody | 找回]]",
+            &sent_by_you(),
+            "Bring them back? [[buttons: 不要]][[confirm: restore api | 好的]][[confirm: restore db]][[confirm: end nobody]]",
             2,
         );
-        // Only a session that exists, and only yes buttons that were offered.
+        // Only sessions that exist; one yes button per action, worded by
+        // cc-moss with every session it covers.
+        let chinese = tr!(false, true);
+        let yes = markers::yes_label("restore", &["api".into(), "db".into()], chinese);
         assert_eq!(
             line.proposals,
-            [chat::Proposal {
-                action: "restore".into(),
-                slot_id: slot,
-                yes: vec!["找回".into()]
-            }]
+            [
+                chat::Proposal {
+                    action: "restore".into(),
+                    slot_id: ids[0].clone(),
+                    yes: vec![yes.clone()]
+                },
+                chat::Proposal {
+                    action: "restore".into(),
+                    slot_id: ids[1].clone(),
+                    yes: vec![yes.clone()]
+                },
+            ]
         );
-        assert_eq!(line.text.as_deref(), Some("Bring api back?"));
+        assert_eq!(line.buttons, ["不要".to_string(), yes]);
+        assert_eq!(line.text.as_deref(), Some("Bring them back?"));
+    }
+
+    #[test]
+    fn moss_labels_never_count_as_consent() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api", "work", "db"]);
+        // A rename question that hides an end and a forget behind 好的.
+        let asked = talk.reply_line(
+            &sent_by_you(),
+            "给 api 改个名？[[buttons: 好的|不要]][[confirm: end work | 好的]][[confirm: forget db | 好的]]",
+            2,
+        );
+        let chinese = tr!(false, true);
+        let end_work = markers::yes_label("end", &["work".into()], chinese);
+        let forget_db = markers::yes_label("forget", &["db".into()], chinese);
+        assert_eq!(
+            asked.buttons,
+            [
+                "好的".to_string(),
+                "不要".into(),
+                forget_db,
+                end_work.clone()
+            ]
+        );
+        let now = 1_800_000_000_000;
+        let at = rfc3339(now - 5_000);
+        let moss = Line {
+            at: rfc3339(now - 10_000),
+            ..asked
+        };
+        let check = |reply: &str, action: &str, slot: &str| {
+            let you = Line::message("y1", &at, chat::FROM_YOU, reply);
+            super::super::act::consent(&[moss.clone(), you], Some("y1"), action, slot, now, &|_| {
+                false
+            })
+        };
+        assert!(check("好的", "end", &ids[1]).is_err(), "Moss's label");
+        assert!(check("好的", "forget", &ids[2]).is_err(), "Moss's label");
+        assert!(check(&end_work, "end", &ids[1]).is_ok(), "cc-moss's button");
+        assert!(
+            check(&end_work, "forget", &ids[2]).is_err(),
+            "one tap agrees to what it says, nothing else"
+        );
     }
 
     #[test]

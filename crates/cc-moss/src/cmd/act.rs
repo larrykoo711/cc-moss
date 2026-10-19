@@ -5,9 +5,10 @@
 //!
 //! Actions that lose nothing run at once: `setup-fix`, `sync-name`, `name`,
 //! `forget-gone`. Those that start or end work or forget a session the user
-//! may want (`restore`, `forget`, `end`) need `--because <id>`: a message of
-//! the user's, under ten minutes old, answering a Moss message with buttons.
-//! Moss cannot write the conversation file, so it cannot make one up.
+//! may want (`restore`, `forget`, `end`) need `--because <id>`: the user's
+//! tap, under ten minutes old, on the yes button cc-moss put under the Moss
+//! message that proposed exactly that (`[[confirm:]]`). Moss cannot write the
+//! conversation file, so it cannot make one up, and it never words the button.
 //! Nothing is ever done to Moss itself.
 
 use std::path::{Path, PathBuf};
@@ -105,9 +106,9 @@ pub fn consent_key(because: &str, action: &str, slot_id: &str) -> String {
 /// Whether `because` is the user's go-ahead for `action` on `slot_id`: a
 /// message of theirs, at most ten minutes old, answering the Moss message
 /// right before it, which proposed exactly this action for exactly this
-/// session (`[[confirm:]]`, recorded by the daemon), and whose text is one
-/// of that proposal's yes buttons. Each go-ahead works once per action and
-/// session (`used`).
+/// session (`[[confirm:]]`, recorded by the daemon), and whose text is that
+/// proposal's yes button, worded by cc-moss. Each go-ahead works once per
+/// action and session (`used`).
 pub fn consent(
     lines: &[Line],
     because: Option<&str>,
@@ -143,7 +144,7 @@ pub fn consent(
     if !agreed {
         return Err(
             "the user's reply is not a yes to this action for this session; ask with \
-             [[buttons:]] and [[confirm:]]"
+             [[confirm: <action> <session>]] and let them tap the yes button cc-moss adds"
                 .into(),
         );
     }
