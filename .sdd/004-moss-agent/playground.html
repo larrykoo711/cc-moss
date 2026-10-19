@@ -288,6 +288,8 @@
     <a data-sec="design"><span class="ic">⟳</span>方案核心</a>
     <a data-sec="anchors"><span class="ic">⚿</span>代码锚点</a>
     <div class="group">实施</div>
+    <a data-sec="progress"><span class="ic">◷</span>进展（10-19）</a>
+    <a data-sec="lane"><span class="ic">✎</span>反馈车道</a>
     <a data-sec="kanban"><span class="ic">☑</span>Kanban 推进</a>
     <!-- 需交互模拟器的需求（决策/参数类）在此加板块，如 <a data-sec="simulator">模拟器</a> -->
   </nav>
@@ -345,6 +347,40 @@
       <li class="ok">claude.rs:76-91</li><li class="ok">AlertRouter.swift:50</li><li class="ok">PetBubble.swift:180-185</li><li class="ok">LoginItem.swift:4-35</li></ul>
   </section>
 
+  <section id="progress">
+    <h2>进展 <span class="badge warn">P2 进行中 · T2.3 / T2.4</span></h2>
+    <p class="lede">P1（T1.1–T1.4）代码齐，T1.4 在真机验收；P2 的 T2.1、T2.2 已完成，T2.3「和 Moss 对话」与 T2.4「体检」在真机上逐条打磨。合并树最近一次：Rust 794、Swift 588 全绿。</p>
+    <table><thead><tr><th>日期</th><th>做了什么</th></tr></thead><tbody>
+      <tr><td>10-18</td><td>S0–S2 立项与设计（G1、G2）；T1.1 探针、T1.2 默认 bypass（PR #36 进 main）、T1.3 代答中枢、T2.1 守护进程、T2.2 Moss 常驻完成；T1.4 桌面答题合入待真机</td></tr>
+      <tr><td>10-19 上午</td><td>P1 先发版分支 <code>release/p1</code> 装本机验收；按反馈加面板侧栏、「待处理」队列页、小莫答题气泡重做；随后并回本分支</td></tr>
+      <tr><td>10-19</td><td>T2.3：Moss 页（内置动作、打字、Markdown、气泡合并、分页折叠、加载状态）；Claude Code 命令截屏回传 + <code>/usage</code> <code>/status</code> 图形卡片；按账号类型推荐；统一快捷栏；会话搜索增强与「让 Moss 帮你找」→ 会话卡片</td></tr>
+      <tr><td>10-19</td><td>T2.4：会话事实、守护进程代办通道（要点头的动作核对你的回复）、每天体检与体检简报、整理会话补名字 / 改正名字</td></tr>
+      <tr><td>10-19</td><td>会话页：发送锁定与跟随、置顶、点击行展开回复并预填 Claude Code 的建议、齿轮菜单、面板高度三档、Moss 退出列表、一键「整理并移进 tmux」（进行中）</td></tr>
+      <tr><td>10-19</td><td>性能：刷新从约每秒一次降到按需（<code>registry.changed</code> + 1.5 / 5 秒间隔）；tmux 名保留中文原名</td></tr>
+    </tbody></table>
+    <p class="lede">两条教训：替换运行中的二进制要先复制到临时名再 <code>mv</code>（<code>cp</code> 覆盖会让签名缓存失效、钩子被系统杀掉）；真机探针起的 claude 会被收编进真实会话记录，结束后必须立刻清理。</p>
+  </section>
+
+  <section id="lane">
+    <h2>反馈车道 <span class="badge info">14 条 · 8 已修</span></h2>
+    <table><thead><tr><th>#</th><th>反馈</th><th>状态</th></tr></thead><tbody>
+      <tr><td>F1</td><td>设置 › Moss「在 Finder 中打开」Moss 的家</td><td><span class="badge mut">待排期</span></td></tr>
+      <tr><td>F2</td><td>设置 › Moss 文案太技术，按 C 端重做</td><td><span class="badge mut">待排期</span></td></tr>
+      <tr><td>F3</td><td>引导用户找到 Moss 对话页并点快捷动作</td><td><span class="badge mut">待排期</span></td></tr>
+      <tr><td>F4</td><td>体检的 tmux 名事实由守护进程代算</td><td><span class="badge warn">部分完成</span></td></tr>
+      <tr><td>F5</td><td>小莫答题气泡：答案引用样式、切题不乱跳</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F6</td><td>面板改名不生效</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F7</td><td>行按钮跳动、点击选中、发送锁定与跟随</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F8</td><td>刷新太频繁</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F9</td><td>置顶分组、悬停卡住、底色粘连</td><td><span class="badge ok">已修</span> <span class="badge mut">悬停待真机确认</span></td></tr>
+      <tr><td>F10</td><td>点击行展开回复并预填建议（浅灰、直接填入、缓存有有效期）</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F11</td><td>齿轮统一设置入口</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F12</td><td>面板高度三档</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F13</td><td>不在 tmux 的会话一键整理并移进 tmux</td><td><span class="badge warn">进行中</span></td></tr>
+      <tr><td>F14</td><td>偶发测试：共用全局语言设置</td><td><span class="badge mut">待排期</span></td></tr>
+    </tbody></table>
+  </section>
+
   <section id="kanban">
     <h2>Kanban 推进 <span class="badge info" id="kbCount">— Phase × — Task</span></h2>
     <!-- 作者纪律（不写进页面正文）：五态 ⬜ Backlog · 🟦 Ready · 🟨 In Progress · 🟩 Review · ✅ Done。
@@ -387,14 +423,14 @@
    st ∈ backlog | ready | doing | review | done
    手填，或跑 skill 的 scripts/gen_kanban.py 从 PLAN 生成 TASKS 粘进来。 */
 const TASKS = [
-  {id:'T1.1', t:'代答探针', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'三问各有证据，选定回填方式', steps:[]},
-  {id:'T1.2', t:'新会话默认 bypass', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'新会话带 bypass、不卡警告框', steps:[]},
-  {id:'T1.3', t:'代答中枢（CLI）', repo:'cc-moss', dep:'T1.1', st:'done', sdd:'—', ac:'假 claude 问答闭环、超时走原生', steps:[]},
-  {id:'T1.4', t:'桌面答题', repo:'cc-moss', dep:'T1.3', st:'review', sdd:'—', ac:'面板答完会话继续', steps:[]},
-  {id:'T2.1', t:'守护进程', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'kill -9 后自动回来', steps:[]},
-  {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'—', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
-  {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'doing', sdd:'—', ac:'面板发一句、看到回复', steps:[]},
-  {id:'T2.4', t:'Doctor', repo:'cc-moss', dep:'T2.3,T1.3', st:'doing', sdd:'—', ac:'体检报告正确、关闭先问', steps:[]},
+  {id:'T1.1', t:'代答探针', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T1.1-ask-probe.spec.md', ac:'三问各有证据，选定回填方式', steps:[]},
+  {id:'T1.2', t:'新会话默认 bypass', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T1.2-bypass-default.spec.md', ac:'新会话带 bypass、不卡警告框', steps:[]},
+  {id:'T1.3', t:'代答中枢（CLI）', repo:'cc-moss', dep:'T1.1', st:'done', sdd:'done/T1.3-ask-broker.spec.md', ac:'假 claude 问答闭环、超时走原生', steps:[]},
+  {id:'T1.4', t:'桌面答题', repo:'cc-moss', dep:'T1.3', st:'review', sdd:'in-progress/T1.4-desktop-answer.spec.md', ac:'面板答完会话继续（真机验收中：侧栏 + 待处理页 + 小莫气泡）', steps:[]},
+  {id:'T2.1', t:'守护进程', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T2.1-daemon.spec.md', ac:'kill -9 后自动回来', steps:[]},
+  {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'done/T2.2-moss-resident.spec.md', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
+  {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'doing', sdd:'in-progress/T2.3-talk-to-moss.spec.md', ac:'面板发一句、看到回复（真机迭代中，AMEND-1～4）', steps:[]},
+  {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'doing', sdd:'in-progress/T2.4-moss-fixes.spec.md', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},

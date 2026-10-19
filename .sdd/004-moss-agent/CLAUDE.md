@@ -30,12 +30,14 @@
 | `diagrams/sequence-ask.html` | 代答时序图 |
 | `diagrams/src/` | 两张图的 archify 源 JSON |
 | `PLAN.md` ⭐ | 4 Phase × 11 Task + R1、依赖图、Kanban |
-| `playground.html` | 可视化档案（背景、缺口、方案、锚点、Kanban） |
+| `playground.html` | 可视化档案（背景、缺口、方案、锚点、进展、反馈车道、Kanban） |
+| `notes/session-names.md` | 会话名与 tmux 名的调研与规则（2026-10-19） |
 
 ## 依赖链 & 推进
 - S0 立项 ✅（2026-10-18）
 - S1 调研 + 设计 ✅：G1 用户批准（2026-10-18），D1–D4 已拍板
-- S2 编排：4 Phase × 11 Task + R1，P1 是 MVP（T1.1–T1.4）；`gen_kanban.py --check` 通过；待 G2
+- S2 编排：4 Phase × 11 Task + R1，P1 是 MVP（T1.1–T1.4）；G2 已过（2026-10-18）
+- S4 实施：T1.1–T1.3、T2.1、T2.2 ✅；T1.4 真机验收中；T2.3、T2.4 进行中（2026-10-19）
 - 第一波可并行：T1.1 探针、T1.2 bypass、T2.1 守护进程
 
 ## 开发笔记

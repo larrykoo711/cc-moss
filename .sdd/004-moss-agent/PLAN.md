@@ -157,11 +157,11 @@ R1 ◄── 全部
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ✅ Done | done/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
-| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟩 Review | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续 |
+| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟩 Review | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续（真机验收中：侧栏 + 待处理页 + 小莫气泡） |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
-| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | 🟨 In Progress | — | 面板发一句、看到回复 |
-| **T2.4** Doctor | cc-moss | T2.3,T1.3 | 🟨 In Progress | — | 体检报告正确、关闭先问 |
+| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | 🟨 In Progress | in-progress/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（真机迭代中，AMEND-1～4） |
+| **T2.4** 体检 | cc-moss | T2.3,T1.3 | 🟨 In Progress | in-progress/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -190,12 +190,36 @@ R1 ◄── 全部
 
 - AMEND（T2.2 → T2.3 实施中，用户发起 2026-10-19）：「置顶怎么有两部分？… Moss agent 默认应该藏起来吧？因为 moss agent 有自己专门的 sidebar 菜单和单独的面板了」→ 会话列表不再固定显示 Moss 行（T2.2「App 面板固定行」作废），Moss 的提醒走侧栏点、待处理与小莫；`pick` / `close` 的保护不变 approved-by=user date=2026-10-19
 
-## 反馈车道（真机反馈，待排期）
+### 2026-10-19
+- P1 先发：从 main 开 `release/p1`（T1.3 + 修正 + T1.4，去掉 Moss 相关）装到本机真机验收；用户反馈后加：面板侧栏（会话 / 待处理 / Moss）、「待处理」队列页、小莫答题气泡重做、面板关闭时把题交给小莫；PR #34 的点击 / 行按钮修复并入。随后 `release/p1` 并回本分支
+- T2.3 开工（G3 过 gate；用户批准三条默认口径）。Rust（inbox / 认领 / 动态摘要 / 控制标记）与 App（Moss 页）两路并行，独立评审 0 Critical / 5 Important / 8 Minor 全修；真机：Moss 加载用户 MCP 启动慢 → `--strict-mcp-config`；输入框没画出就粘贴 → 就绪判断
+- T2.3 AMEND-1 内置动作优先、打字收进键盘图标；AMEND-2 Claude Code 命令（/usage /status 等）截屏回传，`/usage` `/status` 图形卡片，按账号类型（订阅 / API / 云）推荐；AMEND-3 统一快捷栏（按用量排序 + Moss `[[quick:]]` 推荐）；AMEND-4 会话搜索增强 + 「让 Moss 帮你找」+ `[[sessions:]]` 会话卡片
+- T2.3 真机修正：Markdown 块级渲染、气泡 10 分钟内合并、对话分页 30/100、长回复折叠、动态灰字不显示、只回「做完了」的动态强制静默、残留输入自动清、上下文 500k（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`）、加载状态、自动滚到底
+- T2.4 体检开工：`doctor --sessions --json` 事实、守护进程代办通道 `moss act`（要点头的动作核对你的回复）、每天体检、体检简报、整理会话补名字 / 改正名字 / `sync-names`
+- 性能：App 刷新约每秒一次（读 registry 产生的 -wal/-shm 与名字扫描写入自我唤醒）→ 写入时碰 `registry.changed`、App 只盯它，面板开 1.5 秒 / 关 5 秒最小间隔，`claude agents` 每 30 秒一次；实测 30 秒 30 次 → 40 秒 3 次
+- tmux 名保留原名（中文、大小写、emoji），只换 tmux / shell 不认的字符（`notes/session-names.md`）
+- 会话页体验：发送中锁定、发送后跟随、置顶分组（一张扁平列表修复悬停卡住）、点击行展开回复并预填 Claude Code 的下一句建议（`cc-moss suggest`，缓存按轮次 + 10 分钟）、齿轮统一 App 菜单、面板高度三档、Moss 退出会话列表、「移进 tmux / 整理并移进 tmux」（`cc-moss adopt`，进行中）
+- 教训：替换开发版 CLI 时用 `cp` 原地覆盖正在运行的二进制，macOS 签名缓存失效、所有钩子被 SIGKILL 约 2 分钟。规避：一律 `cp` 到临时名再 `mv`
+- 教训：真机探针起的 claude 会被 `claude agents` 收编进真实 registry、Moss 随之播报「断了」。规避：探针结束立刻 close 并核对
 
-- F1 2026-10-19 用户（T2.3 真机）：设置 ›「Moss」加「在 Finder 中打开」Moss 的家（`~/.local/state/cc-moss/moss/`，含 journal / memory / 人设）
-- F2 2026-10-19 用户：设置 ›「Moss」文案太多、太技术，不够 C 端；按 design-voice 重做成人性化的设计（少字、讲用处不讲机制）
-- F4 2026-10-19 controller（T2.4）：体检事实里 tmux 名是否对得上，在 Moss 沙箱里查不到（恒 unknown）；改由守护进程代算会话事实写进 Moss 的家
-- F3 2026-10-19 用户：加引导，带用户定位到 Moss 对话页，并引导点快捷动作（首次使用 / 空状态场景）
+## 反馈车道（真机反馈）
+
+| # | 反馈 | 状态 |
+|---|------|------|
+| F1 | 设置 › Moss「在 Finder 中打开」Moss 的家 | ⬜ 待排期 |
+| F2 | 设置 › Moss 文案太多、太技术，按 C 端重做 | ⬜ 待排期 |
+| F3 | 引导用户找到 Moss 对话页并点快捷动作 | ⬜ 待排期 |
+| F4 | 体检的 tmux 名事实由守护进程代算（`sync-names` 已代办，事实仍待补） | 🟨 部分完成 |
+| F5 | 小莫答题气泡：确认页答案用引用样式、切题不乱跳 | ✅ 已修 |
+| F6 | 面板改名不生效（`/rename` 不触发钩子） | ✅ 已修 |
+| F7 | 会话行按钮跳动、点击选中、发送中锁定、发送后跟随 | ✅ 已修 |
+| F8 | 刷新太频繁 | ✅ 已修 |
+| F9 | 置顶分组、悬停卡住、选中底色粘连 | ✅ 已修（悬停待真机确认） |
+| F10 | 点击会话行展开回复并预填建议；建议浅灰、直接填入；缓存带有效期 | ✅ 已修 |
+| F11 | 齿轮统一设置入口、侧栏去掉「设置」文字 | ✅ 已修 |
+| F12 | 面板高度按会话数三档（大档 70% 屏高） | ✅ 已修 |
+| F13 | 不在 tmux 的会话一键整理并移进 tmux | 🟨 进行中（`cc-moss adopt`） |
+| F14 | 偶发测试：多组测试共用全局语言设置互相干扰 | ⬜ 待排期 |
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
@@ -204,7 +228,7 @@ R1 ◄── 全部
 
 ## 开放问题
 - Q1 版本号：每个 Phase 一个小版本（0.3.0 起），P4 后是否直接 1.0？P4 收尾时定
-- Q2 Moss 默认名字与头像：默认「Moss」，头像沿用 ∞ 标志的变体？T2.2 spec 时给方案
+- ~~Q2 Moss 默认名字与头像~~：默认「Moss」，头像为 ∞ 标志的品牌色圆角方块（T2.3 定）
 - ~~Q3 代答默认等待时长~~：T1.1 实测后定为 300 秒（A5）
 
 ## 已定调（防翻案）
