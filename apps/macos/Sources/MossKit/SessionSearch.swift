@@ -158,7 +158,7 @@ public struct SearchIndex: Sendable {
         return nil
     }
 
-    /// A word that starts with it, the words' initials ("kds" → koo-device-setup,
+    /// A word that starts with it, the words' initials ("mds" → mac-dev-setup,
     /// "jkps" → 接口评审), or the pinyin from the start ("jiekou").
     static func wordStart(_ q: String, _ e: Entry) -> [Range<Int>]? {
         if let w = e.words.first(where: { !$0.chinese && $0.text.hasPrefix(q) }) {

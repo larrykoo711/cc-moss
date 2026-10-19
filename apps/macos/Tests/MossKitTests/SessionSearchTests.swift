@@ -5,7 +5,7 @@ import Testing
 @Suite struct SessionSearchTests {
     let list = sessions([
         sessionJSON(id: "A", name: "api-review", cwd: "/home/u/projects/shop", lastActive: "2026-10-16T09:00:00.000Z"),
-        sessionJSON(id: "B", name: "koo-device-setup", cwd: "/home/u/projects/infra", lastActive: "2026-10-16T08:00:00.000Z"),
+        sessionJSON(id: "B", name: "mac-dev-setup", cwd: "/home/u/projects/infra", lastActive: "2026-10-16T08:00:00.000Z"),
         sessionJSON(id: "C", name: "接口评审", cwd: "/home/u/projects/shop", lastActive: "2026-10-16T07:00:00.000Z"),
         sessionJSON(id: "D", name: "rapid", cwd: "/home/u/projects/web", lastActive: "2026-10-16T10:00:00.000Z"),
         sessionJSON(id: "E", name: "docs", cwd: "/home/u/api-gateway/docs", lastActive: "2026-10-16T06:00:00.000Z"),
@@ -49,8 +49,8 @@ import Testing
     }
 
     @Test func initialsFindDashedAndCamelNames() {
-        #expect(ids("kds") == ["B"])
-        #expect(index.search("kds").first?.nameRanges == [0..<1, 4..<5, 11..<12])
+        #expect(ids("mds") == ["B"])
+        #expect(index.search("mds").first?.nameRanges == [0..<1, 4..<5, 8..<9])
         #expect(ids("fit") == ["G"], "fixInvoiceTotals")
         #expect(ids("setup") == ["B"], "a word start")
     }
@@ -81,8 +81,8 @@ import Testing
     }
 
     @Test func wordsAreSplitWhereTheNameBreaks() {
-        let words = SearchIndex.words("koo-device_setup Now").map(\.text)
-        #expect(words == ["koo", "device", "setup", "now"])
+        let words = SearchIndex.words("mac-dev_setup Now").map(\.text)
+        #expect(words == ["mac", "dev", "setup", "now"])
         #expect(SearchIndex.words("fixInvoiceTotals").map(\.text) == ["fix", "invoice", "totals"])
         #expect(SearchIndex.words("接口").map(\.text) == ["jie", "kou"])
     }
