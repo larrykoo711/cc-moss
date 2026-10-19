@@ -13,7 +13,7 @@ public enum FolderChoice {
         }
     }
 
-    /// "emma-studio" in "~/Documents": the name first, so long paths stay
+    /// "photo-lab" in "~/Documents": the name first, so long paths stay
     /// readable on one line.
     public static func label(_ path: String, home: String) -> Label {
         if path == home { return Label(name: "~", parent: nil) }

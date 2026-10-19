@@ -287,8 +287,8 @@ mod tests {
 
     #[test]
     fn short_names_come_from_the_folder() {
-        assert_eq!(short_name("/Users/me/work/ofoxai"), "ofoxai");
-        assert_eq!(short_name("/Users/me/work/ofoxai/"), "ofoxai");
+        assert_eq!(short_name("/Users/me/work/webshop"), "webshop");
+        assert_eq!(short_name("/Users/me/work/webshop/"), "webshop");
         assert_eq!(
             short_name("/r/cc-moss/.claude/worktrees/97-t7.1"),
             "97-t7-1"

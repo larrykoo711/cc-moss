@@ -328,7 +328,7 @@ mod tests {
             session_id: "0837a145-0000".into(),
             session_ids: vec![],
             name: None,
-            cwd: "/Users/me/emma-studio".into(),
+            cwd: "/Users/me/photo-lab".into(),
             pid: Some(42),
             pid_start: Some("start".into()),
             tmux: None,
@@ -436,11 +436,11 @@ mod tests {
     fn adopt_names_a_nameless_session_after_its_folder() {
         let mut taken = slot();
         taken.slot_id = "s2".into();
-        taken.name = Some("emma-studio".into());
+        taken.name = Some("photo-lab".into());
         let s = slot();
         assert_eq!(
             new_name(&s, &[s.clone(), taken]).as_deref(),
-            Some("emma-studio-2")
+            Some("photo-lab-2")
         );
         let mut named = slot();
         named.name = Some("api".into());

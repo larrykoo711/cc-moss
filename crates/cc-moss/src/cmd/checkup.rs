@@ -566,11 +566,11 @@ mod tests {
     #[test]
     fn checkup_names() {
         let mut nameless = slot(None);
-        nameless.cwd = "/work/ofoxai".into();
+        nameless.cwd = "/work/webshop".into();
         let mut id_named = slot(Some("0123abcd"));
         id_named.slot_id = "s2".into();
         id_named.cwd = "/r/.claude/worktrees/97-t7.1".into();
-        let mut taken = slot(Some("ofoxai"));
+        let mut taken = slot(Some("webshop"));
         taken.slot_id = "s3".into();
         let mut spaced = slot(Some("接口 评审 v1.2"));
         spaced.slot_id = "s4".into();
@@ -578,14 +578,14 @@ mod tests {
         fine.slot_id = "s5".into();
         let mut twin = slot(None);
         twin.slot_id = "s6".into();
-        twin.cwd = "/elsewhere/ofoxai".into();
+        twin.cwd = "/elsewhere/webshop".into();
         let all = [nameless, id_named, taken, spaced, fine, twin];
         let refs: Vec<&Slot> = all.iter().collect();
         let names = name_facts(&refs);
         let get = |id: &str| names.get(id).cloned().unwrap();
         // Unnamed: from the folder, unique among the names there are.
-        assert_eq!(get("s1"), (None, Some("ofoxai-2".to_string())));
-        assert_eq!(get("s6"), (None, Some("ofoxai-3".to_string())));
+        assert_eq!(get("s1"), (None, Some("webshop-2".to_string())));
+        assert_eq!(get("s6"), (None, Some("webshop-3".to_string())));
         assert_eq!(get("s2"), (None, Some("97-t7-1".to_string())));
         // Named but not standard: corrected.
         assert_eq!(get("s4"), (Some("接口-评审-v1-2".to_string()), None));

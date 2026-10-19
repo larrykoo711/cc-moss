@@ -962,8 +962,8 @@ mod tests {
         assert!(Action::parse("sync-names", &a(&["x"])).is_err());
         assert!(!Action::SyncNames.needs_consent());
         assert_eq!(
-            Action::parse("name", &a(&["abc123", "ofoxai"])),
-            Ok(Action::Name("abc123".into(), "ofoxai".into()))
+            Action::parse("name", &a(&["abc123", "webshop"])),
+            Ok(Action::Name("abc123".into(), "webshop".into()))
         );
         assert!(Action::parse("name", &a(&["abc", "two\nlines"])).is_err());
         // Names that would look like another session's in a yes button.

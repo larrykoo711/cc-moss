@@ -5,7 +5,7 @@ import Testing
     let home = "/Users/demo"
 
     @Test func splitsNameFromWhereItLives() {
-        #expect(FolderChoice.label("/Users/demo/Documents/emma-studio", home: home) == .init(name: "emma-studio", parent: "~/Documents"))
+        #expect(FolderChoice.label("/Users/demo/Documents/photo-lab", home: home) == .init(name: "photo-lab", parent: "~/Documents"))
         #expect(FolderChoice.label("/Users/demo/code", home: home) == .init(name: "code", parent: "~"))
         #expect(FolderChoice.label("/Users/demo", home: home) == .init(name: "~", parent: nil))
         #expect(FolderChoice.label("/opt/work", home: home) == .init(name: "work", parent: "/opt"))
@@ -23,7 +23,7 @@ import Testing
 
     @Test func searchWordsAreNotPaths() {
         let exists: (String) -> Bool = { _ in true }
-        #expect(FolderChoice.typedPath("emma", home: home, isFolder: exists) == nil)
+        #expect(FolderChoice.typedPath("photo", home: home, isFolder: exists) == nil)
         #expect(FolderChoice.typedPath("", home: home, isFolder: exists) == nil)
         #expect(FolderChoice.typedPath("~/missing", home: home, isFolder: { _ in false }) == nil)
     }

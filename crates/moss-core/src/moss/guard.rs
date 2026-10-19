@@ -384,7 +384,7 @@ mod tests {
         for fine in [
             "cc-moss moss chat --json",
             // Its hands: the daemon checks what it asks for.
-            "cc-moss moss act name abc123 ofoxai --wait",
+            "cc-moss moss act name abc123 webshop --wait",
             "cc-moss moss act restore abc123 --because 1792000000000-aaaaaa --wait",
             "cc-moss doctor --sessions --json",
             "cc-moss moss profile soul --from drafts/soul.md",

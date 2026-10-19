@@ -873,13 +873,13 @@ fn backfill_follows_a_rename_of_a_named_session() {
     use std::io::Write;
     let mut scanned = std::collections::HashMap::new();
     let mut t = tempfile::NamedTempFile::new().unwrap();
-    writeln!(t, r#"{{"type":"custom-title","customTitle":"ofoxai"}}"#).unwrap();
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"webshop"}}"#).unwrap();
     let mut reg = Registry::open_in_memory().unwrap();
     let event = Event::Start {
         source: StartSource::Startup,
         session_id: "A".into(),
         cwd: "/work".into(),
-        title: Some("ofoxai".into()),
+        title: Some("webshop".into()),
         transcript_path: Some(t.path().to_string_lossy().into_owned()),
     };
     reg.apply(&event, &ctx(100, 1_000)).unwrap();
