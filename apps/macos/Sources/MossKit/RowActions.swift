@@ -14,6 +14,8 @@ public enum RowAction: Hashable, Sendable {
     case copyPath
     /// "Stop reminding…", asked first.
     case close
+    /// Outside tmux: move it in (`cc-moss adopt`), asked first.
+    case adopt
 }
 
 /// Which actions a session's row shows and which wait behind its "⋯": the
@@ -55,13 +57,18 @@ public struct RowActions: Equatable, Sendable {
         // Moss is never dismissed: only switching it off in Settings stops it.
         let close: [RowAction] = Close.allowed(s) && primary != .stopReminding && !s.isMoss ? [.close] : []
 
-        // Left to right (user 2026-10-19): send a message, open, rename.
-        let inline = talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
-        let all = [[primary] + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
+        // Outside tmux and running: it can move in (busy ones wait, but the
+        // button stays to say so).
+        let adopt: [RowAction] = Adopt.availability(s) == .none ? [] : [.adopt]
+
+        // Left to right (user 2026-10-19): move into tmux, send a message, open, rename.
+        let inline = adopt + talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
+        let all = [[primary] + adopt + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
             .filter { !$0.isEmpty }
         self.primary = primary
         self.inline = inline
         self.all = all
-        more = all.map { $0.filter { !inline.contains($0) } }.filter { !$0.isEmpty }
+        // "Move into tmux" stays in "⋯" too: it's easy to miss as an icon.
+        more = all.map { $0.filter { !inline.contains($0) || $0 == .adopt } }.filter { !$0.isEmpty }
     }
 }

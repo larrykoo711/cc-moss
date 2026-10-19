@@ -27,10 +27,10 @@ import Testing
         #expect(!a.all.joined().contains(.close), "stopping is already the main action")
     }
 
-    @Test func outsideTmuxTheFolderIsAllThereIs() {
+    @Test func outsideTmuxItCanMoveInOrGiveItsFolder() {
         let a = RowActions(list[2], hopeless: false)
-        #expect(a.inline == [.copyPath])
-        #expect(a.more == [[.note]])
+        #expect(a.inline == [.adopt, .copyPath])
+        #expect(a.more == [[.adopt], [.note]])
     }
 
     @Test func theFullMenuHasEveryActionOnce() {

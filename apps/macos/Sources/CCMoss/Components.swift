@@ -213,6 +213,9 @@ struct SessionRow: View {
     var folder: String?
     /// While searching: why it matched, in place of the second line.
     var reason: String?
+    /// Something under way (moving into tmux): a spinner and these words in
+    /// place of the second line.
+    var progress: String?
     @Environment(\.colorScheme) private var scheme
 
     /// The name, with the matched characters in bold brand.
@@ -258,7 +261,14 @@ struct SessionRow: View {
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
                 }
-                if let reason {
+                if let progress {
+                    HStack(spacing: 5) {
+                        ProgressView().controlSize(.mini)
+                        Text(progress).lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                } else if let reason {
                     HStack(spacing: 4) {
                         Image(systemName: "magnifyingglass")
                             .font(.system(size: 9.5, weight: .semibold))
@@ -449,7 +459,9 @@ struct ActionsMenu: View {
         } label: {
             HStack(spacing: 9) {
                 ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
+                    .opacity(a.disabled ? 0.45 : 1)
                 Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
+                    .foregroundStyle(a.disabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                 if a.dot { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
                 Spacer(minLength: 16)
                 if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
@@ -531,6 +543,7 @@ struct RowActionButton: View {
                     Image(systemName: action.icon).font(.system(size: 13, weight: .medium))
                 }
             }
+            .opacity(action.disabled ? 0.35 : 1)
             .frame(width: 30, height: 30)
             .background(RoundedRectangle(cornerRadius: 8).fill(shown ? Theme.raised(scheme) : Color.primary.opacity(0.06)))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(shown ? Theme.hairline(scheme) : .clear))

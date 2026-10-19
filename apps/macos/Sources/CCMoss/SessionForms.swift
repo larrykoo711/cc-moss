@@ -135,6 +135,8 @@ extension AppModel {
     /// row, with Claude Code's own suggestion already in it. Any other row
     /// closes it.
     func openReply(_ s: Session) {
+        // Another row: its "Move into tmux?" goes away.
+        if adoptAsk?.id != s.id { adoptAsk = nil }
         guard ReplyLine.opens(s) else {
             closeReply()
             // Not a silent no-op: say why, under the row, for a moment.
@@ -174,14 +176,22 @@ extension AppModel {
 
     /// A quiet line under a row for 2 s: why it can't be typed into.
     func showRowNote(_ id: String, _ why: ReplyLine.Blocked) {
+        // Outside tmux and running: the way in is right there.
+        let movable = why == .notInTmux && sessions.first(where: { $0.id == id }).map { Adopt.availability($0) != .none } == true
         let text = switch why {
+        case .notInTmux where movable: L.t("Not in tmux", "不在 tmux 里")
         case .notInTmux: L.t("Not in tmux, so it can't be typed into from here", "不在 tmux 里，没法从这里打字")
         case .dropped: L.t("Dropped; bring it back first", "断了，先找回")
         }
-        rowNote = (id, text)
+        showRowNote(id, text: text, adopt: movable)
+    }
+
+    /// A quiet line under a row for a moment; one with a link stays longer.
+    func showRowNote(_ id: String, text: String, adopt: Bool = false) {
+        rowNote = (id, text, adopt)
         Task {
-            try? await Task.sleep(nanoseconds: 2_000_000_000)
-            if rowNote?.id == id { rowNote = nil }
+            try? await Task.sleep(nanoseconds: adopt ? 5_000_000_000 : 2_000_000_000)
+            if rowNote?.id == id && rowNote?.text == text { rowNote = nil }
         }
     }
 
