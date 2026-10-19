@@ -1061,6 +1061,30 @@ fn events_interrupted_once_per_interruption() {
 }
 
 #[test]
+fn events_between_look_back_at_one_slot_and_moment() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(
+        &attention("U1", AttentionReason::Permission),
+        &ctx(100, 5_000),
+    )
+    .unwrap();
+    let id = only_slot(&reg).slot_id;
+    let kinds = |from, to| -> Vec<String> {
+        reg.events_between(&id, from, to)
+            .unwrap()
+            .into_iter()
+            .map(|e| e.kind)
+            .collect()
+    };
+    assert_eq!(kinds(4_000, 6_000), ["needs_you"]);
+    assert_eq!(kinds(1_000, 6_000), ["started", "needs_you"]);
+    assert!(kinds(6_000, 9_000).is_empty());
+    assert!(reg.events_between("nobody", 0, 9_000).unwrap().is_empty());
+}
+
+#[test]
 fn attention_set_by_permission_prompt() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))

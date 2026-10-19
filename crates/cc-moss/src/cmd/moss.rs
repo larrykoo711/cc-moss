@@ -474,7 +474,30 @@ pub fn say(json: bool, text: &str) -> Result<()> {
 pub fn chat(json: bool, limit: usize) -> Result<()> {
     let home = moss::home_dir(&state());
     if json {
-        println!("{}", chat::chat_json(&home, limit));
+        let db = state().join("registry.db");
+        let registry = if db.exists() {
+            Registry::open(&db).ok()
+        } else {
+            None
+        };
+        // What an update said of a session, from the registry's events.
+        let told = |slot: &str, from: i64, to: i64| -> Option<String> {
+            let events = registry.as_ref()?.events_between(slot, from, to).ok()?;
+            if let Some(e) = events.iter().find(|e| e.kind == "needs_you") {
+                let why = e
+                    .detail
+                    .get("reason")
+                    .and_then(|r| r.as_str())
+                    .filter(|w| matches!(*w, "permission" | "question" | "input"))
+                    .unwrap_or("input");
+                return Some(format!("needs-you-{why}"));
+            }
+            events
+                .iter()
+                .any(|e| e.kind == "interrupted")
+                .then(|| "dropped".to_string())
+        };
+        println!("{}", chat::chat_json_with(&home, limit, &told));
         return Ok(());
     }
     let messages = chat::fold(&home, limit);

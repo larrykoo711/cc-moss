@@ -273,8 +273,41 @@ pub fn to_json(messages: &[Shown]) -> Value {
 /// The pin is the newest Moss line that carried a `quick` list, shown or
 /// silent: `{"items":[…],"at":…}`, absent when there is none.
 pub fn chat_json(home: &Path, limit: usize) -> Value {
+    chat_json_with(home, limit, &|_, _, _| None)
+}
+
+/// What a session's news was, from the registry's events for slot `slot`
+/// between two times (Unix ms): `needs-you-<reason>` or `dropped`.
+pub type ToldLookup<'a> = dyn Fn(&str, i64, i64) -> Option<String> + 'a;
+
+/// [`chat_json`], with Moss's answers to session news recorded before the
+/// cards kept the news's state (they hold the state at reply time) set
+/// right from `told`: a card that says neither needs-you nor dropped is
+/// looked up in the window before the update (merge window plus 5 s). The
+/// file is not rewritten.
+pub fn chat_json_with(home: &Path, limit: usize, told: &ToldLookup) -> Value {
     let lines = window(home, limit);
-    let mut v = to_json(&fold_lines(&lines, limit));
+    let mut shown = fold_lines(&lines, limit);
+    let news: std::collections::HashMap<&str, i64> = lines
+        .iter()
+        .filter(|l| l.state.is_none() && l.from.as_deref() == Some(FROM_EVENTS))
+        .filter_map(|l| Some((l.id.as_str(), crate::moss::reply::parse_ms(&l.at)?)))
+        .collect();
+    let before = i64::try_from(super::digest::WINDOW.as_millis()).unwrap_or(0) + 5_000;
+    for m in shown.iter_mut().filter(|m| m.from == FROM_MOSS) {
+        let Some(at) = m.reply_to.as_deref().and_then(|r| news.get(r)) else {
+            continue;
+        };
+        for (slot, state) in m.session_states.iter_mut() {
+            if state.starts_with("needs-you") || state == "dropped" {
+                continue;
+            }
+            if let Some(then) = told(slot, at - before, *at) {
+                *state = then;
+            }
+        }
+    }
+    let mut v = to_json(&shown);
     let pin = lines
         .iter()
         .rev()
@@ -442,6 +475,82 @@ mod tests {
         let m = v["messages"].as_array().unwrap();
         assert_eq!(m[1]["quick"], serde_json::json!(["/usage"]));
         assert!(m.iter().all(|x| x["id"] != "m2"));
+    }
+
+    #[test]
+    fn chat_shows_old_answers_to_news_as_the_news_was() {
+        // The real case: needs_you at 10:40:18, the update at 10:40:38, Moss
+        // answering at 10:42:00 with the card's state at that time: idle.
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        append(
+            h,
+            &Line::message(
+                "e1",
+                "2026-10-19T10:40:38Z",
+                FROM_EVENTS,
+                "[动态] koo-device-setup 需要你（权限）",
+            ),
+        )
+        .unwrap();
+        let mut states = std::collections::BTreeMap::new();
+        states.insert("SLOT".to_string(), "idle".to_string());
+        append(
+            h,
+            &Line {
+                sessions: vec!["SLOT".into(), "OTHER".into()],
+                session_states: [
+                    ("SLOT".to_string(), "idle".to_string()),
+                    ("OTHER".to_string(), "working".to_string()),
+                ]
+                .into(),
+                reply_to: Some("e1".into()),
+                ..Line::message(
+                    "m1",
+                    "2026-10-19T10:42:00Z",
+                    FROM_MOSS,
+                    "koo-device-setup 又在等你批一个权限。",
+                )
+            },
+        )
+        .unwrap();
+        let asked = std::cell::RefCell::new(Vec::new());
+        let lookup = |slot: &str, from: i64, to: i64| {
+            asked.borrow_mut().push((slot.to_string(), from, to));
+            (slot == "SLOT").then(|| "needs-you-permission".to_string())
+        };
+        let v = chat_json_with(h, 10, &lookup);
+        let m = &v["messages"][1];
+        assert_eq!(m["session_states"]["SLOT"], "needs-you-permission", "{m}");
+        assert_eq!(
+            m["session_states"]["OTHER"], "working",
+            "not in the news: as it was"
+        );
+        // Looked up by slot, in [update − window − 5 s, update].
+        let at = crate::moss::reply::parse_ms("2026-10-19T10:40:38Z").unwrap();
+        assert!(asked
+            .borrow()
+            .contains(&("SLOT".to_string(), at - 25_000, at)));
+        // Plain answers to you: never looked up.
+        asked.borrow_mut().clear();
+        append(
+            h,
+            &Line::message("y1", "2026-10-19T10:43:00Z", FROM_YOU, "hi"),
+        )
+        .unwrap();
+        append(
+            h,
+            &Line {
+                sessions: vec!["SLOT".into()],
+                session_states: [("SLOT".to_string(), "idle".to_string())].into(),
+                reply_to: Some("y1".into()),
+                ..Line::message("m2", "2026-10-19T10:43:05Z", FROM_MOSS, "ok")
+            },
+        )
+        .unwrap();
+        let v = chat_json_with(h, 10, &lookup);
+        assert_eq!(v["messages"][3]["session_states"]["SLOT"], "idle");
+        assert!(asked.borrow().iter().all(|(_, _, to)| *to == at));
     }
 
     #[test]

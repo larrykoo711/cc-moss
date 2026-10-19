@@ -788,6 +788,26 @@ impl Registry {
         Ok(rows)
     }
 
+    /// One slot's events between two times (Unix ms, both included), oldest
+    /// first. Bounded by slot and time, for looking back at one moment.
+    pub fn events_between(
+        &self,
+        slot_id: &str,
+        from_ms: i64,
+        to_ms: i64,
+    ) -> Result<Vec<SessionEvent>> {
+        if !has_events_table(&self.conn)? {
+            return Ok(Vec::new());
+        }
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT e.seq, e.slot_id, s.name, e.kind, e.detail, e.at
+               FROM events e LEFT JOIN slots s ON s.slot_id = e.slot_id
+              WHERE e.slot_id = ?1 AND e.at BETWEEN ?2 AND ?3 ORDER BY e.seq LIMIT 50",
+        )?;
+        let rows = stmt.query_map(params![slot_id, from_ms, to_ms], read_event)?;
+        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+    }
+
     /// The highest sequence number ever handed out, 0 when there is none.
     /// Pruning does not lower it: SQLite keeps AUTOINCREMENT's high-water
     /// mark in `sqlite_sequence`.
