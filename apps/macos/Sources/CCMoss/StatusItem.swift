@@ -69,10 +69,7 @@ final class KeyPanel: NSPanel {
     }
 
     override func orderOut(_ sender: Any?) {
-        if isVisible {
-            let caller = Thread.callStackSymbols.dropFirst().prefix(6).joined(separator: " | ")
-            linkLog.debug("panel ordered out; from: \(caller, privacy: .public)")
-        }
+        if isVisible { linkLog.debug("panel ordered out") }
         super.orderOut(sender)
     }
 
@@ -257,14 +254,24 @@ final class PanelController {
         observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !PanelHold.active else { return }
-                if self.steady { linkLog.debug("resign key ignored (just opened by a link)"); return }
+                // Another window of ours has the key now, or the app is
+                // active (the keyboard went somewhere real); key going to
+                // nobody while the app isn't active took nothing from us.
+                let reason = PanelHide.Reason.resignedKey(keyTaken: NSApp.keyWindow != nil && NSApp.keyWindow !== panel)
+                guard PanelHide.shouldHide(reason, appActive: NSApp.isActive, justOpenedByLink: self.steady) else {
+                    linkLog.debug("resign key ignored (app active: \(NSApp.isActive), just opened by a link: \(self.steady))")
+                    return
+                }
                 self.hide("resigned key")
             }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self, !PanelHold.active else { return }
-                if self.steady { linkLog.debug("resign active ignored (just opened by a link)"); return }
+                guard PanelHide.shouldHide(.appResignedActive, appActive: NSApp.isActive, justOpenedByLink: self.steady) else {
+                    linkLog.debug("resign active ignored (just opened by a link)")
+                    return
+                }
                 self.hide("app resigned active")
             }
         })
@@ -449,8 +456,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.showForLink(tries: tries - 1) }
             return
         }
+        // A link may have launched the app, which is then not active: make
+        // it active, as a click on the menu bar icon does, so the panel
+        // keeps the keyboard.
+        NSApp.activate()
         statusItem.panel.show(holding: 1.5)
-        linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible)")
+        linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible), app active: \(NSApp.isActive)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let panel = self?.statusItem?.panel else { return }
             linkLog.debug("panel still visible after a link: \(panel.isVisible)")
