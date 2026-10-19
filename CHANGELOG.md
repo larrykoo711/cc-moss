@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-19
+
+Sessions start in bypass mode, questions can be answered from the panel or Mo, and Moss moves in: a Claude Code
+session that keeps your sessions tidy, runs a daily checkup and answers when you ask.
+
 ### Added
 
 - **A cc-moss daemon that stays in the background (macOS).** `cc-moss install` sets it up: it starts when you log in,
@@ -60,7 +65,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   System, Light or Dark.
 - **Answer a session's question from elsewhere.** When a session asks a multiple-choice question, or a `--safe`
   session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
-  `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`) hands the answer back, and the session
+  `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`; with several questions `--choice N:LABEL` and `--text N:TEXT`, mixed freely) hands the answer back, and the session
   carries on. The terminal dialog stays up meanwhile, and whoever answers first wins. Sessions only wait while someone
   takes questions (`cc-moss ask take`; the menubar app does it while it's open, Slack will later), for at most 5 minutes
   (`[ask] wait_secs`); otherwise, or if anything goes wrong, nothing changes. Two new hooks, `PreToolUse` and
@@ -71,7 +76,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   rail: Sessions, and To Do with everything waiting on you, oldest first, one item open at a time with the session's
   name, the whole question and its options as written; answer one and the next opens. A line at the bottom of
   Sessions says when something new is waiting.
-  Click an option, tick several and click Done, Type something (2–5 lines, ⌘↩ sends, in Mo's bubble too), or
+  Click an option, tick several and click Done, Type something (2–5 lines, ⌘↩ sends, in Mo's bubble too, on every question of a several-question ask), or
   Allow / Don't Allow a `--safe` session's request;
   several questions are answered one by one and sent together. The card says whether it was answered, too late, or
   saved for later, and disappears by itself when the question is answered in the terminal, times out or the session
@@ -289,7 +294,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/larrykoo711/cc-moss/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/larrykoo711/cc-moss/compare/v0.1.1...v0.2.0

@@ -504,7 +504,7 @@ cc-moss events --json --since 42
 
 **需要你确认**：Claude Code 弹出权限提示、提问或等你输入时，大约 6 秒后会发一条通知，cc-moss 记下 `needs_you`，`ls --json` 里这个会话的 `attention` 变成 `permission`、`question` 或 `input`。你点了同意（工具跑完）、回了话、这一轮结束或会话退出，它就自动清掉。这里 cc-moss 只是记录，不拦任何提示；只有你在别处答了题（见[替会话接住问题](#替会话接住问题)），答案才会交回会话。目前 Claude Code 把 AskUserQuestion 的提问也报成权限提示，所以这类提问显示为 `permission`。
 
-这两个钩子（`Notification`、`PostToolUse`）是 0.1.1 之后新加的，替会话接住问题的两个（`PreToolUse`、`PermissionRequest`）是 0.2.2 之后。从旧版本升级上来，`cc-moss doctor` 会提示少了几个钩子，运行一次 `cc-moss setup` 补上即可；setup 只加缺的那几个，照旧先给你看 diff。
+这两个钩子（`Notification`、`PostToolUse`）是 0.1.1 之后新加的，替会话接住问题的两个（`PreToolUse`、`PermissionRequest`）是 0.3.0 加的。从旧版本升级上来，`cc-moss doctor` 会提示少了几个钩子，运行一次 `cc-moss setup` 补上即可；setup 只加缺的那几个，照旧先给你看 diff。
 
 ### 恢复时带回什么
 

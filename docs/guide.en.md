@@ -814,7 +814,7 @@ elsewhere (see [Answering a session's questions from elsewhere](#answering-a-ses
 AskUserQuestion as a permission prompt too, so those questions show as `permission`.
 
 The two hooks behind this (`Notification`, `PostToolUse`) came after 0.1.1, and the two that catch questions
-(`PreToolUse`, `PermissionRequest`) after 0.2.2. Coming from an older version, `cc-moss doctor` says some hooks are
+(`PreToolUse`, `PermissionRequest`) in 0.3.0. Coming from an older version, `cc-moss doctor` says some hooks are
 missing; run `cc-moss setup` once to add them. It adds just the missing ones and, as always, shows you the diff first.
 
 ### What comes back
