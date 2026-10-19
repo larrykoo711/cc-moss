@@ -162,8 +162,8 @@ R1 ◄── 全部
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ✅ Done | done/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（AMEND-1～4，真机验收通过） |
 | **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
-| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟦 Ready | todo/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
-| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟦 Ready | todo/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
+| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟨 In Progress | in-progress/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
+| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟨 In Progress | in-progress/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
