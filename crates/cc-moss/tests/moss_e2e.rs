@@ -213,8 +213,17 @@ fn moss_comes_up_with_role() {
         "100x50"
     );
     assert_eq!(
-        moss_option(&w, &["show-options", "-g", "-v", "window-size"]),
+        moss_option(
+            &w,
+            &["show-options", "-w", "-t", "=moss:", "-v", "window-size"]
+        ),
         "manual"
+    );
+    // Its window only: server-wide, tmux 3.5 and older crash when another
+    // detached session is made on that server.
+    assert_eq!(
+        moss_option(&w, &["show-options", "-g", "-w", "-v", "window-size"]),
+        "latest"
     );
     // Its terminal tab says Moss.
     assert_eq!(

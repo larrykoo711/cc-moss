@@ -159,9 +159,9 @@ impl Pane for TmuxPane<'_> {
         if w >= columns && h >= rows {
             return;
         }
-        // A Moss started before cc-moss sized it: its own server, so the
-        // size option there touches nobody else.
-        let _ = self.run(&["set-option", "-g", "window-size", "manual"]);
+        // A Moss started before cc-moss sized it. On its window only (see
+        // `Looker::launch`): tmux 3.5 and older crash on a server-wide one.
+        let _ = self.run(&["set-option", "-w", "-t", &target, "window-size", "manual"]);
         let _ = self.run(&[
             "resize-window",
             "-t",

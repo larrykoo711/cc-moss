@@ -68,7 +68,13 @@ impl Runner for ProcessRunner {
             );
         };
         if !out.status.success() {
-            bail!("tmux {} failed", args.first().map_or("", |s| s.as_str()));
+            let what = args.first().map_or("", |s| s.as_str());
+            let why = String::from_utf8_lossy(&out.stderr);
+            let why = why.trim();
+            if why.is_empty() {
+                bail!("tmux {what} failed");
+            }
+            bail!("tmux {what} failed: {why}");
         }
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }

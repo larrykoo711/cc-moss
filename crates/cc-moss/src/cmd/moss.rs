@@ -1272,10 +1272,14 @@ impl Looker {
                     &target,
                     "remain-on-exit",
                     "off",
-                    // Its own server: nobody attaching shrinks it.
+                    // Nobody attaching shrinks it. On its window only: set
+                    // for the whole server, tmux 3.5 and older crash when
+                    // another detached session is made there.
                     ";",
                     "set-option",
-                    "-g",
+                    "-w",
+                    "-t",
+                    &target,
                     "window-size",
                     "manual",
                     // Its terminal tab says Moss.
