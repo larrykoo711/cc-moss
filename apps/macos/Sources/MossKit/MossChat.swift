@@ -248,6 +248,11 @@ public struct MossAction: Identifiable, Equatable, Sendable {
 
     /// What Moss can do today: it reads the session list, nothing else.
     public static let all: [MossAction] = [
+        MossAction(id: "checkup", symbol: "stethoscope",
+                   titles: ("Checkup", "体检"),
+                   details: ("Fixes what it can, asks you about the rest", "能修的直接修，要你定的给你选项"),
+                   texts: ("Give my sessions a checkup: fix what you can, then a short brief; give me options for what I need to decide.",
+                           "体检一下：能修的直接修，修完给我一段简短的体检简报；要我定的给我选项。")),
         MossAction(id: "needs-you", symbol: "hand.raised",
                    titles: ("Who's waiting on me", "谁在等我"),
                    details: ("Sessions with a question or waiting for your reply", "有问题要答、等你回话的会话"),
@@ -260,6 +265,11 @@ public struct MossAction: Identifiable, Equatable, Sendable {
                    titles: ("What got done today", "今天做了什么"),
                    details: ("What each session finished", "各会话做完的事"),
                    texts: ("What did the sessions finish today? Keep it short.", "今天各个会话做完了什么？简短列一下。")),
+        MossAction(id: "tidy", symbol: "wand.and.stars",
+                   titles: ("Tidy up", "整理会话"),
+                   details: ("Names the unnamed, clears out long-quiet ones", "补名字、清理很久没动的"),
+                   texts: ("Tidy up my sessions: name the unnamed ones, and give me options for long-dropped or long-idle ones.",
+                           "整理一下会话：没名字的补名字，断了很久的和闲着很久的给我选项。")),
     ]
 }
 

@@ -9,7 +9,7 @@ import Testing
 
     @Test func theItemsAreActionsThenCommandsForTheAccount() {
         #expect(ids(MossQuick.items(account: .subscription)) == [
-            "action:needs-you", "action:stuck", "action:today",
+            "action:checkup", "action:needs-you", "action:stuck", "action:today", "action:tidy",
             "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats",
         ])
         #expect(!ids(MossQuick.items(account: .api)).contains("cmd:/usage"))
@@ -35,21 +35,21 @@ import Testing
     @Test func moreListsOnlyWhatTheBarDoesntShowOnce() {
         let ranked = MossQuick.ranked(MossQuick.items(account: .subscription), uses: [], context: .init(), now: now)
         let more = MossQuick.overflow(ranked, shown: 3)
-        #expect(ids(more) == ["cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats"])
+        #expect(ids(more) == ["action:today", "action:tidy", "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats"])
         #expect(Set(ids(more)).isDisjoint(with: ids(Array(ranked.prefix(3)))))
         #expect(MossQuick.overflow(ranked, shown: ranked.count).isEmpty)
     }
 
     @Test func withNoHistoryTheDefaultOrderStands() {
         let ranked = MossQuick.ranked(MossQuick.items(account: .subscription), uses: [], context: .init(), now: now)
-        #expect(Array(ids(ranked).prefix(4)) == ["action:needs-you", "action:stuck", "action:today", "cmd:/usage"])
+        #expect(Array(ids(ranked).prefix(6)) == ["action:checkup", "action:needs-you", "action:stuck", "action:today", "action:tidy", "cmd:/usage"])
     }
 
     @Test func usedMostComesFirst() {
         let uses = (0..<3).map { _ in MossQuickUse(id: "cmd:/status", at: ago(days: 1)) }
             + [MossQuickUse(id: "action:today", at: ago(days: 0.5))]
         let ranked = MossQuick.ranked(MossQuick.items(), uses: uses, context: .init(), now: now)
-        #expect(Array(ids(ranked).prefix(3)) == ["cmd:/status", "action:today", "action:needs-you"])
+        #expect(Array(ids(ranked).prefix(3)) == ["cmd:/status", "action:today", "action:checkup"])
     }
 
     @Test func oldUsesFade() {
@@ -116,8 +116,8 @@ import Testing
 
     @Test func sentTextIsMatchedToItsItem() {
         #expect(MossQuick.item(sent: "/USAGE ")?.id == "cmd:/usage")
-        #expect(MossQuick.item(sent: MossAction.all[1].text(.zh))?.id == "action:stuck")
-        #expect(MossQuick.item(sent: MossAction.all[1].text(.en))?.id == "action:stuck")
+        #expect(MossQuick.item(sent: MossAction.all[2].text(.zh))?.id == "action:stuck")
+        #expect(MossQuick.item(sent: MossAction.all[2].text(.en))?.id == "action:stuck")
         #expect(MossQuick.item(sent: "hello") == nil)
         #expect(MossQuick.item(sent: "/login") == nil)
     }

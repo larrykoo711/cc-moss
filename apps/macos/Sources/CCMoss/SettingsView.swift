@@ -75,8 +75,8 @@ struct SettingsView: View {
                                                   "快捷键 热键 键盘 连按 唤出 面板 短命令 终端 别名 输入 alias")]
             case .permissions: [title, L.t("privacy security accessibility automation notifications allow system events terminal tab double tap",
                                            "隐私 安全 辅助功能 自动化 通知 允许 授权 system events 终端 标签页 连按")]
-            case .moss: [title, L.t("moss resident session always on off switch restart daemon background launchd login running start keep alive",
-                                     "Moss 常驻 会话 一直开着 开关 关闭 重启 守护进程 后台 登录 运行 启动 launchd")]
+            case .moss: [title, L.t("moss resident session always on off switch restart daemon background launchd login running start keep alive checkup daily brief",
+                                     "Moss 常驻 会话 一直开着 开关 关闭 重启 守护进程 后台 登录 运行 启动 launchd 体检 每天 简报")]
             case .about: [title, "cc-moss", "GitHub", L.t("version update license command line program path", "版本 更新 许可 命令行 程序 位置 路径")]
             }
         }

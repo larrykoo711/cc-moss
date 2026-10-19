@@ -23,6 +23,7 @@ struct MossSettings: View {
 
     var body: some View {
         MossCard(model: model, demo: mossDemo)
+        MossCheckupCard(model: model, demo: demo != nil || mossDemo != nil)
         SettingsCard(title: L.t("In the Background", "后台")) {
             CardRow(title: shown.line(),
                     detail: detail,
@@ -168,6 +169,66 @@ private struct MossCard: View {
             }
             await refresh()
             busy = false
+        }
+    }
+}
+
+/// Settings › Moss › Checkup (T2.4): the daily checkup and its brief, kept
+/// in cc-moss's config. Both on by default; the brief needs the checkup.
+private struct MossCheckupCard: View {
+    let model: AppModel
+    /// Screenshots: both on, nothing asked of cc-moss.
+    var demo = false
+    @State private var checkup = true
+    @State private var brief = true
+    @State private var loaded = false
+    @State private var problem: String?
+
+    var body: some View {
+        SettingsCard(title: L.t("Checkup", "体检")) {
+            CardRow(title: L.t("Daily checkup", "每天体检")) {
+                toggle($checkup, key: MossDaily.checkupKey)
+            }
+            CardRow(title: L.t("Daily brief", "每天发体检简报"), divider: false) {
+                toggle($brief, key: MossDaily.briefKey)
+                    .disabled(!checkup)
+            }
+        }
+        Text(problem ?? L.t("Moss checks up once a day when you first open the panel. With the brief off, it speaks up only when you need to decide.",
+                            "每天第一次打开面板时，Moss 自动体检一次；简报关掉后它只在需要你拿主意时开口。"))
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .task(id: model.cliPath) { await load() }
+    }
+
+    private func toggle(_ value: Binding<Bool>, key: String) -> some View {
+        Toggle("", isOn: value)
+            .toggleStyle(.switch)
+            .cursor(.pointingHand)
+            .labelsHidden()
+            .controlSize(.small)
+            .onChange(of: value.wrappedValue) { _, on in save(key, on) }
+    }
+
+    private func load() async {
+        guard !demo, let client = model.client else { return }
+        // A cc-moss without these keys answers with an error: that's "on".
+        checkup = MossDaily.isOn(try? await client.config(MossDaily.checkupKey))
+        brief = MossDaily.isOn(try? await client.config(MossDaily.briefKey))
+        loaded = true
+    }
+
+    private func save(_ key: String, _ on: Bool) {
+        guard loaded, !demo, let client = model.client else { return }
+        Task {
+            do {
+                try await client.setConfig(key, MossDaily.value(on))
+                problem = nil
+            } catch {
+                problem = L.t("Didn't save: \(AppModel.describe(error))", "没能保存：\(AppModel.describe(error))")
+            }
         }
     }
 }
