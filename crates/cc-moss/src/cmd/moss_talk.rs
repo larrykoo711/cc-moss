@@ -530,6 +530,7 @@ impl Talk {
                     reply_to: Some(sent.id.clone()),
                     silent: parsed.silent,
                     buttons: parsed.buttons,
+                    quick: parsed.quick,
                     ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, &parsed.text)
                 })
             }

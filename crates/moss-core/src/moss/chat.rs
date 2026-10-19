@@ -53,6 +53,9 @@ pub struct Line {
     pub state: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    /// What Moss pins on the panel's quick bar (`[[quick:]]`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub quick: Vec<String>,
     /// A Claude Code command's result: which command (`/usage`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -138,6 +141,9 @@ pub struct Shown {
     pub reply_to: Option<String>,
     pub fallback: bool,
     pub buttons: Vec<String>,
+    /// Pinned on the quick bar; left out when none.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub quick: Vec<String>,
     /// A Claude Code command's result (its screen, or why it was not run).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub command: Option<String>,
@@ -187,6 +193,7 @@ fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
             reply_to: l.reply_to.clone(),
             fallback: l.fallback,
             buttons: l.buttons.clone(),
+            quick: l.quick.clone(),
             command: l.command.clone(),
             refused: l.refused,
         });
@@ -328,8 +335,18 @@ mod tests {
             },
         )
         .unwrap();
+        append(
+            h,
+            &Line {
+                quick: vec!["/usage".into(), "stuck".into()],
+                ..moss("m3", "2", "pinned")
+            },
+        )
+        .unwrap();
         let v = to_json(&fold(h, 10));
         let m = v["messages"].as_array().unwrap();
+        assert_eq!(m[4]["quick"], serde_json::json!(["/usage", "stuck"]));
+        assert!(m[1].get("quick").is_none());
         assert_eq!(m[0]["state"], "replied");
         assert_eq!(m[1]["command"], "/usage");
         assert!(m[1].get("refused").is_none());
