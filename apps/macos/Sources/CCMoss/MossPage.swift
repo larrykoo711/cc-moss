@@ -847,6 +847,7 @@ private struct MossQuickRow: View {
         .disabled(!enabled)
         .opacity(enabled ? 1 : 0.45)
         .tip(L.t("Everything Moss can do", "全部快捷指令"))
+        .accessibilityLabel(L.t("Everything Moss can do", "全部快捷指令"))
     }
 
     private func rank() {
@@ -1050,6 +1051,7 @@ struct MossTerminalCard: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
                 .tip(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
+                .accessibilityLabel(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
             }
         }
         .padding(.horizontal, 10)
@@ -1331,6 +1333,7 @@ private struct MossInputBar: View {
             .focusable(false)
             .disabled(empty)
             .tip(L.t("Send  ↵", "发送  ↵"))
+            .accessibilityLabel(L.t("Send", "发送"))
             .padding(.bottom, 1)
             MossIconButton(symbol: "square.grid.2x2", tip: L.t("Back to actions", "回到常用操作")) { model.mossTyping = false }
                 .padding(.bottom, 1)
@@ -1489,6 +1492,7 @@ private struct MossGuessBadge: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
                 .tip(L.t("Hide until Moss's next reply", "先收起，等 Moss 下次回复"))
+                .accessibilityLabel(L.t("Hide the guess", "收起猜测"))
             }
         }
         .padding(.horizontal, 9)

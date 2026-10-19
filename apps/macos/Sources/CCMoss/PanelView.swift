@@ -194,10 +194,11 @@ struct PanelView: View {
         }
         .onAppear { model.checkForUpdate() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
-            if note.object is KeyPanel { model.checkForUpdate() }
-            // Only the panel's own window; back from a dropdown or the folder
-            // picker, an open form keeps the keyboard.
-            if note.object is KeyPanel, model.form == nil { searchFocused = true }
+            // Only the panel's own window (not Settings, a dropdown or the
+            // folder picker); an open form keeps the keyboard.
+            guard note.object is KeyPanel else { return }
+            model.checkForUpdate()
+            if model.form == nil { searchFocused = true }
             model.refresh()
         }
     }
@@ -884,6 +885,7 @@ struct ReplyLineView: View {
                 .allowsHitTesting(!sending)
                 .onHover { hovering = $0 }
                 .tip(L.t("Send  ↵", "发送  ↵"))
+                .accessibilityLabel(L.t("Send", "发送"))
             }
             if let failure = model.replyFlow.failure {
                 Text(failure)

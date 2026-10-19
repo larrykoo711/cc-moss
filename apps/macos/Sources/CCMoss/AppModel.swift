@@ -33,13 +33,20 @@ final class AppModel {
             guard query != oldValue else { return }
             selectFirst()
             // A search starts: read the closed sessions once, for its last section.
-            if !searching { closedPool = nil } else if closedPool == nil { loadClosed() }
+            if !searching {
+                closedPool = nil
+                closedRead += 1 // a read still on its way is for a search that ended
+            } else if closedPool == nil {
+                loadClosed()
+            }
         }
     }
     /// A query is typed: the Sessions page is one ranked list.
     var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
     /// Sessions closed in the last 30 days, read when a search starts.
     var closedPool: [Session]?
+    /// Which read of the closed sessions counts: a late answer to an older one is dropped.
+    @ObservationIgnored var closedRead = 0
     @ObservationIgnored let searchIndexes = SearchIndexes()
     /// Set from the summary strip: show only sessions in this state.
     var stateFilter: SessionState? { didSet { if stateFilter != oldValue { selectFirst() } } }
@@ -202,9 +209,10 @@ final class AppModel {
                 if oldValue == .moss { resetMentionHover() }
             } else if oldValue != .moss {
                 fetchMossSuggestion()
-                // Opened again: the latest 30, every reply folded.
+                // Opened again: the latest 30, every reply folded, read now.
                 mossLimit = MossPaging.page
                 mossExpanded = []
+                Task { await loadMoss() }
             }
             if page == .moss && panelShown { mossDesk.markRead() }
         }
@@ -315,8 +323,10 @@ final class AppModel {
     func loadClosed() {
         guard let client else { return }
         closedPool = []
+        closedRead += 1
+        let read = closedRead
         Task {
-            guard let snap = try? await client.snapshotAll() else { return }
+            guard let snap = try? await client.snapshotAll(), read == closedRead else { return }
             let since = Date().addingTimeInterval(-30 * 86_400)
             closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && $0.lastActiveAt > since }
         }
