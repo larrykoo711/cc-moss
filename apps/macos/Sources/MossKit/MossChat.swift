@@ -117,9 +117,15 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
     public var fallback: Bool
     /// Moss's suggested replies; clicking one sends it.
     public var buttons: [String]
+    /// A Claude Code command Moss ran for you (`/usage`); `text` is then its
+    /// screen as plain terminal text, not Markdown.
+    public var command: String?
+    /// Moss wouldn't run that command here (it needs the terminal).
+    public var refused: Bool
 
     public init(id: String, at: Date? = nil, from: Sender, text: String, delivery: Delivery? = nil, error: String? = nil,
-                replyTo: String? = nil, fallback: Bool = false, buttons: [String] = []) {
+                replyTo: String? = nil, fallback: Bool = false, buttons: [String] = [], command: String? = nil,
+                refused: Bool = false) {
         self.id = id
         self.at = at
         self.from = from
@@ -129,6 +135,8 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
         self.replyTo = replyTo
         self.fallback = fallback
         self.buttons = buttons
+        self.command = command
+        self.refused = refused
     }
 
     /// What the bubble says: a fallback reads as a receipt.
@@ -162,6 +170,8 @@ public struct MossChat: Equatable, Sendable {
         var reply_to: String?
         var fallback: Bool?
         var buttons: [String]?
+        var command: String?
+        var refused: Bool?
     }
 
     public static func decode(_ data: Data) throws -> MossChat {
@@ -177,7 +187,8 @@ public struct MossChat: Equatable, Sendable {
                         delivery: line.state.flatMap(MossMessage.Delivery.init(rawValue:)),
                         error: line.error.flatMap { $0.isEmpty ? nil : $0 },
                         replyTo: line.reply_to, fallback: line.fallback ?? false,
-                        buttons: (line.buttons ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
+                        buttons: (line.buttons ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
+                        command: line.command.flatMap { $0.isEmpty ? nil : $0 }, refused: line.refused ?? false)
         })
     }
 }

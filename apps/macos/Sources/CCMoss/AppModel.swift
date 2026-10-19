@@ -86,6 +86,8 @@ final class AppModel {
     let mossDesk = MossDesk { _ in throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
     /// The Moss page shows the text field instead of its action buttons.
     var mossTyping = false
+    /// What's typed in the Moss page's field, not sent yet.
+    var mossDraft = ""
     /// Moss answered something sent from the panel (for the alerts).
     @ObservationIgnored var onMossReplies: (([MossMessage]) -> Void)?
     /// Settings › Notifications › "Answer questions here" (`ask.enabled`).

@@ -16,7 +16,7 @@ import SwiftUI
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
-///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|off|offline|failing|nodaemon] [--moss-typing]]
+///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|off|offline|failing|nodaemon] [--moss-typing [text]]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -75,6 +75,8 @@ enum Render {
             if value("--page") == "moss" {
                 model.showMoss()
                 model.mossTyping = args.contains("--moss-typing")
+                // `--moss-typing "/"`: with that typed (a slash shows the command list).
+                if let typed = value("--moss-typing"), !typed.hasPrefix("--") { model.mossDraft = typed }
             }
             model.query = value("--query") ?? ""
             switch value("--filter") {

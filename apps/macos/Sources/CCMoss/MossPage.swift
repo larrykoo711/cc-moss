@@ -320,19 +320,27 @@ private struct MossMessageView: View {
             MossAvatar(size: 22)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 6) {
-                MossRichText(text: message.shownText(), quiet: message.fallback)
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 8)
-                    .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
-                    .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
-                    .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
+                if let command = message.command, !message.refused {
+                    MossTerminalCard(command: command, text: message.text)
+                } else {
+                    MossRichText(text: message.shownText(), quiet: message.fallback)
+                        .padding(.horizontal, 11)
+                        .padding(.vertical, 8)
+                        .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
+                        .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
+                        .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
+                }
+                if message.refused, model.canOpenMoss {
+                    QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { _ = model.openMoss() }
+                }
                 if !buttons.isEmpty {
                     MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id)) { i in
                         model.chooseForMoss(buttons[i], on: message.id)
                     }
                 }
             }
-            Spacer(minLength: 36)
+            // A terminal screen gets the whole width; words leave room on the right.
+            Spacer(minLength: message.command != nil && !message.refused ? 0 : 36)
         }
     }
 
@@ -341,7 +349,8 @@ private struct MossMessageView: View {
             Spacer(minLength: 56)
             VStack(alignment: .trailing, spacing: 4) {
                 Text(message.text)
-                    .font(.system(size: 13))
+                    .font(.system(size: MossCommand.looksLikeCommand(message.text) ? 12.5 : 13,
+                                  design: MossCommand.looksLikeCommand(message.text) ? .monospaced : .default))
                     .foregroundStyle(.primary)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
@@ -585,7 +594,8 @@ private struct MossChip: View {
                         .foregroundStyle(Theme.brand)
                 }
                 Text(title)
-                    .font(.system(size: compact ? 11.5 : 12, weight: .medium))
+                    .font(.system(size: compact ? 11.5 : 12, weight: .medium,
+                                  design: MossCommand.looksLikeCommand(title) ? .monospaced : .default))
                     .lineLimit(1)
                     .fixedSize()
             }
@@ -604,6 +614,154 @@ private struct MossChip: View {
     }
 }
 
+// MARK: - Commands
+
+/// A command Moss ran, shown as its terminal screen: the command on top,
+/// then the text as the terminal had it (monospaced, spaces kept, scrolling
+/// sideways). A tall screen is cut with a fade until you ask for all of it.
+private struct MossTerminalCard: View {
+    let command: String
+    let text: String
+    @State private var expanded = false
+    @State private var height: CGFloat = 0
+    @Environment(\.colorScheme) private var scheme
+    static let fold: CGFloat = 260
+
+    private var tall: Bool { height > Self.fold + 20 }
+
+    /// The screen's text; block characters (the usage bars) in the brand colour,
+    /// as the terminal draws them in colour.
+    static func screen(_ raw: String) -> AttributedString {
+        var out = AttributedString(raw.trimmingCharacters(in: .newlines))
+        var i = out.startIndex
+        while i < out.endIndex {
+            let next = out.index(afterCharacter: i)
+            if let scalar = out.characters[i].unicodeScalars.first, (0x2580...0x259F).contains(scalar.value) {
+                out[i..<next].foregroundColor = Theme.brand
+            }
+            i = next
+        }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 5) {
+                Image(systemName: "terminal")
+                    .font(.system(size: 10, weight: .semibold))
+                Text(command)
+                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(Theme.brand)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(Capsule().fill(Theme.brand.opacity(scheme == .dark ? 0.18 : 0.10)))
+            .padding(.horizontal, 10)
+            .padding(.top, 9)
+            .padding(.bottom, 7)
+            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+            ScrollView(.horizontal) {
+                Text(Self.screen(text))
+                    .font(.system(size: 11, design: .monospaced))
+                    .lineSpacing(1.5)
+                    .textSelection(.enabled)
+                    .fixedSize()
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: TerminalHeightKey.self, value: geo.size.height)
+                    })
+            }
+            .scrollIndicators(.never)
+            .frame(maxHeight: tall && !expanded ? Self.fold : nil, alignment: .top)
+            .clipped()
+            .overlay(alignment: .bottom) {
+                if tall && !expanded {
+                    LinearGradient(colors: [Theme.raised(scheme).opacity(0), Theme.raised(scheme)],
+                                   startPoint: .top, endPoint: .bottom)
+                        .frame(height: 44)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onPreferenceChange(TerminalHeightKey.self) { height = $0 }
+            if tall {
+                Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+                Button {
+                    withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(expanded ? L.t("Show less", "收起") : L.t("Show all", "展开"))
+                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 26)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+            }
+        }
+        .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
+        .clipShape(ChatBubble(mine: false))
+        .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L.t("\(command) result", "\(command) 的结果"))
+    }
+}
+
+private struct TerminalHeightKey: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
+}
+
+/// The commands Moss can run, above the field while you type a slash.
+private struct MossCommandList: View {
+    let commands: [MossCommand]
+    let lit: Int
+    let pick: (MossCommand) -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        VStack(spacing: 1) {
+            ForEach(Array(commands.enumerated()), id: \.element.id) { i, command in
+                Button { pick(command) } label: {
+                    HStack(spacing: 10) {
+                        Text(command.name)
+                            .font(.system(size: 12, weight: .medium, design: .monospaced))
+                            .foregroundStyle(i == lit ? Theme.brand : .primary)
+                            .frame(width: 82, alignment: .leading)
+                        Text(command.detail())
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Spacer(minLength: 4)
+                        if i == lit {
+                            Text("Tab")
+                                .font(.system(size: 10, weight: .medium))
+                                .foregroundStyle(.tertiary)
+                        }
+                    }
+                    .padding(.horizontal, 9)
+                    .frame(height: 26)
+                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(i == lit ? Theme.brand.opacity(scheme == .dark ? 0.16 : 0.08) : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+            }
+        }
+        .padding(4)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Theme.raised(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.06), radius: 6, y: 2)
+    }
+}
+
 // MARK: - The bottom bar
 
 /// Moss's abilities as buttons, plus a keyboard to type instead; or the
@@ -611,8 +769,9 @@ private struct MossChip: View {
 private struct MossInputBar: View {
     @Bindable var model: AppModel
     let keys: (KeyPress) -> KeyPress.Result
-    @State private var text = ""
     @FocusState private var focused: Bool
+    /// The lit command in the list, moved with ↑↓.
+    @State private var lit = 0
     @Environment(\.colorScheme) private var scheme
 
     private var desk: MossDesk { model.mossDesk }
@@ -655,20 +814,51 @@ private struct MossInputBar: View {
         }
     }
 
+    private var text: String {
+        get { model.mossDraft }
+        nonmutating set { model.mossDraft = newValue }
+    }
+
+    /// Commands matching what's typed: a slash and no space yet.
+    private var commands: [MossCommand] { MossCommand.suggestions(for: text) }
+
     private var typing: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !commands.isEmpty {
+                MossCommandList(commands: commands, lit: min(lit, commands.count - 1)) { fill($0) }
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            }
+            field
+        }
+        .animation(.easeOut(duration: 0.12), value: commands)
+        .onChange(of: text) { _, _ in lit = 0 }
+    }
+
+    private var field: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(L.t("Message Moss…", "和 Moss 说…"), text: $text, axis: .vertical)
+            TextField(L.t("Message Moss…", "和 Moss 说…"), text: $model.mossDraft, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 13))
+                .font(.system(size: 13, design: MossCommand.looksLikeCommand(text) ? .monospaced : .default))
                 .lineLimit(1...5)
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
                     if press.modifiers.contains(.shift) {
                         // A line break where the cursor is, the way AppKit's own fields do it.
                         NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                    } else if let command = litCommand {
+                        // A command picked from the list: Return sends it.
+                        model.sayToMoss(command.name)
+                        text = ""
                     } else {
                         send()
                     }
+                    return .handled
+                }
+                .onKeyPress(.downArrow) { move(1) }
+                .onKeyPress(.upArrow) { move(-1) }
+                .onKeyPress(.tab) {
+                    guard let command = litCommand else { return .ignored }
+                    fill(command)
                     return .handled
                 }
                 .onKeyPress(phases: .down) { press in keys(press) }
@@ -697,6 +887,24 @@ private struct MossInputBar: View {
     }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+    private var litCommand: MossCommand? {
+        let list = commands
+        return list.isEmpty ? nil : list[min(lit, list.count - 1)]
+    }
+
+    private func move(_ step: Int) -> KeyPress.Result {
+        let count = commands.count
+        guard count > 0 else { return .ignored }
+        lit = (min(lit, count - 1) + step + count) % count
+        return .handled
+    }
+
+    /// Tab or a click: the command goes into the field, ready to send.
+    private func fill(_ command: MossCommand) {
+        text = command.name
+        focused = true
+    }
 
     private func send() {
         guard !empty else { return }
