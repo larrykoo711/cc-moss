@@ -431,6 +431,7 @@ const TASKS = [
   {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'done/T2.2-moss-resident.spec.md', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
   {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'done', sdd:'done/T2.3-talk-to-moss.spec.md', ac:'面板发一句、看到回复（AMEND-1～4，真机验收通过）', steps:[]},
   {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'done', sdd:'done/T2.4-moss-fixes.spec.md', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
+  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'backlog', sdd:'draft/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -438,9 +439,9 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题（MVP · 0.3.0）', ids:['T1.1','T1.2','T1.3','T1.4']},
-  {k:'P2', name:'Moss 住进来（0.4.0）', ids:['T2.1','T2.2','T2.3','T2.4']},
-  {k:'P3', name:'Moss 派活（0.5.0）', ids:['T3.1']},
-  {k:'P4', name:'Slack 与路由（0.6.0）', ids:['T4.1','T4.2']},
+  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
+  {k:'P3', name:'Moss 派活（0.4.0）', ids:['T3.1']},
+  {k:'P4', name:'Slack 与路由（0.5.0）', ids:['T4.1','T4.2']},
   {k:'R', name:'收口', ids:['R1']},
 ];
 
