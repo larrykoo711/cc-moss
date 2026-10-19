@@ -481,7 +481,19 @@ pub fn run(opts: Options) -> Result<()> {
             println!("{n}");
         }
     } else if files::apply(&changes, &notes, opts.dry_run, opts.yes, "install")? {
-        setup::settle_owned(&changes, None)?;
+        // The note lives in the state dir; one that cannot be made (a
+        // relative CC_MOSS_STATE_DIR) must not stop the rest of install.
+        if let Err(e) = setup::settle_owned(&changes, None) {
+            println!(
+                "\n{}",
+                tr!(
+                    format!(
+                        "Couldn't note which Claude Code settings cc-moss added: {e:#}. Uninstall will leave them in place."
+                    ),
+                    format!("没能记下 cc-moss 往 Claude Code 设置里加了哪些项：{e:#}。卸载时会保留它们。")
+                )
+            );
+        }
     } else if !opts.dry_run {
         return Ok(());
     }
