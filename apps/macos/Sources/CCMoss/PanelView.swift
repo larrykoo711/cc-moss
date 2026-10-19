@@ -32,7 +32,7 @@ struct PanelView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            NavRail(model: model, settings: showSettings)
+            NavRail(model: model, appMenu: { toggleMenu(.app) }, appMenuOpen: menu == .app)
             page
         }
         .frame(width: Theme.panelWidth, height: model.panelHeight)
@@ -183,7 +183,9 @@ struct PanelView: View {
                 }
             }
         }
+        .onAppear { model.checkForUpdate() }
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { note in
+            if note.object is KeyPanel { model.checkForUpdate() }
             // Only the panel's own window; back from a dropdown or the folder
             // picker, an open form keeps the keyboard.
             if note.object is KeyPanel, model.form == nil { searchFocused = true }
@@ -414,17 +416,7 @@ struct PanelView: View {
                     .tip(notice)
                     .transition(.opacity)
             } else {
-                // The version gives way first when the main action is long.
-                ViewThatFits(in: .horizontal) {
-                    HStack(spacing: 4) {
-                        LogoButton(version: model.version, open: menu == .app) { toggleMenu(.app) }
-                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
-                    }
-                    HStack(spacing: 4) {
-                        LogoButton(version: model.version, compact: true, open: menu == .app) { toggleMenu(.app) }
-                        if model.phase == .ready { NewSessionButton { model.startNewSession() } }
-                    }
-                }
+                if model.phase == .ready { NewSessionButton { model.startNewSession() } }
             }
             Spacer()
             // Raycast's floating pill with the main action; the rest live on
@@ -533,18 +525,21 @@ struct PanelView: View {
         }
     }
 
-    /// cc-moss's own menu, on the logo: what isn't about one session.
+    /// cc-moss's own menu, behind the rail's gear: what isn't about one
+    /// session. (New Session is in the footer, and ⌘N.)
     private var appSections: [[PanelAction]] {
-        var first: [PanelAction] = []
-        if model.phase == .ready {
-            first.append(PanelAction(title: L.t("New Session…", "新会话…"), icon: Icons.newSession, shortcut: "⌘N") {
-                model.startNewSession()
-            })
+        let version: PanelAction = if let update = model.update {
+            PanelAction(title: L.t("Update to \(update.latest)", "更新到 \(update.latest)"), icon: Icons.update, shortcut: "",
+                        help: L.t("Runs cc-moss update in your terminal.", "在终端里运行 cc-moss update。"), dot: true) {
+                model.runUpdate()
+            }
+        } else {
+            PanelAction(title: "cc-moss \(model.version)", icon: Icons.about, shortcut: "") { showSettings(.about) }
         }
-        first.append(PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() })
         return [
-            first,
-            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() }],
+            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() },
+             PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() }],
+            [version],
             [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
                 NSApplication.shared.terminate(nil)
             }],
@@ -615,7 +610,8 @@ struct PanelView: View {
         let height = ActionsMenu.height(sections), width = ActionsMenu.width
         let floor = size.height - 50 // the action bar
         guard case .session = menu, let row else {
-            return CGSize(width: 10, height: floor - height)
+            // cc-moss's own, from the gear at the rail's foot: up and to the right.
+            return CGSize(width: 6, height: size.height - height - 10)
         }
         let below = row.maxY - 2
         let y = below + height <= floor ? below : max(row.minY - height + 2, 8)
@@ -659,7 +655,8 @@ struct PanelView: View {
         }
     }
 
-    private func showSettings() {
+    private func showSettings(_ tab: SettingsView.Tab? = nil) {
+        if let tab { SettingsView.show(tab) }
         closePanel()
         openWindow(id: "settings")
         SettingsWindow.bringToFront()
@@ -734,6 +731,8 @@ struct PanelAction: Identifiable {
     /// Shown instead of `icon`: the chosen terminal's own app icon.
     var image: NSImage?
     var help: String?
+    /// A brand dot after the title: something new (an update).
+    var dot = false
     let perform: () -> Void
 }
 

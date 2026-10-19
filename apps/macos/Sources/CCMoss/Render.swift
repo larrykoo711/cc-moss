@@ -127,6 +127,11 @@ enum Render {
                 model.panelHeight = CGFloat(PanelSize.height(PanelSize.tier(count: n, previous: nil), visible: visible))
             }
             if let h = value("--panel-height").flatMap(Double.init) { model.panelHeight = CGFloat(h) }
+            // `--update 0.3.0`: as if a newer cc-moss were out (the gear's dot, its menu).
+            model.updateCheckedAt = Date()
+            if let latest = value("--update") {
+                model.update = try? UpdateInfo.decode(Data(#"{"schema":1,"current":"0.2.2","latest":"\#(latest)","available":true}"#.utf8))
+            }
             if let id = value("--select") { model.selectedID = id }
             model.demoSuggestion = value("--suggestion")
             // `--reply <id>`: that session's reply line open (with `--suggestion`, prefilled).

@@ -434,6 +434,7 @@ struct ActionsMenu: View {
             HStack(spacing: 9) {
                 ActionIcon(action: a, symbolSize: 12).foregroundStyle(.secondary)
                 Text(a.title).font(.system(size: 13)).lineLimit(1).fixedSize()
+                if a.dot { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
                 Spacer(minLength: 16)
                 if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
             }

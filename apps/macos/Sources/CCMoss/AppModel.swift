@@ -74,6 +74,35 @@ final class AppModel {
     /// You typed in the line: a suggestion arriving later leaves it alone.
     @ObservationIgnored var replyTouched = false
     @ObservationIgnored var replyPrefilled: String?
+    /// A newer cc-moss, when the last check found one (the gear's dot).
+    var update: UpdateInfo?
+    @ObservationIgnored var updateCheckedAt: Date?
+
+    /// Look for a newer cc-moss when the panel opens, at most every 6 hours
+    /// (it goes online, as Settings › About does). Quiet when it can't.
+    func checkForUpdate() {
+        guard let client, updateCheckedAt.map({ Date().timeIntervalSince($0) > 6 * 3600 }) ?? true else { return }
+        updateCheckedAt = Date()
+        Task {
+            guard let info = try? await client.updateInfo() else { return }
+            update = info.available ? info : nil
+        }
+    }
+
+    /// The gear menu's "Update to …": cc-moss update, in the chosen terminal.
+    func runUpdate() {
+        guard let cliPath else { return }
+        let command = LaunchPlan.cliCommand(cli: cliPath, ["update"])
+        let terminal = terminals.current
+        Task {
+            if let failure = await Opener.run(command: command, in: terminal) {
+                copy(failure.command)
+                say(L.t("Couldn't open \(failure.terminalName). The command is on your clipboard.",
+                        "没能打开\(failure.terminalName)。命令已经复制好了。"))
+            }
+        }
+    }
+
     /// How tall the panel is: one of three sizes, picked as it opens.
     var panelHeight: CGFloat = Theme.panelHeight
     @ObservationIgnored var panelTier: PanelTier?

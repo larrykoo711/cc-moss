@@ -9,7 +9,9 @@ import SwiftUI
 /// foot. Pages to come (Doctor) take a place here too.
 struct NavRail: View {
     @Bindable var model: AppModel
-    let settings: () -> Void
+    /// The gear: cc-moss's own menu (Settings, Refresh, the version, Quit).
+    let appMenu: () -> Void
+    var appMenuOpen = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -21,8 +23,10 @@ struct NavRail: View {
             RailButton(icon: "bubble.left.and.text.bubble.right", title: "Moss", shortcut: "⌘3", key: "3",
                        selected: model.page == .moss, dot: mossDot) { model.showMoss() }
             Spacer(minLength: 0)
+            // A bare gear, as menu bar apps have; an update puts a dot on it.
             RailButton(icon: Icons.settings, title: L.t("Settings", "设置"), shortcut: "⌘,",
-                       selected: false, action: settings)
+                       selected: appMenuOpen, dot: model.update != nil ? .unread : nil, showsTitle: false,
+                       action: appMenu)
         }
         .padding(.top, 8)
         .padding(.bottom, 10)
@@ -61,6 +65,8 @@ struct RailButton: View {
     let selected: Bool
     var badge = 0
     var dot: RailDot?
+    /// The name under the icon; the gear goes without (it's understood).
+    var showsTitle = true
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -92,13 +98,15 @@ struct RailButton: View {
                                 .transition(.scale.combined(with: .opacity))
                         }
                     }
-                Text(title)
-                    .font(.system(size: 9.5, weight: selected ? .semibold : .medium))
-                    .lineLimit(1)
-                    .fixedSize()
+                if showsTitle {
+                    Text(title)
+                        .font(.system(size: 9.5, weight: selected ? .semibold : .medium))
+                        .lineLimit(1)
+                        .fixedSize()
+                }
             }
             .foregroundStyle(selected ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(hovering ? .primary : .secondary))
-            .frame(width: Theme.railWidth, height: 48)
+            .frame(width: Theme.railWidth, height: showsTitle ? 48 : 36)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

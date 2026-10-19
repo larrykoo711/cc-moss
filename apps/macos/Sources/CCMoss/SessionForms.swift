@@ -766,12 +766,19 @@ struct NewSessionButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: Icons.newSession)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.primary.opacity(0.06) : .clear))
-                .contentShape(Rectangle())
+            HStack(spacing: 5) {
+                Image(systemName: Icons.newSession)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(L.t("New Session", "新会话"))
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .foregroundStyle(hovering ? .primary : .secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.primary.opacity(0.06) : .clear))
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .focusable(false)
