@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stand-in for Claude Code in e2e tests: emits the hook events cc-moss
 # listens to, then takes commands from a FIFO named after the current session
-# id: "prompt <title>", "clear", "exit", "ask", "answered". Like Claude Code,
+# id: "prompt <title>", "stop", "clear", "exit", "ask", "answered". Like Claude Code,
 # the transcript file only appears with the first prompt (F8).
 # "ask" asks one AskUserQuestion the way 2.1.302 does (PreToolUse, then
 # PermissionRequest, which runs in the background so the terminal could still
@@ -42,6 +42,9 @@ while true; do
       [ -n "$arg" ] && name="$arg"
       echo '{}' >> "$(transcript "$sid")"
       hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+    stop)
+      # The reply is done (Stop).
+      hook stop "{\"session_id\":\"$sid\",\"hook_event_name\":\"Stop\"}" ;;
     rename)
       # Claude Code's `/rename`: written to the transcript, no hook.
       name="$arg"

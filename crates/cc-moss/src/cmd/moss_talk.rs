@@ -897,7 +897,7 @@ impl Talk {
                 && s.pid.is_some_and(|pid| !process_exists(pid))
                 && s.effective_status(moss_core::proc::is_alive) == Status::Interrupted;
             if gone {
-                registry.record_lost(&s.slot_id, now_ms)?;
+                registry.record_lost_of(&s.slot_id, s.pid, now_ms)?;
             }
         }
         let since = self.cursor.unwrap_or(0);

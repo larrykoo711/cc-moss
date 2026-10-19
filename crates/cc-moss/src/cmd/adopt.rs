@@ -129,7 +129,7 @@ fn command_line(pid: u32) -> Option<String> {
 }
 
 /// Still that Claude Code, right now: same start time and its command line.
-fn still_it(slot: &Slot) -> bool {
+pub(super) fn still_it(slot: &Slot) -> bool {
     let Some(pid) = slot.pid else {
         return false;
     };
@@ -346,6 +346,8 @@ mod tests {
             last_active_at_ms: 0,
             ended_at_ms: None,
             archived_at_ms: None,
+            provider_started: None,
+            provider_seen_keys: None,
         }
     }
 

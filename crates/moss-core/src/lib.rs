@@ -17,6 +17,7 @@ pub mod moss;
 pub mod naming;
 pub mod platform;
 pub mod proc;
+pub mod provider;
 pub mod registry;
 pub mod restore;
 pub mod settings_json;

@@ -19,12 +19,26 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
     rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
 
     if as_json {
-        let sessions: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
+        let settings = super::provider::current();
+        let queue = super::provider::queued(&store_dir::state_dir());
+        let sessions: Vec<Value> = rows
+            .iter()
+            .map(|(st, s)| {
+                let mut v = to_json(*st, s);
+                // Running sessions the provider switch didn't reach (T2.6).
+                v["provider_restart"] = super::provider::restart_reason(s, *st, settings.as_ref())
+                    .filter(|_| !s.is_moss())
+                    .into();
+                v["restart_queued"] = (*st == Status::Running && queue.contains(&s.slot_id)).into();
+                v
+            })
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "schema": JSON_SCHEMA,
                 "state_dir": store_dir::state_dir(),
+                "provider": { "host": settings.as_ref().and_then(|s| s.host.clone()) },
                 "sessions": sessions,
             }))?
         );

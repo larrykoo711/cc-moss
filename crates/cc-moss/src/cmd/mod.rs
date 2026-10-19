@@ -22,6 +22,8 @@ pub mod moss;
 pub mod moss_talk;
 pub mod new;
 pub mod note;
+pub mod provider;
+pub mod restart;
 pub mod restore;
 pub mod send;
 pub mod setup;

@@ -473,9 +473,18 @@ impl Registry {
                             params![id, status.as_str(), raw, ctx.now_ms],
                         )?;
                         let detail = serde_json::json!({ "reason": raw });
+                        // `cc-moss restart` (or restore) ended it on purpose
+                        // and brings it back right away: no news.
+                        let restarting = tx
+                            .query_row(
+                                "SELECT restore_started_at FROM slots WHERE slot_id = ?1",
+                                [&id],
+                                |r| r.get::<_, Option<i64>>(0),
+                            )?
+                            .is_some_and(|t| ctx.now_ms - t < crate::restore::PENDING_WINDOW_MS);
                         if changed == 1 && status == Status::Closed {
                             record_event(&tx, &id, "ended", &detail, ctx.now_ms)?;
-                        } else if changed == 1 {
+                        } else if changed == 1 && !restarting {
                             record_interrupted(&tx, &id, &detail, ctx.now_ms)?;
                         }
                     }
@@ -904,6 +913,36 @@ impl Registry {
         Ok(out)
     }
 
+    /// The provider a session started with, and the keys seen so far
+    /// (both JSON, from [`crate::provider`]: never a key's value).
+    pub fn set_provider(&self, slot_id: &str, started: &str, seen: &str) -> Result<()> {
+        self.write()?.execute(
+            "UPDATE slots SET provider_started = ?2, provider_seen_keys = ?3 WHERE slot_id = ?1",
+            params![slot_id, started, seen],
+        )?;
+        Ok(())
+    }
+
+    /// The provider key names a session has seen (JSON array).
+    pub fn set_provider_seen(&self, slot_id: &str, seen: &str) -> Result<()> {
+        self.write()?.execute(
+            "UPDATE slots SET provider_seen_keys = ?2 WHERE slot_id = ?1",
+            params![slot_id, seen],
+        )?;
+        Ok(())
+    }
+
+    /// Record one event for a session.
+    pub fn record(
+        &self,
+        slot_id: &str,
+        kind: &str,
+        detail: &serde_json::Value,
+        now_ms: i64,
+    ) -> Result<()> {
+        record_event(self.write()?, slot_id, kind, detail, now_ms)
+    }
+
     /// Record an event about no one session (`slot_id` empty).
     pub fn record_global(&self, kind: &str, detail: &serde_json::Value, now_ms: i64) -> Result<()> {
         record_event(self.write()?, GLOBAL, kind, detail, now_ms)
@@ -940,7 +979,37 @@ impl Registry {
     /// (SIGKILL, power loss). Once per interruption: nothing is recorded when
     /// the slot's latest event already is `interrupted`.
     pub fn record_lost(&self, slot_id: &str, now_ms: i64) -> Result<bool> {
+        self.record_lost_of(slot_id, None, now_ms)
+    }
+
+    /// [`Registry::record_lost`] for the process `pid` that was seen gone:
+    /// nothing when the slot runs another process by now (restarted).
+    pub fn record_lost_of(&self, slot_id: &str, pid: Option<u32>, now_ms: i64) -> Result<bool> {
         let tx = self.write_tx()?;
+        if let Some(seen) = pid {
+            let now: Option<u32> = tx
+                .query_row("SELECT pid FROM slots WHERE slot_id = ?1", [slot_id], |r| {
+                    r.get(0)
+                })
+                .optional()?
+                .flatten();
+            if now != Some(seen) {
+                return Ok(false);
+            }
+        }
+        // On its way back (`restart`, `restore`): not lost.
+        let returning = tx
+            .query_row(
+                "SELECT restore_started_at FROM slots WHERE slot_id = ?1",
+                [slot_id],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten()
+            .is_some_and(|t| now_ms - t < crate::restore::PENDING_WINDOW_MS);
+        if returning {
+            return Ok(false);
+        }
         let detail = serde_json::json!({ "reason": "process-gone" });
         let recorded = record_interrupted(&tx, slot_id, &detail, now_ms)?;
         clear_attention(&tx, slot_id)?;
@@ -1172,7 +1241,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
                     attention,
                     (SELECT transcript_path FROM slot_sessions ss
                       WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id),
-                    role, archived_at_ms
+                    role, archived_at_ms, provider_started, provider_seen_keys
              FROM slots ORDER BY created_at, slot_id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -1216,6 +1285,8 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             last_active_at_ms: r.get(14)?,
             ended_at_ms: r.get(15)?,
             archived_at_ms: r.get(26)?,
+            provider_started: r.get(27)?,
+            provider_seen_keys: r.get(28)?,
         })
     })?;
     let mut slots = rows.collect::<rusqlite::Result<Vec<_>>>()?;

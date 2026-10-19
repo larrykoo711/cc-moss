@@ -173,7 +173,7 @@ fn record_lost(registry: &Registry) -> Result<()> {
         if slot.status == Status::Running
             && slot.effective_status(proc::is_alive) == Status::Interrupted
         {
-            registry.record_lost(&slot.slot_id, now)?;
+            registry.record_lost_of(&slot.slot_id, slot.pid, now)?;
         }
     }
     Ok(())

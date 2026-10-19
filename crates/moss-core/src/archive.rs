@@ -55,6 +55,8 @@ mod tests {
             last_active_at_ms,
             ended_at_ms: None,
             archived_at_ms: None,
+            provider_started: None,
+            provider_seen_keys: None,
         }
     }
 

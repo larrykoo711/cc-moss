@@ -165,6 +165,78 @@ fn install_hint(tools: &[Tool]) -> Option<String> {
     })
 }
 
+/// The API provider Claude Code's settings name, and whether running
+/// sessions still use an older one (T2.6). Folders whose own settings pick
+/// a provider are pointed out: a switch doesn't reach them.
+fn provider_check() -> Option<Check> {
+    let now = super::provider::current()?;
+    let where_to = match &now.host {
+        Some(host) => host.clone(),
+        None if now.keys.is_empty() => tr!("your Claude account", "你的 Claude 账号").into(),
+        None => tr!("a key of your own", "你自己的 key").into(),
+    };
+    let path = moss_core::store_dir::registry_path();
+    let slots = if path.exists() {
+        moss_core::registry::Registry::open(&path)
+            .and_then(|r| r.slots())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let running: Vec<_> = slots
+        .iter()
+        .filter(|s| !s.is_moss())
+        .filter(|s| {
+            s.effective_status(moss_core::proc::is_alive) == moss_core::slot::Status::Running
+        })
+        .collect();
+    let stale = running
+        .iter()
+        .filter(|s| {
+            super::provider::restart_reason(s, moss_core::slot::Status::Running, Some(&now))
+                .is_some()
+        })
+        .count();
+    let own: std::collections::BTreeSet<&str> = running
+        .iter()
+        .map(|s| s.cwd.as_str())
+        .filter(|cwd| {
+            ["settings.json", "settings.local.json"].iter().any(|f| {
+                moss_core::provider::Snapshot::read(
+                    &std::path::Path::new(cwd).join(".claude").join(f),
+                )
+                .is_some_and(|s| !s.keys.is_empty())
+            })
+        })
+        .collect();
+    let mut detail = tr!(
+        format!("sessions use {where_to}"),
+        format!("会话用的是 {where_to}")
+    );
+    if !own.is_empty() {
+        detail.push_str(&tr!(
+            format!(
+                "; {} folder(s) pick their own, a switch doesn't reach them",
+                own.len()
+            ),
+            format!("；{} 个目录自己指定了供应商，切换对它们不生效", own.len())
+        ));
+    }
+    Some(if stale > 0 {
+        check(
+            Mark::Warn,
+            tr!("API provider", "API 供应商"),
+            tr!(
+                format!("{where_to}; {stale} session(s) need a restart to use it"),
+                format!("{where_to}；{stale} 个会话要重开才能用上")
+            ),
+            Some("cc-moss restart --stale".into()),
+        )
+    } else {
+        check(Mark::Note, tr!("API provider", "API 供应商"), detail, None)
+    })
+}
+
 fn checks() -> Result<Vec<Check>> {
     let paths = Paths::detect()?;
     let zshrc = read_optional(&paths.zshrc)?.unwrap_or_default();
@@ -189,6 +261,7 @@ fn checks() -> Result<Vec<Check>> {
     out.extend(app_check());
     out.extend(daemon_check());
     out.extend(super::moss::facts().map(|f| moss_check(&f)));
+    out.extend(provider_check());
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {

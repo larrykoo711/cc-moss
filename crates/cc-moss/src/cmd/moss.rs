@@ -99,7 +99,7 @@ const PRIVATE_READS: &[&str] = &[
 /// Claude Code's folder when it is not `~/.claude`: `[claude] config_dir`
 /// in cc-moss's config, else `CLAUDE_CONFIG_DIR`. Claude Code keeps there
 /// what it otherwise keeps in `~/.claude` and `~/.claude.json`.
-fn config_dir() -> Option<PathBuf> {
+pub(super) fn config_dir() -> Option<PathBuf> {
     let configured = moss_core::config::Config::load()
         .ok()
         .and_then(|c| c.claude.config_dir);

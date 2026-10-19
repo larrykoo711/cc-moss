@@ -195,6 +195,26 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Start sessions again in place (same tmux pane) to use a new API provider.
+    ///
+    /// A busy session restarts after its turn, unless --now.
+    Restart {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required_unless_present = "stale")]
+        names: Vec<String>,
+        /// Every running session the provider switch didn't reach.
+        #[arg(long)]
+        stale: bool,
+        /// Restart a busy session right away; its current turn is lost.
+        #[arg(long)]
+        now: bool,
+        /// With --now: don't ask.
+        #[arg(long)]
+        yes: bool,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
     /// Bring archived sessions back into the list.
     Unarchive {
         /// Session names (Claude name, tmux name or id prefix).
@@ -582,6 +602,19 @@ fn main() -> std::process::ExitCode {
         } => report(cmd::ls::run(all, archived, json)),
         Command::Archive { names, json } => exit(cmd::archive::archive(&names, json)),
         Command::Unarchive { names, json } => exit(cmd::archive::unarchive(&names, json)),
+        Command::Restart {
+            names,
+            stale,
+            now,
+            yes,
+            json,
+        } => exit(cmd::restart::run(cmd::restart::RestartArgs {
+            names,
+            now,
+            yes,
+            stale,
+            json,
+        })),
         Command::Events { json, since, limit } => report(cmd::events::run(
             since,
             usize::try_from(limit).unwrap_or(usize::MAX),
