@@ -1,4 +1,5 @@
 pub mod act;
+pub mod adopt;
 pub mod alias;
 pub mod app;
 pub mod ask;

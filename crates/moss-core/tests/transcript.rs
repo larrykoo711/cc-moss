@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use moss_core::transcript::{custom_title_since, last_custom_title, turn_open};
+use moss_core::transcript::{custom_title_since, last_custom_title, last_prompt, turn_open};
 
 fn file_with(lines: &[String]) -> tempfile::NamedTempFile {
     let mut f = tempfile::NamedTempFile::new().unwrap();
@@ -21,6 +21,37 @@ fn filler(n: usize) -> Vec<String> {
                 .to_string()
         })
         .collect()
+}
+
+fn said(text: &str, at: &str) -> String {
+    serde_json::json!({"type": "user", "timestamp": at, "message": {"role": "user", "content": text}})
+        .to_string()
+}
+
+#[test]
+fn last_prompt_is_the_last_thing_typed() {
+    let f = file_with(&[
+        said("first ask", "2026-10-19T08:00:00.000Z"),
+        said("fix the login page\nand the footer", "2026-10-19T09:00:00.000Z"),
+        // Not prompts: a tool's result, meta, a local command, an interrupt.
+        serde_json::json!({"type": "user", "timestamp": "2026-10-19T09:01:00.000Z",
+            "message": {"content": [{"type": "tool_result", "content": "ok"}]}})
+        .to_string(),
+        serde_json::json!({"type": "user", "isMeta": true, "timestamp": "2026-10-19T09:02:00.000Z",
+            "message": {"content": "meta"}})
+        .to_string(),
+        said("<command-name>/rename</command-name>", "2026-10-19T09:03:00.000Z"),
+        said("[Request interrupted by user]", "2026-10-19T09:04:00.000Z"),
+        r#"{"type":"assistant","timestamp":"2026-10-19T09:05:00.000Z","message":{"content":"done"}}"#
+            .to_string(),
+    ]);
+    let (text, at) = last_prompt(f.path()).unwrap();
+    assert_eq!(text, "fix the login page\nand the footer");
+    assert_eq!(at, 1_792_400_400_000);
+    assert_eq!(
+        last_prompt(std::path::Path::new("/nonexistent/x.jsonl")),
+        None
+    );
 }
 
 #[test]

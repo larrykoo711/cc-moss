@@ -207,6 +207,17 @@ enum Command {
         #[arg(last = true, required = true)]
         text: Vec<String>,
     },
+    /// Move a session running outside tmux into tmux (it quits and resumes there).
+    Adopt {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// Say what it would do; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
     /// The next prompt Claude Code suggests in a session's input (the dim text).
     Suggest {
         /// Session name (Claude name, tmux name or id prefix).
@@ -596,6 +607,15 @@ fn main() -> std::process::ExitCode {
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
         Command::Suggest { name, json } => report(cmd::suggest::run(&name, json)),
+        Command::Adopt {
+            name,
+            json,
+            dry_run,
+        } => match cmd::adopt::run(&name, json, dry_run) {
+            Ok(true) => std::process::ExitCode::SUCCESS,
+            Ok(false) => std::process::ExitCode::FAILURE,
+            Err(e) => report(Err(e)),
+        },
         Command::Daemon { action } => match action {
             DaemonCommand::Run => match cmd::daemon::run() {
                 Ok(true) => std::process::ExitCode::SUCCESS,
