@@ -30,7 +30,13 @@ pub fn run() -> Result<Registry> {
     if !live.is_empty() {
         adopt(&mut registry, &live)?;
     }
-    registry.backfill_names()?;
+    for slot_id in registry.backfill_names()? {
+        // The panel's rename goes through `/rename`, which fires no hook: the
+        // tmux name follows here instead.
+        if let Some(slot) = registry.slots()?.into_iter().find(|s| s.slot_id == slot_id) {
+            let _ = crate::cmd::hook::sync_tmux_name_of(&registry, &slot);
+        }
+    }
     record_lost(&registry)?;
     registry.prune_events(now_ms() - EVENT_RETENTION_MS)?;
     Ok(registry)

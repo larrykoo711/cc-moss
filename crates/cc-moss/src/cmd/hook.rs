@@ -206,6 +206,12 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };
+    sync_tmux_name_of(registry, &slot)
+}
+
+/// [`sync_tmux_name`] for a slot in hand (also after `reconcile` picks up a
+/// `/rename` from the transcript).
+pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slot) -> Result<()> {
     // Moss keeps the tmux name it was started with.
     if slot.is_moss() {
         return Ok(());
@@ -216,7 +222,7 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
     let Some(tmux_id) = loc.session_id.as_deref() else {
         return Ok(());
     };
-    if !registry.is_tmux_primary(&slot)? {
+    if !registry.is_tmux_primary(slot)? {
         return Ok(());
     }
     let config = Config::load().unwrap_or_else(|e| {

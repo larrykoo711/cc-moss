@@ -42,6 +42,10 @@ while true; do
       [ -n "$arg" ] && name="$arg"
       echo '{}' >> "$(transcript "$sid")"
       hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+    rename)
+      # Claude Code's `/rename`: written to the transcript, no hook.
+      name="$arg"
+      echo "{\"type\":\"custom-title\",\"customTitle\":\"$arg\",\"sessionId\":\"$sid\"}" >> "$(transcript "$sid")" ;;
     clear)
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"clear\"}"
       sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")

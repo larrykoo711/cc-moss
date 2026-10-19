@@ -426,14 +426,17 @@ impl Registry {
         Ok(())
     }
 
-    /// Name open slots that have none yet from their transcript's last
-    /// `/rename`. Claude Code leaves the name out of hook payloads after
-    /// `--resume`, so a resumed session can stay nameless otherwise.
-    pub fn backfill_names(&self) -> Result<usize> {
+    /// Take each open slot's name from its transcript's last `/rename`,
+    /// and return the slots whose name changed. Claude Code leaves the name
+    /// out of hook payloads after `--resume`, and `/rename` itself fires no
+    /// hook, so an idle session renamed from the panel would keep its old
+    /// name until it next did something.
+    pub fn backfill_names(&self) -> Result<Vec<String>> {
         self.write()?;
-        let mut named = 0;
+        let mut renamed = Vec::new();
         for slot in self.slots()? {
-            if slot.name.is_some() || slot.status == Status::Closed {
+            // Moss keeps the name it was started with.
+            if slot.status == Status::Closed || slot.is_moss() {
                 continue;
             }
             let Some(path) = slot.transcript_path.as_deref() else {
@@ -452,12 +455,12 @@ impl Registry {
                 "UPDATE slots SET name_scanned_to = ?2 WHERE slot_id = ?1",
                 params![slot.slot_id, scanned as i64],
             )?;
-            if let Some(name) = title {
+            if let Some(name) = title.filter(|t| slot.name.as_deref() != Some(t.as_str())) {
                 self.set_name(&slot.slot_id, &name)?;
-                named += 1;
+                renamed.push(slot.slot_id);
             }
         }
-        Ok(named)
+        Ok(renamed)
     }
 
     /// Whether Claude is working on a prompt (from outside the hooks).

@@ -841,10 +841,36 @@ fn backfill_picks_up_a_rename_made_after_an_earlier_look() {
         transcript_path: Some(t.path().to_string_lossy().into_owned()),
     };
     reg.apply(&event, &ctx(100, 1_000)).unwrap();
-    assert_eq!(reg.backfill_names().unwrap(), 0);
+    assert_eq!(reg.backfill_names().unwrap().len(), 0);
     writeln!(t, r#"{{"type":"custom-title","customTitle":"job-late"}}"#).unwrap();
-    assert_eq!(reg.backfill_names().unwrap(), 1);
+    assert_eq!(reg.backfill_names().unwrap().len(), 1);
     assert_eq!(only_slot(&reg).name.as_deref(), Some("job-late"));
+}
+
+/// `/rename` fires no hook: a named session renamed while idle is picked up
+/// from its transcript at the next look (the panel's rename form relies on it).
+#[test]
+fn backfill_follows_a_rename_of_a_named_session() {
+    use std::io::Write;
+    let mut t = tempfile::NamedTempFile::new().unwrap();
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"ofoxai"}}"#).unwrap();
+    let mut reg = Registry::open_in_memory().unwrap();
+    let event = Event::Start {
+        source: StartSource::Startup,
+        session_id: "A".into(),
+        cwd: "/work".into(),
+        title: Some("ofoxai".into()),
+        transcript_path: Some(t.path().to_string_lossy().into_owned()),
+    };
+    reg.apply(&event, &ctx(100, 1_000)).unwrap();
+    assert!(
+        reg.backfill_names().unwrap().is_empty(),
+        "same name: nothing to do"
+    );
+    writeln!(t, r#"{{"type":"custom-title","customTitle":"azure-tier"}}"#).unwrap();
+    let renamed = reg.backfill_names().unwrap();
+    assert_eq!(renamed, vec![only_slot(&reg).slot_id.clone()]);
+    assert_eq!(only_slot(&reg).name.as_deref(), Some("azure-tier"));
 }
 
 // ---- Event stream and attention (T2.1) ----
