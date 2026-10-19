@@ -16,6 +16,7 @@ import SwiftUI
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
+///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|off|offline|failing|nodaemon] [--moss-typing]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -53,7 +54,9 @@ enum Render {
         NSApp.setActivationPolicy(.prohibited)
         var askData = value("--asks").flatMap { FileManager.default.contents(atPath: $0) }
         if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
-        let runner = DemoRunner(sessions: data, asks: askData, answer: value("--answer"))
+        let mossChat = value("--moss-chat").flatMap { FileManager.default.contents(atPath: $0) }
+        let runner = DemoRunner(sessions: value("--page") == "moss" ? DemoRunner.withMoss(data) : data, asks: askData,
+                                answer: value("--answer"), mossChat: mossChat, moss: value("--moss"))
         ClickTargets.shared.enabled = args.contains("--click")
         let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
         let done = DispatchSemaphore(value: 0)
@@ -69,6 +72,10 @@ enum Render {
                 exit(0)
             }
             if value("--page") == "queue" { model.showQueue() }
+            if value("--page") == "moss" {
+                model.showMoss()
+                model.mossTyping = args.contains("--moss-typing")
+            }
             model.query = value("--query") ?? ""
             switch value("--filter") {
             case "working": model.stateFilter = .working
@@ -544,6 +551,10 @@ struct DemoRunner: CommandRunner {
     var sessions: Data
     var asks: Data?
     var answer: String?
+    /// `moss chat --json`; none: an empty conversation.
+    var mossChat: Data?
+    /// `--moss <state>`: what `moss status --json` says (Moss up 2 hours, idle, by default).
+    var moss: String?
 
     func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
         func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
@@ -552,6 +563,14 @@ struct DemoRunner: CommandRunner {
             return CommandResult(status: 0, stdout: asks ?? Data(#"{"schema":1,"asks":[]}"#.utf8), stderr: "")
         case ["ask", "take"]:
             return ok("")
+        case ["moss", "chat"]:
+            return CommandResult(status: 0, stdout: mossChat ?? Data(#"{"schema":1,"messages":[]}"#.utf8), stderr: "")
+        case ["moss", "status"]:
+            return ok(Self.mossStatus(moss))
+        case ["moss", "say"]:
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            return ok(#"{"schema":1,"id":"1760608999000-000000"}"#)
         case ["ask", "answer"]:
             print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
             fflush(stdout)
@@ -565,6 +584,44 @@ struct DemoRunner: CommandRunner {
         default:
             return CommandResult(status: 0, stdout: sessions, stderr: "")
         }
+    }
+
+    /// `moss status --json` for a demo state, Moss started 2 hours 5 minutes before `L.clock()`.
+    static func mossStatus(_ state: String?) -> String {
+        let f = ISO8601DateFormatter()
+        let since = f.string(from: L.clock().addingTimeInterval(-2 * 3600 - 300))
+        let up = #""schema":1,"enabled":true,"running":true,"since":"\#(since)","restarts":0,"daemon_running":true"#
+        return switch state {
+        case "thinking": "{\(up),\"activity\":\"thinking\",\"queued\":0}"
+        case "queued": "{\(up),\"activity\":\"thinking\",\"queued\":2}"
+        case "waiting": "{\(up),\"activity\":\"waiting\",\"queued\":1}"
+        case "off": #"{"schema":1,"enabled":false,"running":false,"activity":"off","queued":0}"#
+        case "offline": #"{"schema":1,"enabled":true,"running":false,"activity":"offline","queued":0}"#
+        case "failing": #"{"schema":1,"enabled":true,"running":false,"last_error":"Claude Code exited right after it started","activity":"offline","queued":0}"#
+        case "nodaemon": #"{"schema":1,"enabled":true,"running":false,"daemon_running":false,"activity":"offline","queued":0}"#
+        default: "{\(up),\"activity\":\"idle\",\"queued\":0}"
+        }
+    }
+
+    /// The demo sessions plus a running Moss, so the Moss page can offer its terminal.
+    static func withMoss(_ data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var list = top["sessions"] as? [[String: Any]], var moss = list.first else { return data }
+        moss["id"] = "0MOSS"
+        moss["name"] = "moss"
+        moss["role"] = "moss"
+        moss["status"] = "running"
+        moss["busy"] = false
+        moss["attention"] = NSNull()
+        moss["last_prompt"] = NSNull()
+        moss["cwd"] = "/Users/demo/.local/state/cc-moss/moss"
+        if var tmux = moss["tmux"] as? [String: Any] {
+            tmux["session_name"] = "moss"
+            moss["tmux"] = tmux
+        }
+        list.append(moss)
+        top["sessions"] = list
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
     }
 
     /// Only question `id` of an `ask list --json` file.

@@ -71,7 +71,23 @@ final class AppModel {
     /// Everything waiting on you, worked through on the panel's "To Do" page.
     var askQueue = AskQueue()
     /// The panel page the side rail has picked.
-    var page: PanelPage = .sessions
+    var page: PanelPage = .sessions {
+        didSet {
+            // Back on the Moss page later, it opens on its actions again.
+            if page != .moss { mossTyping = false }
+            if page == .moss && panelShown { mossDesk.markRead() }
+        }
+    }
+    /// The panel is on screen (the Moss page counts as read only then).
+    var panelShown = false {
+        didSet { if panelShown && page == .moss { mossDesk.markRead() } }
+    }
+    /// Talking to Moss (T2.3): its status and the conversation.
+    let mossDesk = MossDesk { _ in throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
+    /// The Moss page shows the text field instead of its action buttons.
+    var mossTyping = false
+    /// Moss answered something sent from the panel (for the alerts).
+    @ObservationIgnored var onMossReplies: (([MossMessage]) -> Void)?
     /// Settings › Notifications › "Answer questions here" (`ask.enabled`).
     var askEnabled = true
     /// What changed in the question list, for the alerts.
@@ -82,6 +98,10 @@ final class AppModel {
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
     init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
         self.terminals = terminals ?? TerminalPrefs()
+        mossDesk.say = { [weak self] text in
+            guard let client = self?.client else { throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
+            return try await client.mossSay(text)
+        }
         if let client {
             self.client = client
             refresh()
@@ -173,6 +193,7 @@ final class AppModel {
             if let dir = snap.stateDir { watch(dir) }
             if selectedID == nil || !visible.contains(where: { $0.id == selectedID }) { selectFirst() }
             await loadAsks()
+            await loadMoss()
         } catch MossClient.Failure.newerSchema {
             phase = .needsUpgrade
         } catch MossClient.Failure.command(let message) {
@@ -243,4 +264,6 @@ enum PanelPage: Equatable {
     case sessions
     /// Questions and replies waiting on you (user 2026-10-18).
     case queue
+    /// Moss's status and a conversation with it (T2.3).
+    case moss
 }

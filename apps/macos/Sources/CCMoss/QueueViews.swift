@@ -6,7 +6,7 @@ import SwiftUI
 // sessions page stays free to use.
 
 /// The rail down the panel's left edge: one button per page, Settings at the
-/// foot. Pages to come (talking to Moss, Doctor) take a place here too.
+/// foot. Pages to come (Doctor) take a place here too.
 struct NavRail: View {
     @Bindable var model: AppModel
     let settings: () -> Void
@@ -18,6 +18,8 @@ struct NavRail: View {
                        selected: model.page == .sessions) { model.page = .sessions }
             RailButton(icon: "tray.full", title: L.t("To Do", "待处理"), shortcut: "⌘2",
                        selected: model.page == .queue, badge: model.queueCount) { model.showQueue() }
+            RailButton(icon: "bubble.left.and.text.bubble.right", title: "Moss", shortcut: "⌘3",
+                       selected: model.page == .moss, dot: mossDot) { model.showMoss() }
             Spacer(minLength: 0)
             RailButton(icon: Icons.settings, title: L.t("Settings", "设置"), shortcut: "⌘,",
                        selected: false, action: settings)
@@ -31,6 +33,20 @@ struct NavRail: View {
             Rectangle().fill(Theme.hairline(scheme)).frame(width: 1)
         }
     }
+
+    /// An answer you haven't read beats Moss thinking; on its page, neither shows.
+    private var mossDot: RailDot? {
+        guard model.page != .moss else { return nil }
+        if model.mossDesk.unread { return .unread }
+        return model.mossDesk.activity == .thinking ? .busy : nil
+    }
+}
+
+/// A small dot on a rail icon: something new there, or work going on.
+enum RailDot: Equatable {
+    case unread
+    /// Breathes.
+    case busy
 }
 
 /// One page in the rail: its symbol over a short name; the page you're on
@@ -41,6 +57,7 @@ struct RailButton: View {
     var shortcut: String?
     let selected: Bool
     var badge = 0
+    var dot: RailDot?
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -64,6 +81,12 @@ struct RailButton: View {
                                 .overlay(Capsule().strokeBorder(Theme.surface(scheme), lineWidth: 1.5))
                                 .offset(x: 6, y: -5)
                                 .transition(.scale.combined(with: .opacity))
+                        } else if let dot {
+                            MossDot(color: Theme.brand, breathing: dot == .busy, size: 8)
+                                .padding(2)
+                                .background(Circle().fill(Theme.surface(scheme)))
+                                .offset(x: 3, y: -3)
+                                .transition(.scale.combined(with: .opacity))
                         }
                     }
                 Text(title)
@@ -79,9 +102,10 @@ struct RailButton: View {
         .focusable(false)
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
         .tip(shortcut.map { "\(title)  \($0)" } ?? title)
-        .accessibilityLabel(badge > 0 ? "\(title), \(badge)" : title)
+        .accessibilityLabel(badge > 0 ? "\(title), \(badge)" : dot == .unread ? L.t("\(title), new reply", "\(title)，有新回复") : title)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .animation(.spring(response: 0.3, dampingFraction: 0.7), value: badge)
+        .animation(.easeOut(duration: 0.2), value: dot)
     }
 
     private var tileFill: Color {
