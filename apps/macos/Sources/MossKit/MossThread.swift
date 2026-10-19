@@ -33,7 +33,7 @@ public enum MossThread {
     /// whole bubble, and a message of yours that didn't get through keeps its
     /// "Resend" right beside it.
     static func closes(_ m: MossMessage) -> Bool {
-        (m.from == .moss && !m.buttons.isEmpty) || (m.from == .you && m.delivery == .failed)
+        (m.from == .moss && (!m.buttons.isEmpty || !m.sessions.isEmpty)) || (m.from == .you && m.delivery == .failed)
     }
 
     public static func groups(_ messages: [MossMessage]) -> [MossGroup] {

@@ -28,7 +28,19 @@ final class AppModel {
     }
     /// The menu bar icon, following the sessions.
     @ObservationIgnored let icon = MenuBarIcon()
-    var query = "" { didSet { if query != oldValue { selectFirst() } } }
+    var query = "" {
+        didSet {
+            guard query != oldValue else { return }
+            selectFirst()
+            // A search starts: read the closed sessions once, for its last section.
+            if !searching { closedPool = nil } else if closedPool == nil { loadClosed() }
+        }
+    }
+    /// A query is typed: the Sessions page is one ranked list.
+    var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Sessions closed in the last 30 days, read when a search starts.
+    var closedPool: [Session]?
+    @ObservationIgnored let searchIndexes = SearchIndexes()
     /// Set from the summary strip: show only sessions in this state.
     var stateFilter: SessionState? { didSet { if stateFilter != oldValue { selectFirst() } } }
     var selectedID: String?
@@ -77,7 +89,8 @@ final class AppModel {
     /// The Sessions page, flat: headings and rows, each row once, its pin
     /// taken from the section it's in.
     var listItems: [SessionListItem] {
-        SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded)
+        if searching { return SessionList.searchItems(query: query, live: searchHits, closed: closedHits) }
+        return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded)
     }
     /// You typed in the line: a suggestion arriving later leaves it alone.
     /// Claude Code's suggestion in that line: quiet until you touch it.
@@ -129,6 +142,9 @@ final class AppModel {
     var pins = Pins.load()
     /// Off for screenshots: their pins are never saved.
     @ObservationIgnored var pinsPersist = true
+    /// The session card in Moss's reply whose name field is open
+    /// ("<message id>/<session id>").
+    var mossCardRenaming: String?
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
     /// Claude Code's guess at what you'd say to Moss next (its own input box).
@@ -250,7 +266,39 @@ final class AppModel {
     /// folders, the folded group only while it is open. Never Moss: it has
     /// its own page (user 2026-10-19).
     var visible: [Session] {
-        pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+        if searching { return searchHits.map(\.session) }
+        return pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+    }
+
+    /// Ranked results for the query, the state filter applied.
+    var searchHits: [SearchHit] {
+        let folders = Dictionary(Grouping.projects(sessions).flatMap { p in p.sessions.map { ($0.id, p.label) } },
+                                 uniquingKeysWith: { a, _ in a })
+        return searchIndexes.live(sessions, folders: folders).search(query)
+            .filter { stateFilter == nil || $0.session.state == stateFilter }
+    }
+
+    /// Closed sessions that match (only without a state filter).
+    var closedHits: [SearchHit] {
+        guard stateFilter == nil, let closedPool else { return [] }
+        return searchIndexes.closed(closedPool).search(query)
+    }
+
+    func loadClosed() {
+        guard let client else { return }
+        closedPool = []
+        Task {
+            guard let snap = try? await client.snapshotAll() else { return }
+            let since = Date().addingTimeInterval(-30 * 86_400)
+            closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && $0.lastActiveAt > since }
+        }
+    }
+
+    /// Nothing found: ask Moss to look, on its page.
+    func askMossToFind(_ q: String) {
+        sayToMoss(L.t("Find me a session: \(q)", "帮我找一个会话：\(q)"))
+        query = ""
+        showMoss()
     }
 
     var selected: Session? {
@@ -417,4 +465,35 @@ enum PanelPage: Equatable {
     case queue
     /// Moss's status and a conversation with it (T2.3).
     case moss
+}
+
+/// The search indexes, rebuilt only when the sessions change (pinyin isn't
+/// free), never per keystroke.
+final class SearchIndexes {
+    private var liveKey: [String] = []
+    private var liveIndex = SearchIndex([])
+    private var closedKey: [String] = []
+    private var closedIndex = SearchIndex([])
+
+    private static func key(_ list: [Session]) -> [String] {
+        list.map { "\($0.id)|\($0.title)|\($0.cwd)|\($0.lastActiveAt.timeIntervalSince1970)|\($0.lastPrompt ?? "")|\($0.notes.note ?? "")|\($0.state)" }
+    }
+
+    func live(_ sessions: [Session], folders: [String: String]) -> SearchIndex {
+        let k = Self.key(sessions)
+        if k != liveKey {
+            liveKey = k
+            liveIndex = SearchIndex(sessions, folders: folders)
+        }
+        return liveIndex
+    }
+
+    func closed(_ sessions: [Session]) -> SearchIndex {
+        let k = Self.key(sessions)
+        if k != closedKey {
+            closedKey = k
+            closedIndex = SearchIndex(sessions)
+        }
+        return closedIndex
+    }
 }

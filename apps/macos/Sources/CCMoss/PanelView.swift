@@ -278,7 +278,7 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
+        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -303,6 +303,9 @@ struct PanelView: View {
                         case let .projectHeader(project): SectionHeader(project: project)
                         case .olderHeader: OlderGroupHeader(model: model)
                         case let .row(s, pinned): row(s, pinned: pinned)
+                        case let .hit(h, closed): row(h.session, pinned: model.pins.contains(h.session.id), hit: h, closed: closed)
+                        case .closedHeader: ClosedHeader()
+                        case let .noMatch(q): AskMossRow(query: q) { model.askMossToFind(q) }
                         }
                     }
                 }
@@ -325,7 +328,7 @@ struct PanelView: View {
         }
     }
 
-    private func row(_ s: Session, pinned: Bool = false) -> some View {
+    private func row(_ s: Session, pinned: Bool = false, hit: SearchHit? = nil, closed: Bool = false) -> some View {
         // A click only selects; opening is deliberate: the button that
         // appears at the end of the hovered row, the action pill below, or
         // Return (user 2026-10-16). The row carries its own actions: the
@@ -341,7 +344,7 @@ struct PanelView: View {
         let note = model.rowNote.flatMap { $0.id == s.id ? $0.text : nil }
         return VStack(spacing: 0) {
             rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
-                      lineOpen: lineOpen, pinned: pinned)
+                      lineOpen: lineOpen, pinned: pinned, hit: hit, closed: closed)
             if lineOpen {
                 ReplyLineView(model: model, session: s, focused: $replyFocused)
                     .transition(.opacity)
@@ -367,22 +370,25 @@ struct PanelView: View {
     }
 
     private func rowButton(_ s: Session, shownSession: Session, menuOpen: Bool, shown: Bool, actions: RowActions,
-                           lineOpen: Bool, pinned: Bool) -> some View {
+                           lineOpen: Bool, pinned: Bool, hit: SearchHit? = nil, closed: Bool = false) -> some View {
         Button {
             model.selectedID = s.id
             // Waiting for you: a reply line opens right under it.
             model.openReply(s)
         } label: {
-            SessionRow(session: shownSession, selected: s.id == model.selected?.id, hovered: shown,
-                       actions: shown ? actions.inline.map { action($0, for: s) } : [],
-                       more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
+            SessionRow(session: shownSession, selected: !closed && s.id == model.selected?.id, hovered: shown,
+                       actions: closed ? [bringBackClosed(s)] : shown ? actions.inline.map { action($0, for: s) } : [],
+                       more: !closed && shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
                        menuOpen: menuOpen,
                        perform: { perform($0) },
                        problem: model.restoreProblem(s),
                        pinned: pinned,
                        lineOpen: lineOpen,
                        pin: s.isMoss ? nil : { model.togglePin(s) },
-                       restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
+                       restoring: (s.state == .interrupted || closed) && model.restoreFlow.isRunning(s.id),
+                       highlight: hit?.nameRanges ?? [],
+                       folder: hit.map { _ in Self.folderName(s) },
+                       reason: hit?.reason.map(Self.reasonText))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -461,6 +467,25 @@ struct PanelView: View {
     }
 
     /// What one row action looks like and does.
+    /// A closed session found by the search: bring it back.
+    private func bringBackClosed(_ s: Session) -> PanelAction {
+        PanelAction(title: L.t("Bring Back", "找回"), icon: Icons.restore, shortcut: "",
+                    help: L.t("Start it again, right where the conversation left off.", "重新开起来，接着上次的对话。")) {
+            model.restore(s)
+        }
+    }
+
+    static func folderName(_ s: Session) -> String { (s.cwd as NSString).lastPathComponent }
+
+    /// Why a result matched, when its name doesn't show it.
+    static func reasonText(_ r: SearchHit.Reason) -> String {
+        switch r {
+        case let .path(q): L.t("in path: \(q)", "路径里有 \(q)")
+        case let .note(text): L.t("note: \(text)", "便条：\(text)")
+        case let .prompt(text): L.t("last said: \(text)", "最后说：\(text)")
+        }
+    }
+
     /// Pin to the top of the list, or unpin (⌘P).
     private func pinAction(for s: Session) -> PanelAction {
         let pinned = model.pins.contains(s.id)
@@ -841,5 +866,61 @@ struct ReplyLineView: View {
         guard !model.replyDraft.contains("\n") else { return .ignored }
         model.moveReply(from: session, backwards: backwards)
         return .handled
+    }
+}
+
+/// Above the closed sessions a search found.
+struct ClosedHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "archivebox")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(L.t("Closed", "已关闭"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(L.t("last 30 days", "最近 30 天"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+}
+
+/// Nothing found: a quiet way to ask Moss instead.
+struct AskMossRow: View {
+    let query: String
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 8) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(L.t("No match for “\(query)”", "没找到「\(query)」"))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Text("·").foregroundStyle(.tertiary)
+                Text(L.t("Ask Moss →", "让 Moss 帮你找 →"))
+                    .foregroundStyle(hovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                    .fixedSize()
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12.5))
+            .padding(.horizontal, 12)
+            .frame(height: 40)
+            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.selection(scheme).opacity(0.5) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .padding(.top, 8)
     }
 }

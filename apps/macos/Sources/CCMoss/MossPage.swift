@@ -426,6 +426,9 @@ private struct MossMessageView: View {
                         .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                         .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 }
+                if !message.sessions.isEmpty {
+                    MossSessionCards(model: model, messageID: message.id, ids: message.sessions)
+                }
                 if message.refused, model.canOpenMoss {
                     QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
                 }

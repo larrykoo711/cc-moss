@@ -98,6 +98,10 @@ enum Render {
                 model.mossQuickOpen = args.contains("--moss-quick-open")
             }
             model.query = value("--query") ?? ""
+            // The closed sessions a search reads come in a moment later: wait for them.
+            for _ in 0..<20 where model.searching && (model.closedPool ?? []).isEmpty {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
             switch value("--filter") {
             case "working": model.stateFilter = .working
             case "waiting": model.stateFilter = .waiting
@@ -120,6 +124,8 @@ enum Render {
             // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
             model.pinsPersist = false
             model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
+            // `--moss-card-rename <message id>/<session id>`: that card's name field open.
+            model.mossCardRenaming = value("--moss-card-rename")
             // `--sessions-count N`: the panel's size for that many sessions (on a
             // 1000-pt-tall screen, or `--screen-height`); `--panel-height`: exactly that.
             if let n = value("--sessions-count").flatMap(Int.init) {
@@ -710,8 +716,29 @@ struct DemoRunner: CommandRunner {
             default: return CommandResult(status: 0, stdout: line("answered"), stderr: "")
             }
         default:
+            // `ls --json --all`: the same, plus two sessions closed a few days ago.
+            if arguments.contains("--all") { return CommandResult(status: 0, stdout: Self.withClosed(sessions), stderr: "") }
             return CommandResult(status: 0, stdout: sessions, stderr: "")
         }
+    }
+
+    /// Copies of the second and fourth sessions, named "…-v1", closed 3 days before `L.clock()`.
+    static func withClosed(_ data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var list = top["sessions"] as? [[String: Any]], list.count >= 4 else { return data }
+        let when = ISO8601DateFormatter().string(from: L.clock().addingTimeInterval(-3 * 86_400))
+        for (i, source) in [list[1], list[3]].enumerated() {
+            var s = source
+            s["id"] = "0CL\(i)"
+            s["name"] = ((source["name"] as? String) ?? "session") + "-v1"
+            s["status"] = "closed"
+            s["busy"] = false
+            s["last_active_at"] = when
+            s["ended_at"] = when
+            list.append(s)
+        }
+        top["sessions"] = list
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
     }
 
     /// `moss status --json` for a demo state, Moss started 2 hours 5 minutes before `L.clock()`.
