@@ -94,12 +94,10 @@ struct MossUsageView: View {
                     ForEach(Array(usage.limits.enumerated()), id: \.offset) { _, limit in limitRow(limit) }
                 }
             }
-            if let session = usage.session, !session.isEmpty {
-                Hairline()
-                sessionGrid(session)
-            }
+            // The "Session" block is Moss's own Claude Code session, not your
+            // usage: it stays in the raw text only (user 2026-10-19).
             if !usage.insights.isEmpty {
-                Hairline()
+                if !usage.limits.isEmpty { Hairline() }
                 insights
             }
             if !usage.tables.isEmpty {
@@ -153,106 +151,6 @@ struct MossUsageView: View {
             Meter(fraction: Double(limit.percent) / 100, color: color(limit.level), height: 7)
         }
         .accessibilityElement(children: .combine)
-    }
-
-    // Session totals
-
-    private func tokens(_ input: String, _ output: String) -> String {
-        L.t("\(input) in · \(output) out", "入 \(input) · 出 \(output)")
-    }
-
-    private func sessionGrid(_ s: MossUsage.Session) -> some View {
-        let changes = "+\(s.added ?? 0)  −\(s.removed ?? 0)"
-        return VStack(alignment: .leading, spacing: 8) {
-            SectionTitle(symbol: "clock", title: L.t("This Claude Code session", "本次 Claude Code 会话"))
-            Grid(horizontalSpacing: 8, verticalSpacing: 8) {
-                GridRow {
-                    stat(L.t("Cost", "花费"), s.cost ?? "—")
-                    stat(L.t("Time", "用时"), s.wallDuration ?? "—", tip: s.apiDuration.map { L.t("API time \($0)", "API 用时 \($0)") })
-                }
-                GridRow {
-                    stat(L.t("Code changes", "代码改动"), changes)
-                    if let input = s.input, let output = s.output {
-                        stat("Tokens", tokens(input, output))
-                    } else {
-                        stat(L.t("API time", "API 用时"), s.apiDuration ?? "—")
-                    }
-                }
-            }
-            if !s.models.isEmpty {
-                VStack(spacing: 0) {
-                    ForEach(Array(s.models.enumerated()), id: \.offset) { i, m in
-                        HStack(spacing: 8) {
-                            Text(m.model)
-                                .font(.system(size: 11, design: .monospaced))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                            Spacer(minLength: 6)
-                            Text(tokens(m.input, m.output))
-                                .font(.system(size: 11))
-                                .foregroundStyle(.secondary)
-                                .monospacedDigit()
-                                .lineLimit(1)
-                            if let cost = m.cost {
-                                Text(cost)
-                                    .font(.system(size: 11, weight: .medium))
-                                    .monospacedDigit()
-                                    .frame(minWidth: 52, alignment: .trailing)
-                            }
-                        }
-                        .padding(.horizontal, 9)
-                        .padding(.vertical, 6)
-                        if i < s.models.count - 1 { Hairline().padding(.leading, 9) }
-                    }
-                }
-                .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(Color.primary.opacity(scheme == .dark ? 0.05 : 0.035)))
-            }
-            if let hit = s.cacheHit {
-                HStack(alignment: .center, spacing: 9) {
-                    ZStack {
-                        Circle().stroke(Color.primary.opacity(scheme == .dark ? 0.12 : 0.08), lineWidth: 3)
-                        Circle()
-                            .trim(from: 0, to: Double(hit) / 100)
-                            .stroke(Color.green.opacity(0.85), style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                            .rotationEffect(.degrees(-90))
-                    }
-                    .frame(width: 20, height: 20)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(L.t("\(hit)% of input came from the prompt cache", "\(hit)% 的输入来自提示缓存"))
-                            .font(.system(size: 11.5, weight: .medium))
-                        if let detail = s.cacheDetail {
-                            Text(detail)
-                                .font(.system(size: 10.5))
-                                .foregroundStyle(.secondary)
-                                .lineLimit(2)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
-                .padding(.leading, 2)
-                .tip(s.cache ?? "")
-            }
-        }
-    }
-
-    private func stat(_ label: String, _ value: String, tip: String? = nil) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.system(size: 10.5))
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(size: 13, weight: .semibold))
-                .monospacedDigit()
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .fill(Color.primary.opacity(scheme == .dark ? 0.05 : 0.035)))
-        .tip(tip ?? value)
     }
 
     // What's using it

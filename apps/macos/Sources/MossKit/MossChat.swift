@@ -122,10 +122,13 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
     public var command: String?
     /// Moss wouldn't run that command here (it needs the terminal).
     public var refused: Bool
+    /// Moss's picks for the quick bar (`[[quick: /usage | waiting]]`):
+    /// slash commands or action ids.
+    public var quick: [String]
 
     public init(id: String, at: Date? = nil, from: Sender, text: String, delivery: Delivery? = nil, error: String? = nil,
                 replyTo: String? = nil, fallback: Bool = false, buttons: [String] = [], command: String? = nil,
-                refused: Bool = false) {
+                refused: Bool = false, quick: [String] = []) {
         self.id = id
         self.at = at
         self.from = from
@@ -137,6 +140,7 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
         self.buttons = buttons
         self.command = command
         self.refused = refused
+        self.quick = quick
     }
 
     /// What the bubble says: a fallback reads as a receipt.
@@ -150,14 +154,35 @@ public struct MossMessage: Identifiable, Equatable, Sendable {
 /// The answer of `cc-moss moss chat --json` (schema 1), oldest first.
 public struct MossChat: Equatable, Sendable {
     public var messages: [MossMessage]
+    /// Moss's newest quick-bar pin (`"quick":{"items":[…],"at":…}`), even
+    /// from a reply that wasn't shown; nil from an older cc-moss.
+    public var pin: Pin?
 
-    public init(messages: [MossMessage] = []) {
+    /// What Moss pinned to the quick bar, and when.
+    public struct Pin: Equatable, Sendable {
+        public var items: [String]
+        public var at: Date?
+
+        public init(items: [String], at: Date?) {
+            self.items = items
+            self.at = at
+        }
+    }
+
+    public init(messages: [MossMessage] = [], pin: Pin? = nil) {
         self.messages = messages
+        self.pin = pin
     }
 
     private struct Wire: Decodable {
         var schema: Int
         var messages: [Line]?
+        var quick: WirePin?
+    }
+
+    private struct WirePin: Decodable {
+        var items: [String]?
+        var at: String?
     }
 
     private struct Line: Decodable {
@@ -172,6 +197,7 @@ public struct MossChat: Equatable, Sendable {
         var buttons: [String]?
         var command: String?
         var refused: Bool?
+        var quick: [String]?
     }
 
     public static func decode(_ data: Data) throws -> MossChat {
@@ -182,14 +208,23 @@ public struct MossChat: Equatable, Sendable {
             throw MossClient.Failure.unreadable("\(error)")
         }
         guard wire.schema <= 1 else { throw MossClient.Failure.newerSchema(wire.schema) }
-        return MossChat(messages: (wire.messages ?? []).map { line in
+        let pin = wire.quick.map { p in
+            Pin(items: (p.items ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }, at: p.at.flatMap(parseTimestamp))
+        }
+        return MossChat(pin: pin, messages: (wire.messages ?? []).map { line in
             MossMessage(id: line.id, at: line.at.flatMap(parseTimestamp), from: .init(line.from), text: line.text ?? "",
                         delivery: line.state.flatMap(MossMessage.Delivery.init(rawValue:)),
                         error: line.error.flatMap { $0.isEmpty ? nil : $0 },
                         replyTo: line.reply_to, fallback: line.fallback ?? false,
                         buttons: (line.buttons ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty },
-                        command: line.command.flatMap { $0.isEmpty ? nil : $0 }, refused: line.refused ?? false)
+                        command: line.command.flatMap { $0.isEmpty ? nil : $0 }, refused: line.refused ?? false,
+                        quick: (line.quick ?? []).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty })
         })
+    }
+
+    private init(pin: Pin?, messages: [MossMessage]) {
+        self.messages = messages
+        self.pin = pin
     }
 }
 
