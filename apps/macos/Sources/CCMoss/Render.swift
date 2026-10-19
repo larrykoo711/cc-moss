@@ -120,6 +120,8 @@ enum Render {
             case "note": if let s = model.selected { model.editNote(s) }
             case "close": if let s = model.selected { model.askToClose([s]) }
             case "message":
+                // `--suggestion "<text>"`: what Claude Code suggests typing next.
+                model.demoSuggestion = value("--suggestion")
                 if let s = model.selected {
                     model.writeMessage(s)
                     // `--sending`: as it looks while the message is on its way.
