@@ -629,6 +629,35 @@ private struct MossTerminalCard: View {
 
     private var tall: Bool { height > Self.fold + 20 }
 
+    /// One line ("unknown command", "That command printed nothing.") is a
+    /// sentence: it wraps. A real screen keeps its columns and scrolls sideways.
+    private var oneLine: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).contains("\n") }
+
+    @ViewBuilder private var screen: some View {
+        let lines = Text(Self.screen(oneLine ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text))
+            .font(.system(size: 11, design: .monospaced))
+            .lineSpacing(1.5)
+            .textSelection(.enabled)
+        if oneLine {
+            lines
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 11)
+                .padding(.vertical, 9)
+        } else {
+            ScrollView(.horizontal) {
+                lines
+                    .fixedSize()
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 9)
+                    .background(GeometryReader { geo in
+                        Color.clear.preference(key: TerminalHeightKey.self, value: geo.size.height)
+                    })
+            }
+            .scrollIndicators(.never)
+        }
+    }
+
     /// The screen's text; block characters (the usage bars) in the brand colour,
     /// as the terminal draws them in colour.
     static func screen(_ raw: String) -> AttributedString {
@@ -660,19 +689,7 @@ private struct MossTerminalCard: View {
             .padding(.top, 9)
             .padding(.bottom, 7)
             Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
-            ScrollView(.horizontal) {
-                Text(Self.screen(text))
-                    .font(.system(size: 11, design: .monospaced))
-                    .lineSpacing(1.5)
-                    .textSelection(.enabled)
-                    .fixedSize()
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 9)
-                    .background(GeometryReader { geo in
-                        Color.clear.preference(key: TerminalHeightKey.self, value: geo.size.height)
-                    })
-            }
-            .scrollIndicators(.never)
+            screen
             .frame(maxHeight: tall && !expanded ? Self.fold : nil, alignment: .top)
             .clipped()
             .overlay(alignment: .bottom) {
@@ -820,7 +837,9 @@ private struct MossInputBar: View {
     }
 
     /// Commands matching what's typed: a slash and no space yet.
-    private var commands: [MossCommand] { MossCommand.suggestions(for: text) }
+    private var commands: [MossCommand] {
+        MossCommand.suggestions(for: text, account: desk.status?.account ?? .unknown)
+    }
 
     private var typing: some View {
         VStack(alignment: .leading, spacing: 6) {

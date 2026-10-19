@@ -22,10 +22,12 @@ public struct MossStatus: Equatable, Sendable {
     public var lastReplyAt: Date?
     /// Text from a delivery that didn't go through is still in Moss's input.
     public var inputBusy: Bool
+    /// How Claude Code is paid for: some commands only make sense for one kind.
+    public var account: MossAccount
 
     public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
                 daemonRunning: Bool = true, lastError: String? = nil, activity: MossActivity? = nil,
-                queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false) {
+                queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false, account: MossAccount = .unknown) {
         self.enabled = enabled
         self.running = running
         self.since = since
@@ -37,6 +39,7 @@ public struct MossStatus: Equatable, Sendable {
         self.queued = queued
         self.lastReplyAt = lastReplyAt
         self.inputBusy = inputBusy
+        self.account = account
     }
 
     private struct Wire: Decodable {
@@ -52,6 +55,7 @@ public struct MossStatus: Equatable, Sendable {
         var queued: Int?
         var last_reply_at: String?
         var input_busy: Bool?
+        var account: String?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -70,7 +74,8 @@ public struct MossStatus: Equatable, Sendable {
                           activity: wire.activity.flatMap(MossActivity.init(rawValue:)),
                           queued: max(0, wire.queued ?? 0),
                           lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp),
-                          inputBusy: wire.input_busy ?? false)
+                          inputBusy: wire.input_busy ?? false,
+                          account: wire.account.flatMap(MossAccount.init(rawValue:)) ?? .unknown)
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the

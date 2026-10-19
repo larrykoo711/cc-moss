@@ -42,6 +42,44 @@
    "reply_to": "1792144350000-7a8b9c",
    "command": "/login",
    "refused": true
+  },
+  {
+   "id": "1792144510000-3e4f5a",
+   "at": "2026-10-16T09:55:10Z",
+   "from": "you",
+   "text": "/cost",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144514000-6b7c8d",
+   "at": "2026-10-16T09:55:14Z",
+   "from": "moss",
+   "text": "/cost is for API usage. You're signed in with a subscription; try /usage instead.\n",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792144510000-3e4f5a",
+   "command": "/cost"
+  },
+  {
+   "id": "1792144561000-9e0f1a",
+   "at": "2026-10-16T09:56:01Z",
+   "from": "you",
+   "text": "/clear",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144564000-2b3c4d",
+   "at": "2026-10-16T09:56:04Z",
+   "from": "moss",
+   "text": "That command printed nothing.",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792144561000-9e0f1a",
+   "command": "/clear"
   }
  ]
 }

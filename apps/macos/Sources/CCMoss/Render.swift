@@ -16,7 +16,7 @@ import SwiftUI
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
-///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|off|offline|failing|nodaemon] [--moss-typing [text]]]
+///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -592,11 +592,12 @@ struct DemoRunner: CommandRunner {
     static func mossStatus(_ state: String?) -> String {
         let f = ISO8601DateFormatter()
         let since = f.string(from: L.clock().addingTimeInterval(-2 * 3600 - 300))
-        let up = #""schema":1,"enabled":true,"running":true,"since":"\#(since)","restarts":0,"daemon_running":true"#
+        let up = #""schema":1,"enabled":true,"running":true,"since":"\#(since)","restarts":0,"daemon_running":true,"account":"subscription""#
         return switch state {
         case "thinking": "{\(up),\"activity\":\"thinking\",\"queued\":0}"
         case "queued": "{\(up),\"activity\":\"thinking\",\"queued\":2}"
         case "waiting": "{\(up),\"activity\":\"waiting\",\"queued\":1}"
+        case "api": "{\(up.replacingOccurrences(of: "subscription", with: "api")),\"activity\":\"idle\",\"queued\":0}"
         case "stuck": "{\(up),\"activity\":\"idle\",\"queued\":1,\"input_busy\":true}"
         case "off": #"{"schema":1,"enabled":false,"running":false,"activity":"off","queued":0}"#
         case "offline": #"{"schema":1,"enabled":true,"running":false,"activity":"offline","queued":0}"#

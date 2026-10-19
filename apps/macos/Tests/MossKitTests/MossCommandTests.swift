@@ -54,6 +54,40 @@ import Testing
         #expect(MossCommand.suggestions(for: "/zzz").isEmpty)
     }
 
+    @Test func theAccountIsRead() throws {
+        let json = #"{"schema":1,"enabled":true,"running":true,"account":"api"}"#
+        #expect(try MossStatus.decode(Data(json.utf8)).account == .api)
+        let older = #"{"schema":1,"enabled":true,"running":true}"#
+        #expect(try MossStatus.decode(Data(older.utf8)).account == .unknown)
+        let newer = #"{"schema":1,"enabled":true,"running":true,"account":"enterprise"}"#
+        #expect(try MossStatus.decode(Data(newer.utf8)).account == .unknown)
+    }
+
+    private func names(_ account: MossAccount) -> [String] {
+        MossCommand.suggestions(for: "/", account: account).map(\.name)
+    }
+
+    @Test func aSubscriptionGetsUsageNotCost() {
+        #expect(names(.subscription) == ["/usage", "/status", "/context", "/stats", "/help", "/clear", "/compact"])
+    }
+
+    @Test func anAPIKeyGetsCostNotUsage() {
+        #expect(names(.api) == ["/status", "/context", "/cost", "/stats", "/help", "/clear", "/compact"])
+    }
+
+    @Test func aCloudAccountGetsCostNotUsage() {
+        #expect(names(.cloud) == ["/status", "/context", "/cost", "/stats", "/help", "/clear", "/compact"])
+    }
+
+    @Test func unknownShowsEverything() {
+        #expect(names(.unknown) == MossCommand.all.map(\.name))
+    }
+
+    @Test func aCommandThatDoesntFitIsStillACommand() {
+        #expect(MossCommand.suggestions(for: "/us", account: .api).isEmpty)
+        #expect(MossCommand.isAllowed("/usage"), "typed by hand, it's still sent")
+    }
+
     @Test func aSlashMakesItLookLikeACommand() {
         #expect(MossCommand.looksLikeCommand("/usage"))
         #expect(MossCommand.looksLikeCommand("  /context"))
