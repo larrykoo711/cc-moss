@@ -1423,6 +1423,10 @@ mod tests {
         assert!(SESSIONS_SKILL.contains("`[[silent]]` by default"));
         assert!(SESSIONS_SKILL.contains("Never announce that a session finished a turn"));
         assert!(SESSIONS_SKILL.contains("one or two short sentences"));
+        // The same three rules where Moss always reads them.
+        assert!(CLAUDE_MD.contains("with `[[silent]]`, unless the user has to act now"));
+        assert!(CLAUDE_MD.contains("Never announce that a session finished a turn"));
+        assert!(CLAUDE_MD.contains("one or two short sentences"));
     }
 
     #[test]
