@@ -40,6 +40,7 @@ struct MossPage: View {
                 .transition(.opacity)
             }
         }
+        .overlay { MentionHoverLayer(model: model) }
         .animation(.easeOut(duration: 0.12), value: model.mossQuickOpen)
         .animation(.easeOut(duration: 0.18), value: desk.messages.isEmpty)
         .task(id: model.panelShown) {
@@ -403,6 +404,7 @@ private struct MossMessageView: View {
     }
 
     private var cards: [MossSessionCard] { model.mossCards(group) }
+    private var mentionNames: [MossMentions.Name] { model.mentionNames(group) }
     private var allHandled: Bool { MossSessionCard.allHandled(cards) }
 
     private var moss: some View {
@@ -419,7 +421,8 @@ private struct MossMessageView: View {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(group.messages) { m in
                                 // All its sessions handled: Moss's words are history now.
-                                MossRichText(text: m.shownText(), quiet: m.fallback || allHandled)
+                                MossRichText(text: m.shownText(), quiet: m.fallback || allHandled,
+                                             mentions: m.fallback ? [] : mentionNames, model: model)
                             }
                         }
                         .padding(.horizontal, 11)
@@ -527,6 +530,9 @@ private struct ChatBubble: Shape {
 private struct MossRichText: View {
     let text: String
     var quiet = false
+    /// Sessions its words may name: each becomes a mention.
+    var mentions: [MossMentions.Name] = []
+    var model: AppModel?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
@@ -581,14 +587,20 @@ private struct MossRichText: View {
         }
     }
 
-    private func words(_ raw: String, size: CGFloat = 13, weight: Font.Weight = .regular,
-                       secondary: Bool = false) -> some View {
-        Text(inline(raw))
-            .font(.system(size: size, weight: weight))
-            .foregroundStyle(quiet || secondary ? .secondary : .primary)
-            .textSelection(.enabled)
-            .fixedSize(horizontal: false, vertical: true)
-            .tint(Theme.brand)
+    @ViewBuilder private func words(_ raw: String, size: CGFloat = 13, weight: Font.Weight = .regular,
+                                    secondary: Bool = false) -> some View {
+        let marked = MossMentions.mark(MossMarkdown.inline(raw), names: mentions)
+        if let model, marked.runs.contains(where: { $0.link.flatMap(MossMentions.id(of:)) != nil }) {
+            // Names a session: drawn so each name can be clicked and hovered.
+            MentionText(model: model, text: marked, size: size, weight: weight, secondary: quiet || secondary)
+        } else {
+            Text(styled(marked))
+                .font(.system(size: size, weight: weight))
+                .foregroundStyle(quiet || secondary ? .secondary : .primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+                .tint(Theme.brand)
+        }
     }
 
     private func table(header: [String], rows: [[String]]) -> some View {
@@ -613,8 +625,8 @@ private struct MossRichText: View {
         .scrollIndicators(.never)
     }
 
-    private func inline(_ raw: String) -> AttributedString {
-        var out = MossMarkdown.inline(raw)
+    private func styled(_ text: AttributedString) -> AttributedString {
+        var out = text
         for run in out.runs where run.inlinePresentationIntent?.contains(.code) == true {
             out[run.range].font = .system(size: 12, design: .monospaced)
             out[run.range].backgroundColor = Color.primary.opacity(scheme == .dark ? 0.12 : 0.07)

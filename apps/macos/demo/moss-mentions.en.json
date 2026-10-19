@@ -1,0 +1,26 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792141000000-m00000",
+   "at": "2026-10-16T09:58:00Z",
+   "from": "you",
+   "text": "Who's waiting on me?",
+   "state": "replied",
+   "buttons": []
+  },
+  {
+   "id": "1792141020000-m00001",
+   "at": "2026-10-16T09:58:20Z",
+   "from": "moss",
+   "text": "**api-review** is waiting for you to approve a permission; once you do it can carry on with the tests. login-page is still working, leave it be. I've read the `login-page` logs.",
+   "buttons": [],
+   "sessions": [
+    "01B"
+   ],
+   "session_states": {
+    "01B": "needs-you-permission"
+   }
+  }
+ ]
+}

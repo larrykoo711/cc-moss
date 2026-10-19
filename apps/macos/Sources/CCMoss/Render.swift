@@ -134,6 +134,8 @@ enum Render {
                 model.adoptAsk = AdoptAsk(id: id, named: value("--adopt-named"), checking: false)
             }
             if let id = value("--adopting") { model.adopting = [id] }
+            // `--mention-hover <id>`: the card of that session's mention in Moss's words.
+            if let id = value("--mention-hover") { model.mentionHover = MentionHover(id: id, anchor: .zero) }
             if let p = value("--adopt-problem"), let cut = p.firstIndex(of: ":") {
                 model.adoptProblems[String(p[..<cut])] = String(p[p.index(after: cut)...])
             }

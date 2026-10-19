@@ -152,6 +152,10 @@ final class AppModel {
     /// The session card in Moss's reply whose name field is open
     /// ("<message id>/<session id>").
     var mossCardRenaming: String?
+    /// The session mention in Moss's words whose card is showing.
+    var mentionHover: MentionHover?
+    @ObservationIgnored var mentionShow: Task<Void, Never>?
+    @ObservationIgnored var mentionHide: Task<Void, Never>?
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
     /// Claude Code's guess at what you'd say to Moss next (its own input box).

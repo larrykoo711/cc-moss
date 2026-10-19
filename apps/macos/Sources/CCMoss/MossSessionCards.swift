@@ -14,6 +14,11 @@ extension AppModel {
                                      then: group.sessionStates)
     }
 
+    /// One session's card, live: for a mention's hover card.
+    func mossCard(_ id: String) -> MossSessionCard? {
+        MossSessionCard.cards([id], among: sessions + (closedPool ?? []), waiting: mossWaiting([id])).first
+    }
+
     /// What To Do holds for these sessions: an open question or permission,
     /// else a reply it waits for. Handled, it's gone and the card is plain again.
     private func mossWaiting(_ ids: [String]) -> [String: MossSessionCard.Waiting] {
@@ -91,10 +96,12 @@ private struct GoneCard: View {
     }
 }
 
-private struct MossSessionCardView: View {
+struct MossSessionCardView: View {
     @Bindable var model: AppModel
     let card: MossSessionCard
     let session: Session
+    /// Shown over a mention: no rename there, and no frame of its own.
+    var hover = false
     /// Which card's rename field is open: message and session together, so
     /// the same session in two replies doesn't open twice.
     let key: String
@@ -129,6 +136,10 @@ private struct MossSessionCardView: View {
                                 .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                         }
                     }
+                    if hover {
+                        // Over a mention: where it is and when, then why it waits.
+                        folderLine
+                    }
                     if card.resolved {
                         // It needed you when Moss said so; it doesn't now.
                         HStack(spacing: 3) {
@@ -147,15 +158,8 @@ private struct MossSessionCardView: View {
                             .font(.system(size: 11, weight: .medium))
                             .foregroundStyle(stateColor)
                             .lineLimit(1)
-                    } else {
-                        HStack(spacing: 4) {
-                            Text(PanelView.folderName(session))
-                            Text("·")
-                            Text(L.ago(session.lastActiveAt))
-                        }
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
-                        .lineLimit(1)
+                    } else if !hover {
+                        folderLine
                     }
                 }
                 Spacer(minLength: 6)
@@ -176,6 +180,18 @@ private struct MossSessionCardView: View {
         .padding(.vertical, 6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised(scheme)))
         .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme), lineWidth: 1))
+        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.45 : 0.16) : 0), radius: hover ? 10 : 0, y: hover ? 4 : 0)
+    }
+
+    private var folderLine: some View {
+        HStack(spacing: 4) {
+            Text(PanelView.folderName(session))
+            Text("·")
+            Text(L.ago(session.lastActiveAt))
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
     }
 
     /// A short line under the card: moving, why it couldn't, why it waits.
@@ -201,7 +217,7 @@ private struct MossSessionCardView: View {
             if card.canPin && !moving {
                 PinButton(pinned: pinned) { model.togglePin(session) }
             }
-            if card.canRename && !moving {
+            if card.canRename && !moving && !hover {
                 CardIconButton(icon: Icons.rename, help: L.t("Rename", "改名"), lit: renaming) {
                     if renaming {
                         model.mossCardRenaming = nil
