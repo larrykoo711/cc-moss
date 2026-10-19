@@ -117,13 +117,21 @@ private func event(_ seq: Int, _ kind: String, slot: String = "A", at: TimeInter
     var answer: NotificationAuth
     var asks = 0
     var posted: [AlertNote] = []
+    var withdrawn: [String] = []
+    /// How long asking for the permission takes (a slow system).
+    var delay: UInt64 = 0
 
     init(status: NotificationAuth, answer: NotificationAuth = .allowed) {
         self.status = status
         self.answer = answer
     }
 
-    func authorization() async -> NotificationAuth { status }
+    func authorization() async -> NotificationAuth {
+        if delay > 0 { try? await Task.sleep(nanoseconds: delay) }
+        return status
+    }
+
+    func withdraw(_ ids: [String]) { withdrawn += ids }
 
     func requestAuthorization() async -> NotificationAuth {
         asks += 1
@@ -175,6 +183,21 @@ private func event(_ seq: Int, _ kind: String, slot: String = "A", at: TimeInter
         let gate = NotificationGate(notifier: fake)
         #expect(!(await gate.deliver(note)))
         #expect(gate.auth == .unavailable)
+    }
+
+    /// A question answered while its notification was still on its way:
+    /// it's never posted after being taken back.
+    @Test func aNoteWithdrawnWhileOnItsWayIsNotPosted() async {
+        let fake = FakeNotifier(status: .allowed)
+        fake.delay = 100_000_000
+        let gate = NotificationGate(notifier: fake)
+        let ask = NotificationPlan.askNote(for: SessionAlert(id: 2, slotId: "A", kind: .needsYou, at: t0, askId: "q1"), title: "job-a")
+        let delivering = Task { await gate.deliver(ask) }
+        try? await Task.sleep(nanoseconds: 20_000_000)
+        gate.withdraw([ask.id])
+        let posted = await delivering.value
+        #expect(!posted)
+        #expect(fake.posted.isEmpty)
     }
 
     @Test func settingsCanAskAhead() async {
