@@ -260,7 +260,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var alerts: AlertCenter?
     private var startup: StartupReminder?
 
+    /// Before SwiftUI sees any event: links come to us, and the chosen
+    /// appearance is on before the first window draws.
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        AppAppearance.apply()
+        takeLinks()
+    }
+
+    /// `cc-moss://` links as an Apple Event, handled here. Left to SwiftUI,
+    /// a link went to the Settings window scene and opened Settings too.
+    private func takeLinks() {
+        NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openLink(_:reply:)),
+                                                     forEventClass: AEEventClass(kInternetEventClass),
+                                                     andEventID: AEEventID(kAEGetURL))
+    }
+
+    @objc private func openLink(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
+        guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue, let url = URL(string: raw) else { return }
+        application(NSApp, open: [url])
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // SwiftUI may set its own link handler while launching: ours again.
+        takeLinks()
         // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
         if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)

@@ -64,8 +64,8 @@ struct SettingsView: View {
         /// Words that find this section from the search field.
         var keywords: [String] {
             switch self {
-            case .general: [title, L.t("login startup language english chinese new session bypass permission workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
-                                       "开机 登录 启动 语言 中文 英文 english 新会话 bypass 权限 放手 工作区 目录 文件夹 终端 ghostty iterm wezterm kitty alacritty")]
+            case .general: [title, L.t("login startup language english chinese appearance theme light dark mode new session bypass permission workspace folder directory terminal ghostty iterm wezterm kitty alacritty",
+                                       "开机 登录 启动 语言 中文 英文 english 外观 主题 浅色 深色 暗色 theme 新会话 bypass 权限 放手 工作区 目录 文件夹 终端 ghostty iterm wezterm kitty alacritty")]
             case .menuBar: [title, L.t("icon number count motion animation cpu", "图标 数字 数量 动态 动画 cpu 状态栏")]
             case .mo: [title, "Mo", L.t("pet desktop companion size interaction quiet everyday active voice speech speak sound chime read aloud",
                                        "宠物 桌面 小伙伴 大小 互动 安静 日常 积极 声音 语音 说话 朗读 播报 提示音 voice")]
@@ -491,6 +491,7 @@ struct GeneralSettings: View {
     @State private var loginError: String?
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
+    @State private var appearance = AppearanceChoice.load().rawValue
     /// `claude.permission_mode` as last read or saved (bypass until read).
     @State private var permissionMode = PermissionMode.bypass
     @State private var bypass = true
@@ -525,6 +526,23 @@ struct GeneralSettings: View {
                     (LangChoice.en.rawValue, "English"),
                 ])
                 .onChange(of: language) { _, new in setLanguage(new) }
+            }
+        }
+        SettingsCard(title: L.t("Appearance", "外观")) {
+            CardRow(
+                title: L.t("Appearance", "外观"),
+                detail: L.t("Follow your Mac, or keep it light or dark.",
+                            "跟随系统，也可以固定成浅色或深色。"),
+                divider: false
+            ) {
+                SlidingPicker(selection: $appearance, options: [
+                    (AppearanceChoice.system.rawValue, L.t("System", "跟随系统")),
+                    (AppearanceChoice.light.rawValue, L.t("Light", "浅色")),
+                    (AppearanceChoice.dark.rawValue, L.t("Dark", "深色")),
+                ])
+                .onChange(of: appearance) { _, new in
+                    AppAppearance.choose(AppearanceChoice(rawValue: new) ?? .system)
+                }
             }
         }
         SettingsCard(title: L.t("New sessions", "新会话")) {
