@@ -13,6 +13,10 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
     /// While searching: a ranked result (closed: from the closed ones).
     case hit(SearchHit, closed: Bool)
     case closedHeader
+    /// The folded "Archived (N)" group at the bottom of the list.
+    case archivedHeader(Int)
+    /// While searching: above the archived sessions that match.
+    case archivedResultsHeader
     /// Nothing found, live or closed: offer to ask Moss.
     case noMatch(String)
     /// Results, but maybe not the one: a quiet "ask Moss" line above them.
@@ -27,6 +31,8 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
         case let .row(s, _): s.id
         case let .hit(h, closed): closed ? "closed:\(h.session.id)" : h.session.id
         case .closedHeader: "header:closed"
+        case .archivedHeader: "header:archived"
+        case .archivedResultsHeader: "header:archived-results"
         case .noMatch: "no-match"
         case .askMoss: "ask-moss"
         }
@@ -35,13 +41,18 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
 
 public enum SessionList {
     /// While a query is typed: a quiet "ask Moss" line, one ranked list (no
-    /// folders, no Pinned), then the closed ones that match; nothing at all
-    /// → the "ask Moss" card instead.
-    public static func searchItems(query: String, live: [SearchHit], closed: [SearchHit]) -> [SessionListItem] {
+    /// folders, no Pinned), then the archived ones that match in their own
+    /// group, then the closed ones; nothing at all → the "ask Moss" card instead.
+    public static func searchItems(query: String, live: [SearchHit], archived: [SearchHit] = [],
+                                   closed: [SearchHit]) -> [SessionListItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
-        if live.isEmpty && closed.isEmpty { return [.noMatch(q)] }
+        if live.isEmpty && archived.isEmpty && closed.isEmpty { return [.noMatch(q)] }
         var out: [SessionListItem] = [.askMoss(q)]
         out += live.map { SessionListItem.hit($0, closed: false) }
+        if !archived.isEmpty {
+            out.append(.archivedResultsHeader)
+            out += archived.map { .hit($0, closed: false) }
+        }
         if !closed.isEmpty {
             out.append(.closedHeader)
             out += closed.map { .hit($0, closed: true) }
@@ -49,7 +60,9 @@ public enum SessionList {
         return out
     }
 
-    public static func items(pinned: [Session], projects: [Project], older: [Session], olderExpanded: Bool) -> [SessionListItem] {
+    /// `archived`: shown last, folded under "Archived (N)" unless expanded.
+    public static func items(pinned: [Session], projects: [Project], older: [Session], olderExpanded: Bool,
+                             archived: [Session] = [], archivedExpanded: Bool = false) -> [SessionListItem] {
         var out: [SessionListItem] = []
         var seen = Set<String>()
         func add(_ s: Session, pinned: Bool) {
@@ -70,6 +83,10 @@ public enum SessionList {
         if !older.isEmpty {
             out.append(.olderHeader)
             if olderExpanded { older.forEach { add($0, pinned: false) } }
+        }
+        if !archived.isEmpty {
+            out.append(.archivedHeader(archived.count))
+            if archivedExpanded { archived.forEach { add($0, pinned: false) } }
         }
         return out
     }

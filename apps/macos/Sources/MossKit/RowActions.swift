@@ -16,6 +16,14 @@ public enum RowAction: Hashable, Sendable {
     case close
     /// Outside tmux: move it in (`cc-moss adopt`), asked first.
     case adopt
+    /// Not running: put it away in Archived (`cc-moss archive`).
+    case archive
+    /// Archived: back into the list (`cc-moss unarchive`).
+    case unarchive
+    /// Archived: ask Moss to delete it for good (Moss asks you first).
+    case cleanUp
+    /// Flagged after a provider switch: restart it in place (`cc-moss restart`).
+    case restart
 }
 
 /// Which actions a session's row shows and which wait behind its "⋯": the
@@ -34,6 +42,14 @@ public struct RowActions: Equatable, Sendable {
     public let all: [[RowAction]]
 
     public init(_ s: Session, hopeless: Bool) {
+        // Archived: bring it back, or have Moss clean it up.
+        if s.isArchived && !s.isMoss {
+            primary = .unarchive
+            inline = [.cleanUp, .unarchive]
+            all = [[.unarchive, .cleanUp], [.copyPath]]
+            more = [[.copyPath]]
+            return
+        }
         // cc-moss brings Moss back itself: nothing to bring back or dismiss.
         let primary: RowAction = if s.isMoss {
             s.inTmux ? .open : .copyPath
@@ -60,10 +76,15 @@ public struct RowActions: Equatable, Sendable {
         // Outside tmux and running: it can move in (busy ones wait, but the
         // button stays to say so).
         let adopt: [RowAction] = Adopt.availability(s) == .none ? [] : [.adopt]
+        // After a provider switch it can't pick up: restart it where it is.
+        let restart: [RowAction] = Restart.allowed(s) ? [.restart] : []
+        let archive: [RowAction] = Archive.allowed(s) ? [.archive] : []
 
-        // Left to right (user 2026-10-19): move into tmux, send a message, open, rename.
-        let inline = adopt + talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
-        let all = [[primary] + adopt + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
+        // Left to right (user 2026-10-19): move into tmux, restart, send a
+        // message, open, rename. Too many: rename waits in "⋯".
+        var inline = adopt + restart + talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
+        if inline.count > Self.inlineLimit { inline.removeAll { $0 == .rename } }
+        let all = [[primary] + restart + adopt + talk.reversed(), [.note], copies.filter { $0 != primary }, close + archive]
             .filter { !$0.isEmpty }
         self.primary = primary
         self.inline = inline
