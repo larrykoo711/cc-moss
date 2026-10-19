@@ -324,9 +324,18 @@ fn private_dir(dir: &Path) -> io::Result<()> {
 /// shown (a dead process is interrupted). No time of writing in it, so an
 /// unchanged list writes nothing.
 pub fn sessions_md(rows: &[(Status, Slot)]) -> String {
+    sessions_md_since(rows, i64::MAX)
+}
+
+/// [`sessions_md`], plus the sessions closed at or after `closed_since_ms`
+/// (what got done today), last in the list.
+pub fn sessions_md_since(rows: &[(Status, Slot)], closed_since_ms: i64) -> String {
     let mut shown: Vec<&(Status, Slot)> = rows
         .iter()
-        .filter(|(st, s)| *st != Status::Closed && s.role.as_deref() != Some(super::ROLE))
+        .filter(|(st, s)| {
+            let recent = s.ended_at_ms.is_some_and(|e| e >= closed_since_ms);
+            (*st != Status::Closed || recent) && s.role.as_deref() != Some(super::ROLE)
+        })
         .collect();
     let rank = |st: Status| match st {
         Status::Interrupted => 0,
@@ -354,7 +363,10 @@ pub fn sessions_md(rows: &[(Status, Slot)]) -> String {
             (Status::Running, None, true) => "working".to_string(),
             (Status::Running, None, false) => "idle".to_string(),
             (Status::Interrupted, ..) => "interrupted".to_string(),
-            (Status::Closed, ..) => "closed".to_string(),
+            (Status::Closed, ..) => match s.ended_at_ms {
+                Some(at) => format!("closed at {}", rfc3339(at)),
+                None => "closed".to_string(),
+            },
         };
         let name = s
             .name
@@ -662,6 +674,26 @@ mod tests {
         assert!(md.find("| web").unwrap() < md.find("| api").unwrap());
         assert!(!md.contains("| old") && !md.contains("| moss"), "{md}");
         assert!(sessions_md(&[]).contains("No sessions right now."));
+    }
+
+    #[test]
+    fn sessions_overview_adds_what_closed_today() {
+        let mut today = slot("done", Status::Closed, None, 5_000);
+        today.ended_at_ms = Some(5_000);
+        let mut long_ago = slot("gone", Status::Closed, None, 100);
+        long_ago.ended_at_ms = Some(100);
+        let rows = vec![
+            (Status::Closed, today),
+            (Status::Closed, long_ago),
+            (Status::Running, slot("api", Status::Running, None, 2_000)),
+        ];
+        let md = sessions_md_since(&rows, 1_000);
+        assert!(
+            md.contains("| done | closed at 1970-01-01T00:00:05Z |"),
+            "{md}"
+        );
+        assert!(!md.contains("| gone"), "{md}");
+        assert!(md.find("| api").unwrap() < md.find("| done").unwrap());
     }
 
     #[test]

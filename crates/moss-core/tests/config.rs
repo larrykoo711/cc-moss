@@ -110,7 +110,8 @@ mod setting {
                 "ui.language",
                 "claude.permission_mode",
                 "ask.enabled",
-                "moss.enabled"
+                "moss.enabled",
+                "moss.digest"
             ]
         );
         assert_eq!(

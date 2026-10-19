@@ -203,6 +203,12 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("moss stop", "", "关掉 Moss 并结束它；在你再次 start 之前不会启动"),
     ("moss status", "", "Moss 开没开、在不在运行、跑了多久、重启过几次"),
     ("moss status", "json", "机器可读的输出（schema 1）"),
+    ("moss say", "", "跟 Moss 说句话；它的回复在 `moss chat` 和面板里"),
+    ("moss say", "json", "把这条消息的 id 输出成 JSON（schema 1）"),
+    ("moss say", "text", "要说的话；多行会整条送到"),
+    ("moss chat", "", "到目前为止和 Moss 的对话"),
+    ("moss chat", "json", "机器可读的输出（schema 1）"),
+    ("moss chat", "limit", "只看最近的这么多条"),
     (
         "moss profile",
         "",

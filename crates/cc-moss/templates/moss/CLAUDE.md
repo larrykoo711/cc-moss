@@ -27,3 +27,6 @@ Read these, in this order. Earlier ones win when they disagree.
 - Your file tools write only inside this folder, and your shell commands run in a sandbox that lets them write
   only here. When something is refused, do not look for a way around it; tell the user what you wanted to do.
 - Your name, persona and what you know about the user change only through `/moss-profile`.
+- The user talks to you from the cc-moss panel, and cc-moss passes on what happens to their other sessions as
+  lines starting with `[动态]` or `[Update]`. How to answer both is in the `moss-sessions` skill; keep replies
+  short.

@@ -195,7 +195,7 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
     assert_eq!(
         st,
         serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0,
-            "daemon_running":false})
+            "daemon_running":false,"activity":"offline","queued":0})
     );
     start(&state, "moss-0000-1111", "moss", true);
     let out = run(&["moss", "stop"]);

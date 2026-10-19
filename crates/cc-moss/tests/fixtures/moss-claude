@@ -1,0 +1,113 @@
+#!/bin/bash
+# Stand-in for Moss's Claude Code in e2e tests. It draws a prompt (❯) and
+# reads its terminal the way Claude Code does: bracketed paste on, a pasted
+# text stays in the input until Enter, Esc clears it. On Enter it writes the
+# user entry and its reply to the transcript and runs the Stop hook from its
+# own .claude/settings.json, as Claude Code would.
+#
+# What it answers: "echo: <text>". A message with "slow" in it waits for
+# $CC_MOSS_FAKE_DIR/release before answering (a long turn); with "confirm"
+# it also shows a confirm prompt meanwhile; with "buttons" it adds a
+# [[buttons:]] marker; session news ([Update] / [动态]) gets [[silent]].
+# Every message it hears is appended to $CC_MOSS_FAKE_DIR/moss-heard.txt.
+[ "$1" = agents ] && { echo '[]'; exit 0; }
+sid="" boot=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --session-id) sid="$2"; shift 2 ;;
+    -*) shift ;;
+    *) boot="$1"; shift ;;
+  esac
+done
+export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=cli
+transcript="$CC_MOSS_FAKE_DIR/$sid.jsonl"
+
+esc() {
+  local s=$1
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\t'/\\t}; s=${s//$'\r'/}
+  printf '%s' "$s"
+}
+now() { perl -MTime::HiRes -MPOSIX -e '$t=Time::HiRes::time; printf "%s.%03dZ", strftime("%Y-%m-%dT%H:%M:%S", gmtime($t)), ($t-int($t))*1000'; }
+user() {
+  printf '{"type":"user","timestamp":"%s","isSidechain":false,"message":{"role":"user","content":"%s"}}\n' "$(now)" "$(esc "$1")" >> "$transcript"
+}
+assistant() {
+  printf '{"type":"assistant","timestamp":"%s","isSidechain":false,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"%s"}]}}\n' "$(now)" "$(esc "$1")" >> "$transcript"
+}
+stop_hook() {
+  local cmd
+  cmd=$(sed -n 's/.*"command": "\(.*hook moss-stop.*\)".*/\1/p' .claude/settings.json)
+  [ -n "$cmd" ] && sh -c "$cmd" < /dev/null
+}
+prompt() { printf '\n❯ '; }
+
+turn() {
+  local text=$1 answer
+  printf '%s\n' "$text" >> "$CC_MOSS_FAKE_DIR/moss-heard.txt"
+  user "$text"
+  case "$text" in
+    "[Update]"*|"[动态]"*) answer="[[silent]]" ;;
+    *buttons*) answer="echo: $text
+[[buttons: Yes | No]]" ;;
+    *) answer="echo: $text" ;;
+  esac
+  case "$text" in
+    *confirm*) printf '\nDo you want to proceed?\n❯ 1. Yes\n  2. No\n' ;;
+    *slow*) printf '\n✻ Thinking… (esc to interrupt)\n' ;;
+  esac
+  case "$text" in
+    *slow*|*confirm*)
+      until [ -e "$CC_MOSS_FAKE_DIR/release" ]; do sleep 0.1; done
+      rm -f "$CC_MOSS_FAKE_DIR/release" ;;
+  esac
+  assistant "$answer"
+  printf '\n⏺ %s\n' "$answer"
+  stop_hook
+}
+
+printf '%s' "{\"session_id\":\"$sid\",\"cwd\":\"$PWD\",\"source\":\"startup\",\"transcript_path\":\"$transcript\"}" \
+  | "$CC_MOSS_BIN" hook session-start > /dev/null
+[ -n "$boot" ] && turn "$boot"
+
+# Raw input, no echo: it draws what it takes in itself. (macOS ships bash
+# 3.2: no fractional read timeouts.)
+stty -echo -icanon min 1 2>/dev/null
+printf '\e[?2004h'
+prompt
+buf="" paste=0
+while true; do
+  IFS= read -r -n1 -d '' c || { sleep 0.1; continue; }
+  if [ "$c" = $'\e' ]; then
+    if IFS= read -r -n1 -t 1 -d '' n && [ "$n" = "[" ]; then
+      seq=""
+      while IFS= read -r -n1 -d '' n; do
+        seq+=$n
+        case "$n" in [A-Za-z~]) break ;; esac
+      done
+      case "$seq" in
+        200~) paste=1 ;;
+        201~) paste=0 ;;
+      esac
+    else
+      # Esc: the input is cleared.
+      buf=""
+      prompt
+    fi
+    continue
+  fi
+  if [ "$c" = $'\r' ] || [ "$c" = $'\n' ]; then
+    if [ "$paste" = 1 ]; then
+      buf+=$'\n'
+      printf '\n  '
+      continue
+    fi
+    [ -z "$buf" ] && continue
+    text=$buf
+    buf=""
+    turn "$text"
+    prompt
+    continue
+  fi
+  buf+=$c
+  printf '%s' "$c"
+done

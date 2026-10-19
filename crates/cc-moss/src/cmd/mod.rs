@@ -15,6 +15,7 @@ pub mod install;
 pub mod launch;
 pub mod ls;
 pub mod moss;
+pub mod moss_talk;
 pub mod new;
 pub mod note;
 pub mod restore;

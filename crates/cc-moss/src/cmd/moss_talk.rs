@@ -1,0 +1,383 @@
+//! The daemon's side of talking to Moss: it types the inbox into Moss's
+//! terminal one message at a time, takes each reply from Moss's transcript
+//! into chat.jsonl, and tells Moss what happens to the other sessions.
+//! The rules are in `moss_core::moss::{inbox, reply, digest, markers}`; this
+//! file talks to tmux, the registry and the files.
+
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use moss_core::moss::chat::{self, Line};
+use moss_core::moss::digest::{self, Change, Digest};
+use moss_core::moss::inbox::{self, InFlight, Outcome, Pane};
+use moss_core::moss::reply::{self, Claim, Timing, Verdict};
+use moss_core::moss::{self, markers};
+use moss_core::registry::Registry;
+use moss_core::slot::{now_ms, rfc3339, Status};
+
+use super::moss::{test_millis, tmux};
+
+/// How often the inbox is looked at while nothing is in flight.
+const INBOX_EVERY: Duration = Duration::from_millis(250);
+/// How often the registry is read for Moss's transcript and session news.
+const REGISTRY_EVERY: Duration = Duration::from_secs(2);
+/// tmux buffer the daemon pastes from.
+const BUFFER: &str = "cc-moss-inbox";
+
+/// Moss's terminal through tmux, found by its role mark.
+pub struct TmuxPane<'a> {
+    socket: &'a str,
+    /// A file only the daemon writes, for `load-buffer`.
+    scratch: PathBuf,
+    target: Option<String>,
+}
+
+impl<'a> TmuxPane<'a> {
+    pub fn new(socket: &'a str, state: &Path) -> TmuxPane<'a> {
+        TmuxPane {
+            socket,
+            scratch: moss_core::daemon::Paths::new(state)
+                .dir
+                .join("moss-paste.txt"),
+            target: None,
+        }
+    }
+
+    fn target(&mut self) -> Result<String, String> {
+        if let Some(t) = &self.target {
+            return Ok(t.clone());
+        }
+        let seen = super::moss::look(self.socket);
+        let id = seen
+            .live
+            .first()
+            .cloned()
+            .ok_or_else(|| "Moss's tmux session is not there".to_string())?;
+        self.target = Some(id.clone());
+        Ok(id)
+    }
+
+    fn run(&self, args: &[&str]) -> Result<String, String> {
+        match tmux(self.socket, args) {
+            Ok(out) if out.status.success() => {
+                Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+            }
+            Ok(out) => Err(String::from_utf8_lossy(&out.stderr).trim().to_string()),
+            Err(e) => Err(format!("{e:?}")),
+        }
+    }
+}
+
+impl Pane for TmuxPane<'_> {
+    fn paste(&mut self, text: &str) -> Result<(), String> {
+        let target = self.target()?;
+        // From a file: a long message would not fit in one tmux command.
+        moss::home::write_if_changed(&self.scratch, text).map_err(|e| e.to_string())?;
+        let file = self.scratch.to_string_lossy().into_owned();
+        let loaded = self.run(&["load-buffer", "-b", BUFFER, &file]);
+        let _ = std::fs::remove_file(&self.scratch);
+        loaded?;
+        self.run(&["paste-buffer", "-p", "-d", "-b", BUFFER, "-t", &target])
+            .map(|_| ())
+    }
+
+    fn screen(&mut self) -> Result<String, String> {
+        let target = self.target()?;
+        self.run(&["capture-pane", "-p", "-J", "-e", "-t", &target])
+    }
+
+    fn key(&mut self, key: &str) -> Result<(), String> {
+        let target = self.target()?;
+        self.run(&["send-keys", "-t", &target, key]).map(|_| ())
+    }
+
+    fn wait(&mut self, how_long: Duration) {
+        std::thread::sleep(how_long);
+    }
+}
+
+/// The conversation with one running Moss.
+pub struct Talk {
+    home: PathBuf,
+    state: PathBuf,
+    courier: inbox::Courier,
+    claim: Option<(InFlight, Claim)>,
+    digest: Digest,
+    timing: Timing,
+    registry_every: Duration,
+    /// Moss's transcript, from its record in the registry.
+    transcript: Option<PathBuf>,
+    /// The last registry event read; `None` until the first read, which
+    /// starts from now (old news is not told).
+    cursor: Option<i64>,
+    next_inbox: Instant,
+    next_registry: Instant,
+    waiting_shown: bool,
+}
+
+impl Talk {
+    pub fn new(state: &Path) -> Talk {
+        let default = Timing::default();
+        let timing = Timing {
+            settle: test_millis("CC_MOSS_MOSS_SETTLE_MS").unwrap_or(default.settle),
+            look_every: test_millis("CC_MOSS_MOSS_LOOK_MS").unwrap_or(default.look_every),
+            no_start: test_millis("CC_MOSS_MOSS_NO_START_MS").unwrap_or(default.no_start),
+            turn: test_millis("CC_MOSS_MOSS_TURN_MS").unwrap_or(default.turn),
+            late: test_millis("CC_MOSS_MOSS_LATE_MS").unwrap_or(default.late),
+        };
+        let window = test_millis("CC_MOSS_DIGEST_WINDOW_MS").unwrap_or(digest::WINDOW);
+        let now = Instant::now();
+        Talk {
+            home: moss::home_dir(state),
+            state: state.to_path_buf(),
+            courier: inbox::Courier::default(),
+            claim: None,
+            digest: Digest::new(window, digest::REPEAT),
+            timing,
+            registry_every: test_millis("CC_MOSS_MOSS_REGISTRY_MS").unwrap_or(REGISTRY_EVERY),
+            transcript: None,
+            cursor: None,
+            next_inbox: now,
+            next_registry: now,
+            waiting_shown: true,
+        }
+    }
+
+    /// One go of the daemon's loop, while Moss runs.
+    pub fn tick(&mut self, socket: &str, now: Instant, digest_on: bool, log: &dyn Fn(&str)) {
+        let now_ms = now_ms();
+        if now >= self.next_registry {
+            self.next_registry = now + self.registry_every;
+            if let Err(e) = self.read_registry(now_ms) {
+                log(&format!("moss: error: reading the registry: {e:#}"));
+            }
+        }
+        if let Some(line) = self
+            .digest
+            .due(now_ms, crate::i18n::lang() == crate::i18n::Lang::Zh)
+        {
+            if digest_on {
+                self.tell(&line, now_ms, log);
+            }
+        }
+        let mut pane = TmuxPane::new(socket, &self.state);
+        if self.claim.is_some() {
+            self.take_reply(&mut pane, now_ms, log);
+            return;
+        }
+        // Markers left from turns no message of ours started.
+        reply::take_stops(&self.home);
+        self.show_waiting(false);
+        if now < self.next_inbox {
+            return;
+        }
+        self.next_inbox = now + INBOX_EVERY;
+        if inbox::count(&self.home) == 0 {
+            return;
+        }
+        let transcript = self.transcript.clone().unwrap_or_default();
+        let turn = self
+            .transcript
+            .as_deref()
+            .and_then(moss_core::transcript::turn_open);
+        let from = std::fs::metadata(&transcript).map_or(0, |m| m.len());
+        for outcome in self.courier.step(&self.home, &mut pane, turn, now_ms) {
+            match outcome {
+                Outcome::Sent(sent) => {
+                    if sent.from == chat::FROM_YOU {
+                        self.record(&Line::state(&sent.id, &rfc3339(now_ms), "sent", None), log);
+                    }
+                    let claim = Claim::new(
+                        transcript.clone(),
+                        from,
+                        &sent.tail,
+                        sent.at_ms,
+                        self.timing,
+                    );
+                    self.claim = Some((sent, claim));
+                }
+                Outcome::Failed { id, from, error } => {
+                    log(&format!("moss: error: message {id} did not go in: {error}"));
+                    if from == chat::FROM_YOU {
+                        let line = Line::state(&id, &rfc3339(now_ms), "failed", Some(&error));
+                        self.record(&line, log);
+                    }
+                }
+            }
+        }
+    }
+
+    fn take_reply(&mut self, pane: &mut dyn Pane, now_ms: i64, log: &dyn Fn(&str)) {
+        let Some((sent, claim)) = self.claim.as_mut() else {
+            return;
+        };
+        let stopped = reply::take_stops(&self.home);
+        let verdict = claim.tick(now_ms, stopped, pane);
+        let waiting = claim.waiting();
+        let sent = sent.clone();
+        let at = rfc3339(now_ms);
+        let line = match verdict {
+            Verdict::Wait => {
+                self.show_waiting(waiting);
+                return;
+            }
+            Verdict::Reply { text, .. } => {
+                let parsed = markers::parse(&text);
+                Line {
+                    reply_to: Some(sent.id.clone()),
+                    silent: parsed.silent,
+                    buttons: parsed.buttons,
+                    ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, &parsed.text)
+                }
+            }
+            Verdict::Received(why) => {
+                log(&format!("moss: no reply taken for {}: {why}", sent.id));
+                let text = tr!(
+                    "Moss got it (its reply could not be read back; see its terminal).",
+                    "Moss 收到了（没能取回回复，去终端看）。"
+                );
+                Line {
+                    reply_to: Some(sent.id.clone()),
+                    fallback: true,
+                    // Nobody waits on a reply to session news.
+                    silent: sent.from != chat::FROM_YOU,
+                    ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, text)
+                }
+            }
+        };
+        if let Some((_, c)) = &self.claim {
+            // A /clear may have moved Moss to a new transcript.
+            if !c.transcript().as_os_str().is_empty() {
+                self.transcript = Some(c.transcript().to_path_buf());
+            }
+        }
+        self.claim = None;
+        self.courier.done();
+        self.show_waiting(false);
+        self.record(&line, log);
+    }
+
+    /// `<home>/waiting` while Moss waits on a confirm prompt.
+    fn show_waiting(&mut self, waiting: bool) {
+        if waiting == self.waiting_shown {
+            return;
+        }
+        let path = reply::waiting_path(&self.home);
+        let done = if waiting {
+            std::fs::write(&path, b"").is_ok()
+        } else {
+            moss::remove(&path).is_ok()
+        };
+        if done {
+            self.waiting_shown = waiting;
+        }
+    }
+
+    fn record(&self, line: &Line, log: &dyn Fn(&str)) {
+        if let Err(e) = chat::append(&self.home, line) {
+            log(&format!("moss: error: chat.jsonl: {e}"));
+        }
+        if let Err(e) = chat::rotate_if_long(&self.home) {
+            log(&format!("moss: error: rotating chat.jsonl: {e}"));
+        }
+    }
+
+    /// Session news for Moss: into its inbox, and into the chat.
+    fn tell(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
+        let message = inbox::Message {
+            schema: 1,
+            id: inbox::new_id(now_ms),
+            at: rfc3339(now_ms),
+            from: chat::FROM_EVENTS.to_string(),
+            text: text.to_string(),
+        };
+        if let Err(e) = inbox::put(&self.home, &message) {
+            log(&format!("moss: error: inbox: {e}"));
+            return;
+        }
+        self.record(
+            &Line::message(&message.id, &message.at, chat::FROM_EVENTS, text),
+            log,
+        );
+    }
+
+    /// Moss's transcript, sessions whose process is gone, and the news since
+    /// the last read.
+    fn read_registry(&mut self, now_ms: i64) -> anyhow::Result<()> {
+        let db = self.state.join("registry.db");
+        if !db.exists() {
+            return Ok(());
+        }
+        let registry = Registry::open(&db)?;
+        if self.cursor.is_none() {
+            self.cursor = Some(registry.last_event_seq()?);
+        }
+        let slots = registry.slots()?;
+        if let Some(path) = slots
+            .iter()
+            .filter(|s| s.is_moss() && s.status != Status::Closed)
+            .max_by_key(|s| s.last_active_at_ms)
+            .and_then(|s| s.transcript_path.clone())
+        {
+            // Not while a claim follows a /clear on its own.
+            if self.claim.is_none() {
+                self.transcript = Some(PathBuf::from(path));
+            }
+        }
+        for s in &slots {
+            // `kill(pid, 0)` first: only a process that seems gone costs a
+            // closer look (a `ps` on macOS).
+            let gone = s.status == Status::Running
+                && !s.is_moss()
+                && s.pid.is_some_and(|pid| !process_exists(pid))
+                && s.effective_status(moss_core::proc::is_alive) == Status::Interrupted;
+            if gone {
+                registry.record_lost(&s.slot_id, now_ms)?;
+            }
+        }
+        let since = self.cursor.unwrap_or(0);
+        for e in registry.events(Some(since), 500)? {
+            self.cursor = Some(e.seq);
+            let Some(kind) = digest::Kind::from_event(&e.kind) else {
+                continue;
+            };
+            let Some(slot) = slots.iter().find(|s| s.slot_id == e.slot_id) else {
+                continue;
+            };
+            if slot.is_moss() {
+                continue;
+            }
+            let name = e
+                .name
+                .clone()
+                .or_else(|| slot.name.clone())
+                .unwrap_or_else(|| slot.session_id.chars().take(8).collect());
+            let why = e
+                .detail
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .filter(|_| kind == digest::Kind::NeedsYou)
+                .map(String::from);
+            self.digest.push(
+                Change {
+                    slot_id: e.slot_id.clone(),
+                    name,
+                    kind,
+                    why,
+                },
+                now_ms,
+            );
+        }
+        Ok(())
+    }
+}
+
+/// Whether a process with this pid exists (it may not be the one recorded).
+fn process_exists(pid: u32) -> bool {
+    let Ok(pid) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: signal 0 only checks that the process exists.
+    let r = unsafe { libc::kill(pid, 0) };
+    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}

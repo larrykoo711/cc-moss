@@ -352,6 +352,24 @@ enum MossCommand {
         #[arg(long)]
         json: bool,
     },
+    /// Say something to Moss; its reply shows in `moss chat` and the panel.
+    Say {
+        /// Print the message's id as JSON (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// What to say; several lines arrive whole.
+        #[arg(last = true, required = true)]
+        text: Vec<String>,
+    },
+    /// The conversation with Moss so far.
+    Chat {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// How many of the latest messages.
+        #[arg(long, default_value_t = moss_core::moss::chat::DEFAULT_LIMIT)]
+        limit: usize,
+    },
     /// Replace Moss's identity, soul or notes about you with new text (from
     /// standard input or --from; what /moss-profile uses).
     #[command(hide = true)]
@@ -452,6 +470,10 @@ fn main() -> std::process::ExitCode {
         // Moss's fence decides, and fails closed; not a session event.
         if event == cmd::moss::GUARD_EVENT {
             return cmd::moss::guard_hook(&argv);
+        }
+        // Moss's turn ended: a marker for the daemon, nothing else.
+        if event == cmd::moss::STOP_EVENT {
+            return cmd::moss::stop_hook(&argv);
         }
         cmd::hook::run(&event);
         return std::process::ExitCode::SUCCESS;
@@ -557,6 +579,8 @@ fn main() -> std::process::ExitCode {
             MossCommand::Start => cmd::moss::start(),
             MossCommand::Stop => cmd::moss::stop(),
             MossCommand::Status { json } => cmd::moss::print_status(json),
+            MossCommand::Say { json, text } => cmd::moss::say(json, &text.join(" ")),
+            MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),
             MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
         }),
         Command::Ask { action } => report(cmd::ask::run(match action {
