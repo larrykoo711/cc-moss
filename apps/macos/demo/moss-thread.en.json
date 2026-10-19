@@ -1,0 +1,85 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792140600000-f00000",
+   "at": "2026-10-16T08:50:00Z",
+   "from": "you",
+   "text": "Keep an eye on fix-invoice for me",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140620000-f00001",
+   "at": "2026-10-16T08:50:20Z",
+   "from": "you",
+   "text": "Tell me when the reconciliation script is done",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140660000-g00000",
+   "at": "2026-10-16T08:51:00Z",
+   "from": "moss",
+   "text": "Sure, watching it.",
+   "reply_to": "1792140620000-f00001",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792140900000-g00001",
+   "at": "2026-10-16T08:55:00Z",
+   "from": "moss",
+   "text": "**fix-invoice** has started the reconciliation script.",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141200000-g00002",
+   "at": "2026-10-16T09:00:00Z",
+   "from": "moss",
+   "text": "Step 2 of 4: checking the tax amounts.",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141560000-g00003",
+   "at": "2026-10-16T09:06:00Z",
+   "from": "moss",
+   "text": "Step 2 passed, no differences.",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792141980000-g00004",
+   "at": "2026-10-16T09:13:00Z",
+   "from": "moss",
+   "text": "Step 3 compares last month's invoices; it's slower.",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792142460000-g00005",
+   "at": "2026-10-16T09:21:00Z",
+   "from": "moss",
+   "text": "Done. Everything matches.",
+   "reply_to": null,
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1792144860000-h00000",
+   "at": "2026-10-16T10:01:00Z",
+   "from": "moss",
+   "text": "By the way, **flaky-test** just failed again, same test as before.",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}
