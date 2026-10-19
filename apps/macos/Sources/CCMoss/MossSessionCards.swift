@@ -46,12 +46,13 @@ struct MossSessionCards: View {
         VStack(alignment: .leading, spacing: 4) {
             ForEach(cards) { card in
                 if let s = card.session {
-                    MossSessionCardView(model: model, card: card, session: s, key: "\(messageID)/\(card.id)")
+                    MossSessionCardView(model: model, card: card, session: s, groupHandled: MossSessionCard.showsAllHandled(cards),
+                                        key: "\(messageID)/\(card.id)")
                 } else {
                     GoneCard()
                 }
             }
-            if MossSessionCard.allHandled(cards) {
+            if MossSessionCard.showsAllHandled(cards) {
                 HStack(spacing: 4) {
                     Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold))
                     Text(L.t("All handled", "都处理好了"))
@@ -102,6 +103,9 @@ struct MossSessionCardView: View {
     let session: Session
     /// Shown over a mention: no rename there, and no frame of its own.
     var hover = false
+    /// The bubble says "✓ All handled" under its cards: this one just says
+    /// what it's doing now.
+    var groupHandled = false
     /// Which card's rename field is open: message and session together, so
     /// the same session in two replies doesn't open twice.
     let key: String
@@ -140,7 +144,12 @@ struct MossSessionCardView: View {
                         // Over a mention: where it is and when, then why it waits.
                         folderLine
                     }
-                    if card.resolved {
+                    if card.resolved && groupHandled {
+                        Text(Self.nowText(session, alone: true))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if card.resolved {
                         // It needed you when Moss said so; it doesn't now.
                         HStack(spacing: 3) {
                             Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
@@ -314,12 +323,13 @@ struct MossSessionCardView: View {
     }
 
     /// What it's doing now, after you handled it.
-    static func nowText(_ s: Session) -> String {
+    /// `alone`: the whole line, so it starts with a capital.
+    static func nowText(_ s: Session, alone: Bool = false) -> String {
         switch s.state {
-        case .working: L.t("working now", "现在在干活")
-        case .waiting: L.t("idle now", "现在空闲")
-        case .interrupted: L.t("dropped now", "现在断了")
-        case .closed: L.t("ended", "已结束")
+        case .working: alone ? L.t("Working now", "现在在干活") : L.t("working now", "现在在干活")
+        case .waiting: alone ? L.t("Idle now", "现在空闲") : L.t("idle now", "现在空闲")
+        case .interrupted: alone ? L.t("Dropped now", "现在断了") : L.t("dropped now", "现在断了")
+        case .closed: alone ? L.t("Ended", "已结束") : L.t("ended", "已结束")
         }
     }
 
