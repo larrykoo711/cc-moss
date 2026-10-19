@@ -820,7 +820,7 @@ struct ReplyLineView: View {
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
 
-    private var sending: Bool { model.sendFlow.isSending }
+    private var sending: Bool { model.replyFlow.isSending }
     private var hasText: Bool { ReplyLine.toSend(model.replyDraft) != nil }
 
     var body: some View {
@@ -885,7 +885,7 @@ struct ReplyLineView: View {
                 .onHover { hovering = $0 }
                 .tip(L.t("Send  ↵", "发送  ↵"))
             }
-            if let failure = model.sendFlow.failure {
+            if let failure = model.replyFlow.failure {
                 Text(failure)
                     .font(.system(size: 11))
                     .foregroundStyle(Theme.caption)

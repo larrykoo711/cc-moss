@@ -74,6 +74,9 @@ final class AppModel {
     var form: PanelForm? { didSet { if form != oldValue { sendFlow = .idle } } }
     /// A message to a session on its way (idle, sending, failed).
     var sendFlow = SendFlow()
+    /// The reply line's own send: a form opening or closing must never
+    /// unlock a reply still on its way (that sent it twice).
+    var replyFlow = SendFlow()
     /// After a send, a note or a rename the session moves in the list: keep
     /// it selected and in view as the refreshed order arrives.
     @ObservationIgnored var reveal: (id: String, until: Date)?

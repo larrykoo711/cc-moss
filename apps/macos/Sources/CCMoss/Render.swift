@@ -165,7 +165,7 @@ enum Render {
                 model.selectedID = id
                 model.openReply(s)
                 try? await Task.sleep(nanoseconds: 100_000_000)
-                if args.contains("--sending") { _ = model.sendFlow.begin() }
+                if args.contains("--sending") { _ = model.replyFlow.begin() }
             }
             switch value("--form") {
             case "new":
