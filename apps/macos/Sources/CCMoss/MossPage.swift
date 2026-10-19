@@ -741,8 +741,9 @@ private struct MossChip: View {
 
 /// Moss's abilities and the account's commands in one row, the ones you
 /// use most first. As many as fit; the rest are behind "⋯". The order is
-/// worked out when the page opens and after each send, never while you
-/// point at it, so nothing moves under the pointer.
+/// worked out when the page opens and then holds still while you use it
+/// (user 2026-10-19: re-ranking after a send made the bar jump); new uses
+/// and Moss's picks show the next time the page opens.
 private struct MossQuickRow: View {
     @Bindable var model: AppModel
     let enabled: Bool
@@ -772,11 +773,11 @@ private struct MossQuickRow: View {
             .onChange(of: geo.size.width) { _, w in width = w }
         }
         .frame(height: 30)
+        // Nothing on the page animates the bar along with it.
+        .transaction { $0.animation = nil }
         .onAppear(perform: rank)
         .onChange(of: shown) { _, _ in publish() }
         .onChange(of: ranked) { _, _ in publish() }
-        .onChange(of: model.quickSends) { _, _ in rank() }
-        .onChange(of: model.quickContext.mossPicks) { _, _ in rank() }
         .onChange(of: model.mossDesk.status?.account) { _, _ in rank() }
     }
 
