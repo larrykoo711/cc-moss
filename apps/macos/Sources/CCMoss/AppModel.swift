@@ -158,7 +158,9 @@ final class AppModel {
     /// The session mention in Moss's words whose card is showing.
     var mentionHover: MentionHover?
     /// The mention under the pointer right now: lit at once, before its card.
-    var mentionPointer = MossMentions.Pointer()
+    var mentionMachine = MentionHoverMachine()
+    /// Where each hovered mention is, for its card.
+    @ObservationIgnored var mentionAnchors: [String: CGRect] = [:]
     @ObservationIgnored var mentionShow: Task<Void, Never>?
     @ObservationIgnored var mentionHide: Task<Void, Never>?
     /// Screenshots only: the suggestion every session "has".
@@ -197,6 +199,7 @@ final class AppModel {
             if page != .moss {
                 mossTyping = false
                 mossQuickOpen = false
+                if oldValue == .moss { resetMentionHover() }
             } else if oldValue != .moss {
                 fetchMossSuggestion()
                 // Opened again: the latest 30, every reply folded.
@@ -208,7 +211,10 @@ final class AppModel {
     }
     /// The panel is on screen (the Moss page counts as read only then).
     var panelShown = false {
-        didSet { if panelShown && page == .moss { mossDesk.markRead() } }
+        didSet {
+            if panelShown && page == .moss { mossDesk.markRead() }
+            if !panelShown { resetMentionHover() }
+        }
     }
     /// Talking to Moss (T2.3): its status and the conversation.
     let mossDesk = MossDesk { _ in throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
