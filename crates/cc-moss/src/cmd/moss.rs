@@ -1075,7 +1075,16 @@ impl Looker {
                     log("moss: it is gone; starting it again after a wait");
                 }
             }
-            Action::Start => self.start(now, log),
+            // The switch, read again right before a start: `moss stop` turns
+            // it off and then ends Moss, and a start on a switch read before
+            // that would bring Moss straight back.
+            Action::Start => match switches() {
+                Ok(moss) if !moss.enabled => {
+                    self.enabled = Some(false);
+                    let _ = self.keeper.tick(now, false, None);
+                }
+                _ => self.start(now, log),
+            },
             Action::Stop => match end_moss(&self.state, "moss-stopped") {
                 Ok(true) => log("moss: stopped (switched off)"),
                 Ok(false) => {}
