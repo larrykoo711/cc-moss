@@ -91,6 +91,12 @@ public struct PetMessage: Equatable, Sendable {
                                   body: L.t("Right where you left off.", "从上次停下的地方接着来。"),
                                   primary: L.t("Open", "去看看"), secondary: L.t("Got it", "知道了"))
         case .finished:
+            // Moss answered something you sent from the panel (T2.3).
+            if n == 1, alerts.first?.reason == MossReplyRouter.reason {
+                return PetMessageText(title: L.t("Moss replied", "Moss 回你了"),
+                                      body: L.t("The reply is on the Moss page.", "回复在面板的 Moss 页里。"),
+                                      primary: L.t("Open Panel", "打开面板"), secondary: L.t("Later", "稍后"))
+            }
             if n > 1 {
                 return PetMessageText(title: L.t("\(n) sessions are waiting", "\(n) 个会话在等你"),
                                       body: L.t("\(list) finished their turns.", "\(list) 这一轮都做完了。"),
