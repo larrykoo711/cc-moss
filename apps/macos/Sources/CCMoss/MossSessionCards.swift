@@ -1,0 +1,464 @@
+import AppKit
+import MossKit
+import SwiftUI
+
+/// The sessions Moss points at, as small cards under its words (T2.3
+/// AMEND-4): open or bring back, rename in place, pin, like a Sessions row.
+extension AppModel {
+    /// The cards for a bubble, live: worked out on every redraw, so a To Do
+    /// item handled or a refresh changes them while the page is open.
+    func mossCards(_ group: MossGroup) -> [MossSessionCard] {
+        let ids = group.sessions
+        guard !ids.isEmpty else { return [] }
+        return MossSessionCard.cards(ids, among: sessions + (closedPool ?? []), waiting: mossWaiting(ids),
+                                     then: group.sessionStates)
+    }
+
+    /// One session's card, live: for a mention's hover card.
+    func mossCard(_ id: String) -> MossSessionCard? {
+        MossSessionCard.cards([id], among: sessions + (closedPool ?? []), waiting: mossWaiting([id])).first
+    }
+
+    /// What To Do holds for these sessions: an open question or permission,
+    /// else a reply it waits for. Handled, it's gone and the card is plain again.
+    private func mossWaiting(_ ids: [String]) -> [String: MossSessionCard.Waiting] {
+        let replies = Set(waitingForInput.map(\.id))
+        var out: [String: MossSessionCard.Waiting] = [:]
+        for id in ids {
+            if let card = openAsk(forSlot: id) {
+                out[id] = .init(reason: card.ask.kind == .permission ? .permission : .question, item: .ask(card.id))
+            } else if replies.contains(id) {
+                out[id] = .init(reason: .input, item: .reply(id))
+            }
+        }
+        return out
+    }
+}
+
+struct MossSessionCards: View {
+    @Bindable var model: AppModel
+    let messageID: String
+    let cards: [MossSessionCard]
+    /// Older cards of a session are receipts; only the newest is live.
+    var roles: [String: MossCardHistory.Role] = [:]
+
+    private var ids: [String] { cards.map(\.id) }
+    private var live: [MossSessionCard] { cards.filter { (roles[$0.id] ?? .live) == .live } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ForEach(cards) { card in
+                if case let .receipt(receipt)? = roles[card.id] {
+                    CardReceipt(name: card.session?.title, receipt: receipt)
+                } else if let s = card.session {
+                    MossSessionCardView(model: model, card: card, session: s, groupHandled: MossSessionCard.showsAllHandled(live),
+                                        key: "\(messageID)/\(card.id)")
+                } else {
+                    GoneCard()
+                }
+            }
+            if MossSessionCard.showsAllHandled(live) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold))
+                    Text(L.t("All handled", "都处理好了"))
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color.green.opacity(0.85))
+                .padding(.leading, 4)
+                .padding(.top, 2)
+            }
+        }
+        .frame(maxWidth: 420, alignment: .leading)
+        .onAppear {
+            // Moss may point at one that has ended: those come from `ls --all`.
+            let known = Set(model.sessions.map(\.id))
+            if model.closedPool == nil, ids.contains(where: { !known.contains($0) }) { model.loadClosed() }
+        }
+    }
+}
+
+/// An older card of a session that has a newer one further down: what
+/// happened then, in one line, no buttons. The mention in the words above
+/// still leads to the session.
+private struct CardReceipt: View {
+    let name: String?
+    let receipt: MossCardHistory.Receipt
+
+    var body: some View {
+        HStack(spacing: 5) {
+            switch receipt {
+            case .handled:
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(Color.green.opacity(0.8))
+                Text(L.t("Handled", "已处理"))
+            case .past:
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 9.5, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+                Text(L.t("Earlier", "已过去"))
+            }
+            if let name {
+                Text("·").foregroundStyle(.tertiary)
+                Text(name).lineLimit(1)
+            }
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 8)
+        .frame(height: 24)
+        .background(Capsule().fill(Color.primary.opacity(0.04)))
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A session that isn't there any more.
+private struct GoneCard: View {
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.06))
+                Image(systemName: "questionmark")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(.tertiary)
+            }
+            .frame(width: 20, height: 20)
+            Text(L.t("This session is gone", "这个会话已经不在了"))
+                .font(.system(size: 12))
+                .foregroundStyle(.tertiary)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .frame(height: 34)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(scheme == .dark ? 0.03 : 0.025)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme), style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+    }
+}
+
+struct MossSessionCardView: View {
+    @Bindable var model: AppModel
+    let card: MossSessionCard
+    let session: Session
+    /// Shown over a mention: no rename there, and no frame of its own.
+    var hover = false
+    /// The bubble says "✓ All handled" under its cards: this one just says
+    /// what it's doing now.
+    var groupHandled = false
+    /// Which card's rename field is open: message and session together, so
+    /// the same session in two replies doesn't open twice.
+    let key: String
+    @State private var name = ""
+    @FocusState private var focused: Bool
+    @Environment(\.colorScheme) private var scheme
+
+    private var renaming: Bool { model.mossCardRenaming == key }
+    private var pinned: Bool { model.pins.contains(session.id) }
+    private var restoring: Bool { card.main == .bringBack && model.restoreFlow.isRunning(session.id) }
+    private var check: Message.RenameCheck { Message.checkRename(name, of: session, among: model.sessions) }
+    // The move into tmux shares the list's state: started here or there, both show it.
+    private var asking: Bool { model.adoptAsk?.id == session.id }
+    private var moving: Bool { model.adopting.contains(session.id) }
+    private var adoptProblem: String? { model.adoptProblems[session.id] }
+    private var note: String? { model.rowNote.flatMap { $0.id == session.id && !$0.adopt ? $0.text : nil } }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                stateIcon
+                VStack(alignment: .leading, spacing: 1) {
+                    HStack(spacing: 5) {
+                        Text(session.title)
+                            .font(.system(size: 12.5, weight: .medium))
+                            .lineLimit(1)
+                        if !session.inTmux {
+                            Image(systemName: Icons.outsideTmux)
+                                .font(.system(size: 9.5, weight: .semibold))
+                                .foregroundStyle(.tertiary)
+                                .tip(L.t("Not in tmux, so it can't be opened from here.", "不在 tmux 里，没法从这里打开。"))
+                                .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
+                        }
+                    }
+                    if hover {
+                        // Over a mention: where it is and when, then why it waits.
+                        folderLine
+                    }
+                    if card.resolved && groupHandled {
+                        Text(Self.nowText(session, alone: true))
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else if card.resolved {
+                        // It needed you when Moss said so; it doesn't now.
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color.green.opacity(0.85))
+                            Text(L.t("Handled", "已处理"))
+                            Text("·")
+                            Text(Self.nowText(session))
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    } else if let waiting = card.waiting {
+                        // Why it waits, in its state's colour, in place of folder · time.
+                        Text(Self.waitingText(waiting.reason))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(stateColor)
+                            .lineLimit(1)
+                    } else if !hover {
+                        folderLine
+                    }
+                }
+                Spacer(minLength: 6)
+                actions
+            }
+            if renaming { renameLine }
+            if asking {
+                AdoptConfirmView(model: model, session: session, inset: 0, trailing: 0)
+            } else if moving {
+                cardLine(L.t("Moving into tmux…", "正在移进 tmux…"), spinner: true)
+            } else if let adoptProblem {
+                cardLine(adoptProblem, icon: Icons.cannotRestore, tint: Theme.amber)
+            } else if let note {
+                cardLine(note, icon: "info.circle")
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Theme.raised(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme), lineWidth: 1))
+        // Over a mention it floats: a soft shadow lifts it off the page.
+        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.5 : 0.14) : 0), radius: hover ? 14 : 0, y: hover ? 6 : 0)
+        .shadow(color: .black.opacity(hover ? (scheme == .dark ? 0.3 : 0.06) : 0), radius: hover ? 2 : 0, y: hover ? 1 : 0)
+    }
+
+    private var folderLine: some View {
+        HStack(spacing: 4) {
+            Text(PanelView.folderName(session))
+            Text("·")
+            Text(L.ago(session.lastActiveAt))
+        }
+        .font(.system(size: 11))
+        .foregroundStyle(.tertiary)
+        .lineLimit(1)
+    }
+
+    /// A short line under the card: moving, why it couldn't, why it waits.
+    private func cardLine(_ text: String, icon: String? = nil, tint: Color? = nil, spinner: Bool = false) -> some View {
+        HStack(spacing: 5) {
+            if spinner {
+                ProgressView().controlSize(.mini)
+            } else if let icon {
+                Image(systemName: icon)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.tertiary))
+            }
+            Text(text).lineLimit(2).fixedSize(horizontal: false, vertical: true)
+        }
+        .font(.system(size: 11.5))
+        .foregroundStyle(.secondary)
+        .padding(.leading, 28)
+        .tip(text)
+    }
+
+    @ViewBuilder private var actions: some View {
+        HStack(spacing: 2) {
+            if card.canPin && !moving {
+                PinButton(pinned: pinned) { model.togglePin(session) }
+            }
+            if card.canRename && !moving && !hover {
+                CardIconButton(icon: Icons.rename, help: L.t("Rename", "改名"), lit: renaming) {
+                    if renaming {
+                        model.mossCardRenaming = nil
+                    } else {
+                        name = session.name ?? ""
+                        model.mossCardRenaming = key
+                    }
+                }
+            }
+            switch card.main {
+            case .open?:
+                CardTextButton(title: L.t("Open", "打开"), icon: Icons.open) {
+                    let panel = NSApplication.shared.keyWindow
+                    model.open(session) { opened in if opened { panel?.close() } }
+                }
+            case .bringBack?:
+                if restoring {
+                    ProgressView().controlSize(.small).scaleEffect(0.6).frame(width: 24, height: 22)
+                } else {
+                    CardTextButton(title: L.t("Bring back", "找回"), icon: Icons.restore) { model.restore(session) }
+                }
+            case let .handle(item)?:
+                CardTextButton(title: L.t("Handle", "去处理"), icon: "arrow.right") {
+                    // Like the nudge: To Do, on that item.
+                    model.page = .queue
+                    model.askQueue.show(item, in: model.queueItems)
+                }
+            case .moveIntoTmux?:
+                if !moving {
+                    let wait = AppModel.adoptWait(session)
+                    CardTextButton(title: AppModel.adoptTitle(session, named: model.adoptAsk?.id == session.id ? model.adoptAsk?.named : nil),
+                                   icon: Icons.adopt, dimmed: wait != nil, lit: asking) {
+                        if asking { model.cancelAdopt() } else { model.askToAdopt(session) }
+                    }
+                    .tip(wait ?? L.t("Ends its process in its current terminal and carries on in tmux; the conversation is kept.",
+                                     "结束它在原终端里的进程，然后在 tmux 里接着跑，对话不会丢。"))
+                }
+            case nil:
+                EmptyView()
+            }
+        }
+    }
+
+    private var renameLine: some View {
+        HStack(spacing: 6) {
+            TextField(L.t("New name", "新名字"), text: $name)
+                .textFieldStyle(.plain)
+                .font(.system(size: 12))
+                .focused($focused)
+                .onSubmit(save)
+                .onExitCommand { model.mossCardRenaming = nil }
+                .padding(.horizontal, 7)
+                .frame(height: 24)
+                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.05)))
+                .overlay(RoundedRectangle(cornerRadius: 6)
+                    .strokeBorder(problem == nil ? Theme.brand.opacity(0.5) : Theme.amber.opacity(0.7), lineWidth: 1))
+            if let problem {
+                Text(problem)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.amber)
+                    .lineLimit(1)
+            } else {
+                Text(L.t("Return saves", "回车保存"))
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+        }
+        .onAppear {
+            if name.isEmpty { name = session.name ?? "" }
+            focused = true
+        }
+    }
+
+    /// What's wrong with the name typed, said briefly; nil when it can be saved
+    /// (or nothing's been typed yet).
+    private var problem: String? {
+        switch check {
+        case .ok, .unchanged, .empty: return nil
+        case .badCharacters: return L.t("One line of plain text", "只能是一行普通文字")
+        case .taken: return L.t("Name taken", "这个名字有人用了")
+        }
+    }
+
+    private func save() {
+        guard check == .ok, !model.sendFlow.isSending else {
+            if check == .unchanged { model.mossCardRenaming = nil }
+            return
+        }
+        let new = name.trimmingCharacters(in: .whitespaces)
+        model.mossCardRenaming = nil
+        model.sendMessage(session, text: Message.renameText(new), done: L.t("Renaming to \(new)…", "正在改名为 \(new)…"))
+    }
+
+    /// What it's doing now, after you handled it.
+    /// `alone`: the whole line, so it starts with a capital.
+    static func nowText(_ s: Session, alone: Bool = false) -> String {
+        switch s.state {
+        case .working: alone ? L.t("Working now", "现在在干活") : L.t("working now", "现在在干活")
+        case .waiting: alone ? L.t("Idle now", "现在空闲") : L.t("idle now", "现在空闲")
+        case .interrupted: alone ? L.t("Dropped now", "现在断了") : L.t("dropped now", "现在断了")
+        case .closed: alone ? L.t("Ended", "已结束") : L.t("ended", "已结束")
+        }
+    }
+
+    static func waitingText(_ reason: MossSessionCard.Waiting.Reason) -> String {
+        switch reason {
+        case .permission: L.t("Waiting for your OK", "在等你批权限")
+        case .question: L.t("Asking you a question", "在问你问题")
+        case .input: L.t("Waiting for your reply", "在等你回话")
+        }
+    }
+
+    /// Its state's colour: brand while it needs you.
+    private var stateColor: Color {
+        session.needsYou || card.waiting?.reason == .permission || card.waiting?.reason == .question
+            ? Theme.brand : Theme.color(session.state)
+    }
+
+    private var stateIcon: some View {
+        let color = session.needsYou ? Theme.brand : Theme.color(session.state)
+        let label = session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
+        return ZStack {
+            RoundedRectangle(cornerRadius: 5)
+                .fill(color.opacity(scheme == .dark ? 0.22 : 0.14))
+            if session.state == .working && !session.needsYou {
+                WorkingRing().scaleEffect(0.85)
+            } else {
+                Image(systemName: session.needsYou ? Icons.needsYou : Icons.state(session.state))
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(color)
+            }
+        }
+        .frame(width: 20, height: 20)
+        .tip(label)
+        .accessibilityLabel(label)
+    }
+}
+
+/// A small icon button on a card.
+private struct CardIconButton: View {
+    let icon: String
+    let help: String
+    var lit = false
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 10.5, weight: .semibold))
+                .foregroundStyle(lit ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(hovering ? .secondary : .tertiary))
+                .frame(width: 22, height: 22)
+                .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(hovering || lit ? 0.07 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .handCursor()
+        .tip(help)
+        .accessibilityLabel(help)
+    }
+}
+
+/// The card's main button, in words.
+private struct CardTextButton: View {
+    let title: String
+    let icon: String
+    /// Waits (a busy session): drawn faint; a click says why.
+    var dimmed = false
+    /// Its confirm line is open below.
+    var lit = false
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 10, weight: .semibold))
+                Text(title).font(.system(size: 11.5, weight: .medium))
+            }
+            .foregroundStyle(Theme.brand)
+            .opacity(dimmed ? 0.45 : 1)
+            .padding(.horizontal, 8)
+            .frame(height: 22)
+            .background(Capsule().fill(Theme.brand.opacity(dimmed ? 0.05 : lit ? 0.24 : hovering ? 0.2 : (scheme == .dark ? 0.16 : 0.1))))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .handCursor()
+    }
+}

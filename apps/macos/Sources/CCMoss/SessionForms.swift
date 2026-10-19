@@ -28,7 +28,8 @@ extension AppModel {
     func startNewSession() {
         let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey)
         let dir = NewSession.defaultDirectory(sessions, workspace: workspace) ?? NSHomeDirectory()
-        newDraft = NewDraft(directory: dir, name: NewSession.defaultName(for: dir))
+        // A name no open session has, so the form doesn't start on a clash.
+        newDraft = NewDraft(directory: dir, name: NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions))
         closeGate.cancel()
         form = .newSession
     }
@@ -36,7 +37,7 @@ extension AppModel {
     func pickDirectory(_ dir: String) {
         newDraft.directory = dir
         newDraft.error = nil
-        if !newDraft.nameEdited { newDraft.name = NewSession.defaultName(for: dir) }
+        if !newDraft.nameEdited { newDraft.name = NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions) }
     }
 
     /// "Another folder…": the system folder picker over the panel, starting
@@ -109,19 +110,135 @@ extension AppModel {
         form = .rename(s)
     }
 
-    /// Type `text` into the session, as if in its terminal.
+    /// Type `text` into the session, as if in its terminal. One at a time:
+    /// the form stays, locked, until it went; on failure it keeps the text.
     func sendMessage(_ s: Session, text: String, done: String) {
-        guard let client else { return }
-        form = nil
+        guard let client, sendFlow.begin() else { return }
         Task {
             do {
                 try await client.send(target: s.target, text: text)
+                form = nil
+                sendFlow.finish(error: nil)
                 say(done)
+                follow(s)
             } catch {
+                sendFlow.finish(error: Self.describe(error))
                 say(Self.describe(error))
             }
             refresh()
         }
+    }
+
+    // MARK: Reply lines (user 2026-10-19)
+
+    /// A click on a session waiting for you: a reply line opens under its
+    /// row, with Claude Code's own suggestion already in it. Any other row
+    /// closes it.
+    func openReply(_ s: Session) {
+        // Another row: its "Move into tmux?" goes away.
+        if adoptAsk?.id != s.id { adoptAsk = nil }
+        guard ReplyLine.opens(s) else {
+            closeReply()
+            // Not a silent no-op: say why, under the row, for a moment.
+            if let why = ReplyLine.blocked(s) { showRowNote(s.id, why) }
+            return
+        }
+        guard replyOpenID != s.id else { return }
+        guard !replyFlow.isSending else { return }
+        replyOpenID = s.id
+        replyDraft = ""
+        replyField = SuggestionField()
+        replyFlow = .idle
+        // Mid-turn Claude Code shows no suggestion: nothing to ask for.
+        guard !ReplyLine.busy(s) else { return }
+        let handle = s.handle
+        Task {
+            let guess = if let demo = demoSuggestion { demo } else { await suggestion(for: s) }
+            guard replyOpenID == s.id, let fill = replyField.offer(guess, text: replyDraft) else { return }
+            replyDraft = fill
+            FieldSelection.selectAllQuietly()
+        }
+    }
+
+    /// The line's text changed: yours, unless it's the suggestion going in.
+    func replyEdited(_ text: String) {
+        let was = replyField.untouched
+        replyField.changed(to: text)
+        if was && !replyField.untouched { FieldSelection.showHighlight() }
+    }
+
+    /// An arrow key or a click in the line: the suggestion is ordinary text now.
+    func replyEngaged() {
+        guard replyField.untouched else { return }
+        replyField.engaged()
+        FieldSelection.showHighlight()
+    }
+
+    /// A quiet line under a row for 2 s: why it can't be typed into.
+    func showRowNote(_ id: String, _ why: ReplyLine.Blocked) {
+        // Outside tmux and running: the way in is right there.
+        let movable = why == .notInTmux && sessions.first(where: { $0.id == id }).map { Adopt.availability($0) != .none } == true
+        let text = switch why {
+        case .notInTmux where movable: L.t("Not in tmux", "不在 tmux 里")
+        case .notInTmux: L.t("Not in tmux, so it can't be typed into from here", "不在 tmux 里，没法从这里打字")
+        case .dropped: L.t("Dropped; bring it back first", "断了，先找回")
+        }
+        showRowNote(id, text: text, adopt: movable)
+    }
+
+    /// A quiet line under a row for a moment; one with a link stays longer.
+    func showRowNote(_ id: String, text: String, adopt: Bool = false) {
+        rowNote = (id, text, adopt)
+        Task {
+            try? await Task.sleep(nanoseconds: adopt ? 5_000_000_000 : 2_000_000_000)
+            if rowNote?.id == id && rowNote?.text == text { rowNote = nil }
+        }
+    }
+
+    func closeReply() {
+        guard !replyFlow.isSending else { return }
+        replyOpenID = nil
+    }
+
+    /// Return in the line: send what's in it. Then on to the next session
+    /// waiting for you, its line open, so a run of replies is just Return.
+    func sendReply(_ s: Session) {
+        guard let text = ReplyLine.toSend(replyDraft), let client, replyFlow.begin() else { return }
+        Task {
+            do {
+                try await client.send(target: s.target, text: text)
+                replyFlow.finish(error: nil)
+                say(L.t("Sent to \(s.title).", "已发给 \(s.title)。"))
+                let next = ReplyLine.next(after: s.id, in: visible)
+                replyOpenID = nil
+                if let next {
+                    selectedID = next.id
+                    revealTick += 1
+                    openReply(next)
+                } else {
+                    follow(s)
+                }
+            } catch {
+                replyFlow.finish(error: Self.describe(error))
+            }
+            refresh()
+        }
+    }
+
+    /// ↓/↑ in the line: the next (or previous) session waiting for you.
+    func moveReply(from s: Session, backwards: Bool) {
+        guard !replyFlow.isSending, let n = ReplyLine.next(after: s.id, in: visible, backwards: backwards) else { return }
+        selectedID = n.id
+        revealTick += 1
+        openReply(n)
+    }
+
+    /// The session just written to will move up the list: keep it selected
+    /// and in view for the next few refreshes.
+    func follow(_ s: Session) {
+        selectedID = s.id
+        reveal = (s.id, Date().addingTimeInterval(6))
+        revealTick += 1
     }
 
     func saveNote(_ s: Session, text: String) {
@@ -133,6 +250,7 @@ extension AppModel {
                 say(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                     ? L.t("Note cleared.", "便条已清除。")
                     : L.t("Noted.", "记下了。"))
+                follow(s)
             } catch {
                 say(Self.describe(error))
             }
@@ -188,7 +306,7 @@ struct FormCard<Content: View>: View {
             content()
         }
         .padding(12)
-        .frame(width: Theme.panelWidth - 28)
+        .frame(width: Theme.pageWidth - 28)
         .background(Theme.raised(scheme), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline(scheme)))
         .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
@@ -279,6 +397,7 @@ struct NewSessionForm: View {
                                                   model.newDraft.name = new; model.newDraft.nameEdited = true
                                                   model.newDraft.restoring = nil; model.newDraft.error = nil }),
                                 autofocus: true,
+                                tint: nameClash,
                                 onSubmit: submit)
                 }
             }
@@ -317,15 +436,39 @@ struct NewSessionForm: View {
             case .free:
                 FormHint(text: L.t("Starts in tmux and opens in your terminal.", "在 tmux 里开起来，再在你的终端里打开。"))
             case .running(let s):
-                FormHint(text: L.t("“\(s.title)” is already running: Return opens it.", "「\(s.title)」已经在运行了，回车直接打开它。"),
-                         icon: Icons.open, tint: Theme.brand)
+                clash(L.t("“\(s.title)” is already running, so Return opens it. For a new session, pick another name:",
+                          "「\(s.title)」已经在运行，回车会打开它。想新开一个，换个名字："),
+                      icon: Icons.open, tint: Theme.brand)
             case .interrupted(let s):
-                FormHint(text: L.t("A stopped session is called “\(s.title)”; you'll be asked to bring it back.",
-                                   "有个断了的会话也叫「\(s.title)」，确认时会问你要不要找回。"),
-                         icon: Icons.restore, tint: Theme.red)
+                clash(L.t("A stopped session is called “\(s.title)”, so Return offers to bring it back. For a new one, pick another name:",
+                          "有个断了的会话也叫「\(s.title)」，回车会问你要不要找回它。想新开一个，换个名字："),
+                      icon: Icons.restore, tint: Theme.red)
             case .invalid(let why):
                 FormHint(text: why, icon: Icons.warning, tint: Theme.amber)
             }
+        }
+    }
+
+    /// The name is taken: say what Return does now, and offer a free name in one click.
+    private func clash(_ text: String, icon: String, tint: Color) -> some View {
+        let free = NewSession.freeName(draft.name, sessions: model.sessions)
+        return VStack(alignment: .leading, spacing: 6) {
+            FormHint(text: text, icon: icon, tint: tint)
+            SuggestionChip(text: free, chosen: false) {
+                model.newDraft.name = free
+                model.newDraft.nameEdited = true
+            }
+            .padding(.leading, 19)
+        }
+    }
+
+    /// The field's outline while the name belongs to another session.
+    private var nameClash: Color? {
+        if draft.restoring != nil { return Theme.red }
+        switch NewSession.hint(name: draft.name, sessions: model.sessions) {
+        case .running: return Theme.brand
+        case .interrupted: return Theme.red
+        case .free, .invalid: return nil
         }
     }
 
@@ -405,24 +548,67 @@ struct MessageForm: View {
     @Bindable var model: AppModel
     let session: Session
     @State private var text = ""
+    /// Claude Code's suggestion in the field: quiet until you touch it.
+    @State private var field = SuggestionField()
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
                  aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
-            MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text) { send() }
+            MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text,
+                           locked: sending, quiet: field.untouched, onEngage: engage) { send() }
+                .onChange(of: text) { _, new in
+                    let was = field.untouched
+                    field.changed(to: new)
+                    if was && !field.untouched { FieldSelection.showHighlight() }
+                }
+                .onAppear { if let demo = model.demoSuggestion { take(demo) } }
+                .task(id: session.id) {
+                    // Claude Code's own suggestion, asked once, off the main
+                    // thread, quick or not at all; it goes straight into the field.
+                    guard model.demoSuggestion == nil else { return }
+                    take(await model.suggestion(for: session))
+                }
+            if let failure = model.sendFlow.failure {
+                HStack(spacing: 5) {
+                    Image(systemName: "exclamationmark.circle.fill").font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.red)
+                    Text(failure).font(.system(size: 11)).foregroundStyle(Theme.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.leading, 2)
+            }
             HStack(spacing: 8) {
                 Spacer()
                 SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+                    .disabled(sending)
+                    .opacity(sending ? 0.5 : 1)
+                // Locked while sending, but still the Send button.
                 SoftButton(title: L.t("Send", "发送"), icon: Icons.message, prominent: true, shortcut: "⌘↩") { send() }
-                    .disabled(empty)
+                    .disabled(empty || sending)
+                    .allowsHitTesting(!sending)
             }
         }
     }
 
+    private var sending: Bool { model.sendFlow.isSending }
+
+    /// The suggestion goes in as real text, all selected, unless you've typed.
+    private func take(_ guess: String?) {
+        guard let fill = field.offer(guess, text: text) else { return }
+        text = fill
+        FieldSelection.selectAllQuietly()
+    }
+
+    private func engage() {
+        guard field.untouched else { return }
+        field.engaged()
+        FieldSelection.showHighlight()
+    }
+
     private func send() {
-        guard !empty else { return }
+        guard !empty, !sending else { return }
         model.sendMessage(session, text: text, done: L.t("Sent to \(session.title).", "已发给 \(session.title)。"))
     }
 }
@@ -497,7 +683,7 @@ struct RenameForm: View {
     }
 
     private func submit() {
-        guard check == .ok else { return }
+        guard check == .ok, !model.sendFlow.isSending else { return }
         let new = name.trimmingCharacters(in: .whitespaces)
         model.sendMessage(session, text: Message.renameText(new),
                           done: L.t("Renaming to \(new)…", "正在改名为 \(new)…"))
@@ -509,6 +695,12 @@ struct RenameForm: View {
 struct MultilineField: View {
     let placeholder: String
     @Binding var text: String
+    /// On its way: covered by "Sending…", no typing, no focus.
+    var locked = false
+    /// A suggestion nobody has touched yet: grey, like a placeholder.
+    var quiet = false
+    /// An arrow key or a click in the text.
+    var onEngage: () -> Void = {}
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -519,12 +711,15 @@ struct MultilineField: View {
                 Text(placeholder)
                     .font(.system(size: 13))
                     .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .allowsHitTesting(false)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .allowsHitTesting(false)
             }
             TextEditor(text: $text)
                 .font(.system(size: 13))
+                .foregroundStyle(quiet ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
+                .simultaneousGesture(TapGesture().onEnded { onEngage() })
+                .onKeyPress(keys: [.leftArrow, .rightArrow, .upArrow, .downArrow]) { _ in onEngage(); return .ignored }
                 .scrollContentBackground(.hidden)
                 .focused($focused)
                 .padding(.horizontal, 5)
@@ -539,10 +734,53 @@ struct MultilineField: View {
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.selection(scheme).opacity(0.8)))
         .overlay(
             RoundedRectangle(cornerRadius: 8)
-                .strokeBorder(focused ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused ? 1.5 : 1)
+                .strokeBorder(focused && !locked ? Theme.brand.opacity(0.7) : Theme.hairline(scheme), lineWidth: focused && !locked ? 1.5 : 1)
         )
+        .disabled(locked)
+        .overlay {
+            if locked {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).fill(Theme.raised(scheme).opacity(0.94))
+                    RoundedRectangle(cornerRadius: 8).strokeBorder(Theme.hairline(scheme))
+                    HStack(spacing: 7) {
+                        ProgressView().controlSize(.small)
+                        Image(systemName: Icons.message)
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(Theme.brand)
+                        Text(L.t("Sending…", "发送中…"))
+                            .font(.system(size: 12.5, weight: .medium))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .contentShape(Rectangle()) // takes the clicks: nothing reaches the field
+                .transition(.opacity)
+            }
+        }
         .animation(.easeOut(duration: 0.12), value: focused)
+        .animation(.easeOut(duration: 0.15), value: locked)
+        .onChange(of: locked) { _, now in if now { focused = false } else { focused = true } }
         .onAppear { focused = true }
+    }
+}
+
+/// Text put into a field for you (a suggestion) arrives selected, so typing
+/// replaces it, but without the selection's highlight: it should look as
+/// quiet as a placeholder (user 2026-10-19).
+enum FieldSelection {
+    @MainActor static func selectAllQuietly() {
+        // Once the field has the new text and the keyboard.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+            editor.selectedTextAttributes = [.backgroundColor: NSColor.clear]
+            editor.selectAll(nil)
+        }
+    }
+
+    /// The text is yours now: selections look like selections again.
+    @MainActor static func showHighlight() {
+        guard let editor = NSApp.keyWindow?.firstResponder as? NSTextView else { return }
+        editor.selectedTextAttributes = [.backgroundColor: NSColor.selectedTextBackgroundColor,
+                                         .foregroundColor: NSColor.selectedTextColor]
     }
 }
 
@@ -581,19 +819,26 @@ struct FormScrim: View {
     }
 }
 
-/// The "+" beside the logo in the action bar: start a new session (⌘N).
+/// The "+" in the footer: start a new session (⌘N).
 struct NewSessionButton: View {
     let action: () -> Void
     @State private var hovering = false
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: Icons.newSession)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .frame(width: 26, height: 26)
-                .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.primary.opacity(0.06) : .clear))
-                .contentShape(Rectangle())
+            HStack(spacing: 5) {
+                Image(systemName: Icons.newSession)
+                    .font(.system(size: 12, weight: .semibold))
+                Text(L.t("New Session", "新会话"))
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                    .fixedSize()
+            }
+            .foregroundStyle(hovering ? .primary : .secondary)
+            .padding(.horizontal, 8)
+            .frame(height: 26)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Color.primary.opacity(0.06) : .clear))
+            .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .focusable(false)

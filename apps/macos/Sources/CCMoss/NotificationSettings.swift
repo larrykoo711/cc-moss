@@ -5,6 +5,7 @@ import SwiftUI
 /// (A9), and a word when macOS won't let cc-moss use Notification Center
 /// (the full picture is on the Permissions page).
 struct NotificationSettings: View {
+    var model: AppModel?
     var status: NotificationStatus = .shared
     @AppStorage(AlertMode.key) private var mode = AlertMode.auto.rawValue
     @AppStorage(PetController.enabledKey) private var petEnabled = false
@@ -23,6 +24,7 @@ struct NotificationSettings: View {
             }
         }
         .task { await status.refresh() }
+        if let model { AnswerHereCard(model: model) }
         SettingsCard(title: L.t("What to Tell You", "提醒哪些事")) {
             KindRow(kind: .needsYou,
                     title: L.t("Waiting for you", "在等你"),
@@ -91,6 +93,57 @@ private struct KindRow: View {
                 .labelsHidden()
                 .controlSize(.small)
                 .accessibilityLabel(title)
+        }
+    }
+}
+
+/// "Answer questions here" (T1.4): sessions wait a while for an answer from
+/// the panel or Mo. Shared with the CLI as `[ask] enabled`.
+private struct AnswerHereCard: View {
+    @Bindable var model: AppModel
+    @State private var on = true
+    @State private var busy = false
+    @State private var problem: String?
+
+    var body: some View {
+        SettingsCard(title: L.t("Answering", "回答问题")) {
+            CardRow(title: L.t("Answer questions here", "替会话接住问题"),
+                    detail: problem ?? L.t("When a session asks, answer it from the panel or Mo.",
+                                           "会话问你时，在面板或小莫这里直接答。"),
+                    divider: false) {
+                if busy {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Toggle("", isOn: $on)
+                        .toggleStyle(.switch)
+                        .cursor(.pointingHand)
+                        .labelsHidden()
+                        .controlSize(.small)
+                        .disabled(model.client == nil)
+                        .accessibilityLabel(L.t("Answer questions here", "替会话接住问题"))
+                        .onChange(of: on) { _, value in
+                            if value != model.askEnabled { set(value) }
+                        }
+                }
+            }
+            .tip(L.t("The terminal can still answer too; whichever answers first counts.",
+                     "终端里照样能答，谁先答算谁的。"))
+        }
+        .onAppear { on = model.askEnabled }
+        .onChange(of: model.askEnabled) { _, value in on = value }
+    }
+
+    private func set(_ value: Bool) {
+        busy = true
+        Task {
+            defer { busy = false }
+            do {
+                try await model.setAskEnabled(value)
+                problem = nil
+            } catch {
+                on = model.askEnabled
+                problem = L.t("Couldn't save it: \(AppModel.describe(error))", "没存上：\(AppModel.describe(error))")
+            }
         }
     }
 }

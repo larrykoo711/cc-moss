@@ -27,6 +27,7 @@ fn slot(name: &str, status: Status) -> Slot {
         launch_args: vec![],
         transcript_path: Some(format!("/t/{name}.jsonl")),
         restore_started_at_ms: None,
+        role: None,
         busy: false,
         last_prompt: None,
         attention: None,
@@ -173,4 +174,19 @@ fn duplicates_pick_the_newest_restorable_copy() {
         .map(|c| c.verdict)
         .collect();
     assert_eq!(v, vec![Verdict::Restore]);
+}
+
+#[test]
+fn moss_is_never_restored() {
+    let mut moss = slot("moss", Status::Interrupted);
+    moss.role = Some("moss".into());
+    let rows = vec![
+        (Status::Interrupted, moss),
+        (Status::Interrupted, slot("a", Status::Interrupted)),
+    ];
+    let names: Vec<String> = verdicts(&rows, &[], all_exist)
+        .into_iter()
+        .map(|(n, _)| n)
+        .collect();
+    assert_eq!(names, ["a"]);
 }

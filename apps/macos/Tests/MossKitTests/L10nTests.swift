@@ -2,8 +2,7 @@ import Foundation
 import Testing
 @testable import MossKit
 
-// L.lang is global; these run one at a time.
-@Suite(.serialized) struct L10nTests {
+@Suite struct L10nTests {
     var utc: Calendar {
         var c = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "UTC")!
@@ -19,8 +18,10 @@ import Testing
     }
 
     @Test func agoInEnglish() {
-        L.lang = .en
-        defer { L.lang = .detect() }
+        L.$override.withValue(.en) { agoInEnglishBody() }
+    }
+
+    private func agoInEnglishBody() {
         let ago = { (s: Double) in L.ago(self.now.addingTimeInterval(-s), now: self.now, calendar: self.utc) }
         #expect(ago(10) == "just now")
         #expect(ago(60) == "1 minute ago")
@@ -31,8 +32,10 @@ import Testing
     }
 
     @Test func agoInChinese() {
-        L.lang = .zh
-        defer { L.lang = .detect() }
+        L.$override.withValue(.zh) { agoInChineseBody() }
+    }
+
+    private func agoInChineseBody() {
         let ago = { (s: Double) in L.ago(self.now.addingTimeInterval(-s), now: self.now, calendar: self.utc) }
         #expect(ago(10) == "刚刚")
         #expect(ago(300) == "5 分钟前")

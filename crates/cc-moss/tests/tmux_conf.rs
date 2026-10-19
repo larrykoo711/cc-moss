@@ -66,6 +66,49 @@ fn loads_cleanly_and_binds_the_popup_on_this_tmux() {
 }
 
 #[test]
+fn terminal_tabs_show_the_session_name() {
+    let w = World::new("conf-titles");
+    let path = std::env::var("PATH").unwrap();
+    load(&w, &path);
+    let show = |opt: &str| {
+        String::from_utf8_lossy(&tmux(&w, &path, &["show-options", "-gv", opt]).stdout)
+            .trim()
+            .to_string()
+    };
+    assert_eq!(show("set-titles"), "on");
+    assert_eq!(
+        show("set-titles-string"),
+        "#{?#{@cc-moss-name},#{@cc-moss-name},#{session_name}}"
+    );
+    // The title is the session's own name when cc-moss set one, else tmux's.
+    let title = |w: &World| {
+        String::from_utf8_lossy(
+            &tmux(
+                w,
+                &path,
+                &[
+                    "display-message",
+                    "-p",
+                    "-t",
+                    "=probe:",
+                    "#{T:set-titles-string}",
+                ],
+            )
+            .stdout,
+        )
+        .trim()
+        .to_string()
+    };
+    assert_eq!(title(&w), "probe");
+    tmux(
+        &w,
+        &path,
+        &["set-option", "-t", "=probe:", "@cc-moss-name", "接口 评审"],
+    );
+    assert_eq!(title(&w), "接口 评审");
+}
+
+#[test]
 fn an_older_tmux_never_sees_the_popup_binding() {
     let w = World::new("conf-old");
     // A `tmux` that reports 3.1c and otherwise is the real one.

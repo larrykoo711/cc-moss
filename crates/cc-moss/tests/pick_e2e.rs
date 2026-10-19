@@ -46,6 +46,7 @@ fn open_picker_env(w: &World, extra: &[&str], vars: &[(String, String)]) {
         format!("CC_MOSS_FAKE_DIR={}", fifos.display()),
         "HOME=/nonexistent/cc-moss-test-home".into(),
         "CC_MOSS_LANG=en".into(),
+        "CC_MOSS_FORBID_LAUNCHCTL=1".into(),
     ]
     .into_iter()
     .chain(vars.iter().map(|(k, v)| format!("{k}={v}")))

@@ -104,7 +104,19 @@ mod setting {
             config::check_setting("ui.language", "fr"),
             Err(SettingError::BadValue(&["auto", "zh", "en"]))
         );
-        assert_eq!(config::KEYS, &["ui.language", "claude.permission_mode"]);
+        assert_eq!(
+            config::KEYS,
+            &[
+                "ui.language",
+                "claude.permission_mode",
+                "ask.enabled",
+                "moss.enabled",
+                "moss.digest",
+                "moss.actions",
+                "moss.daily_checkup",
+                "moss.daily_brief"
+            ]
+        );
         assert_eq!(
             config::check_setting("claude.permission_mode", " Default "),
             Ok("default".into())
@@ -148,5 +160,43 @@ mod setting {
     fn set_refuses_broken_text() {
         assert!(config::set_in_text("[ui\n", "ui.language", "zh").is_err());
         assert!(config::set_in_text("ui = 3\n", "ui.language", "zh").is_err());
+    }
+
+    #[test]
+    fn ask_defaults_on_with_five_minutes() {
+        let c = Config::default();
+        assert!(c.ask.enabled);
+        assert_eq!(c.ask.wait_secs, 300);
+        assert_eq!(config::get_setting(&c, "ask.enabled"), Ok("true".into()));
+    }
+
+    #[test]
+    fn ask_enabled_is_written_as_a_boolean() {
+        assert_eq!(
+            config::check_setting("ask.enabled", " FALSE "),
+            Ok("false".into())
+        );
+        assert!(config::check_setting("ask.enabled", "no").is_err());
+        let text = config::set_in_text("", "ask.enabled", "false").unwrap();
+        assert_eq!(text, "[ask]\nenabled = false\n");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, format!("{text}wait_secs = 30\n")).unwrap();
+        let c = Config::load_from(&path).unwrap();
+        assert!(!c.ask.enabled);
+        assert_eq!(c.ask.wait_secs, 30);
+    }
+
+    #[test]
+    fn moss_defaults_on_and_turns_off_as_a_boolean() {
+        let c = Config::default();
+        assert!(c.moss.enabled);
+        assert_eq!(config::get_setting(&c, "moss.enabled"), Ok("true".into()));
+        let text = config::set_in_text("", "moss.enabled", "false").unwrap();
+        assert_eq!(text, "[moss]\nenabled = false\n");
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, &text).unwrap();
+        assert!(!Config::load_from(&path).unwrap().moss.enabled);
     }
 }

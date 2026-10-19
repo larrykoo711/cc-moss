@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-10-19T08:00:01.000Z","message":{"role":"user","content":"which sessions need me right now?"}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:05.000Z","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"None right now."}]}}
+{"type":"user","timestamp":"2026-10-19T08:00:20.000Z","message":{"role":"user","content":"and yesterday?"}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:25.000Z","message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"Two finished yesterday."}]}}

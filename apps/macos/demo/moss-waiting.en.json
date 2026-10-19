@@ -1,0 +1,31 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792141000000-w00000",
+   "at": "2026-10-16T09:52:00Z",
+   "from": "moss",
+   "text": "**api-review** is waiting for you to approve a permission.",
+   "buttons": [],
+   "sessions": [
+    "01B"
+   ],
+   "session_states": {
+    "01B": "needs-you-permission"
+   }
+  },
+  {
+   "id": "1792141240000-w00001",
+   "at": "2026-10-16T09:56:00Z",
+   "from": "moss",
+   "text": "**release-notes** is waiting for you to approve a permission.",
+   "buttons": [],
+   "sessions": [
+    "01D"
+   ],
+   "session_states": {
+    "01D": "needs-you-permission"
+   }
+  }
+ ]
+}

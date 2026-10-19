@@ -6,13 +6,21 @@ import SwiftUI
 ///
 ///   CCMoss --render out.png --demo sessions.json [--dark] [--query q]
 ///          [--filter working|waiting|interrupted] [--select <id>] [--hover]
-///          [--menu full|more|app]
+///          [--menu full|more|app] [--click x,y [--command key]]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
-///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|about [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
+///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
+///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
+///                  [--click x,y]] [--press x,y [--command k]]
+///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
+///
+/// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
+/// rendered panel at that point (points from its top-left corner) before the picture is taken, and
+/// prints every `cc-moss ask answer` the click caused; nothing runs, the commands are only printed.
 enum Render {
     /// `--terminals a,b`: pretend only these are installed (real icons);
     /// the choice is never saved.
@@ -44,11 +52,58 @@ enum Render {
         }
         _ = NSApplication.shared
         NSApp.setActivationPolicy(.prohibited)
-        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: CannedRunner(stdout: data)), terminals: terminals(args))
+        var askData = value("--asks").flatMap { FileManager.default.contents(atPath: $0) }
+        if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
+        let mossChat = value("--moss-chat").flatMap { FileManager.default.contents(atPath: $0) }
+        let runner = DemoRunner(sessions: value("--page") == "moss" || args.contains("--moss") ? DemoRunner.withMoss(data) : data, asks: askData,
+                                answer: value("--answer"), mossChat: mossChat, moss: value("--moss"))
+        ClickTargets.shared.enabled = args.contains("--click")
+        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             await model.loadNow()
+            if let id = value("--waiting-input"), let i = model.sessions.firstIndex(where: { $0.id == id }) {
+                model.sessions[i].attention = "input"
+            }
+            prepareAsks(model, args: args)
+            OptionButton.renderHovered = value("--hover-option")
+            if let id = value("--bubble") {
+                // With `--ask <id>` as well, `--choose` works on the bubble's card.
+                prepareAsks(model, args: args)
+                drawBubble(model: model, askId: id, dark: args.contains("--dark"), out: out)
+                exit(0)
+            }
+            if value("--page") == "queue" { model.showQueue() }
+            if value("--page") == "moss" {
+                model.showMoss()
+                // `--moss-limit 100`: as if "Load earlier" had been clicked up to there;
+                // `--moss-top`: scrolled up to the oldest message read.
+                if let limit = value("--moss-limit").flatMap(Int.init) {
+                    model.mossLimit = limit
+                    await model.loadMoss()
+                }
+                model.mossStartAtTop = args.contains("--moss-top")
+                // `--moss-new-below N`: scrolled up, N new messages below.
+                model.demoNewBelow = value("--moss-new-below").flatMap(Int.init)
+                // `--moss-suggestion "<text>"`: Claude Code's guess at your reply to Moss.
+                if let guess = value("--moss-suggestion") {
+                    model.demoMossSuggestion = guess
+                    model.fetchMossSuggestion()
+                }
+                model.mossTyping = args.contains("--moss-typing")
+                // `--moss-typing "/"`: with that typed (a slash shows the command list).
+                if let typed = value("--moss-typing"), !typed.hasPrefix("--") { model.mossDraft = typed }
+                // `--moss-quick-uses '/usage:5,waiting:2'`: the quick bar as if those were
+                // sent that often lately (nothing is saved); `--moss-quick-open`: its "⋯" list.
+                model.quickPersist = false
+                model.quickUses = Self.quickUses(value("--moss-quick-uses") ?? "")
+                model.mossQuickOpen = args.contains("--moss-quick-open")
+            }
             model.query = value("--query") ?? ""
+            // The closed sessions a search reads come in a moment later: wait for them.
+            for _ in 0..<20 where model.searching && (model.closedPool ?? []).isEmpty {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
             switch value("--filter") {
             case "working": model.stateFilter = .working
             case "waiting": model.stateFilter = .waiting
@@ -68,14 +123,67 @@ enum Render {
                 _ = model.restoreFlow.begin(.one(id))
                 model.restoreFlow.finish(.one(id), report: RestoreReport(results: [RestoreResult(id: id, name: id, ok: false, reason: reason)]))
             }
+            // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
+            model.pinsPersist = false
+            model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
+            // `--moss-card-rename <message id>/<session id>`: that card's name field open.
+            model.mossCardRenaming = value("--moss-card-rename")
+            // `--adopt-ask <id> [--adopt-named <name>]`: its "Move into tmux?" line open;
+            // `--adopting <id>`: being moved; `--adopt-problem <id>:<words>`: it couldn't be;
+            // `--row-note <id>`: the "Not in tmux · Move into tmux →" note under it.
+            if let id = value("--adopt-ask") {
+                model.selectedID = id
+                model.adoptAsk = AdoptAsk(id: id, named: value("--adopt-named"), checking: false)
+            }
+            if let id = value("--adopting") { model.adopting = [id] }
+            // `--mention-hover <id>`: the card of that session's mention in Moss's words.
+            if let id = value("--mention-hover") {
+                _ = model.mentionMachine.entered(id)
+                _ = model.mentionMachine.showFired(id)
+                model.mentionHover = MentionHover(id: id, anchor: .zero)
+            }
+            if let p = value("--adopt-problem"), let cut = p.firstIndex(of: ":") {
+                model.adoptProblems[String(p[..<cut])] = String(p[p.index(after: cut)...])
+            }
+            if let id = value("--row-note") {
+                model.selectedID = id
+                model.rowNote = (id, L.t("Not in tmux", "不在 tmux 里"), true)
+            }
+            // `--sessions-count N`: the panel's size for that many sessions (on a
+            // 1000-pt-tall screen, or `--screen-height`); `--panel-height`: exactly that.
+            if let n = value("--sessions-count").flatMap(Int.init) {
+                let visible = value("--screen-height").flatMap(Double.init) ?? 1000
+                model.panelHeight = CGFloat(PanelSize.height(PanelSize.tier(count: n, previous: nil), visible: visible))
+            }
+            if let h = value("--panel-height").flatMap(Double.init) { model.panelHeight = CGFloat(h) }
+            // `--update 0.3.0`: as if a newer cc-moss were out (the gear's dot, its menu).
+            model.updateCheckedAt = Date()
+            if let latest = value("--update") {
+                model.update = try? UpdateInfo.decode(Data(#"{"schema":1,"current":"0.2.2","latest":"\#(latest)","available":true}"#.utf8))
+            }
             if let id = value("--select") { model.selectedID = id }
+            model.demoSuggestion = value("--suggestion")
+            // `--reply <id>`: that session's reply line open (with `--suggestion`, prefilled).
+            if let id = value("--reply"), let s = model.sessions.first(where: { $0.id == id }) {
+                model.selectedID = id
+                model.openReply(s)
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if args.contains("--sending") { _ = model.replyFlow.begin() }
+            }
             switch value("--form") {
             case "new":
                 model.startNewSession()
                 if let name = value("--form-name") { model.newDraft.name = name; model.newDraft.nameEdited = true }
             case "note": if let s = model.selected { model.editNote(s) }
             case "close": if let s = model.selected { model.askToClose([s]) }
-            case "message": if let s = model.selected { model.writeMessage(s) }
+            case "message":
+                // `--suggestion "<text>"`: what Claude Code suggests typing next.
+                model.demoSuggestion = value("--suggestion")
+                if let s = model.selected {
+                    model.writeMessage(s)
+                    // `--sending`: as it looks while the message is on its way.
+                    if args.contains("--sending") { _ = model.sendFlow.begin() }
+                }
             case "rename": if let s = model.selected { model.startRename(s) }
             default: break
             }
@@ -102,6 +210,25 @@ enum Render {
                                         placeholder: L.t("Search, or type a path…", "搜索，或输入路径…"),
                                         typed: { FolderChoice.typedOption($0) }, initialQuery: query) { _ in }
                 drawView(list.fixedSize().glassPanel(cornerRadius: 16).padding(20), dark: args.contains("--dark"), out: out)
+                exit(0)
+            }
+            // `--moss-card <moss chat --json file> [--raw]`: the newest command result on its
+            // own, at the Moss page's width and full height (`--raw`: its terminal text).
+            if let file = value("--moss-card") {
+                guard let data = FileManager.default.contents(atPath: file),
+                      let chat = try? MossChat.decode(data),
+                      let m = chat.messages.last(where: { $0.from == .moss && $0.command != nil }),
+                      let command = m.command else {
+                    FileHandle.standardError.write(Data("--moss-card: no command result in \(file)\n".utf8))
+                    exit(2)
+                }
+                let dark = args.contains("--dark")
+                let graphic = MossScreenCard.make(command: command, text: m.text)
+                let card = MossTerminalCard(command: command, text: m.text, graphic: graphic, raw: args.contains("--raw"))
+                    .frame(width: 362)
+                    .padding(16)
+                    .background(Theme.surface(dark ? .dark : .light))
+                drawView(card.fixedSize(horizontal: false, vertical: true), dark: dark, out: out)
                 exit(0)
             }
             if let tab = value("--settings") {
@@ -133,7 +260,28 @@ enum Render {
                     PermissionCenter.shared.pin(accessibility: .allowed,
                                                 automation: [.terminal(.terminal): .allowed, .systemEvents: .allowed])
                 }
-                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, dark: args.contains("--dark"),
+                // `--daemon running|stopped|unknown`: the Moss page with that status
+                // (`unknown`: cc-moss did not answer).
+                let daemonDemo: DaemonCheck? = switch value("--daemon") {
+                case "running": .known(DaemonStatus(running: true, pid: 4242, version: "0.2.2",
+                                                     startedAt: Date().addingTimeInterval(-3 * 3600 - 300)))
+                case "stopped": .known(.stopped)
+                case "unknown": .failed(AppModel.describe(MossClient.Failure.timedOut))
+                default: nil
+                }
+                // `--moss running|restarted|off|failing|nodaemon`: the Moss card with that status.
+                let since = Date().addingTimeInterval(-2 * 3600 - 300)
+                let mossDemo: MossCheck? = switch value("--moss") {
+                case "running": .known(MossStatus(enabled: true, running: true, since: since))
+                case "restarted": .known(MossStatus(enabled: true, running: true, since: since, restarts: 1))
+                case "off": .known(MossStatus(enabled: false, running: false))
+                case "failing": .known(MossStatus(enabled: true, running: false,
+                                                  lastError: "Claude Code exited right after it started"))
+                case "nodaemon": .known(MossStatus(enabled: true, running: false, daemonRunning: false))
+                default: nil
+                }
+                drawSettings(model: model, tab: page, aliasDemo: aliasDemo, daemonDemo: daemonDemo, mossDemo: mossDemo,
+                             dark: args.contains("--dark"),
                              height: value("--height").flatMap(Double.init), out: out)
             } else {
                 // `--hover`: the pointer on the selected row; `--menu`: a menu open
@@ -145,8 +293,10 @@ enum Render {
                 case "full": id.map { .session($0, full: true) }
                 default: nil
                 }
-                let hover = args.contains("--hover") || value("--menu") == "more" ? id : nil
-                draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, out: out)
+                // `--hover-id <id>`: the pointer on that row instead of the selected one.
+                let hover = value("--hover-id") ?? (args.contains("--hover") || value("--menu") == "more" ? id : nil)
+                let click = value("--click").flatMap(Self.point)
+                await draw(model: model, dark: args.contains("--dark"), menu: menu, hover: hover, click: click, out: out)
             }
             done.signal()
             exit(0)
@@ -334,9 +484,10 @@ enum Render {
     }
 
     /// `height`: a taller window than the default, to see a long page whole.
-    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?, dark: Bool,
+    @MainActor private static func drawSettings(model: AppModel, tab: SettingsView.Tab, aliasDemo: AliasList?,
+                                                daemonDemo: DaemonCheck? = nil, mossDemo: MossCheck? = nil, dark: Bool,
                                                 height: Double?, out: String) {
-        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo)
+        let root = SettingsView(model: model, tab: tab, aliasDemo: aliasDemo, daemonDemo: daemonDemo, mossDemo: mossDemo)
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
         var size = host.fittingSize
@@ -351,7 +502,7 @@ enum Render {
             // The settings window fits itself to its usual size once shown; stretch it back.
             window.setContentSize(size)
             host.layoutSubtreeIfNeeded()
-            RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+            settle(0.3)
         }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
@@ -373,22 +524,314 @@ enum Render {
         try? rep.representation(using: .png, properties: [:])?.write(to: URL(fileURLWithPath: out))
     }
 
-    @MainActor private static func draw(model: AppModel, dark: Bool, menu: PanelMenu?, hover: String?, out: String) {
+    /// `--choose`, `--write`, `--focus`: a card part-way through, as you'd see it.
+    /// The question flags are applied once (`--type` answers a step: twice
+    /// would answer the next one too).
+    @MainActor private static var asksPrepared = false
+
+    @MainActor private static func prepareAsks(_ model: AppModel, args: [String]) {
+        guard !asksPrepared, !model.askDesk.open.isEmpty else { return }
+        asksPrepared = true
+        for (i, arg) in args.enumerated() where i + 1 < args.count {
+            guard let card = model.askDesk.open.first else { break }
+            switch arg {
+            case "--choose":
+                // Picks without sending: a multiple choice, or a step of several.
+                let label = args[i + 1]
+                if card.question?.multiSelect == true || card.several {
+                    model.act(on: card.id) { $0.choose(label) }
+                }
+            case "--type":
+                // A step of several answered in your own words, then on to the next.
+                let text = args[i + 1]
+                if card.several {
+                    model.act(on: card.id) { $0.startWriting(); $0.draft = text; return $0.sendText() }
+                }
+            case "--focus":
+                model.focusAsk(args[i + 1])
+            default:
+                break
+            }
+        }
+        if let i = args.firstIndex(of: "--write"), let card = model.askDesk.open.first {
+            let text = i + 1 < args.count && !args[i + 1].hasPrefix("--") ? args[i + 1] : ""
+            model.act(on: card.id) { $0.writing = true; $0.draft = text; return nil }
+        }
+    }
+
+    /// "/usage:5,waiting:2" → that many uses of each, an hour apart, ending now.
+    static func quickUses(_ spec: String) -> [MossQuickUse] {
+        spec.split(separator: ",").flatMap { part -> [MossQuickUse] in
+            let bits = part.split(separator: ":")
+            guard let token = bits.first, let id = MossQuick.id(fromMoss: String(token)) else { return [] }
+            let count = bits.count > 1 ? Int(bits[1]) ?? 1 : 1
+            return (0..<count).map { MossQuickUse(id: id, at: L.clock().addingTimeInterval(-Double($0) * 3600)) }
+        }
+    }
+
+    /// Run the main run loop for a moment (SwiftUI lays out and draws).
+    @MainActor private static func settle(_ seconds: TimeInterval) {
+        RunLoop.main.run(until: Date().addingTimeInterval(seconds))
+    }
+
+    /// "120,340" in points.
+    static func point(_ raw: String) -> CGPoint? {
+        let parts = raw.split(separator: ",").compactMap { Double($0.trimmingCharacters(in: .whitespaces)) }
+        return parts.count == 2 ? CGPoint(x: parts[0], y: parts[1]) : nil
+    }
+
+    /// Mo's message box for a question, with the question in its detail area.
+    @MainActor private static func drawBubble(model: AppModel, askId: String, dark: Bool, out: String) {
+        guard let card = model.askDesk.card(askId) else {
+            FileHandle.standardError.write(Data("--bubble: no question \(askId) in --asks\n".utf8))
+            exit(2)
+        }
+        let alert = SessionAlert(id: 1, slotId: model.askSlot(card.ask) ?? card.ask.sessionId, kind: .needsYou,
+                                 name: model.askTitle(card.ask), reason: card.ask.kind == .permission ? "permission" : "question",
+                                 at: Date(), askId: askId)
+        let message = PetMessage(alert)
+        let box = PetMessageBox(message: message, text: message.text(names: [model.askTitle(card.ask)]).answeringHere(),
+                                animate: false, detail: AnyView(AskBubbleDetail(model: model, askId: askId)))
+        drawView(box.padding(28).fixedSize(), dark: dark, out: out)
+    }
+
+    @MainActor private static func draw(model: AppModel, dark: Bool, menu: PanelMenu?, hover: String?, click: CGPoint? = nil,
+                                        out: String) async {
         let root = PanelView(model: model, menu: menu, hoveredID: hover)
             // Stand-in for the desktop behind the frosted glass.
             .background(dark ? Color(red: 0.16, green: 0.22, blue: 0.30) : Color(red: 0.55, green: 0.66, blue: 0.75))
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
-        host.frame = NSRect(x: 0, y: 0, width: Theme.panelWidth, height: Theme.panelHeight)
-        let window = NSWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        host.frame = NSRect(x: 0, y: 0, width: Theme.panelWidth, height: model.panelHeight)
+        let window = ProbeWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
         host.layoutSubtreeIfNeeded()
         // Let SwiftUI settle (fonts, lazy rows) before taking the picture.
-        RunLoop.main.run(until: Date().addingTimeInterval(0.6))
+        settle(0.6)
+        if let click {
+            // No mouse event at all: the answer control drawn under that point
+            // runs its own action, inside this process. Nothing on the real
+            // screen moves and no other app sees anything.
+            if let target = ClickTargets.shared.target(at: click) {
+                FileHandle.standardError.write(Data("--click: pressed \"\(target.name)\"\n".utf8))
+                target.action()
+            } else {
+                FileHandle.standardError.write(Data("--click: nothing to press at \(click.x),\(click.y)\n".utf8))
+            }
+            // Let go of the main actor so the answer goes out and comes back.
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            // Draw again with the card as the click left it.
+            host.layoutSubtreeIfNeeded()
+            settle(0.3)
+        }
+        // `--events "move:x,y;click:x,y;…"` (points from the top left): the pointer
+        // moving over the panel and clicking, as real mouse events, in order; then
+        // which rows are lit. For hover bugs a still picture can't show.
+        if let i = CommandLine.arguments.firstIndex(of: "--events"), i + 1 < CommandLine.arguments.count {
+            window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+            window.acceptsMouseMovedEvents = true
+            window.makeKeyAndOrderFront(nil)
+            settle(0.3)
+            for step in CommandLine.arguments[i + 1].split(separator: ";") {
+                let parts = step.split(separator: ":")
+                guard parts.count == 2 else { continue }
+                // `cmd:p`: ⌘ and that key, as you'd press them.
+                if parts[0] == "cmd" {
+                    let key = String(parts[1])
+                    for type in [NSEvent.EventType.keyDown, .keyUp] {
+                        if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                                    windowNumber: window.windowNumber, context: nil, characters: key,
+                                                    charactersIgnoringModifiers: key, isARepeat: false, keyCode: 35) {
+                            window.sendEvent(e)
+                        }
+                    }
+                    settle(0.4)
+                    continue
+                }
+                let xy = parts[1].split(separator: ",").compactMap { Double($0) }
+                guard xy.count == 2 else { continue }
+                let at = NSPoint(x: xy[0], y: model.panelHeight - xy[1])
+                let types: [NSEvent.EventType] = parts[0] == "click" ? [.mouseMoved, .leftMouseDown, .leftMouseUp] : [.mouseMoved]
+                for type in types {
+                    if let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                                  windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                        window.sendEvent(e)
+                    }
+                    settle(0.08)
+                }
+                settle(0.35)
+            }
+            FileHandle.standardError.write(Data("pins: \(model.pins.ids), selected: \(model.selectedID ?? "none")\n".utf8))
+        }
+        // `--press x,y` (points from the top left): a real click on the panel, and
+        // which session is selected after it.
+        if let i = CommandLine.arguments.firstIndex(of: "--press"), i + 1 < CommandLine.arguments.count {
+            let xy = CommandLine.arguments[i + 1].split(separator: ",").compactMap { Double($0) }
+            let at = NSPoint(x: xy[0], y: model.panelHeight - xy[1])
+            // A window takes clicks only once it is on screen: put it far off to the side.
+            window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
+            window.makeKeyAndOrderFront(nil)
+            settle(0.3)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                if let e = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                                              windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+                    window.sendEvent(e)
+                }
+                settle(0.1)
+            }
+            settle(0.3)
+            // `--command n`: then press ⌘ and that key, as you would.
+            if let j = CommandLine.arguments.firstIndex(of: "--command"), j + 1 < CommandLine.arguments.count {
+                let key = CommandLine.arguments[j + 1]
+                for type in [NSEvent.EventType.keyDown, .keyUp] {
+                    if let e = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: .command, timestamp: ProcessInfo.processInfo.systemUptime,
+                                                windowNumber: window.windowNumber, context: nil, characters: key,
+                                                charactersIgnoringModifiers: key, isARepeat: false, keyCode: 45) {
+                        window.sendEvent(e)
+                    }
+                }
+                settle(0.6)
+            }
+            let editor = window.firstResponder as? NSTextView
+            let field = (editor?.delegate as? NSTextField)?.placeholderString ?? "none"
+            // Work queued on the main queue (a deferred focus) doesn't run here.
+            FileHandle.standardError.write(Data("selected: \(model.selected?.id ?? "none"), keyboard: \(field)\n".utf8))
+        }
         guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { exit(1) }
         host.cacheDisplay(in: host.bounds, to: rep)
         guard let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
         try? png.write(to: URL(fileURLWithPath: out))
     }
+}
+
+/// cc-moss as the demo files say it would answer: `ls --json` from the
+/// sessions file, `ask list --json` from the questions file. `ask answer` is
+/// printed, not run, and answers as `--answer` says (answered by default).
+struct DemoRunner: CommandRunner {
+    var sessions: Data
+    var asks: Data?
+    var answer: String?
+    /// `moss chat --json`; none: an empty conversation.
+    var mossChat: Data?
+    /// `--moss <state>`: what `moss status --json` says (Moss up 2 hours, idle, by default).
+    var moss: String?
+
+    func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
+        func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
+        switch Array(arguments.prefix(2)) {
+        case ["ask", "list"]:
+            return CommandResult(status: 0, stdout: asks ?? Data(#"{"schema":1,"asks":[]}"#.utf8), stderr: "")
+        case ["ask", "take"]:
+            return ok("")
+        case ["moss", "chat"]:
+            let all = mossChat ?? Data(#"{"schema":1,"messages":[]}"#.utf8)
+            // `--limit N`: the newest N, as cc-moss reads them.
+            guard let i = arguments.firstIndex(of: "--limit"), i + 1 < arguments.count, let n = Int(arguments[i + 1]),
+                  var top = try? JSONSerialization.jsonObject(with: all) as? [String: Any],
+                  let list = top["messages"] as? [Any] else {
+                return CommandResult(status: 0, stdout: all, stderr: "")
+            }
+            top["messages"] = Array(list.suffix(n))
+            return CommandResult(status: 0, stdout: (try? JSONSerialization.data(withJSONObject: top)) ?? all, stderr: "")
+        case ["moss", "status"]:
+            return ok(Self.mossStatus(moss))
+        case ["moss", "say"]:
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            return ok(#"{"schema":1,"id":"1760608999000-000000"}"#)
+        case ["ask", "answer"]:
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            func line(_ result: String) -> Data { Data(#"{"schema":1,"result":"\#(result)","session":"demo"}"#.utf8) }
+            switch answer {
+            case "late": return CommandResult(status: 1, stdout: line("too-late"), stderr: "cc-moss: too late: it already moved on\n")
+            case "not-waiting": return CommandResult(status: 0, stdout: line("not-waiting"), stderr: "")
+            case "refused": return CommandResult(status: 1, stdout: Data(), stderr: "cc-moss: the session could not use that answer\n")
+            default: return CommandResult(status: 0, stdout: line("answered"), stderr: "")
+            }
+        default:
+            // `ls --json --all`: the same, plus two sessions closed a few days ago.
+            if arguments.contains("--all") { return CommandResult(status: 0, stdout: Self.withClosed(sessions), stderr: "") }
+            return CommandResult(status: 0, stdout: sessions, stderr: "")
+        }
+    }
+
+    /// Copies of the second and fourth sessions, named "…-v1", closed 3 days before `L.clock()`.
+    static func withClosed(_ data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var list = top["sessions"] as? [[String: Any]], list.count >= 4 else { return data }
+        let when = ISO8601DateFormatter().string(from: L.clock().addingTimeInterval(-3 * 86_400))
+        for (i, source) in [list[1], list[3]].enumerated() {
+            var s = source
+            s["id"] = "0CL\(i)"
+            s["name"] = ((source["name"] as? String) ?? "session") + "-v1"
+            s["status"] = "closed"
+            s["busy"] = false
+            s["last_active_at"] = when
+            s["ended_at"] = when
+            list.append(s)
+        }
+        top["sessions"] = list
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
+    }
+
+    /// `moss status --json` for a demo state, Moss started 2 hours 5 minutes before `L.clock()`.
+    static func mossStatus(_ state: String?) -> String {
+        let f = ISO8601DateFormatter()
+        let since = f.string(from: L.clock().addingTimeInterval(-2 * 3600 - 300))
+        let up = #""schema":1,"enabled":true,"running":true,"since":"\#(since)","restarts":0,"daemon_running":true,"account":"subscription""#
+        return switch state {
+        case "thinking": "{\(up),\"activity\":\"thinking\",\"queued\":0}"
+        case "queued": "{\(up),\"activity\":\"thinking\",\"queued\":2}"
+        case "waiting": "{\(up),\"activity\":\"waiting\",\"queued\":1}"
+        case "api": "{\(up.replacingOccurrences(of: "subscription", with: "api")),\"activity\":\"idle\",\"queued\":0}"
+        case "stuck": "{\(up),\"activity\":\"idle\",\"queued\":1,\"input_busy\":true}"
+        case "off": #"{"schema":1,"enabled":false,"running":false,"activity":"off","queued":0}"#
+        case "offline": #"{"schema":1,"enabled":true,"running":false,"activity":"offline","queued":0}"#
+        case "failing": #"{"schema":1,"enabled":true,"running":false,"last_error":"Claude Code exited right after it started","activity":"offline","queued":0}"#
+        case "nodaemon": #"{"schema":1,"enabled":true,"running":false,"daemon_running":false,"activity":"offline","queued":0}"#
+        default: "{\(up),\"activity\":\"idle\",\"queued\":0}"
+        }
+    }
+
+    /// The demo sessions plus a running Moss, so the Moss page can offer its terminal.
+    static func withMoss(_ data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              var list = top["sessions"] as? [[String: Any]], var moss = list.first else { return data }
+        moss["id"] = "0MOSS"
+        moss["name"] = "moss"
+        moss["role"] = "moss"
+        moss["status"] = "running"
+        moss["busy"] = false
+        moss["attention"] = NSNull()
+        moss["last_prompt"] = "[Update] release-notes finished its turn" // never shown: Moss isn't in the list
+        moss["cwd"] = "/Users/demo/.local/state/cc-moss/moss"
+        if var tmux = moss["tmux"] as? [String: Any] {
+            tmux["session_name"] = "moss"
+            moss["tmux"] = tmux
+        }
+        list.append(moss)
+        top["sessions"] = list
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
+    }
+
+    /// Only question `id` of an `ask list --json` file.
+    static func keep(_ id: String, in data: Data) -> Data {
+        guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let list = top["asks"] as? [[String: Any]] else { return data }
+        top["asks"] = list.filter { ($0["id"] as? String) == id }
+        return (try? JSONSerialization.data(withJSONObject: top)) ?? data
+    }
+
+    /// As a shell would need it.
+    static func quoted(_ arg: String) -> String {
+        let plain = arg.allSatisfy { $0.isLetter || $0.isNumber || "-_./:=,".contains($0) }
+        return plain && !arg.isEmpty ? arg : "'" + arg.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+}
+
+/// Takes the keyboard like the real panel, so a probe's clicks and keys land.
+private final class ProbeWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
 }

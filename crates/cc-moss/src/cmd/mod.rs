@@ -1,9 +1,15 @@
+pub mod act;
+pub mod adopt;
 pub mod alias;
 pub mod app;
+pub mod ask;
+pub mod ask_hook;
 pub mod attach;
+pub mod checkup;
 pub mod close;
 pub mod config;
 pub mod confirm;
+pub mod daemon;
 pub mod doctor;
 pub mod events;
 pub mod files;
@@ -11,11 +17,14 @@ pub mod hook;
 pub mod install;
 pub mod launch;
 pub mod ls;
+pub mod moss;
+pub mod moss_talk;
 pub mod new;
 pub mod note;
 pub mod restore;
 pub mod send;
 pub mod setup;
+pub mod suggest;
 pub mod update;
 
 /// `text` padded with spaces to `width` terminal columns (Chinese takes two).

@@ -14,6 +14,8 @@ public enum RowAction: Hashable, Sendable {
     case copyPath
     /// "Stop reminding…", asked first.
     case close
+    /// Outside tmux: move it in (`cc-moss adopt`), asked first.
+    case adopt
 }
 
 /// Which actions a session's row shows and which wait behind its "⋯": the
@@ -32,15 +34,19 @@ public struct RowActions: Equatable, Sendable {
     public let all: [[RowAction]]
 
     public init(_ s: Session, hopeless: Bool) {
-        let primary: RowAction = if s.state == .interrupted {
+        // cc-moss brings Moss back itself: nothing to bring back or dismiss.
+        let primary: RowAction = if s.isMoss {
+            s.inTmux ? .open : .copyPath
+        } else if s.state == .interrupted {
             hopeless ? .stopReminding : .bringBack
         } else if !s.inTmux {
             .copyPath
         } else {
             .open
         }
-        // Renaming is a message too (`/rename`), so both need a running session.
-        let talk: [RowAction] = Message.allowed(s) ? [.rename, .message] : []
+        // Renaming is a message too (`/rename`), so both need a running
+        // session. Moss's name lives in its own files, not in /rename.
+        let talk: [RowAction] = !Message.allowed(s) ? [] : s.isMoss ? [.message] : [.rename, .message]
         let copies: [RowAction] = if s.state == .interrupted {
             [.copyRestoreCommand, .copyPath]
         } else if s.inTmux {
@@ -48,14 +54,21 @@ public struct RowActions: Equatable, Sendable {
         } else {
             [.copyPath]
         }
-        let close: [RowAction] = Close.allowed(s) && primary != .stopReminding ? [.close] : []
+        // Moss is never dismissed: only switching it off in Settings stops it.
+        let close: [RowAction] = Close.allowed(s) && primary != .stopReminding && !s.isMoss ? [.close] : []
 
-        let inline = talk + [primary]
-        let all = [[primary] + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
+        // Outside tmux and running: it can move in (busy ones wait, but the
+        // button stays to say so).
+        let adopt: [RowAction] = Adopt.availability(s) == .none ? [] : [.adopt]
+
+        // Left to right (user 2026-10-19): move into tmux, send a message, open, rename.
+        let inline = adopt + talk.filter { $0 == .message } + [primary] + talk.filter { $0 == .rename }
+        let all = [[primary] + adopt + talk.reversed(), [.note], copies.filter { $0 != primary }, close]
             .filter { !$0.isEmpty }
         self.primary = primary
         self.inline = inline
         self.all = all
-        more = all.map { $0.filter { !inline.contains($0) } }.filter { !$0.isEmpty }
+        // "Move into tmux" stays in "⋯" too: it's easy to miss as an icon.
+        more = all.map { $0.filter { !inline.contains($0) || $0 == .adopt } }.filter { !$0.isEmpty }
     }
 }

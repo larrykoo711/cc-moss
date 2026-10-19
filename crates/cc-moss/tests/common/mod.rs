@@ -30,6 +30,8 @@ pub fn bin() -> Command {
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("CC_MOSS_CONFIG")
         .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
+        // Ask `claude agents` on every look; `ls_asks_claude_at_most_every_30_s` tests the limit.
+        .env("CC_MOSS_ADOPT_ALWAYS", "1")
         // Never the machine's own managed Claude Code settings.
         .env(
             "CC_MOSS_CLAUDE_MANAGED_SETTINGS",
@@ -40,6 +42,8 @@ pub fn bin() -> Command {
         // No test reaches the network; update tests turn checking back on
         // with a stub curl on PATH.
         .env("CC_MOSS_NO_UPDATE_CHECK", "1")
+        // Never the real launchctl: a debug build panics if it gets there.
+        .env("CC_MOSS_FORBID_LAUNCHCTL", "1")
         // Not root unless a test says so, and never the real /Applications.
         .env_remove("SUDO_USER")
         .env(
@@ -47,6 +51,15 @@ pub fn bin() -> Command {
             "/nonexistent/cc-moss-test-applications",
         );
     cmd
+}
+
+/// Tests that steer the binary with its debug-only switches (Moss's tmux
+/// socket, shortened waits) refuse to run against a release build, which
+/// ignores them and would act on the real thing.
+pub fn debug_only() {
+    if !cfg!(debug_assertions) {
+        panic!("this test drives debug-only switches of cc-moss; run it without --release");
+    }
 }
 
 pub fn hook(state: &Path, event: &str, stdin: &str, pid: Option<u32>) -> Output {

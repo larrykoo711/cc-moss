@@ -11,6 +11,62 @@ fn pane_command(w: &World, tmux_name: &str) -> String {
     w.tmux(&["list-panes", "-t", tmux_name, "-F", "#{pane_start_command}"])
 }
 
+/// The session's own name as cc-moss gave it to tmux, and its title.
+fn display_name(w: &World, tmux_name: &str) -> (String, String) {
+    let target = format!("={tmux_name}:");
+    let name = w.tmux(&["display-message", "-p", "-t", &target, "#{@cc-moss-name}"]);
+    let title = w.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        &target,
+        "#{?#{@cc-moss-name},#{@cc-moss-name},#{session_name}}",
+    ]);
+    (name.trim().to_string(), title.trim().to_string())
+}
+
+#[test]
+fn new_sessions_carry_their_own_name_for_the_tab_title() {
+    let w = World::new("new-title");
+    w.new_session("接口 评审");
+    let tmux_name = "host_接口-评审";
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&tmux_name.to_string())
+            .then_some(())
+    });
+    assert_eq!(
+        display_name(&w, tmux_name),
+        ("接口 评审".to_string(), "接口 评审".to_string())
+    );
+    // Renamed with /rename: the tmux name and the title follow.
+    let sid = w.session_id("接口 评审");
+    w.send(&sid, "prompt login page");
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&"host_login-page".to_string())
+            .then_some(())
+    });
+    assert_eq!(display_name(&w, "host_login-page").0, "login page");
+}
+
+#[test]
+fn ls_labels_sessions_that_have_no_title_yet() {
+    let w = World::new("ls-title");
+    w.new_session("api");
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&"host_api".to_string())
+            .then_some(())
+    });
+    w.session_id("api");
+    // A session from before cc-moss set titles: no name on it.
+    w.tmux(&["set-option", "-u", "-t", "=host_api:", "@cc-moss-name"]);
+    assert_eq!(display_name(&w, "host_api").0, "");
+    common::ls_json(&w.state(), false);
+    assert_eq!(display_name(&w, "host_api").0, "api");
+}
+
 #[test]
 fn bypass_in_pane() {
     let w = World::new("bypass-pane");

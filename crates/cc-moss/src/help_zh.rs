@@ -109,6 +109,8 @@ const TEXT: &[(&str, &str, &str)] = &[
         "体检钩子、别名、tmux、starship、shell 区块和工具",
     ),
     ("doctor", "fix", "把缺失或失效的别名链接重新建好"),
+    ("doctor", "sessions", "各会话和安装情况：一张简短的表（加 --json 是给 Moss 体检用的事实）"),
+    ("doctor", "json", "机器可读的输出（schema 1），配合 --sessions"),
     (
         "alias",
         "",
@@ -127,22 +129,22 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "config",
         "",
-        "查看或修改 config.toml 里的设置（目前只有 ui.language）",
+        "查看或修改 config.toml 里的设置（`config set --help` 里列着都有哪些）",
     ),
     ("config get", "", "显示一项设置的值（没设置过就显示默认值）"),
     ("config get", "json", "机器可读的输出（schema 1）"),
-    ("config get", "key", "设置项：ui.language"),
+    ("config get", "key", "设置项，比如 ui.language 或 moss.daily_checkup"),
     (
         "config set",
         "",
         "修改一项设置；文件里的注释和其他内容原样保留",
     ),
     ("config set", "json", "机器可读的输出（schema 1）"),
-    ("config set", "key", "设置项：ui.language"),
+    ("config set", "key", "设置项，比如 ui.language 或 moss.daily_checkup"),
     (
         "config set",
         "value",
-        "新的值；ui.language 可以是 auto、zh 或 en",
+        "新的值；ui.language 可以是 auto、zh 或 en，开关是 true 或 false",
     ),
     (
         "send",
@@ -188,6 +190,80 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("note", "state", "停在哪里 / 在等什么"),
     ("note", "text", "随手记的备注"),
     ("note", "clear", "清空全部备注"),
+    ("daemon", "", "常驻的 cc-moss 守护进程，由 launchd 看着（macOS）"),
+    ("daemon run", "", "在前台运行；launchd 启动的就是它"),
+    ("daemon start", "", "让 launchd 启动守护进程，需要时先把它设置好"),
+    (
+        "daemon stop",
+        "",
+        "停掉守护进程；在你再次 start 之前一直不启动，重新登录也不会",
+    ),
+    ("daemon status", "", "守护进程在不在运行、跑了多久、是哪个版本"),
+    ("daemon status", "json", "机器可读的输出（schema 1）"),
+    ("moss", "", "Moss：cc-moss 替你一直开着的那个会话，在这里打开或关掉"),
+    ("moss start", "", "打开 Moss；守护进程会把它拉起来并一直看着"),
+    ("moss stop", "", "关掉 Moss 并结束它；在你再次 start 之前不会启动"),
+    ("moss status", "", "Moss 开没开、在不在运行、跑了多久、重启过几次"),
+    ("moss status", "json", "机器可读的输出（schema 1）"),
+    (
+        "moss act",
+        "",
+        "Moss 请守护进程替它做的事（它的沙箱碰不到你的会话）；restore、forget、end 要你点头",
+    ),
+    (
+        "moss act",
+        "action",
+        "setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end",
+    ),
+    ("moss act", "args", "会话；`name` 还要跟上新名字"),
+    ("moss act", "because", "你那条点头的消息的 id"),
+    ("moss act", "wait", "等结果回来，输出成 JSON"),
+    ("adopt", "", "把在 tmux 外运行的会话移进 tmux（它先退出，再在 tmux 里接着来）"),
+    ("adopt", "name", "会话名（Claude 名、tmux 名或 id 前缀）"),
+    ("adopt", "json", "机器可读的输出（schema 1）"),
+    ("adopt", "dry_run", "只说会做什么，什么都不改"),
+    ("suggest", "", "Claude Code 在会话输入框里给的下一句建议（那行淡色字）"),
+    ("suggest", "name", "会话名（Claude 名、tmux 名或 id 前缀）"),
+    ("suggest", "json", "机器可读的输出（schema 1）"),
+    ("moss say", "", "跟 Moss 说句话；它的回复在 `moss chat` 和面板里"),
+    ("moss say", "json", "把这条消息的 id 输出成 JSON（schema 1）"),
+    ("moss say", "text", "要说的话；多行会整条送到"),
+    ("moss chat", "", "到目前为止和 Moss 的对话"),
+    ("moss chat", "json", "机器可读的输出（schema 1）"),
+    ("moss chat", "limit", "只看最近的这么多条"),
+    (
+        "moss profile",
+        "",
+        "用新文字（标准输入或 --from 指定的文件）替换 Moss 的身份、性格或对你的了解（/moss-profile 用的就是它）",
+    ),
+    ("moss profile", "name", "identity | soul | user"),
+    ("moss profile", "from", "从这个文件读新文字，而不是标准输入"),
+    ("ask", "", "会话在等你回答的问题：在这里看、在这里答"),
+    ("ask list", "", "列出会话正在等你回答的问题"),
+    ("ask list", "json", "机器可读的输出（schema 1）"),
+    (
+        "ask answer",
+        "",
+        "回答一道题；会话照常往下走，就像你在它的终端里答的一样",
+    ),
+    ("ask answer", "id", "`cc-moss ask list` 里题目的 id（写开头几位就行；权限请求至少 12 位）"),
+    ("ask answer", "choice", "要选的选项；多选或多题就写多次，按题目顺序，或写成 题号:选项"),
+    ("ask answer", "text", "不选选项，自己写答案；有好几题时写成 题号:答案，每题写一次"),
+    ("ask answer", "allow", "同意，让它用这个工具"),
+    ("ask answer", "deny", "不同意"),
+    ("ask answer", "message", "配合 --deny：改为告诉 Claude 的话"),
+    (
+        "ask answer",
+        "json",
+        "用一行 JSON 说结果（schema 1）：answered、too-late 或 not-waiting",
+    ),
+    ("ask answer", "by", "谁在答（给 App、守护进程和 Slack 用）"),
+    (
+        "ask take",
+        "",
+        "告诉会话你在，可以替它接问题，它就会等你一会儿（每次管 90 秒）",
+    ),
+    ("ask take", "name", "你的名字：只能用 a-z、0-9、- 和 _"),
 ];
 
 const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令。\n\n\
@@ -197,7 +273,8 @@ const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令�
 
 const CONFIG_SET_LONG: &str = "修改一项设置；文件里的注释和其他内容原样保留。\n\n\
 `cc-moss config set ui.language zh` 把 cc-moss 换成中文；设回 `auto` 就重新跟随系统。\
-目前能用的键：ui.language（auto、zh、en）。";
+能用的键：ui.language（auto、zh、en）、claude.permission_mode（bypass、default），\
+以及 true/false 开关：ask.enabled、moss.enabled、moss.digest、moss.actions、moss.daily_checkup、moss.daily_brief。";
 
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\
 写入前会用 diff 展示对 settings.json 的改动并征求同意；原文件旁会留一份带时间戳的备份。";
@@ -238,6 +315,9 @@ pub fn localize(cmd: Command) -> Command {
     cmd.mut_subcommand("help", |c| c.about(HELP))
         .mut_subcommand("alias", |c| c.mut_subcommand("help", |h| h.about(HELP)))
         .mut_subcommand("config", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("daemon", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("moss", |c| c.mut_subcommand("help", |h| h.about(HELP)))
+        .mut_subcommand("ask", |c| c.mut_subcommand("help", |h| h.about(HELP)))
 }
 
 /// One command's description, argument help, headings and help flag.

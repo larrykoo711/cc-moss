@@ -47,6 +47,17 @@ import Testing
         #expect(NewSession.hint(name: "gone", sessions: list) == .free)
     }
 
+    @Test func aTakenNameGetsTheNextFreeNumber() {
+        #expect(NewSession.freeName("fresh", sessions: list) == "fresh")
+        #expect(NewSession.freeName("docs", sessions: list) == "docs-2")
+        // A stopped session still holds its name; a closed one doesn't.
+        #expect(NewSession.freeName("invoice", sessions: list) == "invoice-2")
+        #expect(NewSession.freeName("gone", sessions: list) == "gone")
+        let more = list + sessions([sessionJSON(id: "F", name: "docs-2", status: "running")])
+        #expect(NewSession.freeName("docs", sessions: more) == "docs-3")
+        #expect(NewSession.freeName(" docs ", sessions: list) == "docs-2", "spaces around don't count")
+    }
+
     @Test func refusesNamesCcMossWouldMisread() {
         guard case .invalid = NewSession.plan(name: "-x", directory: "/d", sessions: []) else {
             Issue.record("a leading dash must be refused"); return

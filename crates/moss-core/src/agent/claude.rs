@@ -70,6 +70,9 @@ impl Agent for ClaudeAgent {
                 session_id: p.session_id,
                 reason: EndReason::parse(p.reason.as_deref().unwrap_or("")),
             },
+            // Questions waiting for an answer are kept by `crate::ask`, not
+            // the registry.
+            HookKind::PreToolUse | HookKind::PermissionRequest => return Ok(None),
             HookKind::PostToolUse => Event::ToolDone {
                 session_id: p.session_id,
             },

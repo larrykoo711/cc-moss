@@ -635,6 +635,53 @@ mod app_update {
         assert!(mac.log("pkill").is_empty() && mac.log("killall").is_empty());
     }
 
+    /// A LaunchAgent in a test folder whose recorded launchctl calls say
+    /// `calls`; returns that folder.
+    fn agent(mac: &Mac, calls: &str) -> PathBuf {
+        let dir = mac.env.path("LaunchAgents");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("io.github.larrykoo711.cc-moss.daemon.plist"),
+            "plist",
+        )
+        .unwrap();
+        std::fs::write(dir.join("launchctl.log"), calls).unwrap();
+        dir
+    }
+
+    fn calls(dir: &Path) -> String {
+        std::fs::read_to_string(dir.join("launchctl.log")).unwrap()
+    }
+
+    #[test]
+    fn daemon_restarts_on_the_new_binary() {
+        let mac = Mac::new(None, false);
+        mac.env.serve_latest("9.9.9");
+        mac.env.publish("9.9.9", "cc-moss 9.9.9");
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let dir = agent(&mac, "bootstrap x\n");
+        let out = mac.update(&exe, &[("CC_MOSS_LAUNCHD_DIR", dir.clone())]);
+        assert!(out.status.success(), "{}", text(&out));
+        assert_eq!(calls(&dir).lines().last(), Some("kickstart -k"));
+        assert!(
+            text(&out).contains("Restarted the cc-moss daemon"),
+            "{}",
+            text(&out)
+        );
+    }
+
+    #[test]
+    fn daemon_stopped_stays_stopped_after_an_update() {
+        let mac = Mac::new(None, false);
+        mac.env.serve_latest("9.9.9");
+        mac.env.publish("9.9.9", "cc-moss 9.9.9");
+        let exe = mac.env.installed("opt/bin/cc-moss");
+        let dir = agent(&mac, "bootstrap x\ndisable\nbootout\n");
+        let out = mac.update(&exe, &[("CC_MOSS_LAUNCHD_DIR", dir.clone())]);
+        assert!(out.status.success(), "{}", text(&out));
+        assert_eq!(calls(&dir), "bootstrap x\ndisable\nbootout\n");
+    }
+
     #[test]
     fn app_not_installed_stays_not_installed() {
         let mac = Mac::new(None, false);

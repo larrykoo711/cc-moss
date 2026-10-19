@@ -16,6 +16,18 @@ use crate::agent::HookKind;
 /// this only bounds the damage if something hangs.
 pub const HOOK_TIMEOUT_SECS: u64 = 10;
 
+/// PermissionRequest may wait for an answer from outside (at most
+/// [`crate::ask::MAX_WAIT_SECS`]); the session's own dialog stays usable meanwhile.
+pub const ASK_HOOK_TIMEOUT_SECS: u64 = 600;
+
+/// Seconds Claude Code gives the hook for `kind`.
+pub fn timeout(kind: HookKind) -> u64 {
+    match kind {
+        HookKind::PermissionRequest => ASK_HOOK_TIMEOUT_SECS,
+        _ => HOOK_TIMEOUT_SECS,
+    }
+}
+
 /// Claude Code's event name for each hook cc-moss registers.
 pub fn event_name(kind: HookKind) -> &'static str {
     match kind {
@@ -25,6 +37,8 @@ pub fn event_name(kind: HookKind) -> &'static str {
         HookKind::SessionEnd => "SessionEnd",
         HookKind::Notification => "Notification",
         HookKind::PostToolUse => "PostToolUse",
+        HookKind::PreToolUse => "PreToolUse",
+        HookKind::PermissionRequest => "PermissionRequest",
     }
 }
 
@@ -158,10 +172,15 @@ pub fn hook_binaries(doc: &Value) -> Vec<String> {
 }
 
 /// The matcher cc-moss writes for `kind`, for events that take one. PostToolUse
-/// runs after every tool; the other events are matched in code (Notification)
-/// or have no matcher at all.
+/// and PermissionRequest run for every tool, PreToolUse only before
+/// AskUserQuestion; the other events are matched in code (Notification) or
+/// have no matcher at all.
 fn matcher(kind: HookKind) -> Option<&'static str> {
-    (kind == HookKind::PostToolUse).then_some("*")
+    match kind {
+        HookKind::PostToolUse | HookKind::PermissionRequest => Some("*"),
+        HookKind::PreToolUse => Some(crate::ask::ASK_TOOL),
+        _ => None,
+    }
 }
 
 /// Add the cc-moss hooks, replacing any earlier cc-moss entries in place.
@@ -179,7 +198,7 @@ pub fn install(doc: &Value, exe: &str) -> Result<Value> {
         let entry = json!([{
             "type": "command",
             "command": hook_command(exe, kind),
-            "timeout": HOOK_TIMEOUT_SECS,
+            "timeout": timeout(kind),
         }]);
         let ours = match matcher(kind) {
             Some(m) => json!({ "matcher": m, "hooks": entry }),

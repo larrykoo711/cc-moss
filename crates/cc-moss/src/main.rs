@@ -123,13 +123,19 @@ enum Command {
         /// Recreate alias links that are missing or broken.
         #[arg(long)]
         fix: bool,
+        /// Facts about every session and the install, for Moss's checkup.
+        #[arg(long, conflicts_with = "fix")]
+        sessions: bool,
+        /// Machine-readable output (schema 1); with --sessions.
+        #[arg(long, requires = "sessions")]
+        json: bool,
     },
     /// Your own names for cc-moss commands, usable in any shell (`t` is one).
     Alias {
         #[command(subcommand)]
         action: AliasCommand,
     },
-    /// Read or change a setting in config.toml (today: ui.language).
+    /// Read or change a setting in config.toml (`config set --help` lists them).
     Config {
         #[command(subcommand)]
         action: ConfigCommand,
@@ -201,12 +207,109 @@ enum Command {
         #[arg(last = true, required = true)]
         text: Vec<String>,
     },
+    /// Move a session running outside tmux into tmux (it quits and resumes there).
+    Adopt {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// Say what it would do; change nothing.
+        #[arg(long)]
+        dry_run: bool,
+    },
+    /// The next prompt Claude Code suggests in a session's input (the dim text).
+    Suggest {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// The resident cc-moss daemon that launchd keeps running (macOS).
+    Daemon {
+        #[command(subcommand)]
+        action: DaemonCommand,
+    },
+    /// Moss, the session cc-moss keeps running for you: switch it on or off.
+    Moss {
+        #[command(subcommand)]
+        action: MossCommand,
+    },
+    /// Questions sessions are waiting on: see them, answer them from here.
+    Ask {
+        #[command(subcommand)]
+        action: AskCommand,
+    },
     /// Entry point for Claude Code hooks. Always exits 0.
     #[command(hide = true)]
     Hook {
         /// session-start | user-prompt-submit | stop | session-end | notification | post-tool-use
+        /// | pre-tool-use | permission-request
         event: String,
     },
+}
+
+#[derive(Subcommand)]
+enum AskCommand {
+    /// List the questions sessions are waiting on.
+    List {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Answer a question; the session carries on as if you answered in its terminal.
+    #[command(group(clap::ArgGroup::new("reply").required(true).multiple(true).args(["choice", "text", "allow", "deny"])))]
+    Answer {
+        /// The question's id from `cc-moss ask list` (a prefix is enough; 12 characters for a permission).
+        id: String,
+        /// The option to pick; repeat for several, in question order, or as N:LABEL for question N.
+        #[arg(long, value_name = "LABEL")]
+        choice: Vec<String>,
+        /// Your own answer instead of an option; with several questions, N:TEXT for question N (repeat per question).
+        #[arg(long, value_name = "TEXT", conflicts_with_all = ["allow", "deny"])]
+        text: Vec<String>,
+        /// Let the tool run.
+        #[arg(long, conflicts_with_all = ["choice", "deny"])]
+        allow: bool,
+        /// Don't let the tool run.
+        #[arg(long, conflicts_with_all = ["choice"])]
+        deny: bool,
+        /// With --deny: what to tell Claude instead.
+        #[arg(long, requires = "deny")]
+        message: Option<String>,
+        /// Who is answering (for the app, the daemon and Slack).
+        #[arg(long, value_enum, default_value = "cli", hide = true)]
+        by: AnswerBy,
+        /// Say how it went as one line of JSON (schema 1): `result` is answered, too-late or not-waiting.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Say you are here to take questions, so sessions wait for you a while (90 seconds per call).
+    Take {
+        /// Your name: a-z, 0-9, - and _.
+        #[arg(long)]
+        name: String,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+enum AnswerBy {
+    Cli,
+    Desktop,
+    Slack,
+    Moss,
+}
+
+impl From<AnswerBy> for moss_core::ask::By {
+    fn from(by: AnswerBy) -> Self {
+        match by {
+            AnswerBy::Cli => moss_core::ask::By::Cli,
+            AnswerBy::Desktop => moss_core::ask::By::Desktop,
+            AnswerBy::Slack => moss_core::ask::By::Slack,
+            AnswerBy::Moss => moss_core::ask::By::Moss,
+        }
+    }
 }
 
 #[derive(Subcommand)]
@@ -247,26 +350,102 @@ enum AliasCommand {
 }
 
 #[derive(Subcommand)]
+enum DaemonCommand {
+    /// Run in the foreground; this is what launchd starts.
+    Run,
+    /// Have launchd start the daemon, setting it up if needed.
+    Start,
+    /// Stop the daemon; it stays off, across logins too, until `start`.
+    Stop,
+    /// Whether the daemon is running, since when, and which version.
+    Status {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum MossCommand {
+    /// Switch Moss on; the daemon starts it and keeps it running.
+    Start,
+    /// Switch Moss off and end it; it stays off until `start`.
+    Stop,
+    /// Whether Moss is on and running, since when, and how often it restarted.
+    Status {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// What Moss asks the daemon to do for it (its sandbox can't reach your
+    /// sessions); `restore`, `forget` and `end` need your go-ahead.
+    #[command(hide = true)]
+    Act {
+        /// setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end
+        action: String,
+        /// The session, and for `name` the new name.
+        args: Vec<String>,
+        /// The id of your message that said yes.
+        #[arg(long)]
+        because: Option<String>,
+        /// Wait for the result and print it as JSON.
+        #[arg(long)]
+        wait: bool,
+    },
+    /// Say something to Moss; its reply shows in `moss chat` and the panel.
+    Say {
+        /// Print the message's id as JSON (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// What to say; several lines arrive whole.
+        #[arg(last = true, required = true)]
+        text: Vec<String>,
+    },
+    /// The conversation with Moss so far.
+    Chat {
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+        /// How many of the latest messages.
+        #[arg(long, default_value_t = moss_core::moss::chat::DEFAULT_LIMIT)]
+        limit: usize,
+    },
+    /// Replace Moss's identity, soul or notes about you with new text (from
+    /// standard input or --from; what /moss-profile uses).
+    #[command(hide = true)]
+    Profile {
+        /// identity | soul | user
+        name: String,
+        /// Read the new text from this file instead of standard input.
+        #[arg(long)]
+        from: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum ConfigCommand {
     /// Print a setting's value (the default when it is not set).
     Get {
         /// Machine-readable output (schema 1).
         #[arg(long)]
         json: bool,
-        /// The setting: ui.language.
+        /// The setting, e.g. ui.language or moss.daily_checkup.
         key: String,
     },
     /// Change a setting; comments and everything else in the file stay.
     ///
     /// `cc-moss config set ui.language zh` switches cc-moss to Chinese;
-    /// `auto` follows the system again. Known keys: ui.language (auto, zh, en).
+    /// `auto` follows the system again. Known keys: ui.language (auto, zh,
+    /// en), claude.permission_mode (bypass, default), and true/false ones:
+    /// ask.enabled, moss.enabled, moss.digest, moss.actions,
+    /// moss.daily_checkup, moss.daily_brief.
     Set {
         /// Machine-readable output (schema 1).
         #[arg(long)]
         json: bool,
-        /// The setting: ui.language.
+        /// The setting, e.g. ui.language or moss.daily_checkup.
         key: String,
-        /// The new value; for ui.language: auto, zh or en.
+        /// The new value: for ui.language auto, zh or en; true or false for switches.
         value: String,
     },
 }
@@ -331,6 +510,14 @@ fn main() -> std::process::ExitCode {
             .map(|a| a.to_string_lossy().into_owned())
             .find(|a| !a.starts_with('-'))
             .unwrap_or_default();
+        // Moss's fence decides, and fails closed; not a session event.
+        if event == cmd::moss::GUARD_EVENT {
+            return cmd::moss::guard_hook(&argv);
+        }
+        // Moss's turn ended: a marker for the daemon, nothing else.
+        if event == cmd::moss::STOP_EVENT {
+            return cmd::moss::stop_hook(&argv);
+        }
         cmd::hook::run(&event);
         return std::process::ExitCode::SUCCESS;
     }
@@ -397,7 +584,13 @@ fn main() -> std::process::ExitCode {
                 cmd::install::run(opts)
             })
         }
-        Command::Doctor { fix } => match cmd::doctor::run(fix) {
+        Command::Doctor {
+            sessions: true,
+            json: true,
+            ..
+        } => report(cmd::checkup::print_sessions_json()),
+        Command::Doctor { sessions: true, .. } => report(cmd::checkup::print_sessions_table()),
+        Command::Doctor { fix, .. } => match cmd::doctor::run(fix) {
             Ok(true) => std::process::ExitCode::SUCCESS,
             Ok(false) => std::process::ExitCode::FAILURE,
             Err(e) => report(Err(e)),
@@ -421,6 +614,72 @@ fn main() -> std::process::ExitCode {
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
+        Command::Suggest { name, json } => report(cmd::suggest::run(&name, json)),
+        Command::Adopt {
+            name,
+            json,
+            dry_run,
+        } => match cmd::adopt::run(&name, json, dry_run) {
+            Ok(true) => std::process::ExitCode::SUCCESS,
+            Ok(false) => std::process::ExitCode::FAILURE,
+            Err(e) => report(Err(e)),
+        },
+        Command::Daemon { action } => match action {
+            DaemonCommand::Run => match cmd::daemon::run() {
+                Ok(true) => std::process::ExitCode::SUCCESS,
+                Ok(false) => std::process::ExitCode::FAILURE,
+                Err(e) => report(Err(e)),
+            },
+            DaemonCommand::Start => report(cmd::daemon::start()),
+            DaemonCommand::Stop => report(cmd::daemon::stop()),
+            DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
+        },
+        Command::Moss {
+            action:
+                MossCommand::Act {
+                    action,
+                    args,
+                    because,
+                    wait,
+                },
+        } => match cmd::act::run(&action, &args, because.as_deref(), wait) {
+            Ok(true) => std::process::ExitCode::SUCCESS,
+            Ok(false) => std::process::ExitCode::FAILURE,
+            Err(e) => report(Err(e)),
+        },
+        Command::Moss { action } => report(match action {
+            MossCommand::Start => cmd::moss::start(),
+            MossCommand::Stop => cmd::moss::stop(),
+            MossCommand::Status { json } => cmd::moss::print_status(json),
+            MossCommand::Say { json, text } => cmd::moss::say(json, &text.join(" ")),
+            MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),
+            MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
+            // Taken above.
+            MossCommand::Act { .. } => Ok(()),
+        }),
+        Command::Ask { action } => report(cmd::ask::run(match action {
+            AskCommand::List { json } => cmd::ask::Action::List { json },
+            AskCommand::Answer {
+                id,
+                choice,
+                text,
+                allow,
+                deny,
+                message,
+                by,
+                json,
+            } => cmd::ask::Action::Answer {
+                id,
+                choices: choice,
+                texts: text,
+                allow,
+                deny,
+                message,
+                by: by.into(),
+                json,
+            },
+            AskCommand::Take { name } => cmd::ask::Action::Take { name },
+        })),
         Command::Note {
             name,
             goal,

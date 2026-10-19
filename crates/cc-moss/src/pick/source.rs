@@ -17,6 +17,8 @@ pub struct SlotRow {
     pub busy: bool,
     /// First line of the last prompt.
     pub preview: Option<String>,
+    /// Moss: cc-moss keeps it running, so it cannot be ended from here.
+    pub moss: bool,
 }
 
 impl SlotRow {
@@ -34,6 +36,7 @@ impl SlotRow {
                 .last_prompt
                 .as_deref()
                 .and_then(moss_core::slot::prompt_preview),
+            moss: s.is_moss(),
         }
     }
 
@@ -169,11 +172,12 @@ pub fn sessions(
     out.into_iter().map(Item::Session).collect()
 }
 
-/// Interrupted sessions, most recently active first.
+/// Interrupted sessions, most recently active first. Never Moss: the
+/// daemon brings it back by itself.
 pub fn interrupted(rows: &[(Status, Slot)]) -> Vec<Item> {
     let mut out: Vec<SlotRow> = rows
         .iter()
-        .filter(|(st, _)| *st == Status::Interrupted)
+        .filter(|(st, s)| *st == Status::Interrupted && !s.is_moss())
         .map(|(_, s)| SlotRow::from_slot(s))
         .collect();
     out.sort_by_key(|r| std::cmp::Reverse(r.last_active_ms));
@@ -211,6 +215,7 @@ mod tests {
             launch_args: vec![],
             transcript_path: None,
             restore_started_at_ms: None,
+            role: None,
             busy: false,
             last_prompt: None,
             attention: None,

@@ -1,0 +1,43 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792140600000-c00000",
+   "at": "2026-10-16T09:40:00Z",
+   "from": "you",
+   "text": "Where's the session that was reviewing the API?",
+   "state": "replied",
+   "buttons": []
+  },
+  {
+   "id": "1792140620000-c00001",
+   "at": "2026-10-16T09:40:20Z",
+   "from": "moss",
+   "text": "Here it is, still open and waiting for you.",
+   "buttons": [],
+   "sessions": [
+    "01B"
+   ]
+  },
+  {
+   "id": "1792140900000-c00002",
+   "at": "2026-10-16T09:55:00Z",
+   "from": "you",
+   "text": "Which ones are about invoices?",
+   "state": "replied",
+   "buttons": []
+  },
+  {
+   "id": "1792140920000-c00003",
+   "at": "2026-10-16T09:55:20Z",
+   "from": "moss",
+   "text": "Found three. **fix-invoice** was interrupted this morning and can be brought back; **scratch** isn't in tmux; one is gone.",
+   "buttons": [],
+   "sessions": [
+    "01C",
+    "01F",
+    "01Z"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608600000-cc0001",
+   "at": "2026-10-16T09:56:40Z",
+   "from": "you",
+   "text": "现在哪些会话在等我？按急的先说。",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608610000-cc0002",
+   "at": "2026-10-16T09:56:50Z",
+   "from": "moss",
+   "text": "**接口评审** 在等你同意跑一条测试命令，别的都在忙自己的。",
+   "reply_to": "1760608600000-cc0001",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608900000-cc0003",
+   "at": "2026-10-16T10:01:40Z",
+   "from": "you",
+   "text": "/usage",
+   "state": "queued",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}

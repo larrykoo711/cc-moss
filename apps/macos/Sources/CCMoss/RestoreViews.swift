@@ -15,7 +15,7 @@ extension AppModel {
 
     /// The folded group after the search and the state filter, newest first.
     var olderShown: [Session] {
-        Filter.apply(query, state: stateFilter, to: Grouping.projects(restoreGroups.older))
+        Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups(unpinned).older))
             .flatMap(\.sessions)
             .sorted { $0.lastActiveAt > $1.lastActiveAt }
     }

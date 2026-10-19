@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": { "title": "Answering a Session's Question", "subtitle": "caught by a hook, routed to where you are, first answer wins", "output": "sequence-ask.html", "viewBox": [920, 860] },
+  "participants": [
+    { "id": "claude", "type": "external", "label": "Claude", "sublabel": "session" },
+    { "id": "hook", "type": "backend", "label": "hook ask", "sublabel": "waits <= 300s" },
+    { "id": "state", "type": "database", "label": "asks/", "sublabel": "state dir" },
+    { "id": "daemon", "type": "backend", "label": "daemon", "sublabel": "router" },
+    { "id": "app", "type": "frontend", "label": "Desktop", "sublabel": "panel, Mo" },
+    { "id": "slack", "type": "external", "label": "Slack", "sublabel": "channel" },
+    { "id": "user", "type": "security", "label": "You", "sublabel": "anywhere" }
+  ],
+  "segments": [
+    { "from": 160, "to": 300, "label": "01 / CATCH" },
+    { "from": 310, "to": 520, "label": "02 / ROUTE" },
+    { "from": 530, "to": 780, "label": "03 / ANSWER" }
+  ],
+  "messages": [
+    { "from": "claude", "to": "hook", "y": 200, "label": "PermissionRequest", "variant": "emphasis" },
+    { "from": "hook", "to": "state", "y": 250, "label": "write ask" },
+    { "from": "state", "to": "daemon", "y": 350, "label": "new ask", "variant": "emphasis" },
+    { "from": "daemon", "to": "app", "y": 400, "label": "present: desktop" },
+    { "from": "daemon", "to": "slack", "y": 470, "label": "away: buttons", "variant": "dashed" },
+    { "from": "user", "to": "app", "y": 570, "label": "pick", "variant": "emphasis" },
+    { "from": "app", "to": "state", "y": 620, "label": "answer (O_EXCL)", "variant": "emphasis" },
+    { "from": "state", "to": "hook", "y": 670, "label": "answered", "variant": "return" },
+    { "from": "hook", "to": "claude", "y": 720, "label": "answer", "variant": "return" },
+    { "from": "daemon", "to": "slack", "y": 760, "label": "withdraw", "variant": "dashed" }
+  ],
+  "activations": [
+    { "participant": "hook", "from": 200, "to": 720, "type": "backend" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "Fail open", "items": ["Off, no taker, error or timeout", "means no decision", "and the session asks you itself"] },
+    { "dot": "amber", "title": "Probed", "items": ["Allow with updatedInput.answers", "terminal stays answerable meanwhile", "probed on Claude Code 2.1.302"] }
+  ]
+}

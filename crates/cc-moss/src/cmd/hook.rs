@@ -3,6 +3,10 @@
 //! Contract with the agent: never fail, stay fast, and print nothing to stdout
 //! except one `systemMessage` JSON on SessionStart outside tmux. Any error is
 //! appended to `hook.log` and swallowed.
+//!
+//! `pre-tool-use` and `permission-request` are the exception to "stay fast":
+//! they belong to answering questions from outside ([`super::ask_hook`]) and
+//! only print a decision for an answer that arrived.
 
 use std::io::{Read, Write};
 use std::os::unix::fs::OpenOptionsExt;
@@ -15,11 +19,13 @@ use moss_core::event::{Context, Event, StartSource};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339};
 use moss_core::tmux::{Socket, Tmux};
-use moss_core::{launch_args, naming, proc, store_dir, tmux};
+use moss_core::{launch_args, moss, naming, proc, store_dir, tmux};
 
 const LOG_MAX_BYTES: u64 = 1 << 20;
 
 pub fn run(event: &str) {
+    // Hooks run for Moss too and record it: they write the registry.
+    moss_core::registry::as_hook();
     // The default panic hook prints to stderr, which Claude Code may show.
     // The panic itself is logged below.
     std::panic::set_hook(Box::new(|_| {}));
@@ -46,10 +52,25 @@ fn handle(event: &str) -> Result<()> {
         // `claude -p` and SDK sessions fire the same hooks (F10) but are not
         // something a person would want restored. PostToolUse runs after
         // every tool call: logging those would flood the log.
-        if !matches!(kind, HookKind::PostToolUse | HookKind::Notification) {
+        if !matches!(
+            kind,
+            HookKind::PostToolUse
+                | HookKind::Notification
+                | HookKind::PreToolUse
+                | HookKind::PermissionRequest
+        ) {
             log(kind.cli_name(), "skipped: non-interactive session");
         }
         return Ok(());
+    }
+    if matches!(kind, HookKind::PreToolUse | HookKind::PermissionRequest) {
+        return super::ask_hook::handle(kind, &payload);
+    }
+    if let Err(e) = super::ask_hook::withdraw(kind, &payload) {
+        log(
+            kind.cli_name(),
+            &format!("withdrawing questions failed: {e:#}"),
+        );
     }
     let Some(event) = ClaudeAgent.parse_hook(kind, &payload)? else {
         // A notification cc-moss does not act on (idle reminder, completion).
@@ -101,6 +122,21 @@ fn handle(event: &str) -> Result<()> {
         return Ok(());
     }
     registry.apply_with(&event, &ctx, &proc::is_alive)?;
+    // Moss (started by the daemon) is recorded as such: only the session
+    // the daemon started, by its id. Anything else that inherited the role
+    // (a window opened in Moss's tmux, a tmux server Moss's shell started,
+    // `claude --resume` of Moss's id elsewhere) stays an ordinary session.
+    if let Event::Start { session_id, .. } = &event {
+        if is_moss_start(
+            env(moss::ROLE_ENV).as_deref(),
+            env(moss::SESSION_ENV).as_deref(),
+            session_id,
+        ) {
+            if let Some(slot) = registry.slot_for_event(session_id, &ctx)? {
+                registry.set_role(&slot.slot_id, moss::ROLE)?;
+            }
+        }
+    }
 
     // Side effects after the registry is committed; failures are only logged.
     match &event {
@@ -137,6 +173,12 @@ fn handle(event: &str) -> Result<()> {
     Ok(())
 }
 
+/// A SessionStart from the Moss the daemon started: the role it was given,
+/// and the session id it was started with is this one.
+fn is_moss_start(role: Option<&str>, moss_session: Option<&str>, session_id: &str) -> bool {
+    role == Some(moss::ROLE) && moss_session.is_some_and(|id| !id.is_empty() && id == session_id)
+}
+
 /// After `--resume` Claude Code omits the name from the payload; the
 /// transcript still records the last `/rename`.
 fn fill_name_from_transcript(
@@ -166,13 +208,23 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };
+    sync_tmux_name_of(registry, &slot)
+}
+
+/// [`sync_tmux_name`] for a slot in hand (also after `reconcile` picks up a
+/// `/rename` from the transcript).
+pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slot) -> Result<()> {
+    // Moss keeps the tmux name it was started with.
+    if slot.is_moss() {
+        return Ok(());
+    }
     let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
         return Ok(());
     };
     let Some(tmux_id) = loc.session_id.as_deref() else {
         return Ok(());
     };
-    if !registry.is_tmux_primary(&slot)? {
+    if !registry.is_tmux_primary(slot)? {
         return Ok(());
     }
     let config = Config::load().unwrap_or_else(|e| {
@@ -200,6 +252,8 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
     if target != current {
         tmux.rename_session(tmux_id, &target)?;
     }
+    // Its own name for terminal tabs, as written (spaces, Chinese and all).
+    tmux.set_display_name(tmux_id, name)?;
     registry.set_tmux_session_name(&slot.slot_id, &target)
 }
 

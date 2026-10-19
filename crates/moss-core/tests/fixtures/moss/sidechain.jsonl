@@ -1,0 +1,4 @@
+{"type":"user","timestamp":"2026-10-19T08:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"which sessions need me\nright now?"}]}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:03.000Z","message":{"role":"assistant","stop_reason":"tool_use","content":[{"type":"thinking","thinking":"..."},{"type":"tool_use","name":"Agent","input":{}}]}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:05.000Z","isSidechain":false,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"None right now."}]}}
+{"type":"assistant","timestamp":"2026-10-19T08:00:07.000Z","isSidechain":true,"message":{"role":"assistant","stop_reason":"end_turn","content":[{"type":"text","text":"A helper's own answer."}]}}

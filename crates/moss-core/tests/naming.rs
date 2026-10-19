@@ -1,18 +1,34 @@
-use moss_core::naming::{sanitize, session_name, unique};
+use moss_core::naming::{has_hidden_chars, sanitize, session_name, unique};
 
 #[test]
 fn sanitize_cases() {
+    // Keeps what people name things with (any script, case, emoji); only
+    // what tmux or a shell can't take becomes `-` (2026-10-19,
+    // notes/session-names.md).
     let cases = [
         ("job-a", "job-a"),
-        ("JOB_A", "job_a"),
+        ("JOB_A", "JOB_A"),
+        ("接口评审", "接口评审"),
+        ("接口 评审", "接口-评审"),
+        ("中文 name", "中文-name"),
+        ("API Review v1.2", "API-Review-v1-2"),
         ("v1.0.43", "v1-0-43"),
         ("a:b", "a-b"),
-        ("hello world", "hello-world"),
-        ("中文 name", "name"),
+        ("hello\tworld", "hello-world"),
+        ("修复#12", "修复-12"),
+        ("it's \"done\" $now `x` !", "it-s-done-now-x"),
+        ("a\\b", "a-b"),
+        ("ship 🚀", "ship-🚀"),
         ("a...b", "a-b"),
         ("--x--", "x"),
+        ("$HOME", "HOME"),
+        ("@team", "team"),
+        ("%1", "1"),
+        ("=x", "x"),
+        ("a\u{7}b", "ab"),
         ("", "session"),
-        ("。。。", "session"),
+        ("。。。", "。。。"),
+        ("...", "session"),
     ];
     for (input, want) in cases {
         assert_eq!(sanitize(input), want, "input={input:?}");
@@ -20,9 +36,22 @@ fn sanitize_cases() {
 }
 
 #[test]
+fn long_names_are_cut_at_forty_characters() {
+    let long = "很长的会话名字".repeat(10);
+    let got = sanitize(&long);
+    assert_eq!(got.chars().count(), 40);
+    assert!(long.starts_with(&got));
+    // A cut never leaves a trailing `-`.
+    let spaced = format!("{} tail", "a".repeat(39));
+    assert_eq!(sanitize(&spaced), "a".repeat(39));
+}
+
+#[test]
 fn prefix_toggle() {
-    assert_eq!(session_name(Some("Host-A"), "Job A"), "host-a_job-a");
-    assert_eq!(session_name(None, "Job A"), "job-a");
+    // The machine's prefix stays lowercase, as before; the name keeps its case.
+    assert_eq!(session_name(Some("Host-A"), "Job A"), "host-a_Job-A");
+    assert_eq!(session_name(Some("host-a"), "接口评审"), "host-a_接口评审");
+    assert_eq!(session_name(None, "Job A"), "Job-A");
 }
 
 #[test]
@@ -49,4 +78,32 @@ fn a_missing_host_name_is_cached_too() {
     assert_eq!(cached_host_prefix(dir.path()), None);
     std::fs::write(dir.path().join("host_prefix"), "host-a\n").unwrap();
     assert_eq!(cached_host_prefix(dir.path()).as_deref(), Some("host-a"));
+}
+
+#[test]
+fn naming_rejects_hidden_characters() {
+    for name in [
+        "api\u{202E}gnp",
+        "a\u{200B}pi",
+        "api\u{2028}x",
+        "api\u{2029}",
+        "\u{FEFF}api",
+        "a\u{200D}pi",
+        "api\u{E0041}",
+        "soft\u{00AD}hyphen",
+    ] {
+        assert!(has_hidden_chars(name), "{name:?}");
+        assert!(!has_hidden_chars(&sanitize(name)), "{name:?}");
+    }
+    // An emoji joined into one stays whole.
+    for name in [
+        "👩\u{200D}💻 notes",
+        "接口评审",
+        "api-review",
+        "🏳️\u{200D}🌈",
+    ] {
+        assert!(!has_hidden_chars(name), "{name:?}");
+    }
+    assert_eq!(sanitize("👩\u{200D}💻"), "👩\u{200D}💻");
+    assert_eq!(sanitize("a\u{202E}pi"), "api");
 }

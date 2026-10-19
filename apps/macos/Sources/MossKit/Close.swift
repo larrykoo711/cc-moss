@@ -11,7 +11,7 @@ public enum Close {
     /// Only an interrupted session can be dismissed: a running one is ended
     /// in Claude Code itself.
     public static func allowed(_ s: Session) -> Bool {
-        s.state == .interrupted
+        s.state == .interrupted && !s.isMoss
     }
 
     /// The question asked before closing.

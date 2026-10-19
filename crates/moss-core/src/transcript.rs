@@ -186,3 +186,47 @@ fn custom_title(line: &[u8]) -> Option<String> {
         .filter(|t| !t.is_empty())
         .map(String::from)
 }
+
+/// The last thing the user typed (not a tool result, meta record, local
+/// command or interrupt), and when, in Unix milliseconds; searching back
+/// from the end, bounded like the rest of this file.
+pub fn last_prompt(path: &Path) -> Option<(String, i64)> {
+    let mut file = File::open(path).ok()?;
+    let size = file.metadata().ok()?.len();
+    scan_back(&mut file, 0, size, prompt)
+}
+
+fn prompt(line: &[u8]) -> Option<(String, i64)> {
+    let needle = b"\"user\"";
+    if !line.windows(needle.len()).any(|w| w == needle) {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(line).ok()?;
+    if v.get("type")?.as_str()? != "user" || v.get("isMeta").and_then(|m| m.as_bool()) == Some(true)
+    {
+        return None;
+    }
+    let content = v.get("message")?.get("content")?;
+    let tool_result = content.as_array().is_some_and(|parts| {
+        parts
+            .iter()
+            .any(|p| p.get("type").and_then(|t| t.as_str()) == Some("tool_result"))
+    });
+    if tool_result {
+        return None;
+    }
+    let text = first_text(content)?.trim();
+    if text.is_empty()
+        || text.starts_with("[Request interrupted")
+        || LOCAL_COMMAND.iter().any(|tag| text.starts_with(tag))
+    {
+        return None;
+    }
+    let at = time::OffsetDateTime::parse(
+        v.get("timestamp")?.as_str()?,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .ok()?;
+    let ms = i64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()?;
+    Some((text.to_string(), ms))
+}

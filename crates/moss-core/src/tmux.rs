@@ -16,6 +16,13 @@ pub trait Runner {
     fn run(&self, args: &[String]) -> Result<String>;
 }
 
+/// The tmux user option holding a session's own name as people gave it
+/// (spaces, Chinese and all), for terminal tab titles.
+pub const NAME_OPTION: &str = "@cc-moss-name";
+
+/// The terminal title: the session's own name, else tmux's.
+pub const TITLE_FORMAT: &str = "#{?#{@cc-moss-name},#{@cc-moss-name},#{session_name}}";
+
 /// Which tmux server to talk to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Socket {
@@ -61,7 +68,13 @@ impl Runner for ProcessRunner {
             );
         };
         if !out.status.success() {
-            bail!("tmux {} failed", args.first().map_or("", |s| s.as_str()));
+            let what = args.first().map_or("", |s| s.as_str());
+            let why = String::from_utf8_lossy(&out.stderr);
+            let why = why.trim();
+            if why.is_empty() {
+                bail!("tmux {what} failed");
+            }
+            bail!("tmux {what} failed: {why}");
         }
         Ok(String::from_utf8_lossy(&out.stdout).into_owned())
     }
@@ -220,6 +233,26 @@ impl<R: Runner> Tmux<R> {
         self.run(&["list-panes", "-t", &target, "-F", PANE_FORMAT])
             .ok()
             .and_then(|out| parse_pane(&out))
+    }
+
+    /// Each session's display name ([`NAME_OPTION`]) by session id, empty
+    /// where none is set; `None` when tmux did not answer.
+    pub fn display_names(&self) -> Option<std::collections::HashMap<String, String>> {
+        let format = format!("#{{session_id}}{SEP}#{{{NAME_OPTION}}}");
+        let out = self.run(&["list-sessions", "-F", &format]).ok()?;
+        Some(
+            out.lines()
+                .filter_map(|l| l.split_once(SEP))
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect(),
+        )
+    }
+
+    /// Give session `session_id` (`$N`) its own display name, for terminal
+    /// titles ([`NAME_OPTION`]).
+    pub fn set_display_name(&self, session_id: &str, name: &str) -> Result<()> {
+        self.run(&["set-option", "-t", session_id, NAME_OPTION, name])
+            .map(drop)
     }
 
     /// Rename by session id (`$N`), never by name, so we cannot hit another session.

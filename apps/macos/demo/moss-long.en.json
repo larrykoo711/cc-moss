@@ -1,0 +1,23 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608500000-dd0001",
+   "at": "2026-10-16T09:55:00Z",
+   "from": "you",
+   "text": "What got done yesterday?",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608530000-dd0002",
+   "at": "2026-10-16T09:55:30Z",
+   "from": "moss",
+   "text": "Six sessions moved forward yesterday:\n\n1. **login-page**: remembers the last email now, three tests added, merged to main.\n2. **api-review**: went through the order and refund endpoints, 7 comments, 5 already fixed.\n3. **fix-invoice**: found the tax rounding bug and fixed it; the full reconciliation script hasn't run yet.\n4. **release-notes**: features and fixes sections written, waiting for you to check the wording.\n5. **flaky-test**: reproduced twice, looks time-zone related, still digging.\n6. **scratch**: sketched the import tool's command line, waiting for you to pick a direction.\n\nWant me to list the three unfinished ones as to-dos?",
+   "reply_to": "1760608500000-dd0001",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}

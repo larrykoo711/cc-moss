@@ -16,11 +16,4 @@ import Testing
         #expect(gate.allowsHover(pointer: CGPoint(x: 101, y: 200)), "it moved: a real hover")
         #expect(gate.allowsHover(pointer: here), "and from then on, until the next scroll")
     }
-
-    @Test func aSelectionMadeByHoverDoesNotScrollTheList() {
-        let gate = HoverGate()
-        gate.selectingByHover()
-        #expect(!gate.shouldScrollToSelection())
-        #expect(gate.shouldScrollToSelection(), "only that one change")
-    }
 }

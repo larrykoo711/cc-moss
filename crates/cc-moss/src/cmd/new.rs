@@ -98,6 +98,8 @@ pub fn run(args: NewArgs) -> Result<()> {
             &cwd.to_string_lossy()
         ));
     }
+    // The terminal tab shows its own name; a title is not worth failing for.
+    let _ = tmux.set_display_name(&pane.session_id, &name);
     // The registry learns about the session from its SessionStart hook.
     println!(
         "{}",

@@ -3,6 +3,8 @@
 //! (started before `cc-moss setup`, or resumed without a name in the
 //! payload) still show up correctly.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use moss_core::agent::claude::{self, LiveSession};
 use moss_core::config::Config;
@@ -15,6 +17,10 @@ use moss_core::{launch_args, proc, store_dir};
 /// Open the registry and repair what hooks could not record.
 pub fn run() -> Result<Registry> {
     let mut registry = Registry::open(&store_dir::registry_path())?;
+    // Moss reads only: what it sees is what was recorded.
+    if registry.read_only() {
+        return Ok(registry);
+    }
     if registry.newer_schema().is_some() {
         eprintln!(
             "{}",
@@ -25,15 +31,138 @@ pub fn run() -> Result<Registry> {
         );
         return Ok(registry);
     }
-    let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
-    let live = claude::live_sessions(&claude_bin);
-    if !live.is_empty() {
-        adopt(&mut registry, &live)?;
+    // Asking Claude Code which sessions run starts a process (a few hundred
+    // ms); the app refreshes far more often than sessions appear unseen.
+    if adoption_due() {
+        let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+        let live = claude::live_sessions(&claude_bin);
+        if !live.is_empty() {
+            adopt(&mut registry, &live)?;
+        }
     }
-    registry.backfill_names()?;
+    let mut scanned = load_scanned();
+    let before = scanned.clone();
+    let renamed = registry.backfill_names(&mut scanned)?;
+    // Only sessions still open are worth remembering.
+    if let Ok(slots) = registry.slots() {
+        let open: std::collections::HashSet<&str> = slots
+            .iter()
+            .filter(|s| s.status != Status::Closed)
+            .map(|s| s.slot_id.as_str())
+            .collect();
+        scanned.retain(|id, _| open.contains(id.as_str()));
+    }
+    if scanned != before {
+        save_scanned(&scanned);
+    }
+    for slot_id in renamed {
+        // The panel's rename goes through `/rename`, which fires no hook: the
+        // tmux name follows here instead.
+        if let Some(slot) = registry.slots()?.into_iter().find(|s| s.slot_id == slot_id) {
+            let _ = crate::cmd::hook::sync_tmux_name_of(&registry, &slot);
+        }
+    }
+    label_tmux(&registry);
     record_lost(&registry)?;
-    registry.prune_events(now_ms() - EVENT_RETENTION_MS)?;
+    registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
+}
+
+/// Give every running session's tmux session its own name for terminal
+/// titles where it is missing or out of date (sessions from before titles,
+/// and idle ones that fire no hook). One tmux call per server, then only the
+/// ones that differ; by session id, the slot that owns the tmux session
+/// only. Moss's server is the keeper's. Nothing goes to the registry.
+fn label_tmux(registry: &Registry) {
+    let Ok(slots) = registry.slots() else {
+        return;
+    };
+    let moss_sockets: Vec<&str> = slots
+        .iter()
+        .filter(|s| s.is_moss())
+        .filter_map(|s| s.tmux.as_ref().map(|t| t.socket.as_str()))
+        .collect();
+    let mut servers: std::collections::HashMap<
+        String,
+        Option<std::collections::HashMap<String, String>>,
+    > = std::collections::HashMap::new();
+    for slot in &slots {
+        if slot.is_moss() || slot.status != Status::Running {
+            continue;
+        }
+        let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
+            continue;
+        };
+        let Some(id) = loc.session_id.as_deref() else {
+            continue;
+        };
+        if moss_sockets.contains(&loc.socket.as_str())
+            || !registry.is_tmux_primary(slot).unwrap_or(false)
+        {
+            continue;
+        }
+        let tmux = Tmux::with_socket(Socket::Path(loc.socket.clone()));
+        let shown = servers
+            .entry(loc.socket.clone())
+            .or_insert_with(|| tmux.display_names());
+        let Some(shown) = shown else {
+            continue;
+        };
+        // Only a session tmux has, and only when it says something else.
+        if shown.get(id).is_some_and(|now| now != name) {
+            let _ = tmux.set_display_name(id, name);
+        }
+    }
+}
+
+/// How often to ask Claude Code for running sessions the hooks never saw.
+const ADOPT_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// True at most once per [`ADOPT_EVERY`], marked by a stamp file's time.
+/// `CC_MOSS_ADOPT_ALWAYS` (tests) asks every time.
+fn adoption_due() -> bool {
+    if std::env::var_os("CC_MOSS_ADOPT_ALWAYS").is_some() {
+        return true;
+    }
+    let stamp = store_dir::state_dir().join("adopt.stamp");
+    let fresh = std::fs::metadata(&stamp)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < ADOPT_EVERY);
+    if fresh {
+        return false;
+    }
+    let _ = std::fs::write(&stamp, b"");
+    true
+}
+
+/// Old events go an hour's worth at a time, not on every look.
+const PRUNE_SLACK_MS: i64 = 60 * 60 * 1000;
+
+/// How far each transcript was read for names, kept beside the registry
+/// rather than in it (see `Registry::backfill_names`).
+fn scanned_path() -> std::path::PathBuf {
+    store_dir::state_dir().join("name-scan.json")
+}
+
+fn load_scanned() -> HashMap<String, u64> {
+    std::fs::read(scanned_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Best effort: losing it only means reading some transcript again.
+fn save_scanned(scanned: &HashMap<String, u64>) {
+    let path = scanned_path();
+    // Its own temporary file: two `ls` at once don't trip on each other.
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
+    if let Ok(bytes) = serde_json::to_vec(scanned) {
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
 }
 
 /// Report running slots whose process is gone without a SessionEnd

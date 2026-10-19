@@ -1,0 +1,32 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608600000-cc0001",
+   "at": "2026-10-16T09:56:40Z",
+   "from": "you",
+   "text": "Which sessions are waiting on me? Most urgent first.",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608610000-cc0002",
+   "at": "2026-10-16T09:56:50Z",
+   "from": "moss",
+   "text": "**api-review** is waiting for your OK to run a test command; the rest are busy on their own.",
+   "reply_to": "1760608600000-cc0001",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608900000-cc0003",
+   "at": "2026-10-16T10:01:40Z",
+   "from": "you",
+   "text": "/usage",
+   "state": "queued",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}

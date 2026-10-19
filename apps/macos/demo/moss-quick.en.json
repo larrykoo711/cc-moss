@@ -1,0 +1,27 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608500000-bb0001",
+   "at": "2026-10-16T09:55:00Z",
+   "from": "you",
+   "text": "Which sessions dropped or got stuck, and where?",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608520000-bb0002",
+   "at": "2026-10-16T09:55:20Z",
+   "from": "moss",
+   "text": "Two of them:\n\n1. **fix-invoice** dropped. Nothing's lost; bring it back to carry on.\n2. **flaky-test** has been stuck on the same failing test for almost 20 minutes.\n\nI've put \"What's stuck\" and \"Account\" first in the quick bar so you can check back later.",
+   "reply_to": "1760608500000-bb0001",
+   "fallback": false,
+   "buttons": [],
+   "quick": [
+    "stuck",
+    "/status"
+   ]
+  }
+ ]
+}

@@ -1,0 +1,85 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792144202000-1a2b3c",
+   "at": "2026-10-16T09:50:02Z",
+   "from": "you",
+   "text": "/usage",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144209000-4d5e6f",
+   "at": "2026-10-16T09:50:09Z",
+   "from": "moss",
+   "text": " Settings:  Status   Config   Usage\n\n Current session\n █████▌                     23% used\n Resets 3pm\n\n Current week (all models)\n ██████████                 41% used\n Resets Oct 23, 9am\n\n Current week (Opus)\n ███▏                       13% used\n Resets Oct 23, 9am\n\n Skills % of usage\n /larry-sdd                       1%\n /code-review                     1%\n\n Subagents % of usage\n general-purpose                 37%\n Explore                         12%\n Plan                             4%\n\n d to day · w to week\n",
+   "fallback": false,
+   "buttons": [
+    "/context",
+    "这周还剩多少？"
+   ],
+   "reply_to": "1792144202000-1a2b3c",
+   "command": "/usage"
+  },
+  {
+   "id": "1792144350000-7a8b9c",
+   "at": "2026-10-16T09:52:30Z",
+   "from": "you",
+   "text": "/login",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144353000-0d1e2f",
+   "at": "2026-10-16T09:52:33Z",
+   "from": "moss",
+   "text": "`/login` 要你在终端里自己操作（会打开浏览器登录），我这边不替你跑。点下面的按钮去 Moss 的终端。",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792144350000-7a8b9c",
+   "command": "/login",
+   "refused": true
+  },
+  {
+   "id": "1792144510000-3e4f5a",
+   "at": "2026-10-16T09:55:10Z",
+   "from": "you",
+   "text": "/cost",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144514000-6b7c8d",
+   "at": "2026-10-16T09:55:14Z",
+   "from": "moss",
+   "text": "/cost is for API usage. You're signed in with a subscription; try /usage instead.\n",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792144510000-3e4f5a",
+   "command": "/cost"
+  },
+  {
+   "id": "1792144561000-9e0f1a",
+   "at": "2026-10-16T09:56:01Z",
+   "from": "you",
+   "text": "/clear",
+   "fallback": false,
+   "buttons": [],
+   "state": "replied"
+  },
+  {
+   "id": "1792144564000-2b3c4d",
+   "at": "2026-10-16T09:56:04Z",
+   "from": "moss",
+   "text": "That command printed nothing.",
+   "fallback": false,
+   "buttons": [],
+   "reply_to": "1792144561000-9e0f1a",
+   "command": "/clear"
+  }
+ ]
+}

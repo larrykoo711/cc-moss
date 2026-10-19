@@ -9,7 +9,7 @@ use moss_core::platform::{on_path, Tool};
 
 use super::files::read_optional;
 use super::install::{self, Paths};
-use super::{alias, app, setup};
+use super::{alias, app, daemon, setup};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Mark {
@@ -187,6 +187,8 @@ fn checks() -> Result<Vec<Check>> {
     };
     let mut out = vec![version_check()];
     out.extend(app_check());
+    out.extend(daemon_check());
+    out.extend(super::moss::facts().map(|f| moss_check(&f)));
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {
@@ -215,6 +217,23 @@ fn checks() -> Result<Vec<Check>> {
             ),
             fix_setup.clone(),
         ),
+        // Only the question hooks: sessions are still recorded, they just
+        // can't be answered from elsewhere until the next install.
+        Ok(setup::HookStatus::Incomplete(missing))
+            if missing
+                .iter()
+                .all(|m| matches!(*m, "PreToolUse" | "PermissionRequest")) =>
+        {
+            check(
+                Mark::Warn,
+                tr!("hooks", "钩子"),
+                tr!(
+                    "the hooks for answering a session's questions from elsewhere aren't set up yet",
+                    "替会话接住问题的钩子还没装上"
+                ),
+                fix_setup.clone(),
+            )
+        }
         Ok(setup::HookStatus::Incomplete(missing)) => check(
             Mark::Fail,
             tr!("hooks", "钩子"),
@@ -686,6 +705,110 @@ fn version_check() -> Check {
     }
 }
 
+/// The resident daemon (macOS): running, on this version.
+fn daemon_check() -> Option<Check> {
+    if !daemon::applies() || app::as_root() {
+        return None;
+    }
+    let what = tr!("daemon", "守护进程");
+    let r = daemon::report();
+    let current = env!("CARGO_PKG_VERSION");
+    Some(if !r.running {
+        if daemon::plist_present() {
+            check(
+                Mark::Warn,
+                what,
+                tr!("not running", "没在运行"),
+                Some("cc-moss daemon start".into()),
+            )
+        } else {
+            check(
+                Mark::Warn,
+                what,
+                tr!("not set up", "还没设置"),
+                Some("cc-moss install".into()),
+            )
+        }
+    } else if r.version.as_deref() != Some(current) {
+        let have = r.version.clone().unwrap_or_else(|| "?".into());
+        check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("running {have}, not {current}"),
+                format!("跑的是 {have}，不是 {current}")
+            ),
+            Some("cc-moss install".into()),
+        )
+    } else {
+        let up = daemon::uptime(&r).unwrap_or_else(|| "?".into());
+        check(
+            Mark::Ok,
+            what,
+            tr!(format!("running for {up}"), format!("运行中，已 {up}")),
+            None,
+        )
+    })
+}
+
+/// Moss (macOS): on and running, and what the daemon needs to start it.
+fn moss_check(f: &super::moss::Facts) -> Check {
+    let what = "Moss";
+    if !f.enabled {
+        return check(
+            Mark::Note,
+            what,
+            tr!("off", "已关闭"),
+            Some("cc-moss moss start".into()),
+        );
+    }
+    let missing: Vec<&str> = [("claude", f.claude_found), ("tmux", f.tmux_found)]
+        .iter()
+        .filter(|(_, found)| !found)
+        .map(|(name, _)| *name)
+        .collect();
+    if !missing.is_empty() {
+        let names = missing.join(", ");
+        return check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("the daemon can't find {names}, so it can't start Moss"),
+                format!("守护进程找不到 {names}，所以没法启动 Moss")
+            ),
+            Some(tr!(
+                format!("install {names}, then run `cc-moss install` so the daemon sees it"),
+                format!("先装好 {names}，再运行 `cc-moss install` 让守护进程看得到它")
+            )),
+        );
+    }
+    if let Some(dir) = &f.fence_gap {
+        let dir = dir.display();
+        return check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("CLAUDE_CONFIG_DIR is {dir} here, but Moss isn't kept out of it"),
+                format!("这里的 CLAUDE_CONFIG_DIR 是 {dir}，但 Moss 没被挡在外面")
+            ),
+            Some(tr!(
+                format!("add `config_dir = \"{dir}\"` under [claude] in config.toml, then run `cc-moss install`"),
+                format!("在 config.toml 的 [claude] 下加 `config_dir = \"{dir}\"`，再运行 `cc-moss install`")
+            )),
+        );
+    }
+    if f.running {
+        check(Mark::Ok, what, tr!("running", "运行中"), None)
+    } else {
+        check(
+            Mark::Warn,
+            what,
+            tr!("on, but not running", "已打开，但没在运行"),
+            Some("cc-moss daemon start".into()),
+        )
+    }
+}
+
 /// The menubar app (macOS only): in an Applications folder, where its
 /// notifications work, and the same version as this cc-moss.
 fn app_check() -> Option<Check> {
@@ -832,6 +955,57 @@ fn alias_names(text: &str) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn doctor_names_missing_claude_for_moss() {
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        let facts = |claude_found, tmux_found| super::super::moss::Facts {
+            enabled: true,
+            running: false,
+            claude_found,
+            tmux_found,
+            fence_gap: None,
+        };
+        let c = moss_check(&facts(false, true));
+        assert_eq!(c.mark, Mark::Warn);
+        assert!(
+            c.detail.contains("claude") && !c.detail.contains("tmux"),
+            "{}",
+            c.detail
+        );
+        assert!(c
+            .fix
+            .as_deref()
+            .is_some_and(|f| f.contains("cc-moss install")));
+        let both = moss_check(&facts(false, false));
+        assert!(both.detail.contains("claude, tmux"), "{}", both.detail);
+        let fine = moss_check(&super::super::moss::Facts {
+            enabled: true,
+            running: true,
+            claude_found: true,
+            tmux_found: true,
+            fence_gap: None,
+        });
+        assert_eq!(fine.mark, Mark::Ok);
+        let gap = moss_check(&super::super::moss::Facts {
+            enabled: true,
+            running: true,
+            claude_found: true,
+            tmux_found: true,
+            fence_gap: Some("/c".into()),
+        });
+        assert_eq!(gap.mark, Mark::Warn);
+        assert!(gap.detail.contains("CLAUDE_CONFIG_DIR"), "{}", gap.detail);
+        assert!(gap.fix.as_deref().is_some_and(|f| f.contains("config_dir")));
+        let off = moss_check(&super::super::moss::Facts {
+            enabled: false,
+            running: false,
+            claude_found: false,
+            tmux_found: false,
+            fence_gap: None,
+        });
+        assert_eq!(off.mark, Mark::Note, "off is a choice, not a problem");
+    }
 
     #[test]
     fn finds_blocks_after_starship() {

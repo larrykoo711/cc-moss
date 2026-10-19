@@ -4,6 +4,13 @@ public enum Filter {
     /// Projects keeping only sessions that match every word of `query` in their
     /// name, folder, note or last message, ignoring case. Empty query keeps all.
     /// With `state`, only sessions in that state are kept.
+    /// Whether one session on its own (Moss's pinned row) passes the
+    /// search and the state filter, read as `label` its heading.
+    public static func keeps(_ s: Session, label: String, query: String, state: SessionState? = nil) -> Bool {
+        let alone = Project(path: s.cwd, label: label, worktree: nil, sessions: [s])
+        return !apply(query, state: state, to: [alone]).isEmpty
+    }
+
     public static func apply(_ query: String, state: SessionState? = nil, to projects: [Project]) -> [Project] {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty || state != nil else { return projects }

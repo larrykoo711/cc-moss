@@ -23,7 +23,7 @@ import Testing
 
     @Test func searchWordsAreNotPaths() {
         let exists: (String) -> Bool = { _ in true }
-        #expect(FolderChoice.typedPath("emma", home: home, isFolder: exists) == nil)
+        #expect(FolderChoice.typedPath("photo", home: home, isFolder: exists) == nil)
         #expect(FolderChoice.typedPath("", home: home, isFolder: exists) == nil)
         #expect(FolderChoice.typedPath("~/missing", home: home, isFolder: { _ in false }) == nil)
     }

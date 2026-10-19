@@ -48,6 +48,11 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>io.github.larrykoo711.cc-moss</string>
   <key>CFBundleName</key><string>cc-moss</string>
   <key>CFBundleDisplayName</key><string>cc-moss</string>
+  <key>CFBundleURLTypes</key>
+  <array><dict>
+    <key>CFBundleURLName</key><string>io.github.larrykoo711.cc-moss</string>
+    <key>CFBundleURLSchemes</key><array><string>cc-moss</string></array>
+  </dict></array>
   <key>CFBundleExecutable</key><string>cc-moss</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>

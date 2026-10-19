@@ -41,9 +41,14 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     /// Why the session is waiting on you right now (`permission`, `question`,
     /// `input`), or nil. Only running sessions carry one.
     public var attention: String?
+    /// What cc-moss runs the session as: `moss` for Moss, else nil.
+    public var role: String?
+
+    /// Moss, the session cc-moss keeps running itself.
+    public var isMoss: Bool { role == "moss" }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention
+        case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention, role
     }
 
     public init(from decoder: Decoder) throws {
@@ -60,6 +65,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         lastActiveAt = try c.decode(Date.self, forKey: .lastActiveAt)
         worktree = try c.decodeIfPresent(Worktree.self, forKey: .worktree)
         attention = try c.decodeIfPresent(String.self, forKey: .attention)
+        role = try c.decodeIfPresent(String.self, forKey: .role)
     }
 }
 
