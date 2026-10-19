@@ -444,6 +444,14 @@ struct MessageForm: View {
     @Bindable var model: AppModel
     let session: Session
     @State private var text = ""
+    /// What Claude Code itself suggests typing next in this session.
+    @State private var suggestion: String?
+
+    init(model: AppModel, session: Session) {
+        self.model = model
+        self.session = session
+        _suggestion = State(initialValue: model.demoSuggestion)
+    }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -451,7 +459,12 @@ struct MessageForm: View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
                  aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text,
-                           locked: sending) { send() }
+                           locked: sending, suggestion: suggestion) { send() }
+                .task(id: session.id) {
+                    // Asked once, off the main thread, quick or not at all.
+                    guard model.demoSuggestion == nil else { return }
+                    suggestion = await model.client?.suggest(session.handle)
+                }
             if let failure = model.sendFlow.failure {
                 HStack(spacing: 5) {
                     Image(systemName: "exclamationmark.circle.fill").font(.system(size: 11, weight: .semibold))
@@ -566,19 +579,34 @@ struct MultilineField: View {
     @Binding var text: String
     /// On its way: covered by "Sending…", no typing, no focus.
     var locked = false
+    /// The session's own suggestion: the placeholder while empty; Tab fills it in.
+    var suggestion: String?
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
+        let shown = Suggestion.placeholder(text: text, suggestion: suggestion, fallback: placeholder)
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
-                Text(placeholder)
-                    .font(.system(size: 13))
-                    .foregroundStyle(.tertiary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 8)
-                    .allowsHitTesting(false)
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(shown.text)
+                        .font(.system(size: 13))
+                        .foregroundStyle(.tertiary)
+                    if shown.isSuggestion {
+                        Text(L.t("Tab to use", "Tab 填入"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .frame(height: 16)
+                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
+                                .strokeBorder(Theme.hairline(scheme)))
+                            .fixedSize()
+                    }
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .allowsHitTesting(false)
             }
             TextEditor(text: $text)
                 .font(.system(size: 13))
@@ -591,6 +619,9 @@ struct MultilineField: View {
                     onSubmit()
                     return .handled
                 }
+                // Tab (or → in an empty field) takes the suggestion; typed text wins.
+                .onKeyPress(.tab) { fillSuggestion() }
+                .onKeyPress(.rightArrow) { fillSuggestion() }
         }
         .frame(minHeight: 84, maxHeight: 150)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.selection(scheme).opacity(0.8)))
@@ -622,6 +653,12 @@ struct MultilineField: View {
         .animation(.easeOut(duration: 0.15), value: locked)
         .onChange(of: locked) { _, now in if now { focused = false } else { focused = true } }
         .onAppear { focused = true }
+    }
+
+    private func fillSuggestion() -> KeyPress.Result {
+        guard !locked, let fill = Suggestion.fill(text: text, suggestion: suggestion) else { return .ignored }
+        text = fill
+        return .handled
     }
 }
 

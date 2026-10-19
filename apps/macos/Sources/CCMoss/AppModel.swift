@@ -67,6 +67,8 @@ final class AppModel {
     @ObservationIgnored var reveal: (id: String, until: Date)?
     /// Bumped to scroll the selected row into view.
     var revealTick = 0
+    /// Screenshots only: the suggestion every session "has".
+    @ObservationIgnored var demoSuggestion: String?
     /// The new-session form's fields; kept here so they survive the panel
     /// closing while the folder chooser is open.
     var newDraft = NewDraft()
