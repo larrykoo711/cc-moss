@@ -69,6 +69,10 @@ final class AppModel {
     var revealTick = 0
     /// Screenshots only: the suggestion every session "has".
     @ObservationIgnored var demoSuggestion: String?
+    /// Claude Code's guess at what you'd say to Moss next (its own input box).
+    var mossSuggestion: String?
+    /// Screenshots only: Moss's suggestion, never asked of cc-moss.
+    @ObservationIgnored var demoMossSuggestion: String?
     /// The new-session form's fields; kept here so they survive the panel
     /// closing while the folder chooser is open.
     var newDraft = NewDraft()
@@ -89,6 +93,7 @@ final class AppModel {
                 mossTyping = false
                 mossQuickOpen = false
             } else if oldValue != .moss {
+                fetchMossSuggestion()
                 // Opened again: the latest 30, every reply folded.
                 mossLimit = MossPaging.page
                 mossExpanded = []

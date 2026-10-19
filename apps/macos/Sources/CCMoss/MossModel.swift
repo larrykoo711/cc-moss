@@ -22,7 +22,10 @@ extension AppModel {
                 if let status = try? await client.mossStatus() { mossDesk.update(status: status) }
                 guard let chat = try? await client.mossChat(limit: mossLimit) else { break }
                 mossLoaded = chat.messages.count
+                let newestBefore = mossDesk.chat.last { $0.from == .moss }?.id
                 let replies = mossDesk.update(chat: chat)
+                // Moss said something new: Claude Code has a new guess at your answer.
+                if mossOnScreen, mossDesk.chat.last(where: { $0.from == .moss })?.id != newestBefore { fetchMossSuggestion() }
                 if mossOnScreen { mossDesk.markRead() }
                 if !replies.isEmpty { onMossReplies?(replies) }
             } while mossLoadAgain
@@ -55,6 +58,8 @@ extension AppModel {
     /// has it, so the message shows as logged.
     func sayToMoss(_ text: String) {
         noteQuickUse(text)
+        // The guess was for what you'd say now; you've said something.
+        mossSuggestion = nil
         Task {
             await mossDesk.send(text)
             refresh()
@@ -75,6 +80,18 @@ extension AppModel {
             await mossDesk.perform(action)
             refresh()
         }
+    }
+
+    /// Ask Claude Code (through cc-moss) what you'd likely say to Moss next:
+    /// off the main thread, 1.5 s at most; nothing if it has no guess.
+    func fetchMossSuggestion() {
+        if let demo = demoMossSuggestion {
+            mossSuggestion = demo
+            return
+        }
+        guard let client, let moss else { return }
+        let handle = moss.handle
+        Task { mossSuggestion = await client.suggest(handle) }
     }
 
     /// One of the quick bar's items.

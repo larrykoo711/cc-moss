@@ -1202,7 +1202,11 @@ private struct MossInputBar: View {
     private var actions: some View {
         HStack(spacing: 6) {
             MossQuickRow(model: model, enabled: blocked == nil)
-            MossIconButton(symbol: "keyboard", tip: L.t("Type a message", "打字")) { model.mossTyping = true }
+            MossIconButton(symbol: "keyboard",
+                           tip: suggestion.map { L.t("Moss's guess: \($0)", "Moss 猜你想说：\($0)") } ?? L.t("Type a message", "打字"),
+                           dot: suggestion != nil && blocked == nil) {
+                model.mossTyping = true
+            }
                 .disabled(blocked != nil)
                 .opacity(blocked == nil ? 1 : 0.45)
         }
@@ -1211,6 +1215,20 @@ private struct MossInputBar: View {
     private var text: String {
         get { model.mossDraft }
         nonmutating set { model.mossDraft = newValue }
+    }
+
+    /// Claude Code's guess at what you'd say to Moss, when it has one.
+    private var suggestion: String? { Suggestion.fill(text: "", suggestion: model.mossSuggestion) }
+
+    /// The empty field's placeholder: the guess, else the usual words.
+    private var placeholder: (text: String, isSuggestion: Bool) {
+        Suggestion.placeholder(text: text, suggestion: model.mossSuggestion, fallback: L.t("Message Moss…", "和 Moss 说…"))
+    }
+
+    private func fillSuggestion() -> KeyPress.Result {
+        guard commands.isEmpty, let fill = Suggestion.fill(text: text, suggestion: model.mossSuggestion) else { return .ignored }
+        text = fill
+        return .handled
     }
 
     /// Commands matching what's typed: a slash and no space yet.
@@ -1232,7 +1250,7 @@ private struct MossInputBar: View {
 
     private var field: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(L.t("Message Moss…", "和 Moss 说…"), text: $model.mossDraft, axis: .vertical)
+            TextField(placeholder.text, text: $model.mossDraft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: MossCommand.looksLikeCommand(text) ? .monospaced : .default))
                 .lineLimit(1...5)
@@ -1253,14 +1271,30 @@ private struct MossInputBar: View {
                 .onKeyPress(.downArrow) { move(1) }
                 .onKeyPress(.upArrow) { move(-1) }
                 .onKeyPress(.tab) {
-                    guard let command = litCommand else { return .ignored }
+                    guard let command = litCommand else { return fillSuggestion() }
                     fill(command)
                     return .handled
                 }
+                // → in an empty field takes Moss's guess too.
+                .onKeyPress(.rightArrow) { fillSuggestion() }
                 .onKeyPress(phases: .down) { press in keys(press) }
                 .padding(.horizontal, 10)
+                .padding(.trailing, placeholder.isSuggestion ? 64 : 0)
                 .padding(.vertical, 6)
                 .frame(minHeight: 30)
+                .overlay(alignment: .trailing) {
+                    if placeholder.isSuggestion {
+                        Text(L.t("Tab to use", "Tab 填入"))
+                            .font(.system(size: 10.5, weight: .medium))
+                            .foregroundStyle(.tertiary)
+                            .padding(.horizontal, 5)
+                            .frame(height: 16)
+                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.hairline(scheme)))
+                            .fixedSize()
+                            .padding(.trailing, 8)
+                            .allowsHitTesting(false)
+                    }
+                }
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.raised(scheme)))
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(focused ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
@@ -1279,7 +1313,10 @@ private struct MossInputBar: View {
             MossIconButton(symbol: "square.grid.2x2", tip: L.t("Back to actions", "回到常用操作")) { model.mossTyping = false }
                 .padding(.bottom, 1)
         }
-        .onAppear { focused = true }
+        .onAppear {
+            focused = true
+            model.fetchMossSuggestion()
+        }
     }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1313,6 +1350,8 @@ private struct MossInputBar: View {
 private struct MossIconButton: View {
     let symbol: String
     let tip: String
+    /// Something waiting behind it (Moss's guess at your reply).
+    var dot = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -1324,6 +1363,16 @@ private struct MossIconButton: View {
                 .foregroundStyle(hovering ? .primary : .secondary)
                 .frame(width: 28, height: 28)
                 .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(hovering ? Theme.selection(scheme) : .clear))
+                .overlay(alignment: .topTrailing) {
+                    if dot {
+                        Circle().fill(Theme.brand)
+                            .frame(width: 6, height: 6)
+                            .padding(1.5)
+                            .background(Circle().fill(Theme.surface(scheme)))
+                            .offset(x: 1, y: 2)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                }
                 .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())

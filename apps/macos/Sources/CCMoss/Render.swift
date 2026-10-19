@@ -83,6 +83,11 @@ enum Render {
                     await model.loadMoss()
                 }
                 model.mossStartAtTop = args.contains("--moss-top")
+                // `--moss-suggestion "<text>"`: Claude Code's guess at your reply to Moss.
+                if let guess = value("--moss-suggestion") {
+                    model.demoMossSuggestion = guess
+                    model.mossSuggestion = guess
+                }
                 model.mossTyping = args.contains("--moss-typing")
                 // `--moss-typing "/"`: with that typed (a slash shows the command list).
                 if let typed = value("--moss-typing"), !typed.hasPrefix("--") { model.mossDraft = typed }
