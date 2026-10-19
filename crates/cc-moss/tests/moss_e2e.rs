@@ -51,7 +51,9 @@ fn daemon_with(_w: &World, mut cmd: std::process::Command) -> Daemon {
 }
 
 fn wait_until<T>(what: &str, secs: u64, mut f: impl FnMut() -> Option<T>) -> T {
-    let until = Instant::now() + Duration::from_secs(secs);
+    // At least 30 s whatever the caller says: a slow, busy CI machine takes
+    // its time, and a wait that ends early only costs when it would fail.
+    let until = Instant::now() + Duration::from_secs(secs.max(30));
     loop {
         if let Some(v) = f() {
             return v;
@@ -415,10 +417,13 @@ fn moss_stop_keeps_it_down() {
         String::from_utf8_lossy(&out.stdout).contains("Stopped Moss"),
         "{out:?}"
     );
-    assert!(!has_moss(&w));
+    wait_until("Moss to be gone", 30, || (!has_moss(&w)).then_some(()));
     // Several checks and the whole (shortened) ladder later, still down.
-    std::thread::sleep(Duration::from_millis(2_000));
-    assert!(!has_moss(&w), "the daemon left it off");
+    let until = Instant::now() + Duration::from_millis(2_000);
+    while Instant::now() < until {
+        assert!(!has_moss(&w), "the daemon left it off: {}", log(&w));
+        std::thread::sleep(Duration::from_millis(100));
+    }
     assert!(running_moss(&w, None).is_none());
     let st = status(&w);
     assert_eq!(

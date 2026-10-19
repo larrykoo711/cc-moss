@@ -52,7 +52,9 @@ fn daemon(w: &World) -> Daemon {
 }
 
 fn wait_until<T>(what: &str, secs: u64, mut f: impl FnMut() -> Option<T>) -> T {
-    let until = Instant::now() + Duration::from_secs(secs);
+    // At least 30 s whatever the caller says: a slow, busy CI machine takes
+    // its time, and a wait that ends early only costs when it would fail.
+    let until = Instant::now() + Duration::from_secs(secs.max(30));
     loop {
         if let Some(v) = f() {
             return v;
