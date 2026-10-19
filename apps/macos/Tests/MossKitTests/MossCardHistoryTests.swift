@@ -14,43 +14,59 @@ import Testing
         MossMessage(id: id, at: t0.addingTimeInterval(minute * 60), from: .you, text: "?", delivery: .replied)
     }
 
+    private let waiting = ["01A": "needs-you-permission"]
+
     @Test func onlyTheNewestCardOfASessionIsLive() {
         let groups = MossThread.groups([
-            moss("a", 0, ["01A"], states: ["01A": "needs-you-permission"]), you("y1", 20),
-            moss("b", 30, ["01A"], states: ["01A": "needs-you-permission"]), you("y2", 50),
+            moss("a", 0, ["01A"], states: waiting), you("y1", 20),
+            moss("b", 30, ["01A"], states: waiting), you("y2", 50),
             moss("c", 60, ["01A", "01B"], states: ["01A": "needs-you-permission", "01B": "working"]),
         ])
         let roles = MossCardHistory.roles(groups)
         #expect(roles["c"]?["01A"] == .live)
         #expect(roles["c"]?["01B"] == .live)
-        #expect(roles["a"]?["01A"] == .receipt(.handled(at: nil)), "it needed you then; a newer card took over")
-        #expect(roles["b"]?["01A"] == .receipt(.handled(at: nil)))
+        // Every later moment still needed you, and now is unknown: nothing
+        // says these were handled.
+        #expect(roles["a"]?["01A"] == .receipt(.past))
+        #expect(roles["b"]?["01A"] == .receipt(.past))
     }
 
-    @Test func anOlderCardThatDidntNeedYouIsJustPast() {
+    @Test func aNewerCardThatNoLongerNeedsYouMakesOlderOnesHandled() {
+        let groups = MossThread.groups([
+            moss("a", 0, ["01A"], states: waiting), you("y1", 20),
+            moss("b", 30, ["01A"], states: ["01A": "working"]), you("y2", 50),
+            moss("c", 60, ["01A"], states: waiting),
+        ])
+        let roles = MossCardHistory.roles(groups)
+        #expect(roles["a"]?["01A"] == .receipt(.handled), "b said it was working again")
+        #expect(roles["b"]?["01A"] == .receipt(.past), "it didn't need you then")
+        #expect(roles["c"]?["01A"] == .live)
+    }
+
+    @Test func itsStateNowCountsToo() {
+        let groups = MossThread.groups([
+            moss("a", 0, ["01A"], states: waiting), you("y", 20),
+            moss("b", 30, ["01A"], states: waiting),
+        ])
+        let handled = MossCardHistory.roles(groups, needsYouNow: { _ in false })
+        #expect(handled["a"]?["01A"] == .receipt(.handled), "it doesn't need you now")
+        let still = MossCardHistory.roles(groups, needsYouNow: { _ in true })
+        #expect(still["a"]?["01A"] == .receipt(.past), "it still needs you: maybe for that same thing")
+    }
+
+    @Test func anOlderCardThatDidntNeedYouIsJustEarlier() {
         let groups = MossThread.groups([
             moss("a", 0, ["01A"], states: ["01A": "working"]), you("y", 20),
             moss("b", 30, ["01A"]),
         ])
-        let roles = MossCardHistory.roles(groups)
+        let roles = MossCardHistory.roles(groups, needsYouNow: { _ in false })
         #expect(roles["a"]?["01A"] == .receipt(.past))
         #expect(roles["b"]?["01A"] == .live)
     }
 
-    @Test func withoutAStateFromTheReplyAnOlderCardIsPast() {
+    @Test func withoutAStateFromTheReplyAnOlderCardIsEarlier() {
         let groups = MossThread.groups([moss("a", 0, ["01A"]), you("y", 20), moss("b", 30, ["01A"])])
-        #expect(MossCardHistory.roles(groups)["a"]?["01A"] == .receipt(.past))
-    }
-
-    @Test func theResolvedTimeIsUsedWhenKnown() {
-        let groups = MossThread.groups([
-            moss("a", 0, ["01A"], states: ["01A": "needs-you-permission"]), you("y", 20),
-            moss("b", 30, ["01A"]),
-        ])
-        let at = t0.addingTimeInterval(5 * 60)
-        // The session left "needs you" five minutes after the first reply.
-        let roles = MossCardHistory.roles(groups, resolvedAt: { id, after in id == "01A" && after < at ? at : nil })
-        #expect(roles["a"]?["01A"] == .receipt(.handled(at: at)))
+        #expect(MossCardHistory.roles(groups, needsYouNow: { _ in false })["a"]?["01A"] == .receipt(.past))
     }
 
     @Test func aSessionNamedOnceStaysLive() {

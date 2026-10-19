@@ -10,32 +10,35 @@ public enum MossCardHistory {
     }
 
     public enum Receipt: Equatable, Sendable {
-        /// It needed you then, and that's behind it now ("✓ Handled HH:mm",
-        /// the time when known).
-        case handled(at: Date?)
-        /// Nothing to say beyond "that was then".
+        /// It needed you then, and later it didn't ("✓ Handled").
+        case handled
+        /// Nothing more can be said than "that was earlier".
         case past
     }
 
     /// For each bubble (by its id), the role of each of its cards (by
-    /// session id). `resolvedAt`: when the session stopped needing you after
-    /// the given time, if known.
+    /// session id). An older card that needed you is "handled" only once a
+    /// newer card of that session, or its state now (`needsYouNow`; nil when
+    /// unknown), says it no longer does; otherwise it's just "earlier".
     public static func roles(_ groups: [MossGroup],
-                             resolvedAt: (String, Date) -> Date? = { _, _ in nil }) -> [String: [String: Role]] {
+                             needsYouNow: (String) -> Bool? = { _ in nil }) -> [String: [String: Role]] {
         var out: [String: [String: Role]] = [:]
         var newerSeen = Set<String>()
+        /// A later moment (a newer card, or now) where the session didn't need you.
+        var laterClear: [String: Bool] = [:]
         for group in groups.reversed() {
             let states = group.sessionStates
             var roles: [String: Role] = [:]
             for id in group.sessions {
                 if newerSeen.insert(id).inserted {
                     roles[id] = .live
-                } else if states[id]?.hasPrefix("needs-you") == true {
-                    let then = group.last.at ?? .distantPast
-                    roles[id] = .receipt(.handled(at: resolvedAt(id, then)))
+                    laterClear[id] = needsYouNow(id) == false
+                } else if states[id]?.hasPrefix("needs-you") == true, laterClear[id] == true {
+                    roles[id] = .receipt(.handled)
                 } else {
                     roles[id] = .receipt(.past)
                 }
+                if let state = states[id], !state.hasPrefix("needs-you") { laterClear[id] = true }
             }
             out[group.id] = roles
         }

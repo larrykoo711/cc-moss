@@ -257,7 +257,9 @@ private struct MossConversation: View {
         let messages = desk.messages
         let groups = MossThread.groups(messages)
         // Only the newest card of a session is live; older ones are receipts.
-        let cardRoles = MossCardHistory.roles(groups)
+        let cardRoles = MossCardHistory.roles(groups, needsYouNow: { [model] id in
+            model.mentioned(id).map { $0.needsYou || model.openAsk(forSlot: $0.id) != nil }
+        })
         let lastMoss = messages.last { $0.from == .moss }?.id
         let waiting = desk.waiting
         let thinking = waiting != nil

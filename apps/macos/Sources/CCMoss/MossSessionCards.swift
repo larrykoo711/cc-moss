@@ -87,14 +87,14 @@ private struct CardReceipt: View {
     var body: some View {
         HStack(spacing: 5) {
             switch receipt {
-            case let .handled(at):
+            case .handled:
                 Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
                     .foregroundStyle(Color.green.opacity(0.8))
-                Text(at.map { L.t("Handled \(Self.time($0))", "已处理 \(Self.time($0))") } ?? L.t("Handled", "已处理"))
+                Text(L.t("Handled", "已处理"))
             case .past:
                 Image(systemName: "clock.arrow.circlepath").font(.system(size: 9.5, weight: .semibold))
                     .foregroundStyle(.tertiary)
-                Text(L.t("Since moved on", "已过去"))
+                Text(L.t("Earlier", "已过去"))
             }
             if let name {
                 Text("·").foregroundStyle(.tertiary)
@@ -107,12 +107,6 @@ private struct CardReceipt: View {
         .frame(height: 24)
         .background(Capsule().fill(Color.primary.opacity(0.04)))
         .accessibilityElement(children: .combine)
-    }
-
-    static func time(_ date: Date) -> String {
-        let f = DateFormatter()
-        f.setLocalizedDateFormatFromTemplate("HH:mm")
-        return f.string(from: date)
     }
 }
 
