@@ -36,6 +36,25 @@ struct PanelView: View {
             page
         }
         .frame(width: Theme.panelWidth, height: model.panelHeight)
+        .overlayPreferenceValue(MenuAnchorKey.self) { anchor in
+            if let menu {
+                // Opened without a click (screenshots start with it open): build the items now.
+                let sections = menuSections.isEmpty ? sections(for: menu) : menuSections
+                GeometryReader { geo in
+                    ZStack(alignment: .topLeading) {
+                        // A click anywhere else closes it, as a menu does: a button,
+                        // since tap gestures don't fire here once the panel has
+                        // the keyboard, and over the whole panel, rail included.
+                        Button { closeMenu() } label: { Color.clear.contentShape(Rectangle()) }
+                            .buttonStyle(.plain)
+                            .focusable(false)
+                        ActionsMenu(sections: sections, highlighted: $menuIndex) { closeMenu() }
+                            .offset(menuOffset(menu, sections: sections, row: anchor.map { geo[$0] }, in: geo.size))
+                    }
+                }
+                .transition(.opacity)
+            }
+        }
         .background(Theme.surface(scheme))
         .onChange(of: model.queueItems.isEmpty) { _, empty in if empty { model.askQueue.emptied() } }
         .onChange(of: model.page) { _, page in if page == .sessions { searchFocused = true } }
@@ -96,21 +115,6 @@ struct PanelView: View {
         .focusEffectDisabled()
         .tooltipLayer()
         .background(Theme.surface(scheme))
-        .overlayPreferenceValue(MenuAnchorKey.self) { anchor in
-            if let menu {
-                // Opened without a click (screenshots start with it open): build the items now.
-                let sections = menuSections.isEmpty ? sections(for: menu) : menuSections
-                GeometryReader { geo in
-                    ZStack(alignment: .topLeading) {
-                        // A click anywhere else closes it, as a menu does.
-                        Color.clear.contentShape(Rectangle()).onTapGesture { closeMenu() }
-                        ActionsMenu(sections: sections, highlighted: $menuIndex) { closeMenu() }
-                            .offset(menuOffset(menu, sections: sections, row: anchor.map { geo[$0] }, in: geo.size))
-                    }
-                }
-                .transition(.opacity)
-            }
-        }
         .overlay {
             if model.form != nil || model.closeGate.asking {
                 ZStack(alignment: .bottom) {
@@ -676,7 +680,7 @@ struct PanelView: View {
         let floor = size.height - 50 // the action bar
         guard case .session = menu, let row else {
             // cc-moss's own, from the gear at the rail's foot: up and to the right.
-            return CGSize(width: 6, height: size.height - height - 10)
+            return CGSize(width: Theme.railWidth + 6, height: size.height - height - 10)
         }
         let below = row.maxY - 2
         let y = below + height <= floor ? below : max(row.minY - height + 2, 8)
