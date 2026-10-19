@@ -60,7 +60,10 @@ pub fn files(exe: &str, state: &Path) -> Vec<File> {
     vec![
         managed("CLAUDE.md", CLAUDE_MD),
         managed("SECURITY.md", SECURITY_MD),
-        managed(".claude/settings.json", &settings_json(exe, state)),
+        managed(
+            ".claude/settings.json",
+            &settings_json(exe, state, config_dir().as_deref()),
+        ),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
         managed(".claude/skills/moss-sessions/SKILL.md", SESSIONS_SKILL),
         managed(".claude/skills/moss-doctor/SKILL.md", DOCTOR_SKILL),
@@ -82,8 +85,17 @@ const SHELL_READ_ONLY: &[&str] = &[
     "USER.md",
 ];
 
-/// Where Claude Code keeps every session's transcript.
-const PRIVATE_READS: &str = "~/.claude";
+/// Where Claude Code keeps every session's transcript, and its own record
+/// of your projects and history.
+const PRIVATE_READS: &[&str] = &["~/.claude", "~/.claude.json"];
+
+/// `CLAUDE_CONFIG_DIR` when set (absolute): Claude Code keeps there what
+/// it otherwise keeps in `~/.claude` and `~/.claude.json`.
+fn config_dir() -> Option<PathBuf> {
+    std::env::var_os("CLAUDE_CONFIG_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+}
 
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
@@ -100,7 +112,7 @@ const PROFILE_COMMAND: &str = "cc-moss moss profile *";
 ///   (the working directory), the per-user temp folder and the registry
 ///   cc-moss's own commands update; no retry outside it; Claude Code
 ///   refuses to start rather than run without it.
-fn settings_json(exe: &str, state: &Path) -> String {
+fn settings_json(exe: &str, state: &Path, config_dir: Option<&Path>) -> String {
     let home = moss::home_dir(state);
     let command = format!(
         "{} hook {GUARD_EVENT} --home {} || exit 2",
@@ -120,6 +132,12 @@ fn settings_json(exe: &str, state: &Path) -> String {
         .chain(guard::CONVERSATION)
         .chain(&[".claude"])
         .map(|f| format!("./{f}"))
+        .collect();
+    let deny_read: Vec<String> = PRIVATE_READS
+        .iter()
+        .map(|p| p.to_string())
+        .chain(config_dir.map(|c| c.to_string_lossy().into_owned()))
+        .chain([state.to_string_lossy().into_owned()])
         .collect();
     let value = serde_json::json!({
         "hooks": {
@@ -150,7 +168,7 @@ fn settings_json(exe: &str, state: &Path) -> String {
                 // Other sessions' conversations are not Moss's to read: not
                 // Claude Code's folder, not cc-moss's state (the registry, other sessions' questions),
                 // except its own home (the working directory) inside it.
-                "denyRead": [PRIVATE_READS, state.to_string_lossy()],
+                "denyRead": deny_read,
                 "allowRead": ["."]
             },
             // It looks after sessions on this Mac: no network.
@@ -1387,7 +1405,7 @@ mod tests {
 
     #[test]
     fn guard_settings_run_this_cc_moss_and_fail_closed() {
-        let text = settings_json("/Users/a b/it's/cc-moss", Path::new("/s t/state"));
+        let text = settings_json("/Users/a b/it's/cc-moss", Path::new("/s t/state"), None);
         let v: serde_json::Value = serde_json::from_str(&text).unwrap();
         let hook = &v["hooks"]["PreToolUse"][0];
         assert_eq!(hook["matcher"], "*", "every tool, MCP tools too");
@@ -1405,7 +1423,7 @@ mod tests {
     #[test]
     fn moss_settings_turn_the_strict_sandbox_on() {
         let v: serde_json::Value =
-            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
         let sandbox = &v["sandbox"];
         assert_eq!(sandbox["enabled"], true);
         assert_eq!(sandbox["failIfUnavailable"], true, "never unsandboxed");
@@ -1442,7 +1460,18 @@ mod tests {
         // except its own home.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude", "/s"])
+            serde_json::json!(["~/.claude", "~/.claude.json", "/s"])
+        );
+        // Claude Code's folder where CLAUDE_CONFIG_DIR puts it, too.
+        let moved: serde_json::Value = serde_json::from_str(&settings_json(
+            "/bin/cc-moss",
+            Path::new("/s"),
+            Some(Path::new("/c")),
+        ))
+        .unwrap();
+        assert_eq!(
+            moved["sandbox"]["filesystem"]["denyRead"],
+            serde_json::json!(["~/.claude", "~/.claude.json", "/c", "/s"])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
         // No file tools: Moss reads and writes through the sandboxed shell.
@@ -1462,7 +1491,7 @@ mod tests {
         // any sandbox widening in them) never reach it, so the hooks that
         // record it are in its own settings.
         let v: serde_json::Value =
-            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
         let commands = |event: &str| -> Vec<String> {
             v["hooks"][event]
                 .as_array()

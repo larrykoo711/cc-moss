@@ -313,6 +313,9 @@ mod tests {
         for (tool, input) in [
             ("Read", json!({ "file_path": "SESSIONS.md" })),
             ("Read", json!({ "file_path": "/etc/hosts" })),
+            // Claude Code's record of your projects and history.
+            ("Read", json!({ "file_path": "~/.claude.json" })),
+            ("Read", json!({ "file_path": "/c/.claude.json" })),
             (
                 "Write",
                 json!({ "file_path": "journal/today.md", "content": "x" }),

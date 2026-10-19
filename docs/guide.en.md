@@ -399,8 +399,8 @@ keeps trying.
   - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
     only in its home, never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
-  - Your other sessions stay private: neither its tools nor its shell can read Claude Code's folder (`~/.claude`,
-    where your conversations are) or cc-moss's records outside its home. What Moss knows about your sessions is
+  - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude` and `~/.claude.json`,
+    where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
     the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
     updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
   - No network: web fetch and web search are refused, and its shell can't reach the internet.
