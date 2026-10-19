@@ -212,6 +212,24 @@ fn moss_comes_up_with_role() {
         moss_option(&w, &["show-options", "-g", "-v", "window-size"]),
         "manual"
     );
+    // Its terminal tab says Moss.
+    assert_eq!(
+        moss_option(&w, &["show-options", "-g", "-v", "set-titles"]),
+        "on"
+    );
+    assert_eq!(
+        moss_option(
+            &w,
+            &[
+                "display-message",
+                "-p",
+                "-t",
+                "=moss:",
+                "#{T:set-titles-string}"
+            ]
+        ),
+        "Moss"
+    );
     let st = status(&w);
     assert_eq!(st["daemon_running"], true, "{st}");
     assert!(st.get("last_error").is_none(), "{st}");

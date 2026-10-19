@@ -250,6 +250,8 @@ pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slo
     if target != current {
         tmux.rename_session(tmux_id, &target)?;
     }
+    // Its own name for terminal tabs, as written (spaces, Chinese and all).
+    tmux.set_display_name(tmux_id, name)?;
     registry.set_tmux_session_name(&slot.slot_id, &target)
 }
 
