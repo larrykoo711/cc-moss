@@ -24,6 +24,10 @@ pub fn dir(home: &Path) -> PathBuf {
     home.join("inbox")
 }
 
+/// `<home>/input-busy`: there while text cc-moss could not clear sits in
+/// Moss's input and nothing more is typed in.
+pub const INPUT_BUSY: &str = "input-busy";
+
 /// How much of the message's end is looked for on screen.
 pub const TAIL_CHARS: usize = 12;
 
@@ -91,6 +95,14 @@ pub fn count(home: &Path) -> usize {
     waiting(home).len()
 }
 
+/// How many of your messages wait (`moss status`'s `queued`).
+pub fn count_yours(home: &Path) -> usize {
+    waiting(home)
+        .iter()
+        .filter(|(_, m)| m.as_ref().is_some_and(|m| m.from == "you"))
+        .count()
+}
+
 // ---------------------------------------------------------------- the terminal
 
 /// Moss's terminal, as far as typing a message in goes.
@@ -111,15 +123,49 @@ const PROMPT: char = '❯';
 /// Claude Code shows a long paste as this instead of its text.
 const PASTED: &str = "[Pastedtext";
 
-/// Whether Moss's input line is empty: the last line with the prompt mark
-/// has nothing typed after it. Placeholder hints (dim) and the cursor
-/// (inverse) are not typing. No prompt on screen (starting up, a dialog)
-/// is not empty: nothing is pasted then.
+/// A box-drawing character (`│ ╭ ─ ╰`): Claude Code frames its input with
+/// them; they are never typing.
+fn border(c: char) -> bool {
+    ('\u{2500}'..='\u{257f}').contains(&c)
+}
+
+/// Whether `plain_line` is a prompt line: its first character that is not
+/// a blank or a border is the prompt mark.
+pub(crate) fn prompt_line(plain_line: &str) -> bool {
+    plain_line
+        .chars()
+        .find(|c| !c.is_whitespace() && !border(*c))
+        == Some(PROMPT)
+}
+
+/// A line that closes the input box: only borders (and blanks), with at
+/// least one border.
+fn rule_line(plain_line: &str) -> bool {
+    plain_line.chars().any(border) && plain_line.chars().all(|c| c.is_whitespace() || border(c))
+}
+
+/// Where the input starts: the first prompt line inside the box that holds
+/// the last one (after the rule above it). A pasted line that itself starts
+/// with the prompt mark is inside the same box, below the real prompt.
+fn input_start(lines: &[String]) -> Option<usize> {
+    let last = (0..lines.len()).rev().find(|i| prompt_line(&lines[*i]))?;
+    let top = (0..last)
+        .rev()
+        .find(|i| rule_line(&lines[*i]))
+        .map_or(0, |r| r + 1);
+    (top..=last).find(|i| prompt_line(&lines[*i]))
+}
+
+/// Whether Moss's input line is empty: the last prompt line has nothing
+/// typed after its mark. Placeholder hints (dim), the cursor (inverse) and
+/// borders are not typing. No prompt on screen (starting up, a dialog) is
+/// not empty: nothing is pasted then.
 pub fn input_empty(screen: &str) -> bool {
-    let Some(line) = screen.lines().rev().find(|l| l.contains(PROMPT)) else {
+    let styled: Vec<&str> = screen.lines().collect();
+    let Some(line) = styled.iter().rev().find(|l| prompt_line(&plain(l))) else {
         return false;
     };
-    let after = &line[line.rfind(PROMPT).unwrap_or(0) + PROMPT.len_utf8()..];
+    let after = &line[line.find(PROMPT).unwrap_or(0) + PROMPT.len_utf8()..];
     !typed(after)
 }
 
@@ -146,9 +192,7 @@ fn typed(styled: &str) -> bool {
             }
             continue;
         }
-        // Box borders (│ ╭ ─) frame the input; they are not typing.
-        let border = ('\u{2500}'..='\u{257f}').contains(&c);
-        if !c.is_whitespace() && !c.is_control() && !border && !dim && !inverse {
+        if !c.is_whitespace() && !c.is_control() && !border(c) && !dim && !inverse {
             return true;
         }
     }
@@ -216,21 +260,35 @@ pub fn plain(styled: &str) -> String {
 /// The last [`TAIL_CHARS`] characters of `text` that are not blanks: what
 /// is looked for on screen after a paste, and in the transcript after.
 pub fn tail(text: &str) -> String {
-    let squeezed: Vec<char> = text.chars().filter(|c| !c.is_whitespace()).collect();
+    let squeezed: Vec<char> = squeeze(text).chars().collect();
     squeezed[squeezed.len().saturating_sub(TAIL_CHARS)..]
         .iter()
         .collect()
 }
 
-/// Whether the screen shows `tail` in the input (after the last prompt
-/// mark), or Claude Code's stand-in for a long paste.
+/// `text` without blanks and box borders: how texts are compared, on screen
+/// and in the transcript.
+pub fn squeeze(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_whitespace() && !border(*c))
+        .collect()
+}
+
+/// Whether the screen shows `tail` in the input box (from its prompt line
+/// to the rule that closes it), or Claude Code's stand-in for a long paste.
 pub fn shows(screen: &str, tail: &str) -> bool {
-    let text = plain(screen);
-    let input = match text.rfind(PROMPT) {
-        Some(at) => &text[at..],
-        None => &text[..],
+    let lines: Vec<String> = plain(screen).lines().map(String::from).collect();
+    let Some(start) = input_start(&lines) else {
+        return false;
     };
-    let squeezed: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let mut input = String::new();
+    for line in &lines[start..] {
+        if rule_line(line) {
+            break;
+        }
+        input.push_str(line);
+    }
+    let squeezed = squeeze(&input);
     squeezed.contains(tail) || squeezed.contains(PASTED)
 }
 
@@ -238,38 +296,67 @@ pub fn shows(screen: &str, tail: &str) -> bool {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Typed {
     /// Pasted, seen and submitted; `pastes` pastes it took.
-    Sent {
-        pastes: u32,
-    },
+    Sent { pastes: u32 },
+    /// Not sent; the input is empty again.
     Failed(String),
+    /// Not sent, and something stays in the input that C-u did not clear.
+    Stuck(String),
 }
 
 /// Paste `text` and submit it: paste, look; paste again, look; Esc, paste,
-/// look; then give up. Enter only once the text was seen.
+/// look; then give up. Enter only once the text was seen, or once the
+/// input holds something after a paste (it landed; pasting again would
+/// double it). A failure clears the input with C-u (never a second Esc,
+/// which opens Claude Code's rewind menu) and says whether that worked.
 pub fn type_in(pane: &mut dyn Pane, text: &str) -> Typed {
     let tail = tail(text);
     if tail.is_empty() {
         return Typed::Failed("the message is empty".into());
     }
-    for attempt in 1..=3u32 {
-        if attempt == 3 {
-            if let Err(e) = pane.key("Escape") {
-                return Typed::Failed(format!("tmux: {e}"));
+    let error = 'tries: {
+        for attempt in 1..=3u32 {
+            if attempt > 1 {
+                // Not seen, but landed all the same: no second copy.
+                if pane.screen().is_ok_and(|s| !input_empty(&s)) {
+                    return enter(pane, attempt - 1);
+                }
+            }
+            if attempt == 3 {
+                if let Err(e) = pane.key("Escape") {
+                    break 'tries format!("tmux: {e}");
+                }
+            }
+            if let Err(e) = pane.paste(text) {
+                break 'tries format!("tmux: {e}");
+            }
+            pane.wait(SETTLE);
+            if pane.screen().is_ok_and(|s| shows(&s, &tail)) {
+                return enter(pane, attempt);
             }
         }
-        if let Err(e) = pane.paste(text) {
-            return Typed::Failed(format!("tmux: {e}"));
-        }
-        pane.wait(SETTLE);
-        let seen = pane.screen().is_ok_and(|s| shows(&s, &tail));
-        if seen {
-            return match pane.key("Enter") {
-                Ok(()) => Typed::Sent { pastes: attempt },
-                Err(e) => Typed::Failed(format!("tmux: {e}")),
-            };
-        }
+        "the message did not show up in Moss's input after three pastes".to_string()
+    };
+    clear_after_failure(pane, error)
+}
+
+fn enter(pane: &mut dyn Pane, pastes: u32) -> Typed {
+    match pane.key("Enter") {
+        Ok(()) => Typed::Sent { pastes },
+        Err(e) => clear_after_failure(pane, format!("tmux: {e}")),
     }
-    Typed::Failed("the message did not show up in Moss's input after three pastes".into())
+}
+
+fn clear_after_failure(pane: &mut dyn Pane, error: String) -> Typed {
+    if pane.screen().is_ok_and(|s| input_empty(&s)) {
+        return Typed::Failed(error);
+    }
+    let _ = pane.key("C-u");
+    pane.wait(SETTLE);
+    if pane.screen().is_ok_and(|s| input_empty(&s)) {
+        Typed::Failed(error)
+    } else {
+        Typed::Stuck(error)
+    }
 }
 
 // ---------------------------------------------------------------- the queue
@@ -302,11 +389,18 @@ pub enum Outcome {
 #[derive(Debug, Default)]
 pub struct Courier {
     in_flight: Option<InFlight>,
+    input_busy: bool,
 }
 
 impl Courier {
     pub fn in_flight(&self) -> Option<&InFlight> {
         self.in_flight.as_ref()
+    }
+
+    /// A failed message left text in Moss's input that could not be
+    /// cleared; nothing goes in until it is empty again.
+    pub fn input_busy(&self) -> bool {
+        self.input_busy
     }
 
     /// The reply to the message in flight is in (or will not come).
@@ -343,7 +437,7 @@ impl Courier {
                 continue;
             };
             match pane.screen() {
-                Ok(screen) if input_empty(&screen) => {}
+                Ok(screen) if input_empty(&screen) => self.input_busy = false,
                 // Someone is typing in Moss's terminal, or it is not at
                 // its prompt: the next tick looks again.
                 _ => break,
@@ -367,6 +461,15 @@ impl Courier {
                     from: message.from,
                     error,
                 }),
+                Typed::Stuck(error) => {
+                    self.input_busy = true;
+                    out.push(Outcome::Failed {
+                        id: message.id,
+                        from: message.from,
+                        error,
+                    });
+                    break;
+                }
             }
         }
         out
@@ -387,6 +490,15 @@ pub(crate) mod fake {
         pub submitted: Vec<String>,
         /// What shows instead of the prompt (a dialog), when set.
         pub screen_override: Option<String>,
+        /// The next this many pastes land but show garbled (the readback
+        /// cannot find them).
+        pub blind: u32,
+        /// Showing garbled now.
+        pub garbled: bool,
+        /// The next this many pastes land, then tmux reports an error.
+        pub paste_errors: u32,
+        /// C-u does not clear the input.
+        pub sticky: bool,
     }
 
     impl Pane for FakePane {
@@ -394,8 +506,16 @@ pub(crate) mod fake {
             self.calls.push(format!("paste {text}"));
             if self.swallow > 0 {
                 self.swallow -= 1;
-            } else {
-                self.input.push_str(text);
+                return Ok(());
+            }
+            self.input.push_str(text);
+            if self.blind > 0 {
+                self.blind -= 1;
+                self.garbled = true;
+            }
+            if self.paste_errors > 0 {
+                self.paste_errors -= 1;
+                return Err("lost server".into());
             }
             Ok(())
         }
@@ -403,9 +523,13 @@ pub(crate) mod fake {
             if let Some(s) = &self.screen_override {
                 return Ok(s.clone());
             }
+            let shown = if self.garbled {
+                "#".repeat(self.input.chars().count())
+            } else {
+                self.input.replace('\n', "\n  ")
+            };
             Ok(format!(
-                "Moss\n\u{1b}[2m────\u{1b}[0m\n❯ {}\u{1b}[7m \u{1b}[27m\n  ? for shortcuts\n",
-                self.input
+                "Moss\n\u{1b}[2m────\u{1b}[0m\n❯ {shown}\u{1b}[7m \u{1b}[27m\n\u{1b}[2m────\u{1b}[0m\n  ? for shortcuts\n"
             ))
         }
         fn key(&mut self, key: &str) -> Result<(), String> {
@@ -413,6 +537,7 @@ pub(crate) mod fake {
             match key {
                 "Enter" => self.submitted.push(std::mem::take(&mut self.input)),
                 "Escape" => self.input.clear(),
+                "C-u" if !self.sticky => self.input.clear(),
                 _ => {}
             }
             Ok(())
@@ -438,6 +563,25 @@ mod tests {
             },
         )
         .unwrap();
+    }
+
+    #[test]
+    fn inbox_counts_only_your_messages() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "mine");
+        put(
+            h,
+            &Message {
+                schema: 1,
+                id: "0000000000002-aaaaaa".into(),
+                at: "t".into(),
+                from: "events".into(),
+                text: "[Update] api dropped".into(),
+            },
+        )
+        .unwrap();
+        assert_eq!(count_yours(h), 1);
     }
 
     #[test]
@@ -587,6 +731,94 @@ mod tests {
     }
 
     #[test]
+    fn inbox_sees_a_message_with_a_prompt_mark_in_it() {
+        let mut pane = FakePane::default();
+        assert_eq!(
+            type_in(&mut pane, "check the api log ❯ now"),
+            Typed::Sent { pastes: 1 }
+        );
+    }
+
+    #[test]
+    fn readback_reads_a_wrapped_message_inside_borders() {
+        let t = tail("please look at the api session now");
+        let screen = "\
+╭──────────────────────────────╮
+│ ❯ please look at the api ses │
+│   sion now                   │
+╰──────────────────────────────╯
+  ? for shortcuts
+";
+        assert!(shows(screen, &t));
+        // The box's bottom ends the input: a footer is not part of it.
+        let footer = "│ ❯ please look │\n╰────╯\n  the api session now\n";
+        assert!(!shows(footer, &t));
+    }
+
+    #[test]
+    fn inbox_landed_but_unseen_is_not_pasted_twice() {
+        let mut pane = FakePane {
+            blind: 1,
+            ..FakePane::default()
+        };
+        assert_eq!(type_in(&mut pane, "hello moss"), Typed::Sent { pastes: 1 });
+        assert_eq!(pane.calls, ["paste hello moss", "key Enter"]);
+        assert_eq!(pane.submitted, ["hello moss"]);
+    }
+
+    #[test]
+    fn inbox_failure_clears_the_input_and_keeps_the_queue_moving() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "first");
+        say(h, "0000000000002-aaaaaa", "second");
+        // tmux fails after the text landed: C-u clears it, the next goes on.
+        let mut pane = FakePane {
+            paste_errors: 1,
+            ..FakePane::default()
+        };
+        let mut c = Courier::default();
+        let out = c.step(h, &mut pane, Some(false), 1);
+        assert!(matches!(&out[0], Outcome::Failed { id, .. } if id == "0000000000001-aaaaaa"));
+        assert!(matches!(&out[1], Outcome::Sent(f) if f.id == "0000000000002-aaaaaa"));
+        assert!(
+            pane.calls.iter().any(|k| k == "key C-u"),
+            "{:?}",
+            pane.calls
+        );
+        assert!(!pane.calls.iter().any(|k| k == "key Escape" && false));
+        assert_eq!(pane.submitted, ["second"]);
+        assert!(!c.input_busy());
+    }
+
+    #[test]
+    fn inbox_says_when_its_input_stays_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000001-aaaaaa", "first");
+        say(h, "0000000000002-aaaaaa", "second");
+        let mut pane = FakePane {
+            paste_errors: 1,
+            sticky: true,
+            ..FakePane::default()
+        };
+        let mut c = Courier::default();
+        let out = c.step(h, &mut pane, Some(false), 1);
+        assert_eq!(out.len(), 1, "{out:?}");
+        assert!(matches!(&out[0], Outcome::Failed { .. }));
+        assert!(
+            c.input_busy(),
+            "left text it cannot clear: said, not silent"
+        );
+        assert_eq!(count(h), 1);
+        // Cleared by hand: busy no more, and the queue moves.
+        pane.input.clear();
+        let out = c.step(h, &mut pane, Some(false), 2);
+        assert!(matches!(&out[..], [Outcome::Sent(f)] if f.id == "0000000000002-aaaaaa"));
+        assert!(!c.input_busy());
+    }
+
+    #[test]
     fn input_line_reads_hints_and_cursor_as_empty() {
         assert!(input_empty("❯ \n"));
         assert!(input_empty(
@@ -605,7 +837,15 @@ mod tests {
             "old: the api session\n❯ please look at the api\nsession\n",
             &t
         ));
-        assert!(!shows("❯ please look at the api session\n❯ \n", &t));
+        assert!(!shows(
+            "❯ please look at the api session\n────\n❯ \n────\n",
+            &t
+        ));
+        // A pasted line starting with the mark is still the same input.
+        assert!(shows(
+            "────\n❯ first line\n  ❯ please look at the api session\n────\n",
+            &t
+        ));
         assert!(shows("❯ [Pasted text #1 +40 lines]\n", &t));
     }
 }

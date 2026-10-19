@@ -79,6 +79,9 @@ const SHELL_READ_ONLY: &[&str] = &[
     "USER.md",
 ];
 
+/// Where Claude Code keeps every session's transcript.
+const PRIVATE_READS: &str = "~/.claude/projects";
+
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
 const PROFILE_COMMAND: &str = "cc-moss moss profile *";
@@ -126,6 +129,11 @@ fn settings_json(exe: &str, state: &Path) -> String {
                 "hooks": [{ "type": "command", "command": stop }]
             }]
         },
+        // Other sessions' conversations are not Moss's to read: not with
+        // its file tools (a deny rule holds in bypass mode too) ...
+        "permissions": {
+            "deny": [format!("Read({PRIVATE_READS}/**)")]
+        },
         "sandbox": {
             "enabled": true,
             "failIfUnavailable": true,
@@ -134,7 +142,9 @@ fn settings_json(exe: &str, state: &Path) -> String {
             "excludedCommands": [PROFILE_COMMAND],
             "filesystem": {
                 "allowWrite": allow_write,
-                "denyWrite": deny_write
+                "denyWrite": deny_write,
+                // ... nor from the shell.
+                "denyRead": [PRIVATE_READS]
             }
         }
     });
@@ -361,7 +371,8 @@ pub fn report() -> moss::Report {
     let last_error = moss::read_error(&state);
     let mut r = moss::Report::new(on, running, stored.as_ref(), daemon_running, last_error);
     let home = moss::home_dir(&state);
-    r.queued = inbox::count(&home);
+    r.queued = inbox::count_yours(&home);
+    r.input_busy = home.join(inbox::INPUT_BUSY).exists();
     r.last_reply_at = chat::last_reply_at(&home);
     let turn = if running {
         transcript_of_moss(&state).and_then(|t| moss_core::transcript::turn_open(&t))
@@ -642,7 +653,16 @@ fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
         .and_then(serde_json::Value::as_str)
         .map(PathBuf::from)
         .unwrap_or_else(|| home.clone());
-    Ok(guard::decide(&home, &cwd, tool, tool_input))
+    let private = guard::private_reads(
+        std::env::var_os("HOME").as_deref().map(Path::new),
+        std::env::var_os("CLAUDE_CONFIG_DIR")
+            .as_deref()
+            .map(Path::new),
+    );
+    match guard::decide_read(&private, &cwd, tool, tool_input) {
+        Decision::Allow => Ok(guard::decide(&home, &cwd, tool, tool_input)),
+        deny => Ok(deny),
+    }
 }
 
 // ---------------------------------------------------------------- install / uninstall
@@ -827,9 +847,12 @@ impl Looker {
         let steps = test_millis_list("CC_MOSS_MOSS_STEPS_MS");
         let check_every = test_millis("CC_MOSS_MOSS_CHECK_MS").unwrap_or(keeper::CHECK_EVERY);
         let now = Instant::now();
+        let talk = super::moss_talk::Talk::new(state);
+        // Replies the daemon before this one was still waiting on are lost.
+        talk.recover(log);
         Some(Looker {
             keeper: Keeper::new(steps),
-            talk: super::moss_talk::Talk::new(state),
+            talk,
             digest: true,
             socket,
             state: state.to_path_buf(),
@@ -903,6 +926,8 @@ impl Looker {
         match self.launch() {
             Ok(session_id) => {
                 self.keeper.started(now);
+                // A fresh Moss: whatever the old one had in hand is lost.
+                self.talk.moss_restarted(log);
                 let restarts = self.keeper.restarts();
                 let stored = Stored {
                     schema: 1,
@@ -1191,6 +1216,16 @@ mod tests {
         assert_eq!(
             sandbox["excludedCommands"],
             serde_json::json!(["cc-moss moss profile *"])
+        );
+        assert!(deny.contains(&"./input-busy".into()));
+        // Other sessions' transcripts: not for shell commands, nor Read.
+        assert_eq!(
+            sandbox["filesystem"]["denyRead"],
+            serde_json::json!(["~/.claude/projects"])
+        );
+        assert_eq!(
+            v["permissions"]["deny"],
+            serde_json::json!(["Read(~/.claude/projects/**)"])
         );
     }
 

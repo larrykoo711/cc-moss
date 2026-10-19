@@ -143,6 +143,58 @@ impl Talk {
         }
     }
 
+    /// A new Moss runs: the one that had the message in flight is gone,
+    /// so its reply will not come.
+    pub fn moss_restarted(&mut self, log: &dyn Fn(&str)) {
+        if let Some((sent, _)) = self.claim.take() {
+            self.received(&sent, now_ms(), "Moss restarted before it replied", log);
+        }
+        self.courier.done();
+        self.transcript = None;
+        self.show_waiting(false);
+    }
+
+    /// At daemon start: your messages a daemon before this one sent and
+    /// never saw answered get their "received".
+    pub fn recover(&self, log: &dyn Fn(&str)) {
+        for id in chat::unanswered(&self.home) {
+            let sent = InFlight {
+                id,
+                from: chat::FROM_YOU.to_string(),
+                tail: String::new(),
+                at_ms: 0,
+            };
+            self.received(
+                &sent,
+                now_ms(),
+                "the daemon restarted before the reply",
+                log,
+            );
+        }
+    }
+
+    /// The stand-in reply when Moss's own cannot be had.
+    fn received(&self, sent: &InFlight, now_ms: i64, why: &str, log: &dyn Fn(&str)) {
+        log(&format!("moss: no reply taken for {}: {why}", sent.id));
+        let text = tr!(
+            "Moss got it (its reply could not be read back; see its terminal).",
+            "Moss 收到了（没能取回回复，去终端看）。"
+        );
+        let line = Line {
+            reply_to: Some(sent.id.clone()),
+            fallback: true,
+            // Nobody waits on a reply to session news.
+            silent: sent.from != chat::FROM_YOU,
+            ..Line::message(
+                &inbox::new_id(now_ms),
+                &rfc3339(now_ms),
+                chat::FROM_MOSS,
+                text,
+            )
+        };
+        self.record(&line, log);
+    }
+
     /// One go of the daemon's loop, while Moss runs.
     pub fn tick(&mut self, socket: &str, now: Instant, digest_on: bool, log: &dyn Fn(&str)) {
         let now_ms = now_ms();
@@ -181,7 +233,9 @@ impl Talk {
             .as_deref()
             .and_then(moss_core::transcript::turn_open);
         let from = std::fs::metadata(&transcript).map_or(0, |m| m.len());
-        for outcome in self.courier.step(&self.home, &mut pane, turn, now_ms) {
+        let outcomes = self.courier.step(&self.home, &mut pane, turn, now_ms);
+        self.show_input_busy(self.courier.input_busy());
+        for outcome in outcomes {
             match outcome {
                 Outcome::Sent(sent) => {
                     if sent.from == chat::FROM_YOU {
@@ -223,26 +277,16 @@ impl Talk {
             }
             Verdict::Reply { text, .. } => {
                 let parsed = markers::parse(&text);
-                Line {
+                Some(Line {
                     reply_to: Some(sent.id.clone()),
                     silent: parsed.silent,
                     buttons: parsed.buttons,
                     ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, &parsed.text)
-                }
+                })
             }
             Verdict::Received(why) => {
-                log(&format!("moss: no reply taken for {}: {why}", sent.id));
-                let text = tr!(
-                    "Moss got it (its reply could not be read back; see its terminal).",
-                    "Moss 收到了（没能取回回复，去终端看）。"
-                );
-                Line {
-                    reply_to: Some(sent.id.clone()),
-                    fallback: true,
-                    // Nobody waits on a reply to session news.
-                    silent: sent.from != chat::FROM_YOU,
-                    ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, text)
-                }
+                self.received(&sent, now_ms, &why, log);
+                None
             }
         };
         if let Some((_, c)) = &self.claim {
@@ -254,7 +298,22 @@ impl Talk {
         self.claim = None;
         self.courier.done();
         self.show_waiting(false);
-        self.record(&line, log);
+        if let Some(line) = line {
+            self.record(&line, log);
+        }
+    }
+
+    /// `<home>/input-busy` while text that could not be cleared blocks
+    /// Moss's input.
+    fn show_input_busy(&self, busy: bool) {
+        let path = self.home.join(inbox::INPUT_BUSY);
+        if busy {
+            if !path.exists() {
+                let _ = std::fs::write(&path, b"");
+            }
+        } else {
+            let _ = moss::remove(&path);
+        }
     }
 
     /// `<home>/waiting` while Moss waits on a confirm prompt.
@@ -380,4 +439,66 @@ fn process_exists(pid: u32) -> bool {
     // SAFETY: signal 0 only checks that the process exists.
     let r = unsafe { libc::kill(pid, 0) };
     r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(id: &str, from: &str) -> Line {
+        Line::message(id, "t", from, "x")
+    }
+
+    #[test]
+    fn a_new_moss_answers_the_message_in_flight() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut talk = Talk::new(dir.path());
+        std::fs::create_dir_all(&talk.home).unwrap();
+        let sent = InFlight {
+            id: "m1".into(),
+            from: chat::FROM_YOU.into(),
+            tail: "x".into(),
+            at_ms: 1,
+        };
+        let claim = Claim::new(PathBuf::new(), 0, "x", 1, talk.timing);
+        talk.claim = Some((sent, claim));
+        talk.moss_restarted(&|_| {});
+        assert!(talk.claim.is_none());
+        assert!(talk.courier.in_flight().is_none());
+        let shown = chat::fold(&talk.home, 10);
+        assert!(
+            shown
+                .iter()
+                .any(|m| m.reply_to.as_deref() == Some("m1") && m.fallback),
+            "{shown:?}"
+        );
+    }
+
+    #[test]
+    fn a_new_daemon_answers_messages_left_sent() {
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        std::fs::create_dir_all(&talk.home).unwrap();
+        for l in [
+            line("m1", chat::FROM_YOU),
+            Line::state("m1", "t", "sent", None),
+            line("m2", chat::FROM_YOU),
+            Line::state("m2", "t", "sent", None),
+            Line {
+                reply_to: Some("m2".into()),
+                ..line("r2", chat::FROM_MOSS)
+            },
+            line("m3", chat::FROM_YOU),
+        ] {
+            chat::append(&talk.home, &l).unwrap();
+        }
+        talk.recover(&|_| {});
+        let shown = chat::fold(&talk.home, 10);
+        let state = |id: &str| shown.iter().find(|m| m.id == id).unwrap().state.clone();
+        assert_eq!(state("m1").as_deref(), Some("replied"));
+        assert_eq!(state("m2").as_deref(), Some("replied"));
+        assert_eq!(state("m3").as_deref(), Some("queued"), "still in the inbox");
+        let fallbacks = shown.iter().filter(|m| m.fallback).count();
+        assert_eq!(fallbacks, 1, "{shown:?}");
+    }
 }

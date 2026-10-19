@@ -191,6 +191,15 @@ fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
     shown.into_iter().skip(skip).collect()
 }
 
+/// Your messages that went in and got no reply (state `sent`).
+pub fn unanswered(home: &Path) -> Vec<String> {
+    fold(home, usize::MAX)
+        .into_iter()
+        .filter(|m| m.from == FROM_YOU && m.state.as_deref() == Some("sent"))
+        .map(|m| m.id)
+        .collect()
+}
+
 /// When Moss last replied (shown or silent), as written.
 pub fn last_reply_at(home: &Path) -> Option<String> {
     let mut lines = read_lines(&path(home));

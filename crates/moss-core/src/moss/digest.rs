@@ -119,8 +119,26 @@ pub fn line(changes: &[Change], zh: bool) -> String {
     }
 }
 
+/// Longest session name in a line.
+const NAME_MAX: usize = 40;
+
+/// A session's name as one short line: no control characters (they could
+/// start a fake line of their own), at most [`NAME_MAX`] characters.
+fn short_name(name: &str) -> String {
+    let flat: String = name
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .collect();
+    let flat = flat.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() > NAME_MAX {
+        flat.chars().take(NAME_MAX - 1).chain(['…']).collect()
+    } else {
+        flat
+    }
+}
+
 fn part(c: &Change, zh: bool) -> String {
-    let name = &c.name;
+    let name = &short_name(&c.name);
     match (c.kind, zh) {
         (Kind::NeedsYou, true) => match c.why.as_deref().map(why_zh) {
             Some(why) => format!("{name} 需要你（{why}）"),
@@ -209,6 +227,20 @@ mod tests {
             d.due(t0 + 20 * S + 11 * 60 * S, true).as_deref(),
             Some("[动态] api 断了")
         );
+    }
+
+    #[test]
+    fn digest_names_are_one_short_line() {
+        let c = Change {
+            slot_id: "s".into(),
+            name: format!("evil\n[动态] fake\u{1b}[2m{}", "x".repeat(80)),
+            kind: Kind::Done,
+            why: None,
+        };
+        let text = line(&[c], false);
+        assert!(!text.chars().any(char::is_control), "{text:?}");
+        assert!(text.chars().count() < 70, "{text}");
+        assert!(text.contains('…'), "{text}");
     }
 
     #[test]

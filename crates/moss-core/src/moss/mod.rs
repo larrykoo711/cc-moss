@@ -135,8 +135,12 @@ pub struct Report {
     pub last_error: Option<String>,
     /// What it is doing: [`activity`].
     pub activity: &'static str,
-    /// Messages waiting in its inbox.
+    /// Your messages waiting in its inbox.
     pub queued: usize,
+    /// Text cc-moss could not clear is stuck in Moss's input: nothing more
+    /// goes in until someone clears it in its terminal.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub input_busy: bool,
     /// When its last reply came in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_reply_at: Option<String>,
@@ -186,6 +190,7 @@ impl Report {
             since_ms: stored.map(|s| s.started_ms),
             activity: activity(enabled, running, daemon_running, false, None),
             queued: 0,
+            input_busy: false,
             last_reply_at: None,
         }
     }

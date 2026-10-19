@@ -39,7 +39,7 @@ stop_hook() {
   cmd=$(sed -n 's/.*"command": "\(.*hook moss-stop.*\)".*/\1/p' .claude/settings.json)
   [ -n "$cmd" ] && sh -c "$cmd" < /dev/null
 }
-prompt() { printf '\n❯ '; }
+prompt() { printf '\n────────\n❯ '; }
 
 turn() {
   local text=$1 answer

@@ -39,7 +39,14 @@ const MANAGED: &[&str] = &["security.md", "claude.md", "sessions.md"];
 /// The conversation with you, kept by cc-moss in Moss's home: what waits
 /// to go in, the chat record, the turn markers and the waiting flag. Moss
 /// writing these could put words in your mouth.
-pub const CONVERSATION: &[&str] = &["inbox", "stop", "chat.jsonl", "chat.jsonl.1", "waiting"];
+pub const CONVERSATION: &[&str] = &[
+    "inbox",
+    "stop",
+    "chat.jsonl",
+    "chat.jsonl.1",
+    "waiting",
+    "input-busy",
+];
 
 /// Moss's persona: changed only through `/moss-profile`.
 const PERSONA: &[&str] = &["identity.md", "soul.md", "user.md"];
@@ -114,6 +121,70 @@ pub fn decide(home: &Path, cwd: &Path, tool: &str, input: &Value) -> Decision {
     write_to(home, cwd, Path::new(raw))
 }
 
+/// Folders Moss's read tools stay out of: the transcripts of the user's
+/// other Claude Code sessions (`~/.claude/projects`, and under
+/// `CLAUDE_CONFIG_DIR` when that is set). Moss hears about sessions only
+/// through cc-moss, never by reading their conversations.
+pub fn private_reads(home: Option<&Path>, config_dir: Option<&Path>) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Some(home) = home.filter(|h| h.is_absolute()) {
+        out.push(home.join(".claude/projects"));
+    }
+    if let Some(config) = config_dir.filter(|c| c.is_absolute()) {
+        out.push(config.join("projects"));
+    }
+    out
+}
+
+/// Whether a read tool (Read, Grep, Glob) may look where it is pointed:
+/// not into `private` (links and `..` followed). Other tools are left to
+/// [`decide`].
+pub fn decide_read(private: &[PathBuf], cwd: &Path, tool: &str, input: &Value) -> Decision {
+    let mut paths: Vec<&str> = Vec::new();
+    let field = |k: &str| {
+        input
+            .get(k)
+            .and_then(Value::as_str)
+            .filter(|p| !p.is_empty())
+    };
+    match tool {
+        "Read" => paths.extend(field("file_path")),
+        "Grep" => paths.extend(field("path")),
+        "Glob" => {
+            paths.extend(field("path"));
+            // An absolute pattern names its folder itself: up to the first
+            // wildcard.
+            if let Some(pattern) = field("pattern").filter(|p| p.starts_with('/')) {
+                let cut = pattern.find(['*', '?', '[', '{']).unwrap_or(pattern.len());
+                paths.push(&pattern[..cut]);
+            }
+        }
+        _ => return Decision::Allow,
+    }
+    if paths.is_empty() {
+        paths.push(".");
+    }
+    let fenced: Vec<PathBuf> = private.iter().filter_map(|p| resolve(p)).collect();
+    for raw in paths {
+        let path = Path::new(raw);
+        let absolute = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            cwd.join(path)
+        };
+        let Some(target) = resolve(&absolute) else {
+            return Decision::deny("cc-moss could not work out where that path leads; not reading");
+        };
+        if fenced.iter().any(|f| target.starts_with(f)) {
+            return Decision::deny(
+                "the transcripts of the user's other sessions are private; \
+                 SESSIONS.md and cc-moss's updates are what Moss knows about them",
+            );
+        }
+    }
+    Decision::Allow
+}
+
 /// A write to `path`.
 fn write_to(home: &Path, cwd: &Path, path: &Path) -> Decision {
     let absolute = if path.is_absolute() {
@@ -162,6 +233,30 @@ fn write_to(home: &Path, cwd: &Path, path: &Path) -> Decision {
 fn shell(command: &str) -> Decision {
     let code = without_heredoc_bodies(command);
     let words = words(&code);
+    // Speaking for the user, or marking turns, is cc-moss's.
+    let named = |a: &str, b: &str| {
+        words
+            .windows(2)
+            .any(|p| p[0].eq_ignore_ascii_case(a) && p[1].eq_ignore_ascii_case(b))
+    };
+    if named("moss", "say") || named("hook", "moss-stop") {
+        return Decision::deny(
+            "messages to Moss and its turn markers come from cc-moss; Moss answers in its reply",
+        );
+    }
+    // The profile command runs outside the sandbox: alone, never with
+    // another command riding along.
+    if profile_command(command) {
+        let rest = code.trim();
+        let compound = [";", "&", "|", "\n", "`", "$(", "<(", ">("]
+            .iter()
+            .any(|op| rest.contains(op));
+        if compound {
+            return Decision::deny(
+                "run `cc-moss moss profile <name> --from <file>` as a command of its own",
+            );
+        }
+    }
     let names_protected = words.iter().any(|w| protected_name(w));
     if !names_protected {
         return Decision::Allow;
@@ -190,6 +285,16 @@ fn shell(command: &str) -> Decision {
         "that command would change a file that belongs to cc-moss or Moss's persona; \
          the persona changes only through /moss-profile",
     )
+}
+
+/// Whether `command` starts as `cc-moss moss profile` (what the sandbox lets
+/// out).
+fn profile_command(command: &str) -> bool {
+    let mut it = command.split_whitespace();
+    let first = it.next().unwrap_or("");
+    first.rsplit('/').next() == Some("cc-moss")
+        && it.next() == Some("moss")
+        && it.next() == Some("profile")
 }
 
 /// `cmd <<'TAG'` … `TAG`: the lines in between dropped.
@@ -281,13 +386,23 @@ fn protected_name(word: &str) -> bool {
         .next()
         .unwrap_or(word)
         .to_lowercase();
+    MANAGED.contains(&last.as_str()) || PERSONA.contains(&last.as_str()) || conversation_path(word)
+}
+
+/// A path to the conversation's files in the home: `inbox`, `./stop/x`, or
+/// `…/moss/waiting`, as whole path parts (not `memory/inbox.md`).
+fn conversation_path(word: &str) -> bool {
     let lower = word.to_lowercase();
-    let conversation = lower
+    let parts: Vec<&str> = lower
         .split('/')
-        .any(|p| p == "chat.jsonl" || p == "chat.jsonl.1")
-        || lower.contains("inbox/")
-        || lower.contains("stop/");
-    MANAGED.contains(&last.as_str()) || PERSONA.contains(&last.as_str()) || conversation
+        .filter(|p| !p.is_empty() && *p != ".")
+        .collect();
+    let named = |p: &str| CONVERSATION.contains(&p);
+    if lower.starts_with('/') || lower.starts_with('~') {
+        parts.windows(2).any(|w| w[0] == "moss" && named(w[1]))
+    } else {
+        parts.first().is_some_and(|p| named(p))
+    }
 }
 
 fn own_dir_name(word: &str) -> bool {
@@ -465,6 +580,98 @@ mod tests {
     }
 
     #[test]
+    fn moss_guard_keeps_other_transcripts_unread() {
+        let p = place();
+        let projects = p.root.join("user/.claude/projects");
+        std::fs::create_dir_all(projects.join("-work-api")).unwrap();
+        let private = vec![projects.clone()];
+        let read =
+            |tool: &str, input: serde_json::Value| decide_read(&private, &p.home, tool, &input);
+        let file = projects.join("-work-api/abc.jsonl");
+        assert!(denied(&read("Read", json!({ "file_path": file }))));
+        assert!(denied(&read(
+            "Grep",
+            json!({ "pattern": "x", "path": projects })
+        )));
+        assert!(denied(&read(
+            "Glob",
+            json!({ "pattern": "**/*.jsonl", "path": projects.parent().unwrap().join("projects/.") })
+        )));
+        assert!(denied(&read(
+            "Glob",
+            json!({ "pattern": format!("{}/**/*.jsonl", projects.display()) })
+        )));
+        // Through a link, and through `..`.
+        symlink(&projects, p.home.join("peek")).unwrap();
+        assert!(denied(&read(
+            "Read",
+            json!({ "file_path": "peek/-work-api/abc.jsonl" })
+        )));
+        assert!(denied(&read(
+            "Read",
+            json!({ "file_path": projects.join("-work-api/../-work-api/abc.jsonl") })
+        )));
+        // Its own files and the rest of the machine read as before.
+        assert_eq!(
+            read("Read", json!({ "file_path": "SESSIONS.md" })),
+            Decision::Allow
+        );
+        assert_eq!(read("Grep", json!({ "pattern": "x" })), Decision::Allow);
+        assert_eq!(
+            read("Read", json!({ "file_path": p.root.join("user/notes.md") })),
+            Decision::Allow
+        );
+        assert_eq!(
+            read("Write", json!({ "file_path": file })),
+            Decision::Allow,
+            "writes are decide's"
+        );
+        // The list: the user's Claude Code projects, and CLAUDE_CONFIG_DIR's.
+        let list = private_reads(Some("/u".as_ref()), Some("/c".as_ref()));
+        assert_eq!(
+            list,
+            [
+                PathBuf::from("/u/.claude/projects"),
+                PathBuf::from("/c/projects")
+            ]
+        );
+    }
+
+    #[test]
+    fn moss_guard_keeps_its_hands_off_the_conversation() {
+        let p = place();
+        let bash = |c: &str| decide(&p.home, &p.home, "Bash", &json!({ "command": c }));
+        for bad in [
+            "cc-moss moss say -- hi from moss",
+            "/opt/bin/cc-moss moss say --json -- x",
+            "cc-moss hook moss-stop --home .",
+            "rm -f waiting",
+            "touch input-busy",
+            "rm -rf inbox",
+            "mv stop old",
+            "echo x > ./waiting",
+            "cc-moss moss profile soul --from drafts/soul.md; cp evil SOUL.md",
+            "cc-moss moss profile soul --from drafts/soul.md && rm -rf journal",
+            "cc-moss moss profile soul --from drafts/soul.md | tee x",
+            "cc-moss moss profile soul --from `echo drafts/soul.md`",
+            "cc-moss moss profile soul --from $(echo x)",
+            "cc-moss moss profile soul --from x\nrm -rf journal",
+        ] {
+            assert!(denied(&bash(bad)), "{bad}");
+        }
+        for fine in [
+            "cc-moss moss chat --json",
+            "cc-moss moss profile soul --from drafts/soul.md",
+            "echo done >> journal/today.md",
+            "cat memory/inbox.md > journal/x.md",
+            "rm journal/stop-list.md",
+        ] {
+            assert_eq!(bash(fine), Decision::Allow, "{fine}");
+        }
+        assert!(denied(&write(&p, "input-busy")));
+    }
+
+    #[test]
     fn moss_guard_follows_symlinks() {
         let p = place();
         let out = p.root.join("elsewhere");
@@ -548,7 +755,7 @@ mod tests {
             "cat SOUL.md > /dev/null",
             "echo hi >> journal/today.md",
             "tail -n 5 chat.jsonl",
-            "echo stop > journal/notes.md",
+            "echo stopped > journal/notes.md",
             "cc-moss moss profile soul < /tmp/new-soul.md",
             // Words that only contain a command name are not that command.
             "grep platform CLAUDE.md",
