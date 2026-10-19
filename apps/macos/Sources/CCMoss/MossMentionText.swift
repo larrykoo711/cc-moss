@@ -1,18 +1,13 @@
 import AppKit
 import MossKit
-import OSLog
 import SwiftUI
 
-/// Pointer events on mentions, for watching hover on a real Mac:
-/// `log stream --level debug --predicate 'subsystem == "io.github.larrykoo711.cc-moss" && category == "mention"'`
-private let mentionLog = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "mention")
-
-// Sessions named in Moss's words as mentions (user 2026-10-19): part of the
-// sentence, in its own colour, marked by a light dotted underline and a
-// small soft state dot; coloured only under the pointer. Click goes to
-// the session; hovering a moment shows its card. SwiftUI's Text can't tell
-// which words the pointer is over, so a paragraph with mentions is drawn by
-// a read-only text view that can.
+// Sessions named in Moss's words as mentions (user 2026-10-19): each one a
+// small badge in the sentence, its state dot inside; under the pointer it
+// fills in brand, and after a moment its card shows. Click goes to the
+// session. A paragraph with mentions is laid out by `MentionFlowLayout`:
+// words and characters wrap like text, and each badge is a real button, so
+// hover and clicks are SwiftUI's own (proven in this panel).
 
 /// A mention the pointer rests on, and where it is in the window (top-left origin).
 struct MentionHover: Equatable {
@@ -72,8 +67,8 @@ extension AppModel {
         }
     }
 
-    /// The pointer left mention `id`. Only the one lit counts: another
-    /// paragraph's view may already have lit the next one.
+    /// The pointer left mention `id`. Only the one lit counts: the next
+    /// badge may already have been entered.
     func mentionLeft(_ id: String) {
         guard mentionPointer.leave(id) else { return }
         mentionShow?.cancel()
@@ -125,8 +120,9 @@ struct MentionHoverLayer: View {
     }
 }
 
-/// One paragraph of Moss's words that names sessions.
-struct MentionText: NSViewRepresentable {
+/// One paragraph of Moss's words that names sessions: its words and
+/// characters flow and wrap like text, each mention a badge among them.
+struct MentionParagraph: View {
     @Bindable var model: AppModel
     let text: AttributedString
     var size: CGFloat = 13
@@ -134,238 +130,183 @@ struct MentionText: NSViewRepresentable {
     var secondary = false
     @Environment(\.colorScheme) private var scheme
 
-    func makeNSView(context: Context) -> MentionTextView {
-        let view = MentionTextView()
-        view.onEnter = { [model] id, rect in model.mentionEntered(id, anchor: rect) }
-        view.onLeave = { [model] id in model.mentionLeft(id) }
-        view.onClick = { [model] id in model.goToSession(id) }
-        return view
-    }
-
-    func updateNSView(_ view: MentionTextView, context: Context) {
-        view.textStorage?.setAttributedString(attributed())
-        view.wantsAnchor = model.mentionHover.flatMap { $0.anchor == .zero ? $0.id : nil }
-        view.onAnchor = { [model] id, rect in
-            if model.mentionHover?.id == id { model.mentionHover?.anchor = rect }
-        }
-        view.needsLayout = true
-        view.reportAnchor()
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: MentionTextView, context: Context) -> CGSize? {
-        let width = proposal.width ?? 400
-        return CGSize(width: width, height: nsView.height(for: width))
-    }
-
-    private func attributed() -> NSAttributedString {
-        let base = NSFont.systemFont(ofSize: size, weight: weight.ns)
-        let ink: NSColor = secondary ? .secondaryLabelColor : .labelColor
-        let out = NSMutableAttributedString()
-        for run in text.runs {
-            let piece = String(text[run.range].characters)
-            var font = base
-            let intent = run.inlinePresentationIntent ?? []
-            var attrs: [NSAttributedString.Key: Any] = [.foregroundColor: ink]
-            if intent.contains(.code) {
-                font = .monospacedSystemFont(ofSize: size - 1, weight: .regular)
-                attrs[.backgroundColor] = NSColor.labelColor.withAlphaComponent(scheme == .dark ? 0.12 : 0.07)
-            } else {
-                if intent.contains(.stronglyEmphasized) { font = .systemFont(ofSize: size, weight: .semibold) }
-                if intent.contains(.emphasized) {
-                    font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+    var body: some View {
+        MentionFlowLayout(lineSpacing: 3) {
+            let pieces = MentionFlow.pieces(text)
+            let glued = MentionFlow.glued(pieces)
+            ForEach(Array(pieces.enumerated()), id: \.offset) { i, piece in
+                Group {
+                switch piece {
+                case let .text(run):
+                    Text(styled(run))
+                        .font(.system(size: size, weight: weight))
+                        // Alone, "，" would be set half-width: say it's Chinese.
+                        .typesettingLanguage(.init(languageCode: L.lang == .zh ? .chinese : .english))
+                        .fixedSize()
+                case let .mention(id, name):
+                    MentionBadge(model: model, id: id, name: name, size: size, weight: weight)
+                case .lineBreak:
+                    Color.clear.frame(width: 0, height: 0).layoutValue(key: LineBreakKey.self, value: true)
                 }
+                }
+                .layoutValue(key: GlueKey.self, value: glued[i])
             }
-            attrs[.font] = font
-            if let url = run.link, let id = MossMentions.id(of: url) {
-                // A mention reads as part of the sentence: its own colour and
-                // weight, a light dotted underline, a small soft state dot.
-                // Under the pointer the name and a solid underline turn brand.
-                let lit = model.mentionPointer.id == id
-                let brand = NSColor(Theme.brand)
-                let state = model.mentioned(id).map { Theme.color($0.needsYou ? .working : $0.state) } ?? .secondary
-                let mention: [NSAttributedString.Key: Any] = [.mossMention: id]
-                out.append(NSAttributedString(string: "●\u{2009}", attributes: mention.merging([
-                    .font: NSFont.systemFont(ofSize: size * 0.45),
-                    .baselineOffset: size * 0.22,
-                    .foregroundColor: NSColor(state).withAlphaComponent(0.7),
-                ]) { a, _ in a }))
-                var name = attrs.merging(mention) { _, b in b }
-                name[.underlineStyle] = lit ? NSUnderlineStyle.single.rawValue
-                                            : (NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue)
-                name[.underlineColor] = lit ? brand : brand.withAlphaComponent(0.35)
-                if lit { name[.foregroundColor] = brand }
-                out.append(NSAttributedString(string: piece, attributes: name))
-            } else {
-                if let url = run.link {
-                    attrs[.link] = url
-                }
-                out.append(NSAttributedString(string: piece, attributes: attrs))
+        }
+        .foregroundStyle(secondary ? .secondary : .primary)
+        .textSelection(.enabled)
+    }
+
+    private func styled(_ text: AttributedString) -> AttributedString {
+        var out = text
+        for run in out.runs {
+            let intent = run.inlinePresentationIntent ?? []
+            if intent.contains(.code) {
+                out[run.range].font = .system(size: size - 1, design: .monospaced)
+                out[run.range].backgroundColor = Color.primary.opacity(scheme == .dark ? 0.12 : 0.07)
+            } else if intent.contains(.stronglyEmphasized) {
+                out[run.range].font = .system(size: size, weight: .semibold)
             }
         }
         return out
     }
 }
 
-extension NSAttributedString.Key {
-    /// The slot id of the session a run of text mentions.
-    static let mossMention = NSAttributedString.Key("ccMossMention")
+/// A session's name as a badge: a soft pill with its state dot; filled in
+/// brand under the pointer, where a card follows after a moment.
+private struct MentionBadge: View {
+    @Bindable var model: AppModel
+    let id: String
+    let name: String
+    let size: CGFloat
+    let weight: Font.Weight
+    @State private var frame: CGRect = .zero
+    @Environment(\.colorScheme) private var scheme
+
+    private var lit: Bool { model.mentionPointer.id == id }
+    private var session: Session? { model.mentioned(id) }
+    private var stateColor: Color {
+        guard let s = session else { return .secondary }
+        return s.needsYou ? Theme.brand : Theme.color(s.state)
+    }
+
+    var body: some View {
+        Button { model.goToSession(id) } label: {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(stateColor.opacity(lit ? 1 : 0.75))
+                    .frame(width: 5, height: 5)
+                Text(name)
+                    .font(.system(size: size, weight: weight == .regular ? .medium : weight))
+                    .foregroundStyle(lit ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.primary))
+            }
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1.5)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(lit ? Theme.brand.opacity(scheme == .dark ? 0.26 : 0.17)
+                              : (session == nil ? Color.primary : stateColor).opacity(scheme == .dark ? 0.13 : 0.08))
+            )
+            .contentShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .fixedSize()
+        // In place of the spaces around the name (MentionFlow trims them).
+        .padding(.horizontal, 3)
+        .background(GeometryReader { g in
+            Color.clear
+                .onAppear { frame = g.frame(in: .global); reportAnchor() }
+                .onChange(of: g.frame(in: .global)) { _, new in frame = new }
+        })
+        .onHover { inside in
+            if inside { model.mentionEntered(id, anchor: frame) } else { model.mentionLeft(id) }
+        }
+        .accessibilityLabel(name)
+        .accessibilityHint(L.t("Go to this session", "去这个会话"))
+        .animation(.easeOut(duration: 0.1), value: lit)
+    }
+
+    /// Screenshots: a card asked for before any hover needs to know where.
+    private func reportAnchor() {
+        if model.mentionHover?.id == id, model.mentionHover?.anchor == .zero { model.mentionHover?.anchor = frame }
+    }
 }
 
-private extension Font.Weight {
-    var ns: NSFont.Weight {
-        switch self {
-        case .semibold: .semibold
-        case .bold: .bold
-        case .medium: .medium
-        default: .regular
-        }
-    }
+/// Marks the paragraph's own line breaks among the flow's pieces.
+private struct LineBreakKey: LayoutValueKey {
+    static let defaultValue = false
 }
 
-/// Read-only, selectable text that knows which mention the pointer is on.
-final class MentionTextView: NSTextView {
-    var onEnter: (String, CGRect) -> Void = { _, _ in }
-    var onLeave: (String) -> Void = { _ in }
-    var onClick: (String) -> Void = { _ in }
-    /// Screenshots: a hover card asked for this mention; say where it is.
-    var wantsAnchor: String?
-    var onAnchor: (String, CGRect) -> Void = { _, _ in }
-    private var current: String?
+/// A piece that can't start a line: it wraps with the one before it.
+private struct GlueKey: LayoutValueKey {
+    static let defaultValue = false
+}
 
-    init() {
-        let storage = NSTextStorage()
-        let layout = NSLayoutManager()
-        storage.addLayoutManager(layout)
-        let container = NSTextContainer(size: NSSize(width: 400, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        container.lineFragmentPadding = 0
-        layout.addTextContainer(container)
-        super.init(frame: .zero, textContainer: container)
-        isEditable = false
-        isSelectable = true
-        drawsBackground = false
-        textContainerInset = .zero
-        isVerticallyResizable = false
-        isHorizontallyResizable = false
-        linkTextAttributes = [.foregroundColor: NSColor(Theme.brand), .cursor: NSCursor.pointingHand]
+/// Pieces laid left to right, wrapping when the next doesn't fit, each
+/// line's pieces sharing a baseline: text that wraps like text, with badges.
+struct MentionFlowLayout: Layout {
+    var lineSpacing: CGFloat = 3
+
+    private struct Line {
+        var items: [(index: Int, x: CGFloat, size: CGSize, ascent: CGFloat)] = []
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
     }
 
-    override init(frame: NSRect, textContainer: NSTextContainer?) {
-        super.init(frame: frame, textContainer: textContainer)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    func height(for width: CGFloat) -> CGFloat {
-        guard let container = textContainer, let layout = layoutManager else { return 0 }
-        container.containerSize = NSSize(width: width, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        return ceil(layout.usedRect(for: container).height)
-    }
-
-    /// Screenshots: once it's laid out in a window, say where the mention is.
-    /// Right away, not later: the screenshot runs inside one main-actor task.
-    func reportAnchor() {
-        guard let id = wantsAnchor, let rect = windowRect(of: id), rect.width > 0 else { return }
-        wantsAnchor = nil
-        onAnchor(id, rect)
-    }
-
-    override func layout() {
-        super.layout()
-        reportAnchor()
-    }
-
-    override func viewDidMoveToWindow() {
-        super.viewDidMoveToWindow()
-        reportAnchor()
-    }
-
-    /// Ours only: the text view keeps its own areas (its cursor) too.
-    private var area: NSTrackingArea?
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let area { removeTrackingArea(area) }
-        // Its own bounds, not `.inVisibleRect`: with clipping off (the
-        // default since macOS 14) the visible rect reaches past the view, so
-        // every paragraph's area covered its neighbours and a view the
-        // pointer wasn't on said "left", switching off the mention that was
-        // just lit in the next paragraph. Active always: the panel doesn't
-        // activate the app and often isn't key.
-        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways], owner: self)
-        addTrackingArea(area)
-        self.area = area
-        mentionLog.debug("area \(self.bounds.debugDescription, privacy: .public) in window: \(self.window != nil)")
-    }
-
-    /// An area added at zero size stays zero: lay it out again whenever the
-    /// view's size changes.
-    override func setFrameSize(_ newSize: NSSize) {
-        let changed = newSize != frame.size
-        super.setFrameSize(newSize)
-        if changed { updateTrackingAreas() }
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        mentionLog.debug("entered view \(self.bounds.debugDescription, privacy: .public)")
-    }
-
-    override func mouseMoved(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
-        let id = bounds.contains(point) ? mention(at: point) : nil
-        mentionLog.debug("moved \(point.debugDescription, privacy: .public) mention: \(id ?? "-", privacy: .public)")
-        if bounds.contains(point) {
-            if id != nil { NSCursor.pointingHand.set() } else { NSCursor.iBeam.set() }
+    private func lines(_ subviews: Subviews, width: CGFloat) -> [Line] {
+        var out: [Line] = [Line()]
+        var x: CGFloat = 0
+        for (i, sub) in subviews.enumerated() {
+            if sub[LineBreakKey.self] {
+                out.append(Line())
+                x = 0
+                continue
+            }
+            let size = sub.sizeThatFits(.unspecified)
+            let d = sub.dimensions(in: .unspecified)
+            let ascent = d[VerticalAlignment.firstTextBaseline]
+            if x > 0, x + size.width > width {
+                // Closing punctuation takes the piece before it along.
+                var carried: (index: Int, x: CGFloat, size: CGSize, ascent: CGFloat)?
+                if sub[GlueKey.self], out[out.count - 1].items.count > 1, let last = out[out.count - 1].items.popLast() {
+                    carried = last
+                    out[out.count - 1].ascent = out[out.count - 1].items.map(\.ascent).max() ?? 0
+                    out[out.count - 1].descent = out[out.count - 1].items.map { $0.size.height - $0.ascent }.max() ?? 0
+                }
+                out.append(Line())
+                x = 0
+                if let carried {
+                    out[out.count - 1].items.append((carried.index, 0, carried.size, carried.ascent))
+                    out[out.count - 1].ascent = carried.ascent
+                    out[out.count - 1].descent = carried.size.height - carried.ascent
+                    x = carried.size.width
+                }
+            }
+            out[out.count - 1].items.append((i, x, size, ascent))
+            out[out.count - 1].ascent = max(out[out.count - 1].ascent, ascent)
+            out[out.count - 1].descent = max(out[out.count - 1].descent, size.height - ascent)
+            x += size.width
         }
-        move(to: id)
+        return out
     }
 
-    override func mouseExited(with event: NSEvent) {
-        mentionLog.debug("left view")
-        move(to: nil)
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        let all = lines(subviews, width: width)
+        let height = all.reduce(0) { $0 + $1.ascent + $1.descent } + lineSpacing * CGFloat(max(all.count - 1, 0))
+        let used = all.map { line in line.items.last.map { $0.x + $0.size.width } ?? 0 }.max() ?? 0
+        return CGSize(width: proposal.width ?? used, height: height)
     }
 
-    private func move(to id: String?) {
-        guard id != current else { return }
-        mentionLog.debug("mention \(self.current ?? "-", privacy: .public) -> \(id ?? "-", privacy: .public)")
-        if let left = current { onLeave(left) }
-        current = id
-        if let id, let rect = windowRect(of: id) { onEnter(id, rect) }
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        if let id = mention(at: convert(event.locationInWindow, from: nil)) {
-            onClick(id)
-            return
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for line in lines(subviews, width: bounds.width) {
+            for item in line.items {
+                subviews[item.index].place(at: CGPoint(x: bounds.minX + item.x, y: y + line.ascent - item.ascent),
+                                           proposal: ProposedViewSize(item.size))
+            }
+            y += line.ascent + line.descent + lineSpacing
         }
-        super.mouseDown(with: event)
-    }
-
-    private func mention(at point: NSPoint) -> String? {
-        guard let layout = layoutManager, let container = textContainer, let storage = textStorage,
-              storage.length > 0 else { return nil }
-        let glyph = layout.glyphIndex(for: point, in: container)
-        let box = layout.boundingRect(forGlyphRange: NSRange(location: glyph, length: 1), in: container)
-        guard box.insetBy(dx: -1, dy: -1).contains(point) else { return nil }
-        let index = layout.characterIndexForGlyph(at: glyph)
-        guard index < storage.length else { return nil }
-        return storage.attribute(.mossMention, at: index, effectiveRange: nil) as? String
-    }
-
-    /// The mention's first line box, in window coordinates from the top left.
-    private func windowRect(of id: String) -> CGRect? {
-        guard let layout = layoutManager, let container = textContainer, let storage = textStorage,
-              let window, let content = window.contentView else { return nil }
-        var found: NSRange?
-        storage.enumerateAttribute(.mossMention, in: NSRange(location: 0, length: storage.length)) { value, range, stop in
-            if value as? String == id { found = range; stop.pointee = true }
-        }
-        guard let range = found else { return nil }
-        let glyphs = layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil)
-        let local = layout.boundingRect(forGlyphRange: glyphs, in: container)
-        let inWindow = convert(local, to: nil)
-        return CGRect(x: inWindow.minX, y: content.bounds.height - inWindow.maxY, width: inWindow.width, height: inWindow.height)
     }
 }

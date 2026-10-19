@@ -592,7 +592,7 @@ private struct MossRichText: View {
         let marked = MossMentions.mark(MossMarkdown.inline(raw), names: mentions)
         if let model, marked.runs.contains(where: { $0.link.flatMap(MossMentions.id(of:)) != nil }) {
             // Names a session: drawn so each name can be clicked and hovered.
-            MentionText(model: model, text: marked, size: size, weight: weight, secondary: quiet || secondary)
+            MentionParagraph(model: model, text: marked, size: size, weight: weight, secondary: quiet || secondary)
         } else {
             Text(styled(marked))
                 .font(.system(size: size, weight: weight))
