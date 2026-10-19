@@ -54,6 +54,8 @@ pub struct Digest {
     pending: Vec<Change>,
     opened_at: Option<i64>,
     told: HashMap<(String, Kind), i64>,
+    /// The last line held nothing but finished turns.
+    finished_only: bool,
 }
 
 impl Digest {
@@ -64,6 +66,7 @@ impl Digest {
             pending: Vec::new(),
             opened_at: None,
             told: HashMap::new(),
+            finished_only: false,
         }
     }
 
@@ -100,12 +103,21 @@ impl Digest {
         }
         self.opened_at = None;
         let changes = std::mem::take(&mut self.pending);
+        self.finished_only = changes.iter().all(|c| c.kind == Kind::Done);
         for c in &changes {
             self.told.insert((c.slot_id.clone(), c.kind), now_ms);
         }
         let repeat = self.repeat;
         self.told.retain(|_, at| now_ms - *at < repeat);
         Some(line(&changes, zh))
+    }
+}
+
+impl Digest {
+    /// Whether the line [`Digest::due`] gave last was only finished turns:
+    /// nothing the user has to act on.
+    pub fn last_finished_only(&self) -> bool {
+        self.finished_only
     }
 }
 

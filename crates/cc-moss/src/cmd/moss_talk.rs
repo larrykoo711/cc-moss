@@ -201,6 +201,8 @@ pub struct Talk {
     next_registry: Instant,
     waiting_shown: bool,
     compacting: Option<Compacting>,
+    /// News lines (ids) that were only finished turns.
+    quiet: std::collections::HashSet<String>,
 }
 
 impl Talk {
@@ -229,6 +231,7 @@ impl Talk {
             next_registry: now,
             waiting_shown: true,
             compacting: None,
+            quiet: Default::default(),
         }
     }
 
@@ -299,7 +302,7 @@ impl Talk {
             .due(now_ms, crate::i18n::lang() == crate::i18n::Lang::Zh)
         {
             if digest_on {
-                self.tell(&line, now_ms, log);
+                self.tell_news(&line, now_ms, log);
             }
         }
         let mut pane = TmuxPane::new(socket, &self.state);
@@ -535,22 +538,12 @@ impl Talk {
         let verdict = claim.tick(now_ms, stopped, pane);
         let waiting = claim.waiting();
         let sent = sent.clone();
-        let at = rfc3339(now_ms);
         let line = match verdict {
             Verdict::Wait => {
                 self.show_waiting(waiting);
                 return;
             }
-            Verdict::Reply { text, .. } => {
-                let parsed = markers::parse(&text);
-                Some(Line {
-                    reply_to: Some(sent.id.clone()),
-                    silent: parsed.silent,
-                    buttons: parsed.buttons,
-                    quick: parsed.quick,
-                    ..Line::message(&inbox::new_id(now_ms), &at, chat::FROM_MOSS, &parsed.text)
-                })
-            }
+            Verdict::Reply { text, .. } => Some(self.reply_line(&sent, &text, now_ms)),
             Verdict::Received(why) => {
                 self.received(&sent, now_ms, &why, log);
                 None
@@ -567,6 +560,24 @@ impl Talk {
         self.show_waiting(false);
         if let Some(line) = line {
             self.record(&line, log);
+        }
+    }
+
+    /// Moss's reply as a chat line, its markers read.
+    fn reply_line(&self, sent: &InFlight, text: &str, now_ms: i64) -> Line {
+        let parsed = markers::parse(text);
+        let routine = sent.from == chat::FROM_EVENTS && self.quiet.contains(&sent.id);
+        Line {
+            reply_to: Some(sent.id.clone()),
+            silent: parsed.silent || routine,
+            buttons: parsed.buttons,
+            quick: parsed.quick,
+            ..Line::message(
+                &inbox::new_id(now_ms),
+                &rfc3339(now_ms),
+                chat::FROM_MOSS,
+                &parsed.text,
+            )
         }
     }
 
@@ -612,10 +623,23 @@ impl Talk {
     /// A request of cc-moss's own for Moss (the daily checkup): queued like
     /// session news, so it is not shown as something the user said.
     pub fn ask(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
-        self.tell(text, now_ms, log);
+        let _ = self.tell(text, now_ms, log);
     }
 
-    fn tell(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
+    /// Session news for Moss. Its answer to news that is only finished
+    /// turns is kept quiet whatever it says: nothing there for the user.
+    fn tell_news(&mut self, line: &str, now_ms: i64, log: &dyn Fn(&str)) {
+        if let Some(id) = self.tell(line, now_ms, log) {
+            if self.digest.last_finished_only() {
+                if self.quiet.len() > 100 {
+                    self.quiet.clear();
+                }
+                self.quiet.insert(id);
+            }
+        }
+    }
+
+    fn tell(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) -> Option<String> {
         let message = inbox::Message {
             schema: 1,
             id: inbox::new_id(now_ms),
@@ -625,12 +649,13 @@ impl Talk {
         };
         if let Err(e) = inbox::put(&self.home, &message) {
             log(&format!("moss: error: inbox: {e}"));
-            return;
+            return None;
         }
         self.record(
             &Line::message(&message.id, &message.at, chat::FROM_EVENTS, text),
             log,
         );
+        Some(message.id)
     }
 
     /// Moss's transcript, sessions whose process is gone, and the news since
@@ -720,6 +745,56 @@ mod tests {
 
     fn line(id: &str, from: &str) -> Line {
         Line::message(id, "t", from, "x")
+    }
+
+    #[test]
+    fn finished_only_digest_reply_is_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut talk = Talk::new(dir.path());
+        std::fs::create_dir_all(&talk.home).unwrap();
+        let news = |talk: &mut Talk, changes: &[(&str, digest::Kind)]| {
+            for (slot, kind) in changes {
+                talk.digest.push(
+                    Change {
+                        slot_id: slot.to_string(),
+                        name: slot.to_string(),
+                        kind: *kind,
+                        why: None,
+                    },
+                    0,
+                );
+            }
+            let line = talk.digest.due(i64::MAX / 2, true).unwrap();
+            talk.tell_news(&line, 1, &|_| {});
+            chat::lines(&talk.home).last().unwrap().id.clone()
+        };
+        let sent = |id: &str| InFlight {
+            id: id.into(),
+            from: chat::FROM_EVENTS.into(),
+            tail: String::new(),
+            at_ms: 1,
+        };
+        // Only "finished": Moss's answer is kept quiet, its pins stay.
+        let done = news(
+            &mut talk,
+            &[("api", digest::Kind::Done), ("web", digest::Kind::Done)],
+        );
+        let line = talk.reply_line(&sent(&done), "api 又做完一轮了。[[quick: today]]", 2);
+        assert!(line.silent, "{line:?}");
+        assert_eq!(line.quick, ["today"]);
+        // Something the user has to act on: Moss may speak.
+        let asks = news(
+            &mut talk,
+            &[("db", digest::Kind::NeedsYou), ("ui", digest::Kind::Done)],
+        );
+        let line = talk.reply_line(&sent(&asks), "db 在等你批权限。", 3);
+        assert!(!line.silent, "{line:?}");
+        // The user's own messages are never forced quiet.
+        let mine = InFlight {
+            from: chat::FROM_YOU.into(),
+            ..sent("y1")
+        };
+        assert!(!talk.reply_line(&mine, "ok", 4).silent);
     }
 
     #[test]
