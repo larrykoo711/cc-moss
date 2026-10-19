@@ -37,19 +37,24 @@ pub fn waiting_path(home: &Path) -> PathBuf {
 
 /// Drop a marker (the Stop hook).
 pub fn mark_stop(home: &Path, now_ms: i64) -> std::io::Result<()> {
-    let dir = stop_dir(home);
-    crate::store_dir::ensure_private_dir(&dir)?;
+    let dir = super::home::ensure_real_dir(home, "stop")?;
     let name = format!("{now_ms:013}-{}", std::process::id());
-    std::fs::write(dir.join(name), b"")
+    super::home::write_if_changed(&dir.join(name), "").map(drop)
 }
 
 /// Take every marker there is. True when there was one.
 pub fn take_stops(home: &Path) -> bool {
+    // Never through a link: a linked folder is replaced, not emptied.
+    if std::fs::symlink_metadata(stop_dir(home)).is_ok_and(|m| !m.file_type().is_dir()) {
+        let _ = super::home::ensure_real_dir(home, "stop");
+        return false;
+    }
     let Ok(entries) = std::fs::read_dir(stop_dir(home)) else {
         return false;
     };
     let mut any = false;
     for e in entries.flatten() {
+        // A link is removed (the link, not what it points at) and counts.
         if std::fs::remove_file(e.path()).is_ok() {
             any = true;
         }

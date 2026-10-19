@@ -138,6 +138,18 @@ fn adopt_moves_a_session_into_tmux() {
     assert_eq!(after["tmux"]["session_name"], "host_work");
     assert_eq!(after["last_prompt"], "tidy up the about page");
     assert!(w.session_names().contains(&"host_work".to_string()));
+    // Claude Code itself is started with the name, not only the registry.
+    let cmd = w.tmux(&[
+        "list-panes",
+        "-t",
+        "=host_work",
+        "-F",
+        "#{pane_start_command}",
+    ]);
+    assert!(
+        cmd.contains(&format!("--resume {sid} --name=work")),
+        "{cmd}"
+    );
     // Its terminal tab shows its name.
     let shown = w.tmux(&[
         "display-message",

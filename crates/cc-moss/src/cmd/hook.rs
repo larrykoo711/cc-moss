@@ -24,6 +24,8 @@ use moss_core::{launch_args, moss, naming, proc, store_dir, tmux};
 const LOG_MAX_BYTES: u64 = 1 << 20;
 
 pub fn run(event: &str) {
+    // Hooks run for Moss too and record it: they write the registry.
+    moss_core::registry::as_hook();
     // The default panic hook prints to stderr, which Claude Code may show.
     // The panic itself is logged below.
     std::panic::set_hook(Box::new(|_| {}));

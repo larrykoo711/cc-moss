@@ -10,8 +10,6 @@
 //! Moss cannot write the conversation file, so it cannot make one up.
 //! Nothing is ever done to Moss itself.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -98,10 +96,25 @@ impl Action {
     }
 }
 
-/// Whether `because` is the user's go-ahead: a message of theirs in the
-/// conversation, at most ten minutes old, answering a Moss message that
-/// offered buttons.
-pub fn consent(lines: &[Line], because: Option<&str>, now_ms: i64) -> Result<(), String> {
+/// The key a used go-ahead is remembered by.
+pub fn consent_key(because: &str, action: &str, slot_id: &str) -> String {
+    format!("{because} {action} {slot_id}")
+}
+
+/// Whether `because` is the user's go-ahead for `action` on `slot_id`: a
+/// message of theirs, at most ten minutes old, answering the Moss message
+/// right before it, which proposed exactly this action for exactly this
+/// session (`[[confirm:]]`, recorded by the daemon), and whose text is one
+/// of that proposal's yes buttons. Each go-ahead works once per action and
+/// session (`used`).
+pub fn consent(
+    lines: &[Line],
+    because: Option<&str>,
+    action: &str,
+    slot_id: &str,
+    now_ms: i64,
+    used: &dyn Fn(&str) -> bool,
+) -> Result<(), String> {
     let Some(because) = because else {
         return Err("this needs the user's go-ahead (--because <their message id>)".into());
     };
@@ -116,12 +129,25 @@ pub fn consent(lines: &[Line], because: Option<&str>, now_ms: i64) -> Result<(),
     if now_ms - said > CONSENT_MS || said - now_ms > 60_000 {
         return Err("the user's reply is too old; ask again".into());
     }
+    let reply = messages[at].text.as_deref().unwrap_or("").trim();
     let asked = messages[..at]
         .iter()
         .rev()
         .find(|l| l.from.as_deref() == Some(chat::FROM_MOSS));
-    if !asked.is_some_and(|m| !m.buttons.is_empty()) {
-        return Err("that message does not answer a question with options".into());
+    let agreed = asked.is_some_and(|m| {
+        m.proposals
+            .iter()
+            .any(|p| p.action == action && p.slot_id == slot_id && p.yes.iter().any(|y| y == reply))
+    });
+    if !agreed {
+        return Err(
+            "the user's reply is not a yes to this action for this session; ask with \
+             [[buttons:]] and [[confirm:]]"
+                .into(),
+        );
+    }
+    if used(&consent_key(because, action, slot_id)) {
+        return Err("that go-ahead was used already; ask again".into());
     }
     Ok(())
 }
@@ -188,17 +214,12 @@ pub fn run(action: &str, args: &[String], because: Option<&str>, wait: bool) -> 
         args: args.to_vec(),
         because: because.map(String::from),
     };
-    let actions = dir(&home);
-    store_dir::ensure_private_dir(&actions).with_context(|| format!("{}", actions.display()))?;
+    let actions = moss::home::ensure_real_dir(&home, "actions")
+        .with_context(|| format!("{}", dir(&home).display()))?;
     let path = actions.join(format!("{}.json", request.id));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
+    // Whole or not at all: the daemon never sees half a request.
+    inbox::put_whole(&path, &serde_json::to_string(&request)?)
         .with_context(|| format!("{}", path.display()))?;
-    file.write_all(serde_json::to_string(&request)?.as_bytes())?;
-    drop(file);
     if !wait {
         println!("{}", serde_json::json!({ "schema": 1, "id": request.id }));
         return Ok(true);
@@ -211,6 +232,8 @@ pub fn run(action: &str, args: &[String], because: Option<&str>, wait: bool) -> 
             .and_then(|t| serde_json::from_str::<Outcome>(&t).ok())
         {
             println!("{}", serde_json::to_string(&out)?);
+            // Read: gone. The audit log is the record.
+            let _ = std::fs::remove_file(&result);
             return Ok(out.outcome == "done");
         }
         if Instant::now() >= until {
@@ -251,19 +274,21 @@ impl Hands {
             return;
         }
         self.next = now + Duration::from_millis(300);
-        let Ok(entries) = std::fs::read_dir(dir(&self.home)) else {
+        if !self.home.exists() {
+            return;
+        }
+        // A real folder, never a link Moss put there.
+        let Ok(actions) = moss::home::ensure_real_dir(&self.home, "actions") else {
             return;
         };
-        let mut pending: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                p.extension().is_some_and(|x| x == "json")
-                    && !p.to_string_lossy().ends_with(".result.json")
-            })
+        self.prune_results(&actions);
+        let pending: Vec<PathBuf> = inbox::plain_files(&actions, "json")
+            .into_iter()
+            .filter(|p| !p.to_string_lossy().ends_with(".result.json"))
             .collect();
-        pending.sort();
-        for path in pending {
+        // One a go: a long restore never holds up Moss's conversation more
+        // than once in a row.
+        if let Some(path) = pending.into_iter().next() {
             let id = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -298,6 +323,44 @@ impl Hands {
         }
     }
 
+    /// `<state>/daemon/consents.txt`: go-aheads already used, one key a
+    /// line (the last 500). In the daemon's folder, out of Moss's reach.
+    fn consents_path(&self) -> PathBuf {
+        moss_core::daemon::Paths::new(&self.state)
+            .dir
+            .join("consents.txt")
+    }
+
+    fn used_consents(&self) -> Vec<String> {
+        std::fs::read_to_string(self.consents_path())
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
+    }
+
+    fn use_consent(&self, key: &str) {
+        let mut all = self.used_consents();
+        all.push(key.to_string());
+        let keep = all.len().saturating_sub(500);
+        let text = all[keep..].join("\n") + "\n";
+        let _ = moss::home::write_if_changed(&self.consents_path(), &text);
+    }
+
+    /// Results nobody read within an hour.
+    fn prune_results(&self, actions: &Path) {
+        let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
+        for p in inbox::plain_files(actions, "json") {
+            let result = p.to_string_lossy().ends_with(".result.json");
+            let old = std::fs::metadata(&p)
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t < hour_ago);
+            if result && old {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+
     fn audit(&self, id: &str, request: Option<&Request>, outcome: &str, message: &str) {
         let line = serde_json::json!({
             "schema": 1,
@@ -310,12 +373,7 @@ impl Hands {
             "outcome": outcome,
             "message": message,
         });
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(audit_path(&self.state))
-            .and_then(|mut f| f.write_all(format!("{line}\n").as_bytes()));
+        let _ = moss_core::moss::act::append_audit(&audit_path(&self.state), &line.to_string());
     }
 
     fn carry_out(&self, r: &Request) -> (&'static str, String) {
@@ -323,11 +381,6 @@ impl Hands {
             Ok(a) => a,
             Err(e) => return ("refused", e),
         };
-        if action.needs_consent() {
-            if let Err(e) = consent(&chat::lines(&self.home), r.because.as_deref(), now_ms()) {
-                return ("refused", e);
-            }
-        }
         if action == Action::SetupFix {
             return self.setup_fix();
         }
@@ -362,6 +415,24 @@ impl Hands {
             Check::Refuse(why) => return ("refused", why),
             Check::Skip(why) => return ("skipped", why),
         };
+        if action.needs_consent() {
+            let used = self.used_consents();
+            if let Err(e) = consent(
+                &chat::lines(&self.home),
+                r.because.as_deref(),
+                &r.action,
+                &slot.slot_id,
+                now_ms(),
+                &|key| used.iter().any(|u| u == key),
+            ) {
+                return ("refused", e);
+            }
+            self.use_consent(&consent_key(
+                r.because.as_deref().unwrap_or_default(),
+                &r.action,
+                &slot.slot_id,
+            ));
+        }
         let result = match &action {
             Action::SyncName(_) => sync_name(&registry, &slot),
             Action::Name(_, name) => name_it(&registry, &slot, name),
@@ -405,7 +476,7 @@ impl Hands {
 
     fn restore(&self, slot: &Slot) -> Result<String> {
         let out = moss_core::command::run_with_timeout(
-            Command::new(&self.exe).args(["restore", "--yes", "--json", &slot.session_id]),
+            Command::new(&self.exe).args(["restore", "--yes", "--json", "--", &slot.session_id]),
             Duration::from_secs(90),
         )
         .map_err(|e| anyhow::anyhow!("restore did not finish: {e:?}"))?;
@@ -512,7 +583,7 @@ fn name_it(registry: &Registry, slot: &Slot, name: &str) -> Result<String> {
             Busy("it is busy or something is typed in it; try again when it is idle").into(),
         );
     }
-    match inbox::type_in(&mut pane, &format!("/rename {name}")) {
+    match inbox::type_exactly(&mut pane, &format!("/rename {name}")) {
         Typed::Sent { .. } => {}
         Typed::Failed(e) | Typed::Stuck(e) => bail!("/rename did not go in: {e}"),
     }
@@ -615,6 +686,83 @@ mod tests {
     }
 
     #[test]
+    fn act_never_follows_a_linked_actions_folder() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let home = moss::home_dir(&state);
+        std::fs::create_dir_all(&home).unwrap();
+        // Somewhere else, full of things that look like requests.
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let request = r#"{"schema":1,"id":"x","at":"t","action":"setup-fix","args":[]}"#;
+        std::fs::write(elsewhere.join("0000000000001-aaaaaa.json"), request).unwrap();
+        std::fs::write(elsewhere.join("keep.json"), "{}").unwrap();
+        symlink(&elsewhere, home.join("actions")).unwrap();
+        let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
+        hands.tick(Instant::now(), true, &|_| {});
+        assert!(elsewhere.join("0000000000001-aaaaaa.json").exists());
+        assert!(elsewhere.join("keep.json").exists());
+        assert!(!elsewhere.join("0000000000001-aaaaaa.result.json").exists());
+        let meta = std::fs::symlink_metadata(home.join("actions")).unwrap();
+        assert!(
+            meta.file_type().is_dir(),
+            "the link was replaced by a folder"
+        );
+        // A link inside the folder is not a request either.
+        std::fs::write(dir.path().join("target.json"), request).unwrap();
+        symlink(
+            dir.path().join("target.json"),
+            home.join("actions/0000000000002-bbbbbb.json"),
+        )
+        .unwrap();
+        hands.next = Instant::now();
+        hands.tick(Instant::now(), true, &|_| {});
+        assert!(dir.path().join("target.json").exists());
+        assert!(!home
+            .join("actions/0000000000002-bbbbbb.result.json")
+            .exists());
+    }
+
+    #[test]
+    fn act_takes_only_whole_requests_one_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let actions = moss::home_dir(&state).join("actions");
+        std::fs::create_dir_all(&actions).unwrap();
+        // Half written: left alone.
+        std::fs::write(actions.join("0000000000001-aaaaaa.tmp"), "{\"schema\":1,").unwrap();
+        for id in ["0000000000002-aaaaaa", "0000000000003-aaaaaa"] {
+            std::fs::write(
+                actions.join(format!("{id}.json")),
+                format!(
+                    r#"{{"schema":1,"id":"{id}","at":"t","action":"forget","args":["nobody"]}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
+        hands.tick(Instant::now(), false, &|_| {});
+        assert!(actions.join("0000000000001-aaaaaa.tmp").exists());
+        // One per go: the daemon's loop is never held up by a queue.
+        assert!(actions.join("0000000000002-aaaaaa.result.json").exists());
+        assert!(!actions.join("0000000000003-aaaaaa.result.json").exists());
+        // Old results go.
+        let old = actions.join("0000000000002-aaaaaa.result.json");
+        let hour_ago = std::time::SystemTime::now() - Duration::from_secs(2 * 3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(hour_ago)
+            .unwrap();
+        hands.next = Instant::now();
+        hands.tick(Instant::now(), false, &|_| {});
+        assert!(!old.exists(), "results over an hour old are cleared");
+        assert!(actions.join("0000000000003-aaaaaa.result.json").exists());
+    }
+
+    #[test]
     fn act_refuses_moss() {
         let mut moss = slot("m", "Moss", Some("moss"));
         moss.status = Status::Running;
@@ -695,40 +843,84 @@ mod tests {
         }
     }
 
+    fn proposed(id: &str, at: i64, buttons: &[&str], proposals: &[(&str, &str, &[&str])]) -> Line {
+        Line {
+            proposals: proposals
+                .iter()
+                .map(|(action, slot, yes)| chat::Proposal {
+                    action: action.to_string(),
+                    slot_id: slot.to_string(),
+                    yes: yes.iter().map(|y| y.to_string()).collect(),
+                })
+                .collect(),
+            ..said(id, chat::FROM_MOSS, at, buttons)
+        }
+    }
+
+    fn you(id: &str, at: i64, text: &str) -> Line {
+        Line::message(id, &rfc3339(at), chat::FROM_YOU, text)
+    }
+
     #[test]
-    fn act_consent_reads_the_conversation() {
+    fn act_consent_needs_the_users_yes_to_that_proposal() {
         let now = 1_800_000_000_000;
         let lines = vec![
-            said(
+            proposed(
                 "q1",
-                chat::FROM_MOSS,
                 now - 60_000,
-                &["Bring them back", "Leave them"],
+                &["全部找回", "不要"],
+                &[
+                    ("restore", "SLOT-A", &["全部找回"]),
+                    ("restore", "SLOT-B", &["全部找回"]),
+                ],
             ),
-            said("y1", chat::FROM_YOU, now - 30_000, &[]),
-            said("q2", chat::FROM_MOSS, now - 20_000, &[]),
-            said("y2", chat::FROM_YOU, now - 10_000, &[]),
-            said("old", chat::FROM_YOU, now - 11 * 60_000, &[]),
+            you("y1", now - 30_000, "全部找回"),
+            you("y2", now - 25_000, "不要"),
+            said("q2", chat::FROM_MOSS, now - 20_000, &["Yes"]),
+            you("y3", now - 10_000, "Yes"),
+            proposed(
+                "q3",
+                now - 13 * 60_000,
+                &["找回"],
+                &[("restore", "SLOT-A", &["找回"])],
+            ),
+            you("old", now - 11 * 60_000, "找回"),
         ];
-        assert_eq!(consent(&lines, Some("y1"), now), Ok(()));
-        assert!(consent(&lines, None, now).is_err(), "no reply");
+        let none = |_: &str| false;
+        let ok = |because, action, slot| consent(&lines, Some(because), action, slot, now, &none);
+        assert_eq!(ok("y1", "restore", "SLOT-A"), Ok(()));
+        assert_eq!(
+            ok("y1", "restore", "SLOT-B"),
+            Ok(()),
+            "one yes for each session it named"
+        );
+        assert!(ok("y2", "restore", "SLOT-A").is_err(), "不要 is no yes");
         assert!(
-            consent(&lines, Some("forged"), now).is_err(),
+            ok("y1", "restore", "SLOT-C").is_err(),
+            "a session the proposal didn't name"
+        );
+        assert!(
+            ok("y1", "end", "SLOT-A").is_err(),
+            "an action it didn't propose"
+        );
+        assert!(
+            ok("y3", "restore", "SLOT-A").is_err(),
+            "a reply to a message with no proposal"
+        );
+        assert!(ok("q1", "restore", "SLOT-A").is_err(), "Moss's own words");
+        assert!(
+            ok("forged", "restore", "SLOT-A").is_err(),
             "no such message"
         );
-        assert!(
-            consent(&lines, Some("q1"), now).is_err(),
-            "Moss's own words"
+        assert!(ok("old", "restore", "SLOT-A").is_err(), "too old");
+        assert!(consent(&lines, None, "restore", "SLOT-A", now, &none).is_err());
+        // Used once.
+        let used = |key: &str| key == consent_key("y1", "restore", "SLOT-A");
+        assert!(consent(&lines, Some("y1"), "restore", "SLOT-A", now, &used).is_err());
+        assert_eq!(
+            consent(&lines, Some("y1"), "restore", "SLOT-B", now, &used),
+            Ok(())
         );
-        assert!(
-            consent(&lines, Some("y2"), now).is_err(),
-            "answers no options"
-        );
-        let stale = vec![
-            said("q", chat::FROM_MOSS, now - 12 * 60_000, &["Yes"]),
-            said("old", chat::FROM_YOU, now - 11 * 60_000, &[]),
-        ];
-        assert!(consent(&stale, Some("old"), now).is_err(), "too old");
     }
 
     #[test]

@@ -15,6 +15,18 @@ pub struct Parsed {
     /// Sessions Moss points at (`[[sessions:]]`), as written: names, slot
     /// ids or id prefixes; [`resolve_sessions`] makes them slot ids.
     pub sessions: Vec<String>,
+    /// What a yes would let Moss do (`[[confirm: restore api | 找回]]`).
+    pub confirms: Vec<Confirm>,
+}
+
+/// One action Moss asks the user to agree to: which session, and which of
+/// the reply's buttons mean yes to it.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Confirm {
+    pub action: String,
+    /// As written: a name, slot id or id prefix.
+    pub session: String,
+    pub yes: Vec<String>,
 }
 
 /// What a session was doing when Moss pointed at it, so a card does not
@@ -111,11 +123,14 @@ pub fn resolve_sessions(items: &[String], slots: &[crate::slot::Slot], now_ms: i
 /// At most this many buttons; more would not fit a chat bubble.
 const MAX_BUTTONS: usize = 6;
 
+/// The actions that need the user's go-ahead (`cc-moss moss act`).
+pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end"];
+
 /// At most this many pinned on the quick bar.
 const MAX_QUICK: usize = 3;
 
 /// The panel's built-in actions (`MossAction` ids in the app).
-pub const ACTIONS: &[&str] = &["needs-you", "stuck", "today"];
+pub const ACTIONS: &[&str] = &["needs-you", "stuck", "today", "checkup", "tidy"];
 
 /// Whether `item` can sit on the quick bar: a built-in action, or a Claude
 /// Code command the panel runs.
@@ -156,6 +171,22 @@ pub fn parse(reply: &str) -> Parsed {
             for item in list.split('|').map(str::trim).filter(|i| !i.is_empty()) {
                 if out.sessions.len() < MAX_SESSIONS && !out.sessions.iter().any(|s| s == item) {
                     out.sessions.push(item.to_string());
+                }
+            }
+            true
+        } else if let Some(spec) = strip_prefix_ci(inner, "confirm:") {
+            // `restore <session> | <yes> | <yes>`: only the actions that need
+            // the user's go-ahead, with a session and at least one yes.
+            let mut parts = spec.split('|').map(str::trim);
+            let head: Vec<&str> = parts.next().unwrap_or("").split_whitespace().collect();
+            let yes: Vec<String> = parts.filter(|y| !y.is_empty()).map(String::from).collect();
+            if let [action, session] = head.as_slice() {
+                if CONSENT_ACTIONS.contains(action) && !yes.is_empty() {
+                    out.confirms.push(Confirm {
+                        action: action.to_string(),
+                        session: session.to_string(),
+                        yes,
+                    });
                 }
             }
             true
@@ -332,12 +363,42 @@ mod tests {
     }
 
     #[test]
+    fn reply_markers_confirm() {
+        let p = parse(
+            "4 dropped. [[buttons: 全部找回 | 都不要了]]\n[[confirm: restore api | 全部找回]][[confirm: forget api | 都不要了]][[confirm: dispatch x | 全部找回]][[confirm: restore | 全部找回]]",
+        );
+        assert_eq!(p.text, "4 dropped.");
+        assert_eq!(
+            p.confirms,
+            [
+                Confirm {
+                    action: "restore".into(),
+                    session: "api".into(),
+                    yes: vec!["全部找回".into()]
+                },
+                Confirm {
+                    action: "forget".into(),
+                    session: "api".into(),
+                    yes: vec!["都不要了".into()]
+                },
+            ],
+            "only consent actions, each with a session and a yes"
+        );
+    }
+
+    #[test]
     fn reply_markers_quick() {
         let p = parse("Limits are tight today.\n[[quick: /usage | stuck]]");
         assert_eq!(p.text, "Limits are tight today.");
         assert_eq!(p.quick, ["/usage", "stuck"]);
         // Unknown items dropped (other ids, refused commands, plain words),
         // repeats once, at most three.
+        let p = parse("[[quick: checkup | tidy]]x");
+        assert_eq!(
+            p.quick,
+            ["checkup", "tidy"],
+            "the panel's checkup and tidy-up"
+        );
         let p = parse("[[quick: needs-you | waiting | /login | open it | today | /usage | /status | needs-you]]ok");
         assert_eq!(p.quick, ["needs-you", "today", "/usage"]);
         assert_eq!(p.text, "ok");

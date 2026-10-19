@@ -19,6 +19,28 @@ pub fn audit_path(state: &Path) -> PathBuf {
     state.join("audit.jsonl")
 }
 
+/// The audit log is kept to this size; the one before is kept as `.1`.
+const AUDIT_MAX_BYTES: u64 = 1 << 20;
+
+/// Add one line to the audit log, starting a new one (and keeping the last
+/// as `audit.jsonl.1`) past [`AUDIT_MAX_BYTES`].
+pub fn append_audit(path: &Path, line: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+    if std::fs::metadata(path).is_ok_and(|m| m.len() > AUDIT_MAX_BYTES) {
+        let mut old = path.as_os_str().to_owned();
+        old.push(".1");
+        std::fs::rename(path, old)?;
+    }
+    std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path)?
+        .write_all(format!("{}\n", line.trim_end()).as_bytes())
+}
+
 /// What Moss asks for.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Request {

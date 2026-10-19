@@ -54,32 +54,52 @@ pub fn new_id(now_ms: i64) -> String {
 
 /// Drop `message` in the inbox. Never replaces a file (`O_EXCL`).
 pub fn put(home: &Path, message: &Message) -> io::Result<PathBuf> {
-    let dir = dir(home);
-    crate::store_dir::ensure_private_dir(&dir)?;
+    let dir = super::home::ensure_real_dir(home, "inbox")?;
     let path = dir.join(format!("{}.json", message.id));
     let mut text = serde_json::to_string(message).map_err(io::Error::other)?;
     text.push('\n');
+    put_whole(&path, &text)?;
+    Ok(path)
+}
+
+/// Write `text` as the new file `path`, whole: into `<name>.tmp` first,
+/// then linked into place (never replacing a file already there), so a
+/// reader never sees half of it.
+pub fn put_whole(path: &Path, text: &str) -> io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(&path)?;
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&tmp)?;
     file.write_all(text.as_bytes())?;
-    Ok(path)
+    drop(file);
+    let linked = std::fs::hard_link(&tmp, path);
+    let _ = std::fs::remove_file(&tmp);
+    linked
+}
+
+/// Plain files in `dir` (never links), with extension `ext`, sorted.
+pub fn plain_files(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == ext))
+        .collect();
+    files.sort();
+    files
 }
 
 /// What waits, oldest first. A file that does not read as a message comes
 /// with `None`, so it can be put aside rather than block the rest.
 pub fn waiting(home: &Path) -> Vec<(PathBuf, Option<Message>)> {
-    let Ok(entries) = std::fs::read_dir(dir(home)) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .collect();
-    files.sort();
-    files
+    plain_files(&dir(home), "json")
         .into_iter()
         .map(|p| {
             let m = std::fs::read_to_string(&p)
@@ -416,6 +436,36 @@ pub enum Typed {
     Stuck(String),
 }
 
+/// Paste `text` and press Enter only if the input then holds exactly it
+/// (nothing else typed before or after); otherwise clear it (C-u) and fail.
+/// For commands typed into a session for the user (`/rename`).
+pub fn type_exactly(pane: &mut dyn Pane, text: &str) -> Typed {
+    if let Err(e) = pane.paste(text) {
+        return clear_after_failure(pane, format!("tmux: {e}"));
+    }
+    pane.wait(SETTLE);
+    let holds = pane
+        .screen()
+        .ok()
+        .and_then(|s| input_text(&s))
+        .is_some_and(|t| t.trim_start_matches(PROMPT) == squeeze(text));
+    if !holds {
+        return clear_after_failure(
+            pane,
+            "the input held something else; nothing was sent".into(),
+        );
+    }
+    enter(pane, 1)
+}
+
+/// `text` without control characters (escape sequences, bells), keeping
+/// line breaks and tabs: what goes into a terminal is only words.
+pub fn printable(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+
 /// Paste `text` and submit it: paste, look; paste again, look; Esc, paste,
 /// look; then give up. Enter only once the text was seen, or once the
 /// input holds something after a paste (it landed; pasting again would
@@ -656,10 +706,11 @@ impl Courier {
             }
             // Claude Code runs any input starting with `/` as a command: a
             // message that only looks like one goes in after a space.
-            let text = if message.text.starts_with('/') {
-                format!(" {}", message.text)
+            let clean = printable(&message.text);
+            let text = if clean.starts_with('/') {
+                format!(" {clean}")
             } else {
-                message.text.clone()
+                clean
             };
             let typed = type_in(pane, &text);
             let _ = crate::moss::remove(&path);
@@ -668,7 +719,7 @@ impl Courier {
                     let sent = InFlight {
                         id: message.id,
                         from: message.from,
-                        tail: tail(&message.text),
+                        tail: tail(&printable(&message.text)),
                         at_ms: now_ms,
                     };
                     self.in_flight = Some(sent.clone());
@@ -925,6 +976,79 @@ mod tests {
         let out = Courier::default().step(h, &mut pane, Some(false), 1);
         assert!(matches!(&out[..], [Outcome::Sent(_)]), "{out:?}");
         assert_eq!(pane.submitted, [" /login\nwhy the terminal?"]);
+    }
+
+    #[test]
+    fn inbox_takes_only_whole_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000002-aaaaaa", "whole");
+        // Half written, and a link: neither is a message, neither is removed.
+        std::fs::write(super::dir(h).join("0000000000001-aaaaaa.tmp"), "{\"sch").unwrap();
+        let elsewhere = h.join("elsewhere.json");
+        std::fs::write(&elsewhere, "{}").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, super::dir(h).join("0000000000000-cccccc.json"))
+            .unwrap();
+        let ids: Vec<String> = waiting(h)
+            .into_iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(ids, ["0000000000002-aaaaaa.json"]);
+        // Nothing half written is left behind by a put.
+        let left: Vec<_> = std::fs::read_dir(super::dir(h))
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name().to_string_lossy().ends_with(".tmp")
+                    && !e.file_name().to_string_lossy().starts_with("0000000000001")
+            })
+            .collect();
+        assert!(left.is_empty());
+    }
+
+    #[test]
+    fn inbox_pastes_no_control_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(
+            h,
+            "0000000000001-aaaaaa",
+            "red \u{1b}[31mtext\u{7}\nnext\tline",
+        );
+        let mut pane = FakePane::default();
+        Courier::default().step(h, &mut pane, Some(false), 1);
+        assert_eq!(pane.submitted, ["red [31mtext\nnext\tline"]);
+    }
+
+    #[test]
+    fn typing_exactly_checks_the_whole_input() {
+        let mut pane = FakePane::default();
+        assert_eq!(
+            type_exactly(&mut pane, "/rename api"),
+            Typed::Sent { pastes: 1 }
+        );
+        assert_eq!(pane.submitted, ["/rename api"]);
+        // Something already there: what would be sent is not the command.
+        let mut pane = FakePane {
+            blind: 0,
+            ..FakePane::default()
+        };
+        pane.paste("x").unwrap();
+        pane.calls.clear();
+        assert!(matches!(
+            type_exactly(&mut pane, "/rename api"),
+            Typed::Failed(_)
+        ));
+        assert!(
+            !pane.calls.iter().any(|c| c == "key Enter"),
+            "{:?}",
+            pane.calls
+        );
+        assert!(
+            pane.calls.iter().any(|c| c == "key C-u"),
+            "cleared: {:?}",
+            pane.calls
+        );
     }
 
     #[test]

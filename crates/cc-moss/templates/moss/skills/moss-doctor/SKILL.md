@@ -52,7 +52,16 @@ they need to decide, then the buttons for the decision:
 · 修好了：补了 2 个会话的名字，钩子重新装好了
 · 要你定：4 个断了的会话，要找回吗？
 [[buttons: 全部找回 | 只找回今天的 | 都不要了]]
+[[confirm: restore 0837a145 | 全部找回 | 只找回今天的]]
+[[confirm: restore 5f1e22c0 | 全部找回]]
+[[confirm: forget 0837a145 | 都不要了]]
+[[confirm: forget 5f1e22c0 | 都不要了]]
 ```
+
+Every question that leads to `restore`, `forget` or `end` carries one `[[confirm: <action> <session> |
+<yes button> | …]]` per session and action: which of the buttons mean yes to doing that, to that session
+(its `session_id` prefix or name). The markers are not shown. cc-moss only lets you act on a tap that one
+of them names; without them a tap does nothing.
 
 Nothing wrong and nothing done: just "体检完了，都好好的" (or "All good: nothing needed fixing."). Leave out
 empty lines ("· 修好了" with nothing after it). One question at a time; ask the most important one first.
@@ -62,7 +71,8 @@ unless something needs the user's decision; then speak.
 
 ## 4. After the user taps
 
-The tap arrives as their message. `restore`, `forget` and `end` need it: pass its id with `--because`.
+The tap arrives as their message. `restore`, `forget` and `end` need it: pass its id with `--because`,
+once per session, for exactly the action and sessions your `[[confirm:]]` named for that button.
 Find the id with `cc-moss moss chat --json --limit 5`: the latest message `from: "you"`, whose text is
 what they tapped.
 

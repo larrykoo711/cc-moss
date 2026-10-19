@@ -109,7 +109,7 @@ const TEXT: &[(&str, &str, &str)] = &[
         "体检钩子、别名、tmux、starship、shell 区块和工具",
     ),
     ("doctor", "fix", "把缺失或失效的别名链接重新建好"),
-    ("doctor", "sessions", "各会话和安装情况的事实，给 Moss 体检用"),
+    ("doctor", "sessions", "各会话和安装情况：一张简短的表（加 --json 是给 Moss 体检用的事实）"),
     ("doctor", "json", "机器可读的输出（schema 1），配合 --sessions"),
     (
         "alias",
@@ -129,22 +129,22 @@ const TEXT: &[(&str, &str, &str)] = &[
     (
         "config",
         "",
-        "查看或修改 config.toml 里的设置（目前只有 ui.language）",
+        "查看或修改 config.toml 里的设置（`config set --help` 里列着都有哪些）",
     ),
     ("config get", "", "显示一项设置的值（没设置过就显示默认值）"),
     ("config get", "json", "机器可读的输出（schema 1）"),
-    ("config get", "key", "设置项：ui.language"),
+    ("config get", "key", "设置项，比如 ui.language 或 moss.daily_checkup"),
     (
         "config set",
         "",
         "修改一项设置；文件里的注释和其他内容原样保留",
     ),
     ("config set", "json", "机器可读的输出（schema 1）"),
-    ("config set", "key", "设置项：ui.language"),
+    ("config set", "key", "设置项，比如 ui.language 或 moss.daily_checkup"),
     (
         "config set",
         "value",
-        "新的值；ui.language 可以是 auto、zh 或 en",
+        "新的值；ui.language 可以是 auto、zh 或 en，开关是 true 或 false",
     ),
     (
         "send",
@@ -273,7 +273,8 @@ const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令�
 
 const CONFIG_SET_LONG: &str = "修改一项设置；文件里的注释和其他内容原样保留。\n\n\
 `cc-moss config set ui.language zh` 把 cc-moss 换成中文；设回 `auto` 就重新跟随系统。\
-目前能用的键：ui.language（auto、zh、en）。";
+能用的键：ui.language（auto、zh、en）、claude.permission_mode（bypass、default），\
+以及 true/false 开关：ask.enabled、moss.enabled、moss.digest、moss.actions、moss.daily_checkup、moss.daily_brief。";
 
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\
 写入前会用 diff 展示对 settings.json 的改动并征求同意；原文件旁会留一份带时间戳的备份。";

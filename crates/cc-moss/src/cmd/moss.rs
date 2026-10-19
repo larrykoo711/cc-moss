@@ -82,7 +82,7 @@ const SHELL_READ_ONLY: &[&str] = &[
 ];
 
 /// Where Claude Code keeps every session's transcript.
-const PRIVATE_READS: &str = "~/.claude/projects";
+const PRIVATE_READS: &str = "~/.claude";
 
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
@@ -111,14 +111,13 @@ fn settings_json(exe: &str, state: &Path) -> String {
         shell_quote(exe),
         shell_quote(&home.to_string_lossy())
     );
-    let registry = state.join("registry.db").to_string_lossy().into_owned();
-    let allow_write: Vec<String> = ["", "-wal", "-shm", "-journal"]
-        .iter()
-        .map(|suffix| format!("{registry}{suffix}"))
-        .collect();
+    // Nothing outside the home: not even the registry. Moss reads it (cc-moss
+    // opens it read-only for Moss); what it changes goes through `moss act`.
+    let allow_write: Vec<String> = Vec::new();
     let deny_write: Vec<String> = SHELL_READ_ONLY
         .iter()
         .chain(guard::CONVERSATION)
+        .chain(&[".claude"])
         .map(|f| format!("./{f}"))
         .collect();
     let value = serde_json::json!({
@@ -145,11 +144,24 @@ fn settings_json(exe: &str, state: &Path) -> String {
             "filesystem": {
                 "allowWrite": allow_write,
                 "denyWrite": deny_write,
-                // ... nor from the shell.
-                "denyRead": [PRIVATE_READS]
+                // ... nor from the shell: not Claude Code's folder, not
+                // cc-moss's state (the registry, other sessions' questions),
+                // except its own home (the working directory) inside it.
+                "denyRead": [PRIVATE_READS, state.to_string_lossy()],
+                "allowRead": ["."]
+            },
+            // It looks after sessions on this Mac: no network.
+            "network": {
+                "allowedDomains": []
             }
         }
     });
+    // Moss starts with project settings only (`--setting-sources project`):
+    // cc-moss's own hooks, which record it, go here too, and the bypass
+    // warning is answered as in the user's settings.
+    let value = moss_core::settings_json::install(&value, exe)
+        .and_then(|v| moss_core::settings_json::accept_bypass_prompt(&v))
+        .unwrap_or(value);
     let mut text = serde_json::to_string_pretty(&value).unwrap_or_default();
     text.push('\n');
     text
@@ -472,6 +484,7 @@ pub fn say(json: bool, text: &str) -> Result<()> {
 
 /// `cc-moss moss chat [--json] [--limit N]`: the conversation so far.
 pub fn chat(json: bool, limit: usize) -> Result<()> {
+    let limit = limit.clamp(1, 1000);
     let home = moss::home_dir(&state());
     if json {
         let db = state().join("registry.db");
@@ -595,6 +608,24 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
     let mut text = String::new();
     match from {
         Some(path) => {
+            // It runs outside Moss's sandbox: only a draft in Moss's own
+            // home, links followed, may become its profile.
+            let home = moss::home_dir(&state());
+            let inside = guard::resolve(&std::path::absolute(path)?)
+                .zip(guard::resolve(&home))
+                .is_some_and(|(p, h)| p.starts_with(&h));
+            if !inside {
+                bail!(tr!(
+                    format!(
+                        "{} is not in Moss's home; save the draft there (drafts/) first",
+                        path.display()
+                    ),
+                    format!(
+                        "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
+                        path.display()
+                    )
+                ));
+            }
             text = std::fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?
         }
@@ -689,6 +720,8 @@ fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
         std::env::var_os("CLAUDE_CONFIG_DIR")
             .as_deref()
             .map(Path::new),
+        home.parent(),
+        &home,
     );
     match guard::decide_read(&private, &cwd, tool, tool_input) {
         Decision::Allow => Ok(guard::decide(&home, &cwd, tool, tool_input)),
@@ -869,19 +902,6 @@ const SESSIONS_EVERY: Duration = Duration::from_secs(60);
 /// How often the daemon looks whether the daily checkup is due.
 const DAILY_EVERY: Duration = Duration::from_secs(30);
 
-/// Whether the app's panel is there: its heartbeat as a question taker
-/// (`asks/takers/desktop.alive`) is fresh.
-fn desktop_present(state: &Path) -> bool {
-    let alive = state.join("asks/takers/desktop.alive");
-    std::fs::metadata(alive)
-        .and_then(|m| m.modified())
-        .is_ok_and(|t| {
-            std::time::SystemTime::now()
-                .duration_since(t)
-                .map_or(true, |age| age.as_secs() < moss_core::ask::TAKER_FRESH_SECS)
-        })
-}
-
 /// SESSIONS.md also lists the sessions closed within this.
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// How often the registry is asked whether anything changed.
@@ -993,17 +1013,23 @@ impl Looker {
         let path = super::checkup::daily_path(&self.state);
         let last = std::fs::read_to_string(&path).ok();
         let today = super::checkup::today();
+        // The first time the panel is opened each day (the app marks it).
         if !super::checkup::daily_due(
             on,
-            desktop_present(&self.state),
+            super::checkup::panel_opened_today(&self.state),
             last.as_deref().map(str::trim),
             &today,
         ) {
             return;
         }
         let zh = crate::i18n::lang() == crate::i18n::Lang::Zh;
-        self.talk
-            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log);
+        // Marked done only once it went in; else the next look tries again.
+        if !self
+            .talk
+            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log)
+        {
+            return;
+        }
         if let Err(e) = home::write_if_changed(&path, &format!("{today}\n")) {
             log(&format!("moss: error: noting today's checkup: {e}"));
         }
@@ -1258,6 +1284,17 @@ impl Looker {
             ) {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }
+            // The checkup's facts, for Moss (its sandbox can't read the
+            // registry): names, folders, states and times, no conversation.
+            match super::checkup::report() {
+                Ok(facts) => {
+                    let text = serde_json::to_string_pretty(&facts).unwrap_or_default();
+                    if let Err(e) = home::write_generated(&home_dir, super::checkup::FACTS, &text) {
+                        log(&format!("moss: error: facts.json: {e}"));
+                    }
+                }
+                Err(e) => log(&format!("moss: error: facts.json: {e:#}")),
+            }
             self.next_sessions = now + SESSIONS_EVERY;
             seq
         } else {
@@ -1298,6 +1335,10 @@ fn claude_args(session_id: &str) -> Vec<String> {
     [
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
+        // The user's settings (their sandbox, hooks, permissions) never
+        // widen Moss's fence; what it needs is in its own.
+        "--setting-sources",
+        "project",
         "--session-id",
         session_id,
         boot_prompt(),
@@ -1365,13 +1406,9 @@ mod tests {
         );
         assert_eq!(
             sandbox["filesystem"]["allowWrite"],
-            serde_json::json!([
-                "/s/registry.db",
-                "/s/registry.db-wal",
-                "/s/registry.db-shm",
-                "/s/registry.db-journal"
-            ]),
-            "the home is the working directory; besides it only the registry"
+            serde_json::json!([]),
+            "the home is the working directory, and nothing else: not even the \
+             registry (what Moss changes goes through moss act)"
         );
         let deny = sandbox["filesystem"]["denyWrite"].as_array().unwrap();
         for f in [
@@ -1392,15 +1429,62 @@ mod tests {
             serde_json::json!(["cc-moss moss profile *"])
         );
         assert!(deny.contains(&"./input-busy".into()));
-        // Other sessions' transcripts: not for shell commands, nor Read.
+        // Claude Code's folder and cc-moss's state are not for its shell,
+        // except its own home; nor for Read.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude/projects"])
+            serde_json::json!(["~/.claude", "/s"])
         );
+        assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
         assert_eq!(
             v["permissions"]["deny"],
-            serde_json::json!(["Read(~/.claude/projects/**)"])
+            serde_json::json!(["Read(~/.claude/**)"])
         );
+        // Offline: no network from its shell.
+        assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
+        // Its own .claude folder is not for its shell either.
+        assert!(deny.contains(&"./.claude".into()), "{deny:?}");
+    }
+
+    #[test]
+    fn moss_settings_carry_cc_moss_hooks_of_their_own() {
+        // Moss starts with project settings only: the user's settings (and
+        // any sandbox widening in them) never reach it, so the hooks that
+        // record it are in its own settings.
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+        let commands = |event: &str| -> Vec<String> {
+            v["hooks"][event]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .flat_map(|g| g["hooks"].as_array().cloned().unwrap_or_default())
+                .filter_map(|h| h["command"].as_str().map(String::from))
+                .collect()
+        };
+        assert!(commands("SessionStart")
+            .iter()
+            .any(|c| c.contains("/bin/cc-moss hook session-start")));
+        let stop = commands("Stop");
+        assert!(
+            stop.iter().any(|c| c.contains("hook moss-stop")),
+            "{stop:?}"
+        );
+        assert!(stop.iter().any(|c| c.contains("hook stop")), "{stop:?}");
+        let pre = commands("PreToolUse");
+        assert!(
+            pre.iter().any(|c| c.contains("hook moss-guard")),
+            "the guard stays: {pre:?}"
+        );
+        assert!(commands("SessionEnd")
+            .iter()
+            .any(|c| c.contains("hook session-end")));
+        let args = claude_args("abc");
+        let at = args
+            .iter()
+            .position(|a| a == "--setting-sources")
+            .expect("project settings only");
+        assert_eq!(args[at + 1], "project");
     }
 
     #[test]
@@ -1426,10 +1510,6 @@ mod tests {
         assert!(
             !args.iter().any(|a| a.starts_with("--mcp-config")),
             "zero servers"
-        );
-        assert!(
-            !args.iter().any(|a| a.starts_with("--setting-sources")),
-            "user settings (cc-moss's hooks) still load"
         );
         assert!(args.iter().any(|a| a == "--dangerously-skip-permissions"));
         let at = args.iter().position(|a| a == "--session-id").unwrap();

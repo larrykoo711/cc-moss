@@ -39,6 +39,8 @@ pub struct Registry {
     stamp: Option<std::path::PathBuf>,
     /// Rows changed by opening (migrations), so they don't count.
     opened_changes: u64,
+    /// Opened for Moss: reads only ([`opens_read_only`]).
+    read_only: bool,
 }
 
 /// Beside the registry: touched whenever a cc-moss process closes the
@@ -76,8 +78,35 @@ impl std::fmt::Display for NewerSchema {
 
 impl std::error::Error for NewerSchema {}
 
+/// Set by cc-moss's hooks: they run for Moss too (with its role in their
+/// environment) and record it, outside its sandbox.
+static AS_HOOK: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// This process is a cc-moss hook: it writes the registry even for Moss.
+pub fn as_hook() {
+    AS_HOOK.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Whether the registry is opened read-only: in Moss's processes (its role
+/// in the environment), except cc-moss's own hooks. Moss changes sessions
+/// only through `cc-moss moss act`, which the daemon checks.
+pub fn opens_read_only(role: Option<&str>, hook: bool) -> bool {
+    role == Some(crate::moss::ROLE) && !hook
+}
+
+/// What a write says when Moss tries one.
+const READ_ONLY: &str =
+    "Moss can't change the session records itself; ask through `cc-moss moss act`";
+
 impl Registry {
     pub fn open(path: &Path) -> Result<Self> {
+        let role = std::env::var(crate::moss::ROLE_ENV).ok();
+        if opens_read_only(
+            role.as_deref(),
+            AS_HOOK.load(std::sync::atomic::Ordering::Relaxed),
+        ) {
+            return Self::open_read_only(path);
+        }
         if !path.is_absolute() {
             anyhow::bail!(crate::store_dir::NOT_ABSOLUTE);
         }
@@ -101,6 +130,31 @@ impl Registry {
         Ok(registry)
     }
 
+    /// For reading only: no directory made, no migration, every write
+    /// refused. Fails when there is no registry yet.
+    pub fn open_read_only(path: &Path) -> Result<Self> {
+        let conn = Connection::open_with_flags(
+            path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )
+        .with_context(|| format!("open registry {}", path.display()))?;
+        conn.busy_timeout(BUSY_TIMEOUT)?;
+        conn.pragma_update(None, "query_only", true)?;
+        let version: i64 = conn.pragma_query_value(None, "user_version", |r| r.get(0))?;
+        Ok(Registry {
+            conn,
+            newer: (version > SCHEMA_VERSION).then_some(version),
+            stamp: None,
+            opened_changes: 0,
+            read_only: true,
+        })
+    }
+
+    /// Opened for reading only (for Moss).
+    pub fn read_only(&self) -> bool {
+        self.read_only
+    }
+
     pub fn open_in_memory() -> Result<Self> {
         Self::init(Connection::open_in_memory()?)
     }
@@ -116,6 +170,7 @@ impl Registry {
                 newer: Some(version),
                 stamp: None,
                 opened_changes: 0,
+                read_only: false,
             });
         }
         migrate(&mut conn)?;
@@ -125,6 +180,7 @@ impl Registry {
             newer: None,
             stamp: None,
             opened_changes: 0,
+            read_only: false,
         })
     }
 
@@ -166,6 +222,9 @@ impl Registry {
 
     /// The connection for a write, refused on a newer schema.
     fn write(&self) -> Result<&Connection> {
+        if self.read_only {
+            anyhow::bail!(READ_ONLY);
+        }
         match self.newer {
             Some(found) => Err(NewerSchema {
                 found,
@@ -362,6 +421,26 @@ impl Registry {
                 // Only the slot's current id may end it; a late End for a
                 // pre-/clear id must not close the live process.
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
+                    // A late SessionEnd from a process the session has since
+                    // left (resumed elsewhere) ends nothing: the new one runs.
+                    let recorded: Option<(Option<u32>, Option<String>)> = tx
+                        .query_row(
+                            "SELECT pid, pid_start FROM slots WHERE slot_id = ?1",
+                            [&id],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .optional()?;
+                    let other_process = match (recorded, ctx.pid) {
+                        (Some((Some(pid), start)), Some(caller)) => {
+                            pid != caller
+                                || matches!((&start, &ctx.pid_start), (Some(a), Some(b)) if a != b)
+                        }
+                        _ => false,
+                    };
+                    if other_process {
+                        tx.commit()?;
+                        return Ok(());
+                    }
                     tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
                     clear_attention(&tx, &id)?;
                     let (status, raw) = match reason {

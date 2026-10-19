@@ -17,6 +17,10 @@ use moss_core::{launch_args, proc, store_dir};
 /// Open the registry and repair what hooks could not record.
 pub fn run() -> Result<Registry> {
     let mut registry = Registry::open(&store_dir::registry_path())?;
+    // Moss reads only: what it sees is what was recorded.
+    if registry.read_only() {
+        return Ok(registry);
+    }
     if registry.newer_schema().is_some() {
         eprintln!(
             "{}",
@@ -39,6 +43,15 @@ pub fn run() -> Result<Registry> {
     let mut scanned = load_scanned();
     let before = scanned.clone();
     let renamed = registry.backfill_names(&mut scanned)?;
+    // Only sessions still open are worth remembering.
+    if let Ok(slots) = registry.slots() {
+        let open: std::collections::HashSet<&str> = slots
+            .iter()
+            .filter(|s| s.status != Status::Closed)
+            .map(|s| s.slot_id.as_str())
+            .collect();
+        scanned.retain(|id, _| open.contains(id.as_str()));
+    }
     if scanned != before {
         save_scanned(&scanned);
     }
@@ -143,7 +156,8 @@ fn load_scanned() -> HashMap<String, u64> {
 /// Best effort: losing it only means reading some transcript again.
 fn save_scanned(scanned: &HashMap<String, u64>) {
     let path = scanned_path();
-    let tmp = path.with_extension("json.tmp");
+    // Its own temporary file: two `ls` at once don't trip on each other.
+    let tmp = path.with_extension(format!("json.{}.tmp", std::process::id()));
     if let Ok(bytes) = serde_json::to_vec(scanned) {
         if std::fs::write(&tmp, bytes).is_ok() {
             let _ = std::fs::rename(&tmp, &path);
