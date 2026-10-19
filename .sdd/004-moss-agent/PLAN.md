@@ -157,11 +157,11 @@ R1 ◄── 全部
 | **T1.1** 代答探针 | cc-moss | — | ✅ Done | done/T1.1-ask-probe.spec.md | 三问各有证据，选定回填方式 |
 | **T1.2** 新会话默认 bypass | cc-moss | — | ✅ Done | done/T1.2-bypass-default.spec.md | 新会话带 bypass、不卡警告框 |
 | **T1.3** 代答中枢（CLI） | cc-moss | T1.1 | ✅ Done | done/T1.3-ask-broker.spec.md | 假 claude 问答闭环、超时走原生 |
-| **T1.4** 桌面答题 | cc-moss | T1.3 | 🟩 Review | in-progress/T1.4-desktop-answer.spec.md | 面板答完会话继续（真机验收中：侧栏 + 待处理页 + 小莫气泡） |
+| **T1.4** 桌面答题 | cc-moss | T1.3 | ✅ Done | done/T1.4-desktop-answer.spec.md | 面板答完会话继续（侧栏 + 待处理页 + 小莫气泡，真机验收通过） |
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
-| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | 🟨 In Progress | in-progress/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（真机迭代中，AMEND-1～4） |
-| **T2.4** 体检 | cc-moss | T2.3,T1.3 | 🟨 In Progress | in-progress/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
+| **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ✅ Done | done/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（AMEND-1～4，真机验收通过） |
+| **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -201,6 +201,9 @@ R1 ◄── 全部
 - 会话页体验：发送中锁定、发送后跟随、置顶分组（一张扁平列表修复悬停卡住）、点击行展开回复并预填 Claude Code 的下一句建议（`cc-moss suggest`，缓存按轮次 + 10 分钟）、齿轮统一 App 菜单、面板高度三档、Moss 退出会话列表、「移进 tmux / 整理并移进 tmux」（`cc-moss adopt`，进行中）
 - 教训：替换开发版 CLI 时用 `cp` 原地覆盖正在运行的二进制，macOS 签名缓存失效、所有钩子被 SIGKILL 约 2 分钟。规避：一律 `cp` 到临时名再 `mv`
 - 教训：真机探针起的 claude 会被 `claude agents` 收编进真实 registry、Moss 随之播报「断了」。规避：探针结束立刻 close 并核对
+- 2026-10-19 收尾评审两轮：R1（Rust / App / 安全三路）与 R2（代码 + 安全复核）全部已修；R2 安全复核新发现 4 项 TOCTOU（文件工具竞态、actions 目录替换、profile --from、同意绑定不可见提议）与 `~/.claude.json` 读取，修复中
+- T1.4 ✅ T2.3 ✅ T2.4 ✅ 2026-10-19：真机验收（冷启动链接、历史卡片回执、会话卡片状态、提及徽标）通过，spec 归位 done/
+- 反馈车道 F1–F3（Moss 设置：Finder 打开家目录、去技术化文案、引导去快捷操作）延后到下一轮
 
 ## 反馈车道（真机反馈）
 
