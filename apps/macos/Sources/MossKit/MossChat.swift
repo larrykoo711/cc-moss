@@ -217,6 +217,30 @@ public struct MossAction: Identifiable, Equatable, Sendable {
     ]
 }
 
+/// One block of Moss's words.
+public enum MossBlock: Equatable, Sendable {
+    public struct Item: Equatable, Sendable {
+        /// Nesting, 0 at the left.
+        public var level: Int
+        /// "3." for a numbered item, nil for a bullet.
+        public var marker: String?
+        public var text: String
+        public init(level: Int, marker: String?, text: String) {
+            self.level = level
+            self.marker = marker
+            self.text = text
+        }
+    }
+
+    case paragraph(String)
+    case heading(Int, String)
+    case list(ordered: Bool, items: [Item])
+    case quote(String)
+    case code(String)
+    case table(header: [String], rows: [[String]])
+    case rule
+}
+
 /// Moss's words as rich text: inline Markdown (bold, italics, `code`,
 /// links), whitespace kept. Only https links stay clickable; anything else
 /// (file://, a custom scheme) is plain text.
@@ -230,6 +254,122 @@ public enum MossMarkdown {
             }
         }
         return out
+    }
+
+    /// Moss's words as blocks: paragraphs, headings, lists, quotes, rules,
+    /// fenced code and pipe tables. Inline Markdown stays in the text, for
+    /// `inline` to render.
+    public static func blocks(_ text: String) -> [MossBlock] {
+        var out: [MossBlock] = []
+        var para: [String] = []
+        var quote: [String] = []
+        var items: [MossBlock.Item] = []
+        var ordered = false
+        var code: [String]?
+        let lines = normalised(text).components(separatedBy: "\n")
+
+        func flushPara() {
+            if !para.isEmpty { out.append(.paragraph(para.joined(separator: "\n"))) }
+            para = []
+        }
+        func flushQuote() {
+            if !quote.isEmpty { out.append(.quote(quote.joined(separator: "\n"))) }
+            quote = []
+        }
+        func flushList() {
+            if !items.isEmpty { out.append(.list(ordered: ordered, items: items)) }
+            items = []
+        }
+        func flushAll() { flushPara(); flushQuote(); flushList() }
+
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            i += 1
+            if var body = code {
+                if trimmed.hasPrefix("```") {
+                    out.append(.code(body.joined(separator: "\n")))
+                    code = nil
+                } else {
+                    body.append(line)
+                    code = body
+                }
+                continue
+            }
+            if trimmed.hasPrefix("```") { flushAll(); code = []; continue }
+            if trimmed.isEmpty { flushAll(); continue }
+            if let (level, title) = heading(trimmed) { flushAll(); out.append(.heading(level, title)); continue }
+            if isRule(trimmed) { flushAll(); out.append(.rule); continue }
+            if trimmed.hasPrefix(">") {
+                flushPara(); flushList()
+                quote.append(String(trimmed.dropFirst()).trimmingCharacters(in: .whitespaces))
+                continue
+            }
+            if let item = listItem(line) {
+                flushPara(); flushQuote()
+                if items.isEmpty { ordered = item.marker != nil }
+                items.append(item)
+                continue
+            }
+            if trimmed.hasPrefix("|"), i < lines.count, isTableRule(lines[i]) {
+                flushAll()
+                let header = cells(trimmed)
+                i += 1
+                var rows: [[String]] = []
+                while i < lines.count, lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("|") {
+                    rows.append(cells(lines[i]))
+                    i += 1
+                }
+                out.append(.table(header: header, rows: rows))
+                continue
+            }
+            flushQuote(); flushList()
+            para.append(line)
+        }
+        if let body = code { out.append(.code(body.joined(separator: "\n"))) }
+        flushAll()
+        return out
+    }
+
+    private static func heading(_ line: String) -> (Int, String)? {
+        let hashes = line.prefix(while: { $0 == "#" }).count
+        guard (1...6).contains(hashes), line.dropFirst(hashes).first == " " else { return nil }
+        return (hashes, line.dropFirst(hashes).trimmingCharacters(in: .whitespaces))
+    }
+
+    private static func isRule(_ line: String) -> Bool {
+        let chars = line.filter { $0 != " " }
+        guard chars.count >= 3, let first = chars.first, "-*_".contains(first) else { return false }
+        return chars.allSatisfy { $0 == first }
+    }
+
+    private static func listItem(_ line: String) -> MossBlock.Item? {
+        let indent = line.prefix(while: { $0 == " " || $0 == "\t" })
+            .reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+        let rest = line.drop(while: { $0 == " " || $0 == "\t" })
+        let level = min(indent / 2, 3)
+        if let first = rest.first, "-*+".contains(first), rest.dropFirst().first == " " {
+            return .init(level: level, marker: nil, text: rest.dropFirst(2).trimmingCharacters(in: .whitespaces))
+        }
+        let digits = rest.prefix(while: \.isNumber)
+        guard !digits.isEmpty, digits.count <= 3 else { return nil }
+        let after = rest.dropFirst(digits.count)
+        guard let mark = after.first, mark == "." || mark == ")", after.dropFirst().first == " " else { return nil }
+        return .init(level: level, marker: digits + ".", text: after.dropFirst(2).trimmingCharacters(in: .whitespaces))
+    }
+
+    private static func isTableRule(_ line: String) -> Bool {
+        let t = line.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("|"), t.contains("-") else { return false }
+        return t.allSatisfy { "|-: ".contains($0) }
+    }
+
+    private static func cells(_ line: String) -> [String] {
+        var t = line.trimmingCharacters(in: .whitespaces)
+        if t.hasPrefix("|") { t.removeFirst() }
+        if t.hasSuffix("|") { t.removeLast() }
+        return t.components(separatedBy: "|").map { $0.trimmingCharacters(in: .whitespaces) }
     }
 
     /// What `moss say` takes: line breaks as \n only (cc-moss refuses \r).

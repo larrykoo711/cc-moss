@@ -405,36 +405,95 @@ private struct ChatBubble: Shape {
     }
 }
 
-/// Moss's words with basic Markdown: bold, italics, links, `code` inline,
-/// and fenced code blocks.
+/// Moss's words as Markdown: headings, lists, quotes, rules, fenced code,
+/// tables, and bold / italics / links / `code` inline.
 private struct MossRichText: View {
     let text: String
     var quiet = false
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(Array(Self.blocks(text).enumerated()), id: \.offset) { _, block in
-                if block.code {
-                    ScrollView(.horizontal) {
-                        Text(block.text)
-                            .font(.system(size: 11.5, design: .monospaced))
-                            .textSelection(.enabled)
-                            .padding(8)
-                    }
-                    .scrollIndicators(.never)
-                    .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                        .fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.05)))
-                } else {
-                    Text(inline(block.text))
-                        .font(.system(size: 13))
-                        .foregroundStyle(quiet ? .secondary : .primary)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .tint(Theme.brand)
-                }
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(Array(MossMarkdown.blocks(text).enumerated()), id: \.offset) { _, block in
+                view(for: block)
             }
         }
+    }
+
+    @ViewBuilder private func view(for block: MossBlock) -> some View {
+        switch block {
+        case let .paragraph(raw):
+            words(raw)
+        case let .heading(level, raw):
+            words(raw, size: level <= 1 ? 15 : level == 2 ? 14 : 13, weight: .semibold)
+                .padding(.top, 2)
+        case let .list(_, items):
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, item in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(item.marker ?? (item.level == 0 ? "•" : "◦"))
+                            .font(.system(size: 13, weight: item.marker == nil ? .bold : .medium))
+                            .monospacedDigit()
+                            .foregroundStyle(Theme.brand.opacity(quiet ? 0.6 : 0.9))
+                            .frame(minWidth: item.marker == nil ? 8 : 16, alignment: .trailing)
+                        words(item.text)
+                    }
+                    .padding(.leading, CGFloat(item.level) * 14)
+                }
+            }
+        case let .quote(raw):
+            words(raw, secondary: true)
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 1.5).fill(Theme.brand.opacity(0.45)).frame(width: 3)
+                }
+        case let .code(body):
+            ScrollView(.horizontal) {
+                Text(body)
+                    .font(.system(size: 11.5, design: .monospaced))
+                    .textSelection(.enabled)
+                    .padding(8)
+            }
+            .scrollIndicators(.never)
+            .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(Color.primary.opacity(scheme == .dark ? 0.08 : 0.05)))
+        case let .table(header, rows):
+            table(header: header, rows: rows)
+        case .rule:
+            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).padding(.vertical, 2)
+        }
+    }
+
+    private func words(_ raw: String, size: CGFloat = 13, weight: Font.Weight = .regular,
+                       secondary: Bool = false) -> some View {
+        Text(inline(raw))
+            .font(.system(size: size, weight: weight))
+            .foregroundStyle(quiet || secondary ? .secondary : .primary)
+            .textSelection(.enabled)
+            .fixedSize(horizontal: false, vertical: true)
+            .tint(Theme.brand)
+    }
+
+    private func table(header: [String], rows: [[String]]) -> some View {
+        let columns = max(header.count, rows.map(\.count).max() ?? 0)
+        func cell(_ row: [String], _ i: Int) -> String { i < row.count ? row[i] : "" }
+        return ScrollView(.horizontal) {
+            Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 5) {
+                GridRow {
+                    ForEach(0..<columns, id: \.self) { i in
+                        words(cell(header, i), size: 12, weight: .semibold)
+                    }
+                }
+                Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).gridCellUnsizedAxes(.horizontal)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(0..<columns, id: \.self) { i in words(cell(row, i), size: 12) }
+                    }
+                }
+            }
+            .padding(.vertical, 2)
+        }
+        .scrollIndicators(.never)
     }
 
     private func inline(_ raw: String) -> AttributedString {
@@ -444,34 +503,6 @@ private struct MossRichText: View {
             out[run.range].backgroundColor = Color.primary.opacity(scheme == .dark ? 0.12 : 0.07)
         }
         return out
-    }
-
-    struct Block {
-        var text: String
-        var code: Bool
-    }
-
-    /// Split on ``` fences; an unclosed fence runs to the end.
-    static func blocks(_ text: String) -> [Block] {
-        var out: [Block] = []
-        var current: [Substring] = []
-        var code = false
-        func flush() {
-            let joined = current.joined(separator: "\n")
-            let body = code ? joined : joined.trimmingCharacters(in: .newlines)
-            if !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { out.append(Block(text: body, code: code)) }
-            current = []
-        }
-        for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
-            if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
-                flush()
-                code.toggle()
-            } else {
-                current.append(line)
-            }
-        }
-        flush()
-        return out.isEmpty ? [Block(text: text, code: false)] : out
     }
 }
 
