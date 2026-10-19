@@ -294,6 +294,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task { await LanguageState.shared.load(from: client) }
     }
 
+    /// Opened again (Spotlight, `open -a cc-moss`, the Dock icon when it
+    /// shows): the panel, as a click on the menu bar icon would. Handy when
+    /// the icon is hidden behind the notch or other icons.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        panel?.show()
+        return false
+    }
+
+    /// `cc-moss://panel[/sessions|queue|moss]`: the panel, on that page.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        guard let link = urls.lazy.compactMap(PanelLink.init).first else { return }
+        switch link {
+        case .panel: break
+        case .sessions: model.page = .sessions
+        case .queue: model.showQueue()
+        case .moss: model.showMoss()
+        }
+        panel?.show()
+    }
+
     /// A menu bar app lives on with no window open. SwiftUI otherwise answers
     /// yes here (Settings is its only window scene), so Mo hiding for a moment
     /// after a click, with Settings closed, quit the whole app.
