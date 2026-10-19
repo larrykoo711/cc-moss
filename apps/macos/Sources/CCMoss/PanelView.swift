@@ -222,6 +222,9 @@ struct PanelView: View {
                         model.confirmClose()
                     } else if menu != nil {
                         runMenuItem()
+                    } else if model.page == .sessions, case let .noMatch(q)? = model.listItems.first {
+                        // Nothing found: Return asks Moss.
+                        model.askMossToFind(q)
                     } else {
                         perform(primaryAction)
                     }
@@ -310,7 +313,8 @@ struct PanelView: View {
                         case let .row(s, pinned): row(s, pinned: pinned)
                         case let .hit(h, closed): row(h.session, pinned: model.pins.contains(h.session.id), hit: h, closed: closed)
                         case .closedHeader: ClosedHeader()
-                        case let .noMatch(q): AskMossRow(query: q) { model.askMossToFind(q) }
+                        case let .noMatch(q): AskMossCard(query: q) { model.askMossToFind(q) }
+                        case let .askMoss(q): AskMossLine(query: q) { model.askMossToFind(q) }
                         }
                     }
                 }
@@ -933,7 +937,7 @@ struct ClosedHeader: View {
 }
 
 /// Nothing found: a quiet way to ask Moss instead.
-struct AskMossRow: View {
+struct AskMossCard: View {
     let query: String
     let action: () -> Void
     @State private var hovering = false
@@ -941,29 +945,83 @@ struct AskMossRow: View {
 
     var body: some View {
         Button(action: action) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                Text(L.t("No match for “\(query)”", "没找到「\(query)」"))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Text("·").foregroundStyle(.tertiary)
-                Text(L.t("Ask Moss →", "让 Moss 帮你找 →"))
-                    .foregroundStyle(hovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
-                    .fixedSize()
-                Spacer(minLength: 0)
+            HStack(spacing: 12) {
+                MossAvatar(size: 32)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(L.t("No match for “\(query)”", "没找到「\(query)」"))
+                        .font(.system(size: 13.5, weight: .semibold))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Text(L.t("Ask Moss to find it", "让 Moss 帮你找找看"))
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 4) {
+                    Text(L.t("Ask Moss", "问 Moss"))
+                    Image(systemName: "arrow.right").font(.system(size: 10.5, weight: .bold))
+                    KeyCap(text: "↵")
+                }
+                .font(.system(size: 12.5, weight: .semibold))
+                .foregroundStyle(.white)
+                .padding(.leading, 12)
+                .padding(.trailing, 6)
+                .frame(height: 28)
+                .background(Capsule().fill(Theme.brand.opacity(hovering ? 1 : 0.92)))
             }
-            .font(.system(size: 12.5))
             .padding(.horizontal, 12)
-            .frame(height: 40)
-            .background(RoundedRectangle(cornerRadius: 8).fill(hovering ? Theme.selection(scheme).opacity(0.5) : .clear))
+            .padding(.vertical, 12)
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Theme.brand.opacity(scheme == .dark ? (hovering ? 0.2 : 0.14) : (hovering ? 0.12 : 0.08))))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Theme.brand.opacity(hovering ? 0.45 : 0.25)))
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
         .focusable(false)
+        .handCursor()
         .onHover { hovering = $0 }
+        .padding(.horizontal, 4)
         .padding(.top, 8)
+        .accessibilityLabel(L.t("Ask Moss to find “\(query)”", "让 Moss 帮你找「\(query)」"))
+    }
+}
+
+/// Results, but maybe not the one: a quiet line above them that asks Moss.
+/// Not a row the arrow keys walk to.
+struct AskMossLine: View {
+    let query: String
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Theme.brand.opacity(0.85))
+                Text(L.t("Not what you need?", "不是你要找的？"))
+                    .foregroundStyle(.secondary)
+                    .fixedSize()
+                Text(L.t("Ask Moss to find “\(query)” →", "让 Moss 帮你找「\(query)」→"))
+                    .foregroundStyle(Theme.brand)
+                    .fontWeight(hovering ? .semibold : .medium)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer(minLength: 0)
+            }
+            .font(.system(size: 12))
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(RoundedRectangle(cornerRadius: 7).fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.12 : 0.07) : .clear))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .padding(.top, 4)
+        .padding(.bottom, 2)
     }
 }
