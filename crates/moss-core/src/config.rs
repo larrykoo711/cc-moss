@@ -30,6 +30,10 @@ pub struct ClaudeConfig {
     pub default_args: Vec<String>,
     /// How `cc-moss new` starts a session: in bypass mode unless set to `default`.
     pub permission_mode: PermissionMode,
+    /// Where Claude Code keeps its files when `CLAUDE_CONFIG_DIR` is set in
+    /// your shell: the daemon starts at login without your shell's
+    /// environment, so Moss's fence learns the folder from here.
+    pub config_dir: Option<String>,
 }
 
 /// `[claude] permission_mode`: whether new sessions ask before each action.

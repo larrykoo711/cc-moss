@@ -400,8 +400,8 @@ keeps trying.
   - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
     only in its home, never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
-  - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude` and `~/.claude.json`,
-    where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
+  - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude`, `~/.claude.json` and
+    its backup copies, or the folder `CLAUDE_CONFIG_DIR` names; where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
     the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
     updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
   - No network: web fetch and web search are refused, and its shell can't reach the internet.
@@ -872,6 +872,8 @@ Optional, in `~/.config/cc-moss/config.toml`:
 [claude]
 permission_mode = "bypass"   # new sessions start in bypass mode; "default" asks before each step
 default_args = ["--model", "opus"]   # added to every `cc-moss new`
+# config_dir = "~/.claude-work"   # if you set CLAUDE_CONFIG_DIR in your shell: the folder Moss must stay out of
+#                                   (the daemon starts without your shell; `cc-moss doctor` warns when they differ)
 
 [naming]
 host_prefix = true        # default: name tmux sessions <host>_<name>, handy when you ssh between machines
