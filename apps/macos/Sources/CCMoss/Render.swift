@@ -120,6 +120,13 @@ enum Render {
             // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
             model.pinsPersist = false
             model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
+            // `--sessions-count N`: the panel's size for that many sessions (on a
+            // 1000-pt-tall screen, or `--screen-height`); `--panel-height`: exactly that.
+            if let n = value("--sessions-count").flatMap(Int.init) {
+                let visible = value("--screen-height").flatMap(Double.init) ?? 1000
+                model.panelHeight = CGFloat(PanelSize.height(PanelSize.tier(count: n, previous: nil), visible: visible))
+            }
+            if let h = value("--panel-height").flatMap(Double.init) { model.panelHeight = CGFloat(h) }
             if let id = value("--select") { model.selectedID = id }
             model.demoSuggestion = value("--suggestion")
             // `--reply <id>`: that session's reply line open (with `--suggestion`, prefilled).
@@ -548,7 +555,7 @@ enum Render {
             .background(dark ? Color(red: 0.16, green: 0.22, blue: 0.30) : Color(red: 0.55, green: 0.66, blue: 0.75))
             .environment(\.colorScheme, dark ? .dark : .light)
         let host = NSHostingView(rootView: root)
-        host.frame = NSRect(x: 0, y: 0, width: Theme.panelWidth, height: Theme.panelHeight)
+        host.frame = NSRect(x: 0, y: 0, width: Theme.panelWidth, height: model.panelHeight)
         let window = ProbeWindow(contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         window.contentView = host
@@ -575,7 +582,7 @@ enum Render {
         // which session is selected after it.
         if let i = CommandLine.arguments.firstIndex(of: "--press"), i + 1 < CommandLine.arguments.count {
             let xy = CommandLine.arguments[i + 1].split(separator: ",").compactMap { Double($0) }
-            let at = NSPoint(x: xy[0], y: Theme.panelHeight - xy[1])
+            let at = NSPoint(x: xy[0], y: model.panelHeight - xy[1])
             // A window takes clicks only once it is on screen: put it far off to the side.
             window.setFrameOrigin(NSPoint(x: -4000, y: -4000))
             window.makeKeyAndOrderFront(nil)

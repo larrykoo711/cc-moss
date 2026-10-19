@@ -35,7 +35,7 @@ struct PanelView: View {
             NavRail(model: model, settings: showSettings)
             page
         }
-        .frame(width: Theme.panelWidth, height: Theme.panelHeight)
+        .frame(width: Theme.panelWidth, height: model.panelHeight)
         .background(Theme.surface(scheme))
         .onChange(of: model.queueItems.isEmpty) { _, empty in if empty { model.askQueue.emptied() } }
         .onChange(of: model.page) { _, page in if page == .sessions { searchFocused = true } }
@@ -90,7 +90,7 @@ struct PanelView: View {
                 actionBar
             }
         }
-        .frame(width: Theme.pageWidth, height: Theme.panelHeight)
+        .frame(width: Theme.pageWidth, height: model.panelHeight)
         // Keyboard focus lives in the search field; buttons never take it,
         // so no focus ring lands on the filter or the action pill.
         .focusEffectDisabled()

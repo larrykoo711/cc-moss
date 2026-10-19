@@ -97,6 +97,13 @@ final class PanelController {
     func show() {
         let panel = window ?? makeWindow()
         window = panel
+        // Its size is picked as it opens, never while it's open.
+        if !isShown, let visible = screen()?.visibleFrame {
+            let height = model.sizePanel(visible: visible.height)
+            if abs(panel.frame.height - height) > 0.5 {
+                panel.setContentSize(NSSize(width: Theme.panelWidth, height: height))
+            }
+        }
         position(panel)
         // Key without activating the app: the search field takes typing at
         // once and the app you were in stays frontmost.
@@ -123,7 +130,7 @@ final class PanelController {
     }
 
     private func makeWindow() -> KeyPanel {
-        let size = NSSize(width: Theme.panelWidth, height: Theme.panelHeight)
+        let size = NSSize(width: Theme.panelWidth, height: model.panelHeight)
         let panel = KeyPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -162,11 +169,16 @@ final class PanelController {
     }
 
     /// Under the status button, left edges aligned, kept on its screen.
+    /// The screen the status button is on.
+    private func screen() -> NSScreen? {
+        let button = anchor?()
+        return NSScreen.screens.first { s in button.map { s.frame.intersects($0) } ?? false } ?? NSScreen.main
+    }
+
     private func position(_ panel: NSPanel) {
         let size = panel.frame.size
         let button = anchor?()
-        let screen = NSScreen.screens.first { s in button.map { s.frame.intersects($0) } ?? false } ?? NSScreen.main
-        guard let visible = screen?.visibleFrame else { return }
+        guard let visible = screen()?.visibleFrame else { return }
         let top = (button?.minY ?? visible.maxY) - 5
         var x = button?.minX ?? (visible.maxX - size.width - 8)
         x = min(max(x, visible.minX + 8), visible.maxX - size.width - 8)

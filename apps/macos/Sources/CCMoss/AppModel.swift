@@ -74,6 +74,20 @@ final class AppModel {
     /// You typed in the line: a suggestion arriving later leaves it alone.
     @ObservationIgnored var replyTouched = false
     @ObservationIgnored var replyPrefilled: String?
+    /// How tall the panel is: one of three sizes, picked as it opens.
+    var panelHeight: CGFloat = Theme.panelHeight
+    @ObservationIgnored var panelTier: PanelTier?
+
+    /// The panel is about to open on a screen with `visible` points of height:
+    /// pick its size from how many sessions you have (not Moss, not closed).
+    func sizePanel(visible: CGFloat) -> CGFloat {
+        let count = sessions.filter { $0.state != .closed }.count
+        let tier = PanelSize.tier(count: count, previous: panelTier)
+        panelTier = tier
+        panelHeight = CGFloat(PanelSize.height(tier, visible: Double(visible)))
+        return panelHeight
+    }
+
     /// Sessions pinned to the top of the list (this Mac only).
     var pins = Pins.load()
     /// Off for screenshots: their pins are never saved.
