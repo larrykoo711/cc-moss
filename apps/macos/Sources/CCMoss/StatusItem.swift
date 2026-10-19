@@ -63,20 +63,8 @@ final class KeyPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 
     override func close() {
-        linkLog.debug("panel close() called")
         orderOut(nil)
         onClose?()
-    }
-
-    override func orderOut(_ sender: Any?) {
-        if isVisible { linkLog.debug("panel ordered out") }
-        super.orderOut(sender)
-    }
-
-    override func resignKey() {
-        super.resignKey()
-        let next = NSApp.keyWindow.map { "\(type(of: $0)) \($0.title)" } ?? "none"
-        linkLog.debug("panel resigned key; key window now: \(next, privacy: .public), app active: \(NSApp.isActive)")
     }
 
     override func cancelOperation(_ sender: Any?) {
@@ -111,8 +99,13 @@ final class PanelController {
     /// Show it, and keep it through the next `seconds` of focus changes.
     func show(holding seconds: TimeInterval) {
         steadyUntil = ProcessInfo.processInfo.systemUptime + seconds
+        closedOnPurpose = false
         show()
     }
+
+    /// Closed on purpose (Esc, a click elsewhere, the icon, opening
+    /// something) since a link last showed it: a later check doesn't bring it back.
+    private(set) var closedOnPurpose = false
 
     private var steady: Bool { ProcessInfo.processInfo.systemUptime < steadyUntil }
 
@@ -172,6 +165,7 @@ final class PanelController {
 
     private func didHide() {
         guard isShown else { return }
+        closedOnPurpose = true
         isShown = false
         hiddenAt = ProcessInfo.processInfo.systemUptime
         stopWatching()
@@ -365,7 +359,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
         if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)
-        watchFocusForLinks()
         if let link = pendingLink {
             pendingLink = nil
             linkLog.debug("pending link handled")
@@ -432,27 +425,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showForLink(tries: 10)
     }
 
-    /// Debug (category "link"): who takes the keyboard and the app's
-    /// activation around a launch, to find what hides a link's panel.
-    private func watchFocusForLinks() {
-        let center = NotificationCenter.default
-        let describe: (Any?) -> String = { object in
-            guard let w = object as? NSWindow else { return "?" }
-            return "\(type(of: w)) \"\(w.title)\" visible: \(w.isVisible)"
-        }
-        for name in [NSWindow.didBecomeKeyNotification, NSWindow.willCloseNotification] {
-            _ = center.addObserver(forName: name, object: nil, queue: .main) { note in
-                linkLog.debug("\(note.name.rawValue, privacy: .public): \(describe(note.object), privacy: .public)")
-            }
-        }
-        for name in [NSApplication.didBecomeActiveNotification, NSApplication.didResignActiveNotification,
-                     NSApplication.didHideNotification, NSApplication.didUnhideNotification] {
-            _ = center.addObserver(forName: name, object: nil, queue: .main) { note in
-                linkLog.debug("\(note.name.rawValue, privacy: .public)")
-            }
-        }
-    }
-
     /// Show the panel for a link: once the status button is in the menu bar
     /// (right after a cold launch it may not be yet; tried every 0.1 s for
     /// about a second), held through the launch's focus changes, and shown
@@ -472,10 +444,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible), app active: \(NSApp.isActive)")
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
             guard let panel = self?.statusItem?.panel else { return }
-            // By now the icon is laid out: under it, if it's somewhere real.
-            panel.reanchor()
-            linkLog.debug("panel still visible after a link: \(panel.isVisible)")
-            if !panel.isVisible { panel.showAgain(holding: 1.5) }
+            // Closed by you meanwhile: it stays closed.
+            guard !panel.closedOnPurpose else {
+                linkLog.debug("panel closed meanwhile; left closed")
+                return
+            }
+            // By now the icon is laid out: under it, if it's somewhere real;
+            // shown again only if something else took it off screen.
+            if panel.isVisible {
+                panel.reanchor()
+            } else if panel.isShown {
+                panel.showAgain(holding: 1.5)
+            }
         }
     }
 
