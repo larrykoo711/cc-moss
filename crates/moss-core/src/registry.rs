@@ -421,6 +421,26 @@ impl Registry {
                 // Only the slot's current id may end it; a late End for a
                 // pre-/clear id must not close the live process.
                 if let Some(id) = current_slot(&tx, session_id, ctx)? {
+                    // A late SessionEnd from a process the session has since
+                    // left (resumed elsewhere) ends nothing: the new one runs.
+                    let recorded: Option<(Option<u32>, Option<String>)> = tx
+                        .query_row(
+                            "SELECT pid, pid_start FROM slots WHERE slot_id = ?1",
+                            [&id],
+                            |r| Ok((r.get(0)?, r.get(1)?)),
+                        )
+                        .optional()?;
+                    let other_process = match (recorded, ctx.pid) {
+                        (Some((Some(pid), start)), Some(caller)) => {
+                            pid != caller
+                                || matches!((&start, &ctx.pid_start), (Some(a), Some(b)) if a != b)
+                        }
+                        _ => false,
+                    };
+                    if other_process {
+                        tx.commit()?;
+                        return Ok(());
+                    }
                     tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
                     clear_attention(&tx, &id)?;
                     let (status, raw) = match reason {

@@ -1090,6 +1090,30 @@ fn moss_reads_the_registry_but_never_writes_it() {
 }
 
 #[test]
+fn a_late_end_from_an_old_process_leaves_the_new_one_running() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Startup, "U1", Some("api")),
+        &ctx(100, 1_000),
+    )
+    .unwrap();
+    // Resumed elsewhere (adopt, restore): a new process runs the session.
+    reg.apply(
+        &start(StartSource::Resume, "U1", Some("api")),
+        &ctx(200, 2_000),
+    )
+    .unwrap();
+    // The old process's SessionEnd arrives late.
+    reg.apply(&end("U1", "other"), &ctx(100, 3_000)).unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(s.status, Status::Running, "{s:?}");
+    assert_eq!(s.pid, Some(200));
+    // Its own end still counts.
+    reg.apply(&end("U1", "other"), &ctx(200, 4_000)).unwrap();
+    assert_eq!(only_slot(&reg).status, Status::Interrupted);
+}
+
+#[test]
 fn events_between_look_back_at_one_slot_and_moment() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
