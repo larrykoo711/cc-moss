@@ -321,7 +321,8 @@ private struct MossMessageView: View {
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 6) {
                 if let command = message.command, !message.refused {
-                    MossTerminalCard(command: command, text: message.text)
+                    MossTerminalCard(command: command, text: message.text,
+                                     graphic: MossScreenCard.make(command: command, text: message.text))
                 } else {
                     MossRichText(text: message.shownText(), quiet: message.fallback)
                         .padding(.horizontal, 11)
@@ -616,12 +617,16 @@ private struct MossChip: View {
 
 // MARK: - Commands
 
-/// A command Moss ran, shown as its terminal screen: the command on top,
-/// then the text as the terminal had it (monospaced, spaces kept, scrolling
-/// sideways). A tall screen is cut with a fade until you ask for all of it.
-private struct MossTerminalCard: View {
+/// A command Moss ran: the command on top, then its screen drawn as a card
+/// (/usage, /status) with a toggle to the raw text, or the text as the
+/// terminal had it (monospaced, spaces kept, scrolling sideways). A tall
+/// screen is cut with a fade until you ask for all of it.
+struct MossTerminalCard: View {
     let command: String
     let text: String
+    /// The drawn version and the header's badge, when the screen was recognised.
+    var graphic: (badge: String?, view: AnyView)?
+    @State var raw = false
     @State private var expanded = false
     @State private var height: CGFloat = 0
     @Environment(\.colorScheme) private var scheme
@@ -631,10 +636,11 @@ private struct MossTerminalCard: View {
 
     /// One line ("unknown command", "That command printed nothing.") is a
     /// sentence: it wraps. A real screen keeps its columns and scrolls sideways.
-    private var oneLine: Bool { !text.trimmingCharacters(in: .whitespacesAndNewlines).contains("\n") }
+    private var oneLine: Bool { !MossScreenText.withoutChrome(text).contains("\n") }
 
     @ViewBuilder private var screen: some View {
-        let lines = Text(Self.screen(oneLine ? text.trimmingCharacters(in: .whitespacesAndNewlines) : text))
+        let shown = MossScreenText.withoutChrome(text)
+        let lines = Text(Self.screen(oneLine ? shown.trimmingCharacters(in: .whitespacesAndNewlines) : shown))
             .font(.system(size: 11, design: .monospaced))
             .lineSpacing(1.5)
             .textSelection(.enabled)
@@ -673,10 +679,10 @@ private struct MossTerminalCard: View {
         return out
     }
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+    private var header: some View {
+        HStack(spacing: 6) {
             HStack(spacing: 5) {
-                Image(systemName: "terminal")
+                Text(Image(systemName: "terminal"))
                     .font(.system(size: 10, weight: .semibold))
                 Text(command)
                     .font(.system(size: 11, weight: .semibold, design: .monospaced))
@@ -685,10 +691,61 @@ private struct MossTerminalCard: View {
             .padding(.horizontal, 7)
             .frame(height: 20)
             .background(Capsule().fill(Theme.brand.opacity(scheme == .dark ? 0.18 : 0.10)))
-            .padding(.horizontal, 10)
-            .padding(.top, 9)
-            .padding(.bottom, 7)
+            if let badge = graphic?.badge {
+                Text(badge)
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .frame(height: 20)
+                    .overlay(Capsule().strokeBorder(Theme.hairline(scheme)))
+            }
+            Spacer(minLength: 6)
+            if graphic != nil {
+                Button {
+                    withAnimation(.easeOut(duration: 0.18)) { raw.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(Image(systemName: raw ? "chart.bar.xaxis" : "text.alignleft"))
+                            .font(.system(size: 9.5, weight: .semibold))
+                        Text(raw ? L.t("Visual", "图示") : L.t("Raw", "原文"))
+                    }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .frame(height: 20)
+                    .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.07 : 0.045)))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+                .tip(raw ? L.t("Show it drawn", "看图示") : L.t("Show the terminal text", "看终端原文"))
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 9)
+        .padding(.bottom, 7)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
             Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+            if let graphic, !raw {
+                graphic.view
+                    .transition(.opacity)
+            } else {
+                rawScreen
+            }
+        }
+        .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
+        .clipShape(ChatBubble(mine: false))
+        .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(L.t("\(command) result", "\(command) 的结果"))
+    }
+
+    @ViewBuilder private var rawScreen: some View {
             screen
             .frame(maxHeight: tall && !expanded ? Self.fold : nil, alignment: .top)
             .clipped()
@@ -720,13 +777,6 @@ private struct MossTerminalCard: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
             }
-        }
-        .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
-        .clipShape(ChatBubble(mine: false))
-        .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
-        .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(L.t("\(command) result", "\(command) 的结果"))
     }
 }
 

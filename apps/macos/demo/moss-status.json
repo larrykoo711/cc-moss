@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608680000-aa0001",
+   "at": "2026-10-16T09:58:00Z",
+   "from": "you",
+   "text": "/status",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608686000-aa0002",
+   "at": "2026-10-16T09:58:06Z",
+   "from": "moss",
+   "text": "────────────────────────────────────────────────────────────────────────────────────────────────────\n  Settings  Status   Config   Usage   Stats\n\n  Version:           2.1.303\n  Session name:      billing-fix\n  Session ID:        0f3c9a52-1b7e-4d0a-9c11-5e2f7a8b9c0d\n  Session kind:      interactive\n  Peer address:      uds:/tmp/example.sock\n  cwd:               /Users/alex/work/projects/a-very-long-folder-name-that-the-terminal-will-wrap-somewh\n                     ere-in-the-middle/app\n  Login method:      Claude Max account\n  Organization:      Example Org\n  Email:             alex@example.com\n  Cloud sessions:    GitHub connected\n  Model:             Default (Opus 5.5 · Best for everyday, complex tasks)\n  IDE:               ✔ Connected to Visual Studio Code\n  MCP servers:       1 disabled · /mcp\n  Setting sources:\n  Auto mode server:  Disabled\n\n  Esc to cancel",
+   "reply_to": "1760608680000-aa0001",
+   "command": "/status",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}
