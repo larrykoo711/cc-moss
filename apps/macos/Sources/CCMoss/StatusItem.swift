@@ -261,6 +261,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var startup: StartupReminder?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
+        if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
         startAlerts()
