@@ -1002,8 +1002,8 @@ impl Looker {
         }
     }
 
-    /// Once a day, the first time the desktop is seen: the same request as
-    /// the panel's checkup button.
+    /// Once a day, the first time the user opens the panel that day (the
+    /// app's `panel-opened` mark): the same request as its checkup button.
     fn daily_checkup(&mut self, now: Instant, log: &dyn Fn(&str)) {
         if now < self.next_daily {
             return;

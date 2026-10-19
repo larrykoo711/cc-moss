@@ -2,7 +2,7 @@
 //! the facts about every session and about the install, never a verdict;
 //! what cannot be told is `"unknown"`, never "broken". And the daily
 //! checkup: the daemon asks Moss for one, the same as the panel's button,
-//! the first time it sees the desktop each day.
+//! the first time the user opens the panel each day.
 
 use std::collections::HashMap;
 use std::io;
