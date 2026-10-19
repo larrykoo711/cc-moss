@@ -5,23 +5,38 @@ use std::time::Duration;
 
 use crate::command::output_with_timeout;
 
-/// Lowercase; anything outside `[a-z0-9_-]` becomes `-` (tmux rewrites `.`
-/// and `:` in session names itself, which would break name matching); runs of
-/// `-` collapse; leading and trailing `-` are dropped. Never empty.
+/// The longest tmux name part, in characters.
+pub const MAX_CHARS: usize = 40;
+
+/// A session name as a tmux name: what people name things with stays (any
+/// script, case, emoji); only what tmux or a shell can't take becomes `-`:
+/// white space, `.` and `:` (tmux's target separators), and characters a
+/// shell would read (`'"$\`!#;&|<>(){}[]*?~^,=/`). Control characters go;
+/// so do a leading `-` and the `$` `@` `%` that tmux reads as ids. Runs of
+/// `-` collapse, at most [`MAX_CHARS`] characters. Never empty.
+/// (notes/session-names.md, 2026-10-19: Chinese names used to vanish.)
 pub fn sanitize(name: &str) -> String {
+    const SHELL: &str = ".:'\"$`\\!#;&|<>(){}[]*?~^,=/";
     let mut out = String::with_capacity(name.len());
-    for c in name.chars().flat_map(char::to_lowercase) {
-        let c = if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
-            c
-        } else {
+    for c in name.chars() {
+        if c.is_control() && !c.is_whitespace() {
+            continue;
+        }
+        let c = if c.is_whitespace() || SHELL.contains(c) {
             '-'
+        } else {
+            c
         };
-        if c == '-' && out.ends_with('-') {
+        if c == '-' && (out.is_empty() || out.ends_with('-')) {
+            continue;
+        }
+        if out.is_empty() && matches!(c, '@' | '%') {
             continue;
         }
         out.push(c);
     }
-    let trimmed = out.trim_matches('-');
+    let cut: String = out.chars().take(MAX_CHARS).collect();
+    let trimmed = cut.trim_end_matches('-');
     if trimmed.is_empty() {
         "session".to_string()
     } else {
@@ -29,10 +44,11 @@ pub fn sanitize(name: &str) -> String {
     }
 }
 
-/// `<prefix>_<name>`, both sanitized, or just the name without a prefix.
+/// `<prefix>_<name>`, or just the name without a prefix. The machine's
+/// prefix stays lowercase, as it always was.
 pub fn session_name(prefix: Option<&str>, name: &str) -> String {
     match prefix {
-        Some(p) => format!("{}_{}", sanitize(p), sanitize(name)),
+        Some(p) => format!("{}_{}", sanitize(p).to_lowercase(), sanitize(name)),
         None => sanitize(name),
     }
 }
