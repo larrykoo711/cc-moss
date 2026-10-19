@@ -138,6 +138,15 @@ fn adopt_moves_a_session_into_tmux() {
     assert_eq!(after["tmux"]["session_name"], "host_work");
     assert_eq!(after["last_prompt"], "tidy up the about page");
     assert!(w.session_names().contains(&"host_work".to_string()));
+    // Its terminal tab shows its name.
+    let shown = w.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        "=host_work:",
+        "#{@cc-moss-name}",
+    ]);
+    assert_eq!(shown.trim(), "work");
     let audit = std::fs::read_to_string(w.state().join("audit.jsonl")).unwrap();
     assert!(
         audit.contains("\"action\":\"adopt\"") && audit.contains("\"moved\""),

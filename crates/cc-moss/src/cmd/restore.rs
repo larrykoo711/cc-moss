@@ -419,6 +419,7 @@ impl Launcher {
             });
             return Ok(Launched::Failed(reason, message));
         };
+        let _ = self.tmux.set_display_name(&pane.session_id, &label);
         let loc = TmuxLoc {
             socket: socket_path(&self.tmux),
             session_id: Some(pane.session_id.clone()),

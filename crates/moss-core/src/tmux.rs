@@ -16,6 +16,13 @@ pub trait Runner {
     fn run(&self, args: &[String]) -> Result<String>;
 }
 
+/// The tmux user option holding a session's own name as people gave it
+/// (spaces, Chinese and all), for terminal tab titles.
+pub const NAME_OPTION: &str = "@cc-moss-name";
+
+/// The terminal title: the session's own name, else tmux's.
+pub const TITLE_FORMAT: &str = "#{?#{@cc-moss-name},#{@cc-moss-name},#{session_name}}";
+
 /// Which tmux server to talk to.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Socket {
@@ -220,6 +227,13 @@ impl<R: Runner> Tmux<R> {
         self.run(&["list-panes", "-t", &target, "-F", PANE_FORMAT])
             .ok()
             .and_then(|out| parse_pane(&out))
+    }
+
+    /// Give session `session_id` (`$N`) its own display name, for terminal
+    /// titles ([`NAME_OPTION`]).
+    pub fn set_display_name(&self, session_id: &str, name: &str) -> Result<()> {
+        self.run(&["set-option", "-t", session_id, NAME_OPTION, name])
+            .map(drop)
     }
 
     /// Rename by session id (`$N`), never by name, so we cannot hit another session.
