@@ -471,11 +471,12 @@ pub fn say(json: bool, text: &str) -> Result<()> {
 
 /// `cc-moss moss chat [--json] [--limit N]`: the conversation so far.
 pub fn chat(json: bool, limit: usize) -> Result<()> {
-    let messages = chat::fold(&moss::home_dir(&state()), limit);
+    let home = moss::home_dir(&state());
     if json {
-        println!("{}", chat::to_json(&messages));
+        println!("{}", chat::chat_json(&home, limit));
         return Ok(());
     }
+    let messages = chat::fold(&home, limit);
     if messages.is_empty() {
         println!("{}", tr!("Nothing said yet.", "还没有对话。"));
     }

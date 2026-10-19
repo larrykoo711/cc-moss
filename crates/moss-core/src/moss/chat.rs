@@ -154,6 +154,12 @@ pub struct Shown {
 /// The last `limit` messages, oldest first, with the state of yours folded
 /// in. Silent replies are left out (they still mark yours as replied).
 pub fn fold(home: &Path, limit: usize) -> Vec<Shown> {
+    fold_lines(&window(home, limit), limit)
+}
+
+/// The lines read for the last `limit` messages: chat.jsonl, and the old
+/// file before it when that is not enough.
+fn window(home: &Path, limit: usize) -> Vec<Line> {
     let mut lines = read_lines(&path(home));
     let messages = lines.iter().filter(|l| l.state.is_none()).count();
     if messages < limit {
@@ -161,7 +167,7 @@ pub fn fold(home: &Path, limit: usize) -> Vec<Shown> {
         old.append(&mut lines);
         lines = old;
     }
-    fold_lines(&lines, limit)
+    lines
 }
 
 fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
@@ -240,6 +246,22 @@ fn is_reply(l: &Line) -> bool {
 /// The JSON `moss chat --json` prints.
 pub fn to_json(messages: &[Shown]) -> Value {
     serde_json::json!({ "schema": 1, "messages": messages })
+}
+
+/// `moss chat --json`: the last `limit` messages, and what Moss pinned last.
+/// The pin is the newest Moss line that carried a `quick` list, shown or
+/// silent: `{"items":[…],"at":…}`, absent when there is none.
+pub fn chat_json(home: &Path, limit: usize) -> Value {
+    let lines = window(home, limit);
+    let mut v = to_json(&fold_lines(&lines, limit));
+    let pin = lines
+        .iter()
+        .rev()
+        .find(|l| l.state.is_none() && l.from.as_deref() == Some(FROM_MOSS) && !l.quick.is_empty());
+    if let Some(pin) = pin {
+        v["quick"] = serde_json::json!({ "items": pin.quick, "at": pin.at });
+    }
+    v
 }
 
 #[cfg(test)]
@@ -353,6 +375,43 @@ mod tests {
         assert_eq!(m[3]["command"], "/login");
         assert_eq!(m[3]["refused"], true);
         assert!(m[0].get("command").is_none());
+    }
+
+    #[test]
+    fn chat_reports_the_latest_pin_even_when_silent() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        assert!(chat_json(h, 10).get("quick").is_none(), "none yet");
+        append(h, &Line::message("1", "t1", FROM_YOU, "hi")).unwrap();
+        append(
+            h,
+            &Line {
+                quick: vec!["/usage".into()],
+                ..moss("m1", "1", "seen")
+            },
+        )
+        .unwrap();
+        append(
+            h,
+            &Line {
+                quick: vec!["stuck".into(), "today".into()],
+                silent: true,
+                at: "t2".into(),
+                ..moss("m2", "e1", "quiet")
+            },
+        )
+        .unwrap();
+        // A later moss line without a pin leaves the last pin standing.
+        append(h, &moss("m3", "1", "no pin")).unwrap();
+        let v = chat_json(h, 10);
+        assert_eq!(
+            v["quick"],
+            serde_json::json!({ "items": ["stuck", "today"], "at": "t2" })
+        );
+        // Per message, only on what is shown.
+        let m = v["messages"].as_array().unwrap();
+        assert_eq!(m[1]["quick"], serde_json::json!(["/usage"]));
+        assert!(m.iter().all(|x| x["id"] != "m2"));
     }
 
     #[test]
