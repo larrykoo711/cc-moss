@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use moss_core::agent::claude::{is_auto_name, parse_agents};
+use moss_core::launch_args::is_headless;
 use moss_core::tmux::locate_in_panes;
 
 #[test]
@@ -32,6 +33,18 @@ fn auto_names_are_folder_plus_two_hex_digits() {
     assert!(!is_auto_name("acme-app-dev", "/x/acme-app"));
     assert!(!is_auto_name("acme-app-abc", "/x/acme-app"));
     assert!(!is_auto_name("97-gateway-app", "/x/acme-app"));
+    // Claude Code lowercases the folder name.
+    assert!(is_auto_name("t-89", "/private/var/folders/xm/T"));
+    assert!(is_auto_name("acme-app-d9", "/x/Acme-App"));
+}
+
+#[test]
+fn headless_runs_are_told_apart() {
+    assert!(is_headless(&["claude", "-p", "--model", "haiku"]));
+    assert!(is_headless(&["/usr/local/bin/claude", "--print"]));
+    assert!(!is_headless(&["claude", "--dangerously-skip-permissions"]));
+    assert!(!is_headless(&["claude", "--resume", "abc"]));
+    assert!(!is_headless(&["-p"]), "the program name is not a flag");
 }
 
 #[test]

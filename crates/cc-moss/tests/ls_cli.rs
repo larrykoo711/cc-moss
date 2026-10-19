@@ -183,6 +183,38 @@ fn running_sessions_are_adopted_automatically() {
 }
 
 #[test]
+fn headless_runs_are_not_adopted() {
+    // A plugin's `claude -p` summarizer: `claude agents` lists it as
+    // interactive, but nobody would want it restored.
+    let dir = tempfile::tempdir().unwrap();
+    let mut headless = std::process::Command::new("sh")
+        .args(["-c", "sleep 60; :", "claude", "-p", "--model", "haiku"])
+        .spawn()
+        .unwrap();
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": headless.id(), "cwd": "/tmp/T", "kind": "interactive",
+         "sessionId": "SUM-1", "name": "t-89", "status": "busy"}
+    ]);
+    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::process::Command::new("chmod")
+        .arg("+x")
+        .arg(&stub)
+        .status()
+        .unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let _ = headless.kill();
+    let _ = headless.wait();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 0, "{v}");
+}
+
+#[test]
 fn adopting_leaves_sessions_the_hooks_track_alone() {
     let dir = tempfile::tempdir().unwrap();
     let p = FakeProcess::spawn();

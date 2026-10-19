@@ -201,12 +201,19 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                 }
             }
             None => {
+                let argv = launch_args::argv(s.pid).unwrap_or_default();
+                let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+                // A plugin's or script's `claude -p` (summarizers run one
+                // every few minutes): the hooks skip those, so must this.
+                if launch_args::is_headless(&argv) {
+                    continue;
+                }
                 let transcript = claude::transcript_path(&s.session_id);
                 let ctx = Context {
                     pid: Some(s.pid),
                     pid_start: proc::start_time(s.pid),
                     tmux: locate_in_panes(s.pid, &parents, &panes, &socket_path),
-                    launch_args: Some(launch_args::capture(s.pid)),
+                    launch_args: Some(launch_args::whitelist(&argv)),
                     // Last activity is when Claude last wrote the
                     // transcript, not when cc-moss noticed the session.
                     now_ms: transcript

@@ -138,9 +138,11 @@ pub fn parse_agents(json: &str) -> Vec<LiveSession> {
 /// name says nothing the folder does not, and must not overwrite a tmux
 /// session name the user chose.
 pub fn is_auto_name(name: &str, cwd: &str) -> bool {
+    // Claude Code lowercases the folder: `T` becomes `t-89`.
     let folder = cwd.rsplit('/').find(|s| !s.is_empty()).unwrap_or("");
-    name.strip_prefix(folder)
-        .and_then(|rest| rest.strip_prefix('-'))
+    name.get(..folder.len())
+        .filter(|head| head.eq_ignore_ascii_case(folder))
+        .and_then(|_| name[folder.len()..].strip_prefix('-'))
         .is_some_and(|suffix| suffix.len() == 2 && suffix.chars().all(|c| c.is_ascii_hexdigit()))
 }
 

@@ -133,17 +133,32 @@ pub fn normalize_new(args: &[String]) -> Vec<String> {
     own
 }
 
-/// Whitelisted arguments of a running process, from `ps`. Arguments that
-/// contain spaces cannot be recovered exactly (see the T1.3 spec).
-pub fn capture(pid: u32) -> Vec<String> {
-    let Some(out) = output_with_timeout(
+/// Whether `argv` (program name first) runs Claude Code headless (`-p`,
+/// `--print`): a script's one-shot call, nothing a person would resume.
+/// `claude agents` lists those as interactive too.
+pub fn is_headless(argv: &[&str]) -> bool {
+    argv.iter()
+        .skip(1)
+        .any(|a| *a == "-p" || *a == "--print" || a.starts_with("--print="))
+}
+
+/// The arguments of a running process, from `ps`, split on whitespace:
+/// arguments that contain spaces cannot be recovered exactly (see the T1.3
+/// spec). None when `ps` fails.
+pub fn argv(pid: u32) -> Option<Vec<String>> {
+    let out = output_with_timeout(
         Command::new("ps")
             .args(["-o", "args=", "-p", &pid.to_string()])
             .env("LC_ALL", "C"),
         Duration::from_millis(500),
-    ) else {
-        return Vec::new();
-    };
+    )?;
     let line = String::from_utf8_lossy(&out.stdout);
-    whitelist(&line.split_whitespace().collect::<Vec<_>>())
+    Some(line.split_whitespace().map(String::from).collect())
+}
+
+/// Whitelisted arguments of a running process.
+pub fn capture(pid: u32) -> Vec<String> {
+    argv(pid).map_or_else(Vec::new, |a| {
+        whitelist(&a.iter().map(String::as_str).collect::<Vec<_>>())
+    })
 }
