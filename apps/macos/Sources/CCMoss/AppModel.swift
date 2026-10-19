@@ -67,6 +67,13 @@ final class AppModel {
     @ObservationIgnored var reveal: (id: String, until: Date)?
     /// Bumped to scroll the selected row into view.
     var revealTick = 0
+    /// The session whose row has its reply line open (one at a time).
+    var replyOpenID: String?
+    /// What's in that line.
+    var replyDraft = ""
+    /// You typed in the line: a suggestion arriving later leaves it alone.
+    @ObservationIgnored var replyTouched = false
+    @ObservationIgnored var replyPrefilled: String?
     /// Sessions pinned to the top of the list (this Mac only).
     var pins = Pins.load()
     /// Off for screenshots: their pins are never saved.

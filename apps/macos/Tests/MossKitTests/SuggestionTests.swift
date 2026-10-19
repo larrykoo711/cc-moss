@@ -3,26 +3,19 @@ import Testing
 @testable import MossKit
 
 @Suite struct SuggestionTests {
-    let usual = "What should Claude do next?"
-
-    @Test func anEmptyFieldShowsTheSuggestion() {
-        let p = Suggestion.placeholder(text: "", suggestion: "open the about page in a browser", fallback: usual)
-        #expect(p.text == "open the about page in a browser" && p.isSuggestion)
+    @Test func anUntouchedEmptyFieldTakesTheSuggestion() {
+        #expect(Suggestion.prefill(text: "", touched: false, suggestion: " open the about page ") == "open the about page")
     }
 
-    @Test func noSuggestionMeansTheUsualPlaceholder() {
-        #expect(Suggestion.placeholder(text: "", suggestion: nil, fallback: usual) == (usual, false))
-        #expect(Suggestion.placeholder(text: "", suggestion: "  ", fallback: usual) == (usual, false))
+    @Test func typedTextIsNeverOverwritten() {
+        #expect(Suggestion.prefill(text: "fix the", touched: true, suggestion: "run the tests") == nil)
+        #expect(Suggestion.prefill(text: "", touched: true, suggestion: "run the tests") == nil, "typed and cleared again")
+        #expect(Suggestion.prefill(text: "x", touched: false, suggestion: "run the tests") == nil)
     }
 
-    @Test func tabFillsOnlyWhenEmpty() {
-        #expect(Suggestion.fill(text: "", suggestion: " run the tests ") == "run the tests")
-        #expect(Suggestion.fill(text: "", suggestion: nil) == nil)
-    }
-
-    @Test func typedTextWins() {
-        #expect(Suggestion.fill(text: "fix the", suggestion: "run the tests") == nil)
-        #expect(!Suggestion.placeholder(text: "fix the", suggestion: "run the tests", fallback: usual).isSuggestion)
+    @Test func noSuggestionLeavesTheField() {
+        #expect(Suggestion.prefill(text: "", touched: false, suggestion: nil) == nil)
+        #expect(Suggestion.prefill(text: "", touched: false, suggestion: "  ") == nil)
     }
 
     @Test func decodesTheCLIAnswer() {
@@ -38,5 +31,51 @@ import Testing
         let newer = AskRunner([(["suggest"], ok(#"{"schema":1,"suggestion":"run it"}"#))])
         #expect(await MossClient(executable: "/x/cc-moss", runner: newer).suggest("api-review") == "run it")
         #expect(newer.calls == [["suggest", "api-review", "--json"]])
+    }
+}
+
+@Suite struct ReplyLineTests {
+    let list = sessions([
+        sessionJSON(id: "A", name: "api", attention: "input"),
+        sessionJSON(id: "B", name: "web", busy: true),
+        sessionJSON(id: "C", name: "docs"),
+        sessionJSON(id: "D", name: "ask", attention: "permission"),
+        sessionJSON(id: "E", name: "old", status: "interrupted"),
+        sessionJSON(id: "F", name: "out", tmux: false, attention: "input"),
+        sessionJSON(id: "G", name: "ui", attention: "input"),
+    ])
+
+    private func s(_ id: String) -> Session { list.first { $0.id == id }! }
+
+    @Test func whichRowsOpenALine() {
+        #expect(ReplyLine.opens(s("A")) && ReplyLine.opens(s("C")) && ReplyLine.opens(s("G")))
+        #expect(!ReplyLine.opens(s("B")), "busy")
+        #expect(!ReplyLine.opens(s("D")), "asking for a permission: answered on To Do")
+        #expect(!ReplyLine.opens(s("E")), "dropped")
+        #expect(!ReplyLine.opens(s("F")), "not in tmux")
+    }
+
+    @Test func mossNeverOpensALine() {
+        var moss = s("A")
+        moss.role = "moss"
+        #expect(!ReplyLine.opens(moss))
+    }
+
+    @Test func returnSendsTheFieldsText() {
+        #expect(ReplyLine.toSend("run the tests") == "run the tests")
+        #expect(ReplyLine.toSend("   ") == nil)
+        #expect(ReplyLine.toSend("") == nil)
+    }
+
+    @Test func theNextWaitingSessionInListOrder() {
+        #expect(ReplyLine.next(after: "A", in: list)?.id == "G")
+        #expect(ReplyLine.next(after: "G", in: list)?.id == "A", "wraps to the top")
+        #expect(ReplyLine.next(after: "C", in: list)?.id == "G")
+        #expect(ReplyLine.next(after: "A", in: list, backwards: true)?.id == "G")
+    }
+
+    @Test func noOtherWaitingMeansNone() {
+        let one = [s("A"), s("C")]
+        #expect(ReplyLine.next(after: "A", in: one) == nil)
     }
 }

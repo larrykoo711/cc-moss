@@ -1169,6 +1169,9 @@ private struct MossInputBar: View {
     @FocusState private var focused: Bool
     /// The lit command in the list, moved with ↑↓.
     @State private var lit = 0
+    /// You typed since text mode opened: Moss's guess leaves the field alone.
+    @State private var touched = false
+    @State private var prefilled: String?
     @Environment(\.colorScheme) private var scheme
 
     private var desk: MossDesk { model.mossDesk }
@@ -1218,17 +1221,14 @@ private struct MossInputBar: View {
     }
 
     /// Claude Code's guess at what you'd say to Moss, when it has one.
-    private var suggestion: String? { Suggestion.fill(text: "", suggestion: model.mossSuggestion) }
+    private var suggestion: String? { Suggestion.prefill(text: "", touched: false, suggestion: model.mossSuggestion) }
 
-    /// The empty field's placeholder: the guess, else the usual words.
-    private var placeholder: (text: String, isSuggestion: Bool) {
-        Suggestion.placeholder(text: text, suggestion: model.mossSuggestion, fallback: L.t("Message Moss…", "和 Moss 说…"))
-    }
-
-    private func fillSuggestion() -> KeyPress.Result {
-        guard commands.isEmpty, let fill = Suggestion.fill(text: text, suggestion: model.mossSuggestion) else { return .ignored }
+    /// Put Moss's guess in the field, all selected, unless you've typed.
+    private func prefill() {
+        guard let fill = Suggestion.prefill(text: text, touched: touched, suggestion: model.mossSuggestion) else { return }
+        prefilled = fill
         text = fill
-        return .handled
+        FieldSelection.selectAllSoon()
     }
 
     /// Commands matching what's typed: a slash and no space yet.
@@ -1250,7 +1250,7 @@ private struct MossInputBar: View {
 
     private var field: some View {
         HStack(alignment: .bottom, spacing: 8) {
-            TextField(placeholder.text, text: $model.mossDraft, axis: .vertical)
+            TextField(L.t("Message Moss…", "和 Moss 说…"), text: $model.mossDraft, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13, design: MossCommand.looksLikeCommand(text) ? .monospaced : .default))
                 .lineLimit(1...5)
@@ -1271,30 +1271,14 @@ private struct MossInputBar: View {
                 .onKeyPress(.downArrow) { move(1) }
                 .onKeyPress(.upArrow) { move(-1) }
                 .onKeyPress(.tab) {
-                    guard let command = litCommand else { return fillSuggestion() }
+                    guard let command = litCommand else { return .ignored }
                     fill(command)
                     return .handled
                 }
-                // → in an empty field takes Moss's guess too.
-                .onKeyPress(.rightArrow) { fillSuggestion() }
                 .onKeyPress(phases: .down) { press in keys(press) }
                 .padding(.horizontal, 10)
-                .padding(.trailing, placeholder.isSuggestion ? 64 : 0)
                 .padding(.vertical, 6)
                 .frame(minHeight: 30)
-                .overlay(alignment: .trailing) {
-                    if placeholder.isSuggestion {
-                        Text(L.t("Tab to use", "Tab 填入"))
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 5)
-                            .frame(height: 16)
-                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).strokeBorder(Theme.hairline(scheme)))
-                            .fixedSize()
-                            .padding(.trailing, 8)
-                            .allowsHitTesting(false)
-                    }
-                }
                 .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Theme.raised(scheme)))
                 .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
                     .strokeBorder(focused ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
@@ -1315,8 +1299,12 @@ private struct MossInputBar: View {
         }
         .onAppear {
             focused = true
+            touched = !text.isEmpty
+            prefill()
             model.fetchMossSuggestion()
         }
+        .onChange(of: model.mossSuggestion) { _, _ in prefill() }
+        .onChange(of: text) { _, new in if new != prefilled { touched = !new.isEmpty || touched } }
     }
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
@@ -1343,6 +1331,9 @@ private struct MossInputBar: View {
         guard !empty else { return }
         model.sayToMoss(text)
         text = ""
+        // A fresh field: Moss's next guess may fill it.
+        touched = false
+        prefilled = nil
     }
 }
 

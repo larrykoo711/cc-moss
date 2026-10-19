@@ -222,6 +222,8 @@ struct SessionRow: View {
     var problem: String?
     /// Pinned to the top: a filled pin after the name, always.
     var pinned = false
+    /// Its reply line is open: the row and the line share one background.
+    var lineOpen = false
     /// Pin or unpin; nil where there's no pin (Moss). On hover an outline
     /// pin offers it.
     var pin: (() -> Void)?
@@ -298,7 +300,7 @@ struct SessionRow: View {
         .frame(height: 48)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(selected ? Theme.selection(scheme) : hovered ? Theme.selection(scheme).opacity(0.5) : .clear)
+                .fill(lineOpen ? .clear : selected ? Theme.selection(scheme) : hovered ? Theme.selection(scheme).opacity(0.5) : .clear)
         )
     }
 

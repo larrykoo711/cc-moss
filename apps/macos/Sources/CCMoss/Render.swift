@@ -121,6 +121,14 @@ enum Render {
             model.pinsPersist = false
             model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
             if let id = value("--select") { model.selectedID = id }
+            model.demoSuggestion = value("--suggestion")
+            // `--reply <id>`: that session's reply line open (with `--suggestion`, prefilled).
+            if let id = value("--reply"), let s = model.sessions.first(where: { $0.id == id }) {
+                model.selectedID = id
+                model.openReply(s)
+                try? await Task.sleep(nanoseconds: 100_000_000)
+                if args.contains("--sending") { _ = model.sendFlow.begin() }
+            }
             switch value("--form") {
             case "new":
                 model.startNewSession()

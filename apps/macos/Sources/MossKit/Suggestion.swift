@@ -1,21 +1,14 @@
 import Foundation
 
-/// The dim next-prompt suggestion Claude Code shows in a session's own input
-/// box, offered in the panel's message form (`cc-moss suggest <handle>`).
-/// Shown in place of the placeholder; Tab fills it in; it's never sent
-/// unless you fill it in first.
+/// The next-prompt suggestion Claude Code shows in a session's own input box
+/// (`cc-moss suggest <handle>`). The panel puts it straight into the field as
+/// real text, all selected (user 2026-10-19): Return sends it, typing
+/// replaces it. It never overwrites anything you typed.
 public enum Suggestion {
-    /// What the empty field shows: the session's suggestion, else the usual
-    /// placeholder. True when it's the suggestion (drawn dim, with "Tab").
-    public static func placeholder(text: String, suggestion: String?, fallback: String) -> (text: String, isSuggestion: Bool) {
-        if text.isEmpty, let s = usable(suggestion) { return (s, true) }
-        return (fallback, false)
-    }
-
-    /// Tab (or →) on an empty field: the text to fill in. Nil when you've
-    /// typed something (what you typed wins) or there's no suggestion.
-    public static func fill(text: String, suggestion: String?) -> String? {
-        guard text.isEmpty else { return nil }
+    /// The text to put in the field when a suggestion arrives: only into an
+    /// empty field you haven't typed in since it opened.
+    public static func prefill(text: String, touched: Bool, suggestion: String?) -> String? {
+        guard !touched, text.isEmpty else { return nil }
         return usable(suggestion)
     }
 
@@ -42,5 +35,39 @@ extension MossClient {
     public func suggest(_ handle: String, timeout: Double = 1.5) async -> String? {
         guard let out = try? await plain(["suggest", handle, "--json"], timeout: timeout) else { return nil }
         return Suggestion.decode(Data(out.utf8))
+    }
+}
+
+/// Answering sessions right in the list (user 2026-10-19): click a session
+/// that's waiting for you to type, and a reply line opens under its row.
+public enum ReplyLine {
+    /// Rows a click opens a reply line under: running, not busy, able to take
+    /// typing, not asking for a permission or a choice, and not Moss (which
+    /// has its own page).
+    public static func opens(_ s: Session) -> Bool {
+        guard !s.isMoss, Message.allowed(s), s.state == .waiting else { return false }
+        let attention = s.attention ?? ""
+        return attention.isEmpty || attention == "input"
+    }
+
+    /// Waiting for you to type: the ones a run of replies goes through.
+    public static func waiting(_ s: Session) -> Bool {
+        opens(s) && s.attention == "input"
+    }
+
+    /// What Return sends: the field's text (a filled-in suggestion is just
+    /// text), or nothing when it's empty.
+    public static func toSend(_ text: String) -> String? {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        return t.isEmpty ? nil : text
+    }
+
+    /// The next session waiting for you after `id`, in list order, wrapping
+    /// to the top; nil when there's no other.
+    public static func next(after id: String, in list: [Session], backwards: Bool = false) -> Session? {
+        let order = backwards ? Array(list.reversed()) : list
+        guard let i = order.firstIndex(where: { $0.id == id }) else { return order.first(where: waiting) }
+        let rest = order[(i + 1)...] + order[..<i]
+        return rest.first(where: waiting)
     }
 }

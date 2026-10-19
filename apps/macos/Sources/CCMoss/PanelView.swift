@@ -8,6 +8,7 @@ import SwiftUI
 struct PanelView: View {
     @Bindable var model: AppModel
     @FocusState private var searchFocused: Bool
+    @FocusState private var replyFocused: Bool
     /// The open menu: one session's, or cc-moss's own.
     @State var menu: PanelMenu?
     @State private var toast: String?
@@ -149,7 +150,14 @@ struct PanelView: View {
         .animation(.easeOut(duration: 0.2), value: model.askDesk)
         .animation(.easeOut(duration: 0.15), value: model.page)
         .animation(.easeOut(duration: 0.2), value: QueueNudge.shows(model))
-        .onChange(of: model.selectedID) { _, _ in model.openProblem = nil }
+        .onChange(of: model.selectedID) { _, id in
+            model.openProblem = nil
+            // Selecting another row (the keyboard, a click) closes a reply line.
+            if let open = model.replyOpenID, open != id { model.closeReply() }
+        }
+        .onChange(of: model.replyOpenID) { _, id in
+            if id != nil { replyFocused = true } else if model.form == nil { searchFocused = true }
+        }
         .onAppear {
             searchFocused = true
             model.terminals.rescan()
@@ -335,7 +343,27 @@ struct PanelView: View {
         if s.isMoss {
             shownSession.lastPrompt = MossRowLine.of(model.mossDesk.messages)
         }
-        return Button { model.selectedID = s.id } label: {
+        let lineOpen = model.replyOpenID == s.id
+        return VStack(spacing: 0) {
+            rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions, lineOpen: lineOpen)
+            if lineOpen {
+                ReplyLineView(model: model, session: s, focused: $replyFocused)
+                    .transition(.opacity)
+            }
+        }
+        .background(RoundedRectangle(cornerRadius: 8).fill(lineOpen ? Theme.selection(scheme) : .clear))
+        .clipped()
+        .animation(.easeOut(duration: 0.18), value: lineOpen)
+        .id(s.id)
+    }
+
+    private func rowButton(_ s: Session, shownSession: Session, menuOpen: Bool, shown: Bool, actions: RowActions,
+                           lineOpen: Bool) -> some View {
+        Button {
+            model.selectedID = s.id
+            // Waiting for you: a reply line opens right under it.
+            model.openReply(s)
+        } label: {
             SessionRow(session: shownSession, selected: s.id == model.selected?.id, hovered: shown,
                        actions: shown ? actions.inline.map { action($0, for: s) } : [],
                        more: shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
@@ -343,13 +371,13 @@ struct PanelView: View {
                        perform: { perform($0) },
                        problem: model.restoreProblem(s),
                        pinned: model.pins.contains(s.id),
+                       lineOpen: lineOpen,
                        pin: s.isMoss ? nil : { model.togglePin(s) },
                        restoring: s.state == .interrupted && model.restoreFlow.isRunning(s.id))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .focusable(false)
-        .id(s.id)
         .anchorPreference(key: MenuAnchorKey.self, value: .bounds) { menuOpen ? $0 : nil }
         .onContinuousHover { phase in
             switch phase {
@@ -707,4 +735,99 @@ struct PanelAction: Identifiable {
     var image: NSImage?
     var help: String?
     let perform: () -> Void
+}
+
+/// The line under a session's row for answering it in place: one line
+/// (up to three), Claude Code's suggestion already in it and selected.
+/// Return sends, ⇧Return makes a new line, Esc closes, ↓/↑ go to the next
+/// or previous session waiting for you.
+struct ReplyLineView: View {
+    @Bindable var model: AppModel
+    let session: Session
+    var focused: FocusState<Bool>.Binding
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    private var sending: Bool { model.sendFlow.isSending }
+    private var hasText: Bool { ReplyLine.toSend(model.replyDraft) != nil }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .bottom, spacing: 6) {
+                TextField(L.t("Reply…", "回一句…"), text: $model.replyDraft, axis: .vertical)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .lineLimit(1...3)
+                    .focused(focused)
+                    .disabled(sending)
+                    // On its way: the words step back for "Sending…".
+                    .opacity(sending ? 0 : 1)
+                    .onChange(of: model.replyDraft) { _, text in model.replyEdited(text) }
+                    .onKeyPress(.return, phases: .down) { press in
+                        if press.modifiers.contains(.shift) {
+                            NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
+                        } else {
+                            model.sendReply(session)
+                        }
+                        return .handled
+                    }
+                    .onKeyPress(.escape) { model.closeReply(); return .handled }
+                    .onKeyPress(.downArrow) { move(backwards: false) }
+                    .onKeyPress(.upArrow) { move(backwards: true) }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 6)
+                    .frame(minHeight: 30)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(Color.primary.opacity(scheme == .dark ? 0.06 : 0.04)))
+                    .overlay {
+                        if sending {
+                            ZStack {
+                                HStack(spacing: 6) {
+                                    ProgressView().controlSize(.mini)
+                                    Text(L.t("Sending…", "发送中…"))
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                            .contentShape(Rectangle())
+                            .transition(.opacity)
+                        }
+                    }
+                Button { model.sendReply(session) } label: {
+                    Image(systemName: Icons.message)
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(hasText && (hovering || !sending) ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                        .frame(width: 28, height: 30)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+                .disabled(!hasText || sending)
+                .allowsHitTesting(!sending)
+                .onHover { hovering = $0 }
+                .tip(L.t("Send  ↵", "发送  ↵"))
+            }
+            if let failure = model.sendFlow.failure {
+                Text(failure)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.caption)
+                    .lineLimit(2)
+                    .padding(.leading, 2)
+            }
+        }
+        // Under the session's name, inside the row's own background.
+        .padding(.leading, 44)
+        .padding(.trailing, 8)
+        .padding(.bottom, 9)
+        .animation(.easeOut(duration: 0.15), value: sending)
+        .onAppear { focused.wrappedValue = true }
+    }
+
+    /// ↓/↑ go to the next session waiting for you, unless you're moving
+    /// between lines of what you typed.
+    private func move(backwards: Bool) -> KeyPress.Result {
+        guard !model.replyDraft.contains("\n") else { return .ignored }
+        model.moveReply(from: session, backwards: backwards)
+        return .handled
+    }
 }

@@ -129,6 +129,74 @@ extension AppModel {
         }
     }
 
+    // MARK: Reply lines (user 2026-10-19)
+
+    /// A click on a session waiting for you: a reply line opens under its
+    /// row, with Claude Code's own suggestion already in it. Any other row
+    /// closes it.
+    func openReply(_ s: Session) {
+        guard ReplyLine.opens(s) else { closeReply(); return }
+        guard replyOpenID != s.id else { return }
+        guard !sendFlow.isSending else { return }
+        replyOpenID = s.id
+        replyDraft = ""
+        replyTouched = false
+        replyPrefilled = nil
+        sendFlow = .idle
+        let handle = s.handle
+        Task {
+            let guess = if let demo = demoSuggestion { demo } else { await client?.suggest(handle) }
+            guard replyOpenID == s.id,
+                  let fill = Suggestion.prefill(text: replyDraft, touched: replyTouched, suggestion: guess) else { return }
+            replyPrefilled = fill
+            replyDraft = fill
+            FieldSelection.selectAllSoon()
+        }
+    }
+
+    /// The line's text changed: yours, unless it's the suggestion going in.
+    func replyEdited(_ text: String) {
+        if text != replyPrefilled { replyTouched = true }
+    }
+
+    func closeReply() {
+        guard !sendFlow.isSending else { return }
+        replyOpenID = nil
+    }
+
+    /// Return in the line: send what's in it. Then on to the next session
+    /// waiting for you, its line open, so a run of replies is just Return.
+    func sendReply(_ s: Session) {
+        guard let text = ReplyLine.toSend(replyDraft), let client, sendFlow.begin() else { return }
+        Task {
+            do {
+                try await client.send(target: s.target, text: text)
+                sendFlow.finish(error: nil)
+                say(L.t("Sent to \(s.title).", "已发给 \(s.title)。"))
+                let next = ReplyLine.next(after: s.id, in: visible)
+                replyOpenID = nil
+                if let next {
+                    selectedID = next.id
+                    revealTick += 1
+                    openReply(next)
+                } else {
+                    follow(s)
+                }
+            } catch {
+                sendFlow.finish(error: Self.describe(error))
+            }
+            refresh()
+        }
+    }
+
+    /// ↓/↑ in the line: the next (or previous) session waiting for you.
+    func moveReply(from s: Session, backwards: Bool) {
+        guard !sendFlow.isSending, let n = ReplyLine.next(after: s.id, in: visible, backwards: backwards) else { return }
+        selectedID = n.id
+        revealTick += 1
+        openReply(n)
+    }
+
     /// The session just written to will move up the list: keep it selected
     /// and in view for the next few refreshes.
     func follow(_ s: Session) {
@@ -444,14 +512,10 @@ struct MessageForm: View {
     @Bindable var model: AppModel
     let session: Session
     @State private var text = ""
-    /// What Claude Code itself suggests typing next in this session.
-    @State private var suggestion: String?
-
-    init(model: AppModel, session: Session) {
-        self.model = model
-        self.session = session
-        _suggestion = State(initialValue: model.demoSuggestion)
-    }
+    /// You typed in the field: a suggestion arriving later leaves it alone.
+    @State private var touched = false
+    /// The suggestion put in the field, to tell it apart from your typing.
+    @State private var prefilled: String?
 
     private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
@@ -459,11 +523,14 @@ struct MessageForm: View {
         FormCard(title: L.t("Message to “\(session.title)”", "给「\(session.title)」发消息"), icon: Icons.message,
                  aside: ("terminal", L.t("Typed into it", "像在终端里打字"))) {
             MultilineField(placeholder: L.t("What should Claude do next?", "想让 Claude 接下来做什么？"), text: $text,
-                           locked: sending, suggestion: suggestion) { send() }
+                           locked: sending) { send() }
+                .onChange(of: text) { _, new in if new != prefilled { touched = true } }
+                .onAppear { if let demo = model.demoSuggestion { take(demo) } }
                 .task(id: session.id) {
-                    // Asked once, off the main thread, quick or not at all.
+                    // Claude Code's own suggestion, asked once, off the main
+                    // thread, quick or not at all; it goes straight into the field.
                     guard model.demoSuggestion == nil else { return }
-                    suggestion = await model.client?.suggest(session.handle)
+                    take(await model.client?.suggest(session.handle))
                 }
             if let failure = model.sendFlow.failure {
                 HStack(spacing: 5) {
@@ -488,6 +555,14 @@ struct MessageForm: View {
     }
 
     private var sending: Bool { model.sendFlow.isSending }
+
+    /// The suggestion goes in as real text, all selected, unless you've typed.
+    private func take(_ guess: String?) {
+        guard let fill = Suggestion.prefill(text: text, touched: touched, suggestion: guess) else { return }
+        prefilled = fill
+        text = fill
+        FieldSelection.selectAllSoon()
+    }
 
     private func send() {
         guard !empty, !sending else { return }
@@ -579,31 +654,16 @@ struct MultilineField: View {
     @Binding var text: String
     /// On its way: covered by "Sending…", no typing, no focus.
     var locked = false
-    /// The session's own suggestion: the placeholder while empty; Tab fills it in.
-    var suggestion: String?
     var onSubmit: () -> Void = {}
     @FocusState private var focused: Bool
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let shown = Suggestion.placeholder(text: text, suggestion: suggestion, fallback: placeholder)
         ZStack(alignment: .topLeading) {
             if text.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(shown.text)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.tertiary)
-                    if shown.isSuggestion {
-                        Text(L.t("Tab to use", "Tab 填入"))
-                            .font(.system(size: 10.5, weight: .medium))
-                            .foregroundStyle(.tertiary)
-                            .padding(.horizontal, 5)
-                            .frame(height: 16)
-                            .background(RoundedRectangle(cornerRadius: 4, style: .continuous)
-                                .strokeBorder(Theme.hairline(scheme)))
-                            .fixedSize()
-                    }
-                }
+                Text(placeholder)
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .allowsHitTesting(false)
@@ -619,9 +679,6 @@ struct MultilineField: View {
                     onSubmit()
                     return .handled
                 }
-                // Tab (or → in an empty field) takes the suggestion; typed text wins.
-                .onKeyPress(.tab) { fillSuggestion() }
-                .onKeyPress(.rightArrow) { fillSuggestion() }
         }
         .frame(minHeight: 84, maxHeight: 150)
         .background(RoundedRectangle(cornerRadius: 8).fill(Theme.selection(scheme).opacity(0.8)))
@@ -654,11 +711,16 @@ struct MultilineField: View {
         .onChange(of: locked) { _, now in if now { focused = false } else { focused = true } }
         .onAppear { focused = true }
     }
+}
 
-    private func fillSuggestion() -> KeyPress.Result {
-        guard !locked, let fill = Suggestion.fill(text: text, suggestion: suggestion) else { return .ignored }
-        text = fill
-        return .handled
+/// Text put into a field for you (a suggestion) arrives all selected:
+/// typing replaces it, an arrow key lets you edit it in place.
+enum FieldSelection {
+    @MainActor static func selectAllSoon() {
+        // Once the field has the new text and the keyboard.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        }
     }
 }
 
