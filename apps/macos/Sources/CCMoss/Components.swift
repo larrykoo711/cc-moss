@@ -358,16 +358,22 @@ struct SessionRow: View {
 
 /// A small turning arc in the brand colour: Claude is on it.
 struct WorkingRing: View {
-    @State private var turning = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// The angle comes from the clock, not from a repeating animation: a
+    /// `repeatForever` animation also carried along the ring's position when
+    /// its row appeared or moved, so it drifted off the icon's centre,
+    /// towards its bottom-left corner.
     var body: some View {
-        Circle()
-            .trim(from: 0, to: 0.72)
-            .stroke(Theme.brand, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-            .frame(width: 11, height: 11)
-            .rotationEffect(.degrees(turning ? 360 : 0))
-            .animation(.linear(duration: 1.1).repeatForever(autoreverses: false), value: turning)
-            .onAppear { turning = true }
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1
+            Circle()
+                .trim(from: 0, to: 0.72)
+                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                .frame(width: 11, height: 11)
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: 11, height: 11)
     }
 }
 

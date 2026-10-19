@@ -97,19 +97,21 @@ struct MossDot: View {
     let color: Color
     var breathing = false
     var size: CGFloat = 7
-    @State private var dim = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Breathing from the clock, not a repeating animation, which would also
+    /// carry the dot's position along when its row moves (as the working ring did).
     var body: some View {
-        Circle()
-            .fill(color)
-            .frame(width: size, height: size)
-            .opacity(breathing && dim ? 0.3 : 1)
-            .scaleEffect(breathing && dim ? 0.8 : 1)
-            .animation(breathing && !reduceMotion ? .easeInOut(duration: 1.1).repeatForever(autoreverses: true) : .default,
-                       value: dim)
-            .onAppear { dim = breathing && !reduceMotion }
-            .onChange(of: breathing) { _, on in dim = on && !reduceMotion }
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: !breathing || reduceMotion)) { context in
+            let phase = breathing && !reduceMotion
+                ? (1 - cos(context.date.timeIntervalSinceReferenceDate / 1.1 * .pi)) / 2 : 0
+            Circle()
+                .fill(color)
+                .frame(width: size, height: size)
+                .opacity(1 - 0.7 * phase)
+                .scaleEffect(1 - 0.2 * phase)
+        }
+        .frame(width: size, height: size)
     }
 }
 
