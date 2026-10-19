@@ -14,11 +14,11 @@ struct NavRail: View {
 
     var body: some View {
         VStack(spacing: 4) {
-            RailButton(icon: "rectangle.stack", title: L.t("Sessions", "会话"), shortcut: "⌘1",
+            RailButton(icon: "rectangle.stack", title: L.t("Sessions", "会话"), shortcut: "⌘1", key: "1",
                        selected: model.page == .sessions) { model.page = .sessions }
-            RailButton(icon: "tray.full", title: L.t("To Do", "待处理"), shortcut: "⌘2",
+            RailButton(icon: "tray.full", title: L.t("To Do", "待处理"), shortcut: "⌘2", key: "2",
                        selected: model.page == .queue, badge: model.queueCount) { model.showQueue() }
-            RailButton(icon: "bubble.left.and.text.bubble.right", title: "Moss", shortcut: "⌘3",
+            RailButton(icon: "bubble.left.and.text.bubble.right", title: "Moss", shortcut: "⌘3", key: "3",
                        selected: model.page == .moss, dot: mossDot) { model.showMoss() }
             Spacer(minLength: 0)
             RailButton(icon: Icons.settings, title: L.t("Settings", "设置"), shortcut: "⌘,",
@@ -55,6 +55,9 @@ struct RailButton: View {
     let icon: String
     let title: String
     var shortcut: String?
+    /// ⌘ and this key go to the page wherever the keyboard is, even when no
+    /// field has it (the To Do and Moss pages).
+    var key: KeyEquivalent?
     let selected: Bool
     var badge = 0
     var dot: RailDot?
@@ -100,6 +103,7 @@ struct RailButton: View {
         }
         .buttonStyle(PressStyle())
         .focusable(false)
+        .commandKey(key)
         .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
         .tip(shortcut.map { "\(title)  \($0)" } ?? title)
         .accessibilityLabel(badge > 0 ? "\(title), \(badge)" : dot == .unread ? L.t("\(title), new reply", "\(title)，有新回复") : title)
@@ -443,5 +447,11 @@ struct QueueNudge: View {
         guard case let .ask(id) = item, let card = model.askDesk.card(id) else { return nil }
         if card.ask.kind == .permission { return card.ask.tool.map { "\($0.name) · \($0.preview)" } }
         return card.question?.text
+    }
+}
+
+private extension View {
+    @ViewBuilder func commandKey(_ key: KeyEquivalent?) -> some View {
+        if let key { keyboardShortcut(key, modifiers: .command) } else { self }
     }
 }

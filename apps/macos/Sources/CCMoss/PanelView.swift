@@ -633,9 +633,6 @@ struct PanelView: View {
             if let s = model.selected, model.phase == .ready {
                 Message.allowed(s) ? model.writeMessage(s) : model.editNote(s)
             }
-        case "1": model.page = .sessions
-        case "2": model.showQueue()
-        case "3": model.showMoss()
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):
