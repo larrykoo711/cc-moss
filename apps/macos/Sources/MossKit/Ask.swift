@@ -141,8 +141,16 @@ public enum AskReply: Equatable, Sendable {
     case choices([[String]])
     /// Your own words, for a single question.
     case text(String)
+    /// Several questions, some answered in your own words: one per
+    /// question, in order, each sent by its number.
+    case answers([Answer])
     case allow
     case deny
+
+    public enum Answer: Equatable, Sendable {
+        case picked([String])
+        case typed(String)
+    }
 
     /// `cc-moss ask answer <id> … --by desktop --json`. Labels go in as written; with
     /// several questions (or a label that itself starts with `N:`) each is
@@ -159,6 +167,15 @@ public enum AskReply: Equatable, Sendable {
             }
         case let .text(text):
             args += ["--text", text]
+        case let .answers(perQuestion):
+            for (i, answer) in perQuestion.enumerated() {
+                switch answer {
+                case let .picked(labels):
+                    for label in labels { args += ["--choice", "\(i + 1):\(label)"] }
+                case let .typed(text):
+                    args += ["--text", "\(i + 1):\(text)"]
+                }
+            }
         case .allow:
             args += ["--allow"]
         case .deny:

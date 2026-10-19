@@ -21,9 +21,17 @@ public struct AskCard: Equatable, Sendable {
     public private(set) var picks: [[String]]
     /// Changing one answer from the review: the next pick goes back there.
     private var revisiting = false
-    /// "Write my own" is open (single questions only).
+    /// "Type something" is open on the question shown.
     public var writing = false
-    public var draft = ""
+    /// What's typed, per question (kept when you move between them).
+    private var drafts: [String]
+    /// Questions answered in your own words, per question.
+    private var typedAnswers: [String?]
+    /// What's typed for the question shown.
+    public var draft: String {
+        get { drafts.indices.contains(step) ? drafts[step] : "" }
+        set { if drafts.indices.contains(step) { drafts[step] = newValue } }
+    }
     public private(set) var phase: Phase = .choosing
     /// What was sent, once it was.
     public private(set) var sent: AskReply?
@@ -33,6 +41,13 @@ public struct AskCard: Equatable, Sendable {
     public init(_ ask: Ask) {
         self.ask = ask
         picks = Array(repeating: [], count: ask.questions.count)
+        drafts = Array(repeating: "", count: max(ask.questions.count, 1))
+        typedAnswers = Array(repeating: nil, count: ask.questions.count)
+    }
+
+    /// Question `i` answered in your own words, if it was.
+    public func typed(_ i: Int) -> String? {
+        typedAnswers.indices.contains(i) ? typedAnswers[i] : nil
     }
 
     public var id: String { ask.id }
@@ -42,11 +57,12 @@ public struct AskCard: Equatable, Sendable {
     public var question: Ask.Question? { ask.questions.indices.contains(step) ? ask.questions[step] : nil }
     /// Every question answered: what you picked, before it goes.
     public var reviewing: Bool { several && step == count }
-    /// Your own words fit only a single question (`--text`).
-    public var canWrite: Bool { ask.kind == .question && count == 1 }
+    /// A question can be answered in your own words (`--text`, by number
+    /// when there are several).
+    public var canWrite: Bool { ask.kind == .question }
     /// The last answer row, "Type something", as Claude Code's own list
-    /// ends: only for a single question still being answered.
-    public var offersOwnWords: Bool { canWrite && phase == .choosing }
+    /// ends: on every question while it's being answered, not the review.
+    public var offersOwnWords: Bool { canWrite && phase == .choosing && question != nil }
     public var submitting: Bool { phase == .submitting }
 
     public func picked(_ label: String) -> Bool {
@@ -74,6 +90,8 @@ public struct AskCard: Equatable, Sendable {
             return nil
         }
         picks[step] = [label]
+        if typedAnswers.indices.contains(step) { typedAnswers[step] = nil }
+        writing = false
         return advance()
     }
 
@@ -88,6 +106,7 @@ public struct AskCard: Equatable, Sendable {
         guard phase == .choosing, step > 0 else { return }
         problem = nil
         revisiting = false
+        writing = typed(step - 1) != nil
         step -= 1
     }
 
@@ -98,12 +117,14 @@ public struct AskCard: Equatable, Sendable {
         problem = nil
         step = i
         revisiting = true
+        writing = typed(i) != nil
     }
 
     /// "Send" on the review step.
     public mutating func sendAll() -> AskReply? {
-        guard reviewing, picks.allSatisfy({ !$0.isEmpty }) else { return nil }
-        return submit(.choices(picks))
+        guard reviewing, picks.indices.allSatisfy({ !picks[$0].isEmpty || typed($0) != nil }) else { return nil }
+        guard typedAnswers.contains(where: { $0 != nil }) else { return submit(.choices(picks)) }
+        return submit(.answers(picks.indices.map { i in typed(i).map(AskReply.Answer.typed) ?? .picked(picks[i]) }))
     }
 
     /// "Type something": the row turns into a field.
@@ -117,11 +138,17 @@ public struct AskCard: Equatable, Sendable {
         writing = false
     }
 
-    /// Return in "write my own".
+    /// ⌘↩ in the field: a single question is answered and sent; one of
+    /// several is answered in these words, and the next question (or the
+    /// review) comes up.
     public mutating func sendText() -> AskReply? {
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard canWrite, !text.isEmpty else { return nil }
-        return submit(.text(text))
+        guard canWrite, phase == .choosing, question != nil, !text.isEmpty else { return nil }
+        guard several else { return submit(.text(text)) }
+        typedAnswers[step] = text
+        picks[step] = []
+        writing = false
+        return advance()
     }
 
     public mutating func allow() -> AskReply? {

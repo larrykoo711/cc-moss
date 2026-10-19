@@ -123,19 +123,69 @@ import Testing
         #expect(!card.offersOwnWords, "on its way: no more typing")
     }
 
-    @Test func noTypeSomethingRowForSeveralQuestionsOrPermissions() {
-        var several = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
-        #expect(!several.offersOwnWords)
-        several.startWriting()
-        #expect(!several.writing)
+    @Test func noTypeSomethingRowForPermissionsOrTheReview() {
         #expect(!AskCard(ask(askJSON(kind: "permission"))).offersOwnWords)
+        var card = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
+        #expect(card.offersOwnWords, "every question step has it")
+        _ = card.choose("Postgres")
+        _ = card.choose("SQLite")
+        #expect(card.reviewing)
+        #expect(!card.offersOwnWords, "not on the review")
     }
 
-    @Test func noWritingWithSeveralQuestions() {
-        var card = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
-        #expect(!card.canWrite)
-        card.draft = "hello"
+    private func two() -> AskCard {
+        AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?", labels: ["yes", "no"])])))
+    }
+
+    @Test func ownWordsAnswerOneQuestionOfSeveral() {
+        var card = two()
+        _ = card.choose("SQLite")
+        card.startWriting()
+        card.draft = " only on Fridays \n"
+        #expect(card.sendText() == nil, "with several, it answers this one and moves on")
+        #expect(card.reviewing)
+        #expect(card.typed(1) == "only on Fridays")
+        let reply = card.sendAll()
+        #expect(reply == .answers([.picked(["SQLite"]), .typed("only on Fridays")]))
+    }
+
+    @Test func eachQuestionKeepsItsOwnDraft() {
+        var card = two()
+        card.startWriting()
+        card.draft = "first thoughts"
+        card.stopWriting()
+        _ = card.choose("Postgres")
+        card.startWriting()
+        card.draft = "second thoughts"
+        card.back()
+        #expect(card.draft == "first thoughts")
+    }
+
+    @Test func pickingAnOptionReplacesTypedWords() {
+        var card = two()
+        card.startWriting()
+        card.draft = "my own"
+        _ = card.sendText()
+        card.back()
+        #expect(card.writing, "back on it: its words are open again")
+        _ = card.choose("Postgres")
+        #expect(card.typed(0) == nil)
+        _ = card.choose("no")
+        #expect(card.sendAll() == .choices([["Postgres"], ["no"]]))
+    }
+
+    @Test func mixedAnswersAreSentNumbered() {
+        let reply = AskReply.answers([.picked(["a", "b"]), .typed("1: not a choice")])
+        #expect(reply.arguments(id: id) == ["ask", "answer", id, "--choice", "1:a", "--choice", "1:b",
+                                            "--text", "2:1: not a choice", "--by", "desktop", "--json"])
+    }
+
+    @Test func emptyWordsDoNotAnswer() {
+        var card = two()
+        card.startWriting()
+        card.draft = "   "
         #expect(card.sendText() == nil)
+        #expect(card.step == 0, "still on the first question")
     }
 
     @Test func permissionAllowAndDeny() {

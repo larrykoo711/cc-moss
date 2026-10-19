@@ -97,6 +97,8 @@ struct AskCardBody: View {
             if card.offersOwnWords {
                 if card.writing {
                     OwnWordsField(text: card.draft, focused: $fieldFocused, inBubble: inBubble,
+                                  // One of several: these words answer it, then on to the next.
+                                  sendTitle: card.several ? L.t("Next", "下一题") : L.t("Send", "发送"),
                                   change: { text in act { $0.draft = text; return nil } },
                                   send: { act { $0.sendText() } },
                                   cancel: { act { $0.stopWriting(); return nil } })
@@ -135,7 +137,10 @@ struct AskCardBody: View {
                 .foregroundStyle(.secondary)
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(card.ask.questions.enumerated()), id: \.offset) { i, q in
-                    ReviewRow(index: i, question: q, answer: card.picks[i].map { OptionLabel.split($0).title }.joined(separator: L.t(", ", "、"))) {
+                    ReviewRow(index: i, question: q,
+                              answer: card.typed(i).map { L.t("“\($0)”", "「\($0)」") }
+                                  ?? card.picks[i].map { OptionLabel.split($0).title }.joined(separator: L.t(", ", "、")),
+                              typed: card.typed(i) != nil) {
                         act { $0.revisit(i); return nil }
                     }
                 }
@@ -295,6 +300,7 @@ private struct OwnWordsField: View {
     var focused: FocusState<Bool>.Binding
     /// In Mo's bubble: its window takes the keyboard while this is open.
     var inBubble = false
+    var sendTitle: String = L.t("Send", "发送")
     let change: (String) -> Void
     let send: () -> Void
     let cancel: () -> Void
@@ -319,7 +325,7 @@ private struct OwnWordsField: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.brand.opacity(scheme == .dark ? 0.12 : 0.06)))
             .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.brand.opacity(0.55)))
-            SoftButton(title: L.t("Send", "发送"), icon: "paperplane", prominent: true, shortcut: "⌘↩", action: send)
+            SoftButton(title: sendTitle, icon: "paperplane", prominent: true, shortcut: "⌘↩", action: send)
                 .disabled(empty)
                 .focusable(false)
                 .clickTarget("send text", send)
@@ -537,6 +543,8 @@ private struct ReviewRow: View {
     let index: Int
     let question: Ask.Question
     let answer: String
+    /// Answered in your own words: a quote, with a pencil.
+    var typed = false
     let change: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -565,12 +573,12 @@ private struct ReviewRow: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .multilineTextAlignment(.leading)
                 HStack(alignment: .top, spacing: 6) {
-                    Image(systemName: "checkmark")
+                    Image(systemName: typed ? "pencil" : "checkmark")
                         .font(.system(size: 9.5, weight: .bold))
                         .foregroundStyle(Theme.brand)
                         .padding(.top, 2.5)
                     Text(answer)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .font(.system(size: 12.5, weight: typed ? .regular : .medium))
                         .foregroundStyle(.primary)
                         .fixedSize(horizontal: false, vertical: true)
                         .multilineTextAlignment(.leading)

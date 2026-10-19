@@ -525,7 +525,13 @@ enum Render {
     }
 
     /// `--choose`, `--write`, `--focus`: a card part-way through, as you'd see it.
+    /// The question flags are applied once (`--type` answers a step: twice
+    /// would answer the next one too).
+    @MainActor private static var asksPrepared = false
+
     @MainActor private static func prepareAsks(_ model: AppModel, args: [String]) {
+        guard !asksPrepared, !model.askDesk.open.isEmpty else { return }
+        asksPrepared = true
         for (i, arg) in args.enumerated() where i + 1 < args.count {
             guard let card = model.askDesk.open.first else { break }
             switch arg {
@@ -534,6 +540,12 @@ enum Render {
                 let label = args[i + 1]
                 if card.question?.multiSelect == true || card.several {
                     model.act(on: card.id) { $0.choose(label) }
+                }
+            case "--type":
+                // A step of several answered in your own words, then on to the next.
+                let text = args[i + 1]
+                if card.several {
+                    model.act(on: card.id) { $0.startWriting(); $0.draft = text; return $0.sendText() }
                 }
             case "--focus":
                 model.focusAsk(args[i + 1])
