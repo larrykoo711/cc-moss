@@ -257,6 +257,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// The one reader of the event stream, and where its alerts go (T2.3).
     private var events: EventFeed?
+    /// A cc-moss:// link that arrived before the panel existed (a cold start).
+    private var pendingLink: PanelLink?
     private var alerts: AlertCenter?
     private var startup: StartupReminder?
 
@@ -286,6 +288,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
         if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)
+        if let link = pendingLink {
+            pendingLink = nil
+            DispatchQueue.main.async { [weak self] in self?.open(link) }
+        }
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
         startAlerts()
         // The global shortcut does what a click on the icon does.
@@ -327,6 +333,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `cc-moss://panel[/sessions|queue|moss]`: the panel, on that page.
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let link = urls.lazy.compactMap(PanelLink.init).first else { return }
+        // Launched by the link: it comes before the panel exists. Kept until
+        // the menu bar icon (and its panel) is up.
+        guard panel != nil else {
+            pendingLink = link
+            return
+        }
+        open(link)
+    }
+
+    private func open(_ link: PanelLink) {
         switch link {
         case .panel: break
         case .sessions: model.page = .sessions
