@@ -188,6 +188,8 @@ R1 ◄── 全部
 - T2.2 ✅ 2026-10-18：评审 I1–I10、M1–M10 已修（变异全红），Moss 的 Bash 进 Claude Code 沙箱并经真机探针确认；合并树 Rust 692、Swift 364 全绿；探针 4 个 claude 会话已在用户 registry 里 close，遗留测试 tmux 已关
 - 裁决（T2.2 → T3.1）：沙箱里的 Moss 连不上 tmux；派发、发消息等需要 tmux 的动作**由守护进程代办**（Moss 写请求，守护进程校验、执行、审计），不把命令放出沙箱 approved-by=controller date=2026-10-18
 
+- AMEND（T2.2 → T2.3 实施中，用户发起 2026-10-19）：「置顶怎么有两部分？… Moss agent 默认应该藏起来吧？因为 moss agent 有自己专门的 sidebar 菜单和单独的面板了」→ 会话列表不再固定显示 Moss 行（T2.2「App 面板固定行」作废），Moss 的提醒走侧栏点、待处理与小莫；`pick` / `close` 的保护不变 approved-by=user date=2026-10-19
+
 ## 反馈车道（真机反馈，待排期）
 
 - F1 2026-10-19 用户（T2.3 真机）：设置 ›「Moss」加「在 Finder 中打开」Moss 的家（`~/.local/state/cc-moss/moss/`，含 journal / memory / 人设）
