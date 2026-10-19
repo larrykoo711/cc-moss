@@ -111,11 +111,10 @@ fn settings_json(exe: &str, state: &Path) -> String {
         shell_quote(exe),
         shell_quote(&home.to_string_lossy())
     );
-    let registry = state.join("registry.db").to_string_lossy().into_owned();
-    let allow_write: Vec<String> = ["", "-wal", "-shm", "-journal"]
-        .iter()
-        .map(|suffix| format!("{registry}{suffix}"))
-        .collect();
+    let _ = state;
+    // Nothing outside the home: not even the registry. Moss reads it (cc-moss
+    // opens it read-only for Moss); what it changes goes through `moss act`.
+    let allow_write: Vec<String> = Vec::new();
     let deny_write: Vec<String> = SHELL_READ_ONLY
         .iter()
         .chain(guard::CONVERSATION)
@@ -1365,13 +1364,9 @@ mod tests {
         );
         assert_eq!(
             sandbox["filesystem"]["allowWrite"],
-            serde_json::json!([
-                "/s/registry.db",
-                "/s/registry.db-wal",
-                "/s/registry.db-shm",
-                "/s/registry.db-journal"
-            ]),
-            "the home is the working directory; besides it only the registry"
+            serde_json::json!([]),
+            "the home is the working directory, and nothing else: not even the \
+             registry (what Moss changes goes through moss act)"
         );
         let deny = sandbox["filesystem"]["denyWrite"].as_array().unwrap();
         for f in [

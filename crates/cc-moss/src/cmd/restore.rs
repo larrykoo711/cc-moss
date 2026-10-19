@@ -358,10 +358,26 @@ impl Launcher {
             &self.taken,
             None,
         );
+        // Its folder has to be one: a session never starts anywhere else.
+        if !Path::new(&slot.cwd).is_dir() {
+            registry.clear_restore_started(&slot.slot_id)?;
+            let message = tr!(
+                format!("could not restore {label}: its folder {} is gone", slot.cwd),
+                format!("没能恢复 {label}：它的目录 {} 已经不在了", slot.cwd)
+            );
+            return Ok(Launched::Failed(Reason::MissingDir, message));
+        }
         let name_arg = slot.name.as_ref().map(|n| format!("--name={n}"));
+        // Only the whitelist again, whatever the registry holds: it is
+        // checked when recorded, and once more here before it runs.
+        let replay = moss_core::launch_args::whitelist(
+            &std::iter::once("claude")
+                .chain(slot.launch_args.iter().map(String::as_str))
+                .collect::<Vec<_>>(),
+        );
         let mut argv: Vec<&str> = vec![&self.claude, "--resume", &slot.session_id];
         argv.extend(name_arg.as_deref());
-        argv.extend(slot.launch_args.iter().map(String::as_str));
+        argv.extend(replay.iter().map(String::as_str));
         if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
             let message = tr!(
                 format!("could not restore {label}: {e:#}"),

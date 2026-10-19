@@ -17,6 +17,10 @@ use moss_core::{launch_args, proc, store_dir};
 /// Open the registry and repair what hooks could not record.
 pub fn run() -> Result<Registry> {
     let mut registry = Registry::open(&store_dir::registry_path())?;
+    // Moss reads only: what it sees is what was recorded.
+    if registry.read_only() {
+        return Ok(registry);
+    }
     if registry.newer_schema().is_some() {
         eprintln!(
             "{}",

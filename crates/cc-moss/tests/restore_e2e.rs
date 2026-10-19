@@ -74,6 +74,42 @@ fn crash_then_restore_full_cycle() {
 }
 
 #[test]
+fn restore_replays_only_whitelisted_arguments() {
+    let w = World::new("planted-args");
+    w.new_session("job-p");
+    let sid = w.session_id("job-p");
+    w.send(&sid, "prompt job-p");
+    wait_for(|| (w.session_names() == ["host_job-p"]).then_some(()));
+    w.tmux(&["kill-server"]);
+    wait_for(|| (slot_status(&w, "job-p").as_deref() == Some("interrupted")).then_some(()));
+    // Arguments written straight into the registry, as something with write
+    // access to it could: only the whitelist is replayed.
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    db.execute(
+        "UPDATE slots SET launch_args = ?1",
+        [r#"["--dangerously-skip-permissions","--mcp-config","/tmp/evil.json","--settings","/tmp/x.json","--model","opus"]"#],
+    )
+    .unwrap();
+    drop(db);
+    let out = restore(&w);
+    assert!(out.contains("Started job-p"), "{out}");
+    let cmd = w.tmux(&[
+        "list-panes",
+        "-t",
+        "host_job-p",
+        "-F",
+        "#{pane_start_command}",
+    ]);
+    assert!(
+        !cmd.contains("--mcp-config") && !cmd.contains("evil"),
+        "{cmd}"
+    );
+    assert!(!cmd.contains("--settings"), "{cmd}");
+    assert!(cmd.contains("--model opus"), "{cmd}");
+    assert!(cmd.contains("--dangerously-skip-permissions"), "{cmd}");
+}
+
+#[test]
 fn empty_session_is_not_restored() {
     let w = World::new("empty");
     w.new_session("job-x");

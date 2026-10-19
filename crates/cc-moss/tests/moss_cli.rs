@@ -51,6 +51,54 @@ fn session<'a>(ls: &'a serde_json::Value, sid: &str) -> &'a serde_json::Value {
 }
 
 #[test]
+fn moss_reads_sessions_but_changes_none() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    start(&state, "work-0000-1111", "work", false);
+    let as_moss = |args: &[&str]| {
+        bin()
+            .env("CC_MOSS_STATE_DIR", &state)
+            .env("CC_MOSS_ROLE", "moss")
+            .args(args)
+            .output()
+            .unwrap()
+    };
+    // Reading works: ls (with no repairs written) and the checkup's facts.
+    let out = as_moss(&["ls", "--json", "--all"]);
+    assert!(out.status.success(), "{out:?}");
+    let ls: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(session(&ls, "work-0000-1111")["name"], "work");
+    let out = as_moss(&["doctor", "--sessions", "--json"]);
+    assert!(out.status.success(), "{out:?}");
+    // Changing does not, and says so plainly.
+    let out = as_moss(&["close", "work"]);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("moss act"),
+        "{out:?}"
+    );
+    // Nothing was written: no repair recorded the dead process.
+    let events = bin()
+        .env("CC_MOSS_STATE_DIR", &state)
+        .args(["events", "--json"])
+        .output()
+        .unwrap();
+    let events: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
+    assert!(
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["kind"] != "interrupted"),
+        "{events}"
+    );
+    assert_ne!(
+        session(&ls_json(&state, true), "work-0000-1111")["status"],
+        "closed"
+    );
+}
+
+#[test]
 fn hook_records_the_moss_role() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
