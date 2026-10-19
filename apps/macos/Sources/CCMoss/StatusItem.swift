@@ -1,6 +1,11 @@
 import AppKit
 import MossKit
+import OSLog
 import SwiftUI
+
+/// cc-moss:// links on their way to the panel, for watching a cold start:
+/// `log stream --level debug --predicate 'subsystem == "io.github.larrykoo711.cc-moss" && category == "link"'`
+let linkLog = Logger(subsystem: "io.github.larrykoo711.cc-moss", category: "link")
 
 /// Owns the menu bar item. We drive an `NSStatusItem` ourselves rather than
 /// SwiftUI's `MenuBarExtra`: a label change there costs a full scene update
@@ -33,6 +38,10 @@ final class StatusItemController {
         let label = "cc-moss: " + icon.state.label
         if button.accessibilityLabel() != label { button.setAccessibilityLabel(label) }
     }
+
+    /// The status button is in the menu bar (it has a window): the panel can
+    /// be placed under it.
+    var isPlaced: Bool { item.button?.window != nil }
 
     /// The button's rectangle on screen.
     private var buttonFrame: NSRect? {
@@ -79,6 +88,21 @@ final class PanelController {
     /// A click on the status button first takes the key away from the
     /// panel (hiding it), then toggles: don't reopen it straight away.
     private var hiddenAt: TimeInterval = 0
+    /// Until then, losing the key or the app's activation doesn't hide the
+    /// panel: a link that launched the app opens it while the launch is
+    /// still settling who's frontmost.
+    private var steadyUntil: TimeInterval = 0
+
+    /// Shown and visible on screen.
+    var isVisible: Bool { isShown && window?.isVisible == true }
+
+    /// Show it, and keep it through the next `seconds` of focus changes.
+    func show(holding seconds: TimeInterval) {
+        steadyUntil = ProcessInfo.processInfo.systemUptime + seconds
+        show()
+    }
+
+    private var steady: Bool { ProcessInfo.processInfo.systemUptime < steadyUntil }
 
     static let cornerRadius: CGFloat = 14
 
@@ -203,10 +227,18 @@ final class PanelController {
         // Another window of ours (Settings) or another app took the keyboard;
         // not our own dropdown or folder picker over the panel (PanelHold).
         observers.append(center.addObserver(forName: NSWindow.didResignKeyNotification, object: panel, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
+            MainActor.assumeIsolated {
+                guard let self, !PanelHold.active else { return }
+                if self.steady { linkLog.debug("resign key ignored (just opened by a link)"); return }
+                self.hide()
+            }
         })
         observers.append(center.addObserver(forName: NSApplication.didResignActiveNotification, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { if !PanelHold.active { self?.hide() } }
+            MainActor.assumeIsolated {
+                guard let self, !PanelHold.active else { return }
+                if self.steady { linkLog.debug("resign active ignored (just opened by a link)"); return }
+                self.hide()
+            }
         })
     }
 
@@ -275,10 +307,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSAppleEventManager.shared().setEventHandler(self, andSelector: #selector(openLink(_:reply:)),
                                                      forEventClass: AEEventClass(kInternetEventClass),
                                                      andEventID: AEEventID(kAEGetURL))
+        linkLog.debug("link handler installed")
     }
 
     @objc private func openLink(_ event: NSAppleEventDescriptor, reply: NSAppleEventDescriptor) {
         guard let raw = event.paramDescriptor(forKeyword: keyDirectObject)?.stringValue, let url = URL(string: raw) else { return }
+        linkLog.debug("link event received: \(raw, privacy: .public)")
         application(NSApp, open: [url])
     }
 
@@ -290,6 +324,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = StatusItemController(model: model)
         if let link = pendingLink {
             pendingLink = nil
+            linkLog.debug("pending link handled")
             DispatchQueue.main.async { [weak self] in self?.open(link) }
         }
         pet = PetController(model: model) { [weak self] in self?.panel?.show() }
@@ -337,6 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // the menu bar icon (and its panel) is up.
         guard panel != nil else {
             pendingLink = link
+            linkLog.debug("link kept until the panel exists")
             return
         }
         open(link)
@@ -349,7 +385,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         case .queue: model.showQueue()
         case .moss: model.showMoss()
         }
-        panel?.show()
+        showForLink(tries: 10)
+    }
+
+    /// Show the panel for a link: once the status button is in the menu bar
+    /// (right after a cold launch it may not be yet; tried every 0.1 s for
+    /// about a second), held through the launch's focus changes, and shown
+    /// again once if it didn't stay up.
+    private func showForLink(tries: Int) {
+        guard let statusItem else { return }
+        guard statusItem.isPlaced || tries <= 0 else {
+            linkLog.debug("status button not placed yet; trying again")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in self?.showForLink(tries: tries - 1) }
+            return
+        }
+        statusItem.panel.show(holding: 1.5)
+        linkLog.debug("panel shown for a link; visible: \(statusItem.panel.isVisible)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { [weak self] in
+            guard let panel = self?.statusItem?.panel else { return }
+            linkLog.debug("panel still visible after a link: \(panel.isVisible)")
+            if !panel.isVisible { panel.show(holding: 1.0) }
+        }
     }
 
     /// A menu bar app lives on with no window open. SwiftUI otherwise answers
