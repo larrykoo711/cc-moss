@@ -369,7 +369,11 @@ fn json_has_state_dir_and_worktree() {
 fn ls_on_an_unchanged_registry_writes_nothing() {
     let dir = tempfile::tempdir().unwrap();
     let transcript = dir.path().join("A.jsonl");
-    std::fs::write(&transcript, "{\"type\":\"custom-title\",\"customTitle\":\"job-a\"}\n").unwrap();
+    std::fs::write(
+        &transcript,
+        "{\"type\":\"custom-title\",\"customTitle\":\"job-a\"}\n",
+    )
+    .unwrap();
     let start = serde_json::json!({
         "session_id": "A",
         "transcript_path": transcript,
@@ -379,8 +383,18 @@ fn ls_on_an_unchanged_registry_writes_nothing() {
         "session_title": "job-a",
     })
     .to_string();
-    hook(dir.path(), "session-start", &start, Some(std::process::id()));
-    hook(dir.path(), "session-start", &start_json("B", "startup", Some("gone")), Some(dead_pid()));
+    hook(
+        dir.path(),
+        "session-start",
+        &start,
+        Some(std::process::id()),
+    );
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("B", "startup", Some("gone")),
+        Some(dead_pid()),
+    );
     // The first look may record what it finds (the lost session, the scan mark).
     ls_json(dir.path(), false);
     let db = dir.path().join("registry.db");
@@ -389,12 +403,19 @@ fn ls_on_an_unchanged_registry_writes_nothing() {
     std::thread::sleep(std::time::Duration::from_millis(1100));
     // A working session's transcript grows between looks (no new name).
     use std::io::Write;
-    let mut t = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+    let mut t = std::fs::OpenOptions::new()
+        .append(true)
+        .open(&transcript)
+        .unwrap();
     writeln!(t, "{{\"type\":\"user\",\"message\":\"more work\"}}").unwrap();
     ls_json(dir.path(), false);
     writeln!(t, "{{\"type\":\"assistant\",\"message\":\"done\"}}").unwrap();
     ls_json(dir.path(), true);
-    assert_eq!(std::fs::metadata(&db).unwrap().modified().unwrap(), modified, "registry.db was written");
+    assert_eq!(
+        std::fs::metadata(&db).unwrap().modified().unwrap(),
+        modified,
+        "registry.db was written"
+    );
     assert!(std::fs::read(&db).unwrap() == before, "registry.db changed");
 }
 
@@ -405,7 +426,11 @@ fn ls_asks_claude_at_most_every_30_s() {
     let dir = tempfile::tempdir().unwrap();
     let count = dir.path().join("asked");
     let stub = dir.path().join("claude");
-    std::fs::write(&stub, format!("#!/bin/sh\necho x >> '{}'\necho '[]'\n", count.display())).unwrap();
+    std::fs::write(
+        &stub,
+        format!("#!/bin/sh\necho x >> '{}'\necho '[]'\n", count.display()),
+    )
+    .unwrap();
     std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
     for _ in 0..3 {
         let out = bin()

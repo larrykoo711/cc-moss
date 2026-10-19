@@ -40,6 +40,8 @@ final class AppModel {
     @ObservationIgnored private var watcher: DirectoryWatcher?
     @ObservationIgnored private var watchedDir: String?
     @ObservationIgnored private var timer: Timer?
+    @ObservationIgnored private var lastLoad = Date.distantPast
+    @ObservationIgnored private var paced: Task<Void, Never>?
     @ObservationIgnored private lazy var flight = SingleFlight { [weak self] in await self?.load() }
 
     /// Which terminal sessions open in.
@@ -206,12 +208,26 @@ final class AppModel {
         Task { await flight.request() }
     }
 
+    /// Something worth seeing changed: refresh, but not sooner than
+    /// `StateChange.gap` after the last one. Busy sessions write on every
+    /// tool call; one refresh per gap catches them all.
+    private func changed() {
+        guard paced == nil else { return }
+        let wait = lastLoad.addingTimeInterval(StateChange.gap(panelShown: panelShown)).timeIntervalSinceNow
+        paced = Task { @MainActor [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            self?.paced = nil
+            self?.refresh()
+        }
+    }
+
     /// Load now and wait for it; for screenshots.
     func loadNow() async { await load() }
 
     private func load() async {
         guard let client else { return }
         refreshing = true
+        lastLoad = Date()
         defer { refreshing = false }
         do {
             let snap = try await client.snapshot()
@@ -238,8 +254,8 @@ final class AppModel {
     private func watch(_ dir: String) {
         guard dir != watchedDir else { return }
         watcher?.stop()
-        watcher = DirectoryWatcher(path: dir, latency: 1.0) { [weak self] in
-            Task { @MainActor in self?.refresh() }
+        watcher = DirectoryWatcher(path: dir, latency: 1.0, filter: { StateChange.matters($0, in: dir) }) { [weak self] in
+            Task { @MainActor in self?.changed() }
         }
         watchedDir = dir
     }

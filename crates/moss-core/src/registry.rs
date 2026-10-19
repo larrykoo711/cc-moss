@@ -705,7 +705,9 @@ impl Registry {
         if !has_events_table(&self.conn)? {
             return Ok(0);
         }
-        let oldest: Option<i64> = self.conn.query_row("SELECT MIN(at) FROM events", [], |r| r.get(0))?;
+        let oldest: Option<i64> = self
+            .conn
+            .query_row("SELECT MIN(at) FROM events", [], |r| r.get(0))?;
         match oldest {
             Some(at) if at < before_ms - slack_ms => self.prune_events(before_ms),
             _ => Ok(0),
