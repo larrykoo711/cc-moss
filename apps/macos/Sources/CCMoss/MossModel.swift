@@ -89,9 +89,40 @@ extension AppModel {
             mossSuggestion = demo
             return
         }
-        guard let client, let moss else { return }
+        guard let moss else { return }
+        // Moss's turn is its newest reply; mid-turn there's nothing to ask.
+        let marker = mossDesk.chat.last { $0.from == .moss }?.id ?? "none"
+        let busy = mossDesk.activity == .thinking
         let handle = moss.handle
-        Task { mossSuggestion = await client.suggest(handle) }
+        Task { mossSuggestion = await suggestion(key: "moss", marker: marker, busy: busy, handle: handle) }
+    }
+
+    /// Claude Code's suggestion for a session, through the cache: asked only
+    /// when its turn changed or the last answer lapsed; "none" asked again
+    /// at 2 s and 6 s after the turn's first try.
+    func suggestion(key: String, marker: String, busy: Bool, handle: String) async -> String? {
+        guard let client else { return nil }
+        for _ in 0..<6 {
+            switch suggestionCache.lookup(key, marker: marker, busy: busy, now: Date()) {
+            case let .known(value):
+                return value
+            case .skip:
+                suggestionCache.forget(key)
+                return nil
+            case .ask:
+                let value = await client.suggest(handle)
+                suggestionCache.store(key, marker: marker, value: value, now: Date())
+                if value != nil { return value }
+            case let .askAt(due):
+                try? await Task.sleep(for: .seconds(max(0, due.timeIntervalSinceNow)))
+            }
+        }
+        return nil
+    }
+
+    /// A session's turn marker: its last activity.
+    func suggestion(for s: Session) async -> String? {
+        await suggestion(key: s.id, marker: "\(s.lastActiveAt.timeIntervalSince1970)", busy: ReplyLine.busy(s), handle: s.handle)
     }
 
     /// One of the quick bar's items.

@@ -133,6 +133,10 @@ final class AppModel {
     @ObservationIgnored var demoSuggestion: String?
     /// Claude Code's guess at what you'd say to Moss next (its own input box).
     var mossSuggestion: String?
+    /// The badge for that guess was closed: hidden until Moss's next reply (its id).
+    var mossGuessHiddenFor: String?
+    /// What cc-moss suggest said per session and turn (memory only).
+    @ObservationIgnored var suggestionCache = SuggestionCache()
     /// Screenshots only: Moss's suggestion, never asked of cc-moss.
     @ObservationIgnored var demoMossSuggestion: String?
     /// The new-session form's fields; kept here so they survive the panel

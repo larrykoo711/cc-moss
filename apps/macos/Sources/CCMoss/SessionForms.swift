@@ -151,7 +151,7 @@ extension AppModel {
         guard !ReplyLine.busy(s) else { return }
         let handle = s.handle
         Task {
-            let guess = if let demo = demoSuggestion { demo } else { await client?.suggest(handle) }
+            let guess = if let demo = demoSuggestion { demo } else { await suggestion(for: s) }
             guard replyOpenID == s.id, let fill = replyField.offer(guess, text: replyDraft) else { return }
             replyDraft = fill
             FieldSelection.selectAllQuietly()
@@ -558,7 +558,7 @@ struct MessageForm: View {
                     // Claude Code's own suggestion, asked once, off the main
                     // thread, quick or not at all; it goes straight into the field.
                     guard model.demoSuggestion == nil else { return }
-                    take(await model.client?.suggest(session.handle))
+                    take(await model.suggestion(for: session))
                 }
             if let failure = model.sendFlow.failure {
                 HStack(spacing: 5) {

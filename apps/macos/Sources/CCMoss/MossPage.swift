@@ -1205,13 +1205,34 @@ private struct MossInputBar: View {
         HStack(spacing: 6) {
             MossQuickRow(model: model, enabled: blocked == nil)
             MossIconButton(symbol: "keyboard",
-                           tip: suggestion.map { L.t("Moss's guess: \($0)", "Moss 猜你想说：\($0)") } ?? L.t("Type a message", "打字"),
-                           dot: suggestion != nil && blocked == nil) {
+                           tip: suggestion.map { L.t("Moss's guess: \($0)", "Moss 猜你想说：\($0)") } ?? L.t("Type a message", "打字")) {
                 model.mossTyping = true
             }
                 .disabled(blocked != nil)
                 .opacity(blocked == nil ? 1 : 0.45)
         }
+        // Moss's guess floats just above the bar, faint; it never moves anything.
+        .overlay(alignment: .topLeading) {
+            if let guess = shownGuess {
+                MossGuessBadge(text: guess) {
+                    model.mossTyping = true
+                } close: {
+                    model.mossGuessHiddenFor = newestReply
+                }
+                // Above the bar's top edge (the bar pads its row by 10).
+                .offset(y: -42)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: shownGuess)
+    }
+
+    private var newestReply: String { model.mossDesk.chat.last { $0.from == .moss }?.id ?? "none" }
+
+    /// The guess, unless closed for this reply or Moss can't take a message.
+    private var shownGuess: String? {
+        guard blocked == nil, let s = suggestion, model.mossGuessHiddenFor != newestReply else { return nil }
+        return s
     }
 
     private var text: String {
@@ -1382,5 +1403,52 @@ private struct MossIconButton: View {
         .onHover { inside in withAnimation(.easeOut(duration: 0.1)) { hovering = inside } }
         .tip(tip)
         .accessibilityLabel(tip)
+    }
+}
+
+/// Moss's guess at your reply, floating faintly over the quick bar: a click
+/// opens typing with it filled in; × puts it away until Moss says something new.
+private struct MossGuessBadge: View {
+    let text: String
+    let open: () -> Void
+    let close: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button(action: open) {
+                HStack(spacing: 5) {
+                    Text("↳").foregroundStyle(.tertiary)
+                    Text(text)
+                        .foregroundStyle(hovering ? .secondary : .tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.system(size: 11.5))
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(PressStyle())
+            .focusable(false)
+            if hovering {
+                Button(action: close) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 8.5, weight: .bold))
+                        .foregroundStyle(.tertiary)
+                        .frame(width: 14, height: 14)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(PressStyle())
+                .focusable(false)
+                .tip(L.t("Hide until Moss's next reply", "先收起，等 Moss 下次回复"))
+            }
+        }
+        .padding(.horizontal, 9)
+        .frame(height: 24)
+        .background(Capsule().fill(Color.primary.opacity(scheme == .dark ? 0.05 : 0.035)))
+        .frame(maxWidth: 360, alignment: .leading)
+        .fixedSize(horizontal: false, vertical: true)
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+        .tip(L.t("Moss's guess at your reply. Click to use it.", "Moss 猜你想说的话，点一下就用它。"))
     }
 }
