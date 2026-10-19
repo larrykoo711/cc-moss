@@ -98,7 +98,7 @@ private let chatJSON = #"""
         desk.update(chat: MossChat())
         await desk.send("谁在等我？")
         desk.update(chat: try MossChat.decode(Data(chatJSON.utf8)))
-        #expect(desk.messages.count == 5)
+        #expect(desk.messages.count == 4, "the digest isn't shown")
         #expect(desk.pending.isEmpty)
     }
 

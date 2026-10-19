@@ -576,7 +576,7 @@ struct PanelView: View {
     /// stay and say what to do instead.
     private func open(_ s: Session) {
         let panel = NSApplication.shared.keyWindow
-        if model.open(s) { panel?.close() }
+        model.open(s) { opened in if opened { panel?.close() } }
     }
 
     private func copy(_ text: String) {

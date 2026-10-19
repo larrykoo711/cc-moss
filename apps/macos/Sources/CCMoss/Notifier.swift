@@ -275,7 +275,7 @@ final class AlertCenter {
     /// bubble: open the session in the terminal; if it can't be opened from
     /// here, or it needs bringing back, show it in the panel, where the
     /// panel's own main action (open, bring back) is one key away.
-    static func perform(_ action: AlertAction, slot: String, model: AppModel, showPanel: () -> Void) {
+    static func perform(_ action: AlertAction, slot: String, model: AppModel, showPanel: @escaping @MainActor () -> Void) {
         // The startup summary: the panel, on the sessions that stopped,
         // where "Bring All Back" is one click.
         if slot == NotificationPlan.allInterrupted {
@@ -298,7 +298,11 @@ final class AlertCenter {
             return
         }
         let session = model.session(slot)
-        if action == .open, let session, session.inTmux, session.state != .interrupted, model.open(session) { return }
+        if action == .open, let session, session.inTmux, session.state != .interrupted {
+            // Opens off the main thread; if it can't, the panel shows why.
+            model.open(session) { opened in if !opened { showPanel() } }
+            return
+        }
         // Bring it back in one go (T1.3), and show the panel so its progress
         // and result are visible.
         if action == .restore, let session, session.state == .interrupted {
