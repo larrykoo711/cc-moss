@@ -2,9 +2,14 @@
 //! lives, what it is called, and what the daemon records about it. Starting
 //! it (tmux) is the binary's job; the rules are here.
 
+pub mod chat;
+pub mod digest;
 pub mod guard;
 pub mod home;
+pub mod inbox;
 pub mod keeper;
+pub mod markers;
+pub mod reply;
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -128,9 +133,35 @@ pub struct Report {
     /// Why the last start failed, while Moss is on and not running.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_error: Option<String>,
+    /// What it is doing: [`activity`].
+    pub activity: &'static str,
+    /// Messages waiting in its inbox.
+    pub queued: usize,
+    /// When its last reply came in.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_reply_at: Option<String>,
     /// `since` in Unix milliseconds.
     #[serde(skip)]
     pub since_ms: Option<i64>,
+}
+
+/// What Moss is doing, for `moss status --json`: `off` (switched off),
+/// `offline` (on, but it or the daemon is not running), `waiting` (stopped
+/// at a confirm prompt), `thinking` (in a turn), else `idle`.
+pub fn activity(
+    enabled: bool,
+    running: bool,
+    daemon_running: bool,
+    waiting: bool,
+    turn_open: Option<bool>,
+) -> &'static str {
+    match () {
+        _ if !enabled => "off",
+        _ if !running || !daemon_running => "offline",
+        _ if waiting => "waiting",
+        _ if turn_open == Some(true) => "thinking",
+        _ => "idle",
+    }
 }
 
 impl Report {
@@ -153,6 +184,9 @@ impl Report {
             restarts: stored.map_or(0, |s| s.restarts),
             session_id: stored.map(|s| s.session_id.clone()),
             since_ms: stored.map(|s| s.started_ms),
+            activity: activity(enabled, running, daemon_running, false, None),
+            queued: 0,
+            last_reply_at: None,
         }
     }
 }
@@ -179,13 +213,13 @@ mod tests {
             serde_json::to_value(&r).unwrap(),
             serde_json::json!({"schema":1,"enabled":true,"running":true,
                 "since":"1970-01-01T00:00:01Z","restarts":2,"session_id":"abc",
-                "daemon_running":true})
+                "daemon_running":true,"activity":"idle","queued":0})
         );
         let down = Report::new(false, false, Some(&s), false, Some("old".into()));
         assert_eq!(
             serde_json::to_value(&down).unwrap(),
             serde_json::json!({"schema":1,"enabled":false,"running":false,"restarts":0,
-                "daemon_running":false})
+                "daemon_running":false,"activity":"off","queued":0})
         );
         let failing = Report::new(true, false, None, true, Some("no claude".into()));
         assert_eq!(
@@ -194,6 +228,17 @@ mod tests {
         );
         remove(&path).unwrap();
         remove(&path).unwrap();
+    }
+
+    #[test]
+    fn activity_reads_switch_process_and_turn() {
+        assert_eq!(activity(false, true, true, true, Some(true)), "off");
+        assert_eq!(activity(true, false, true, false, None), "offline");
+        assert_eq!(activity(true, true, false, false, None), "offline");
+        assert_eq!(activity(true, true, true, true, Some(true)), "waiting");
+        assert_eq!(activity(true, true, true, false, Some(true)), "thinking");
+        assert_eq!(activity(true, true, true, false, Some(false)), "idle");
+        assert_eq!(activity(true, true, true, false, None), "idle");
     }
 
     #[test]

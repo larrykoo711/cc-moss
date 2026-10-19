@@ -36,6 +36,11 @@ impl Decision {
 /// every install) or generated.
 const MANAGED: &[&str] = &["security.md", "claude.md", "sessions.md"];
 
+/// The conversation with you, kept by cc-moss in Moss's home: what waits
+/// to go in, the chat record, the turn markers and the waiting flag. Moss
+/// writing these could put words in your mouth.
+pub const CONVERSATION: &[&str] = &["inbox", "stop", "chat.jsonl", "chat.jsonl.1", "waiting"];
+
 /// Moss's persona: changed only through `/moss-profile`.
 const PERSONA: &[&str] = &["identity.md", "soul.md", "user.md"];
 
@@ -136,6 +141,9 @@ fn write_to(home: &Path, cwd: &Path, path: &Path) -> Decision {
         [first, ..] if first == ".claude" => Decision::deny(
             "Moss's own settings, hooks and skills under .claude/ belong to cc-moss and stay as they are",
         ),
+        [first, ..] if CONVERSATION.contains(&first.as_str()) => Decision::deny(format!(
+            "{first} is cc-moss's record of your conversation with Moss; leave it as it is"
+        )),
         [only] if MANAGED.contains(&only.as_str()) => Decision::deny(format!(
             "{only} belongs to cc-moss (it is put back on every install); leave it as it is"
         )),
@@ -273,7 +281,13 @@ fn protected_name(word: &str) -> bool {
         .next()
         .unwrap_or(word)
         .to_lowercase();
-    MANAGED.contains(&last.as_str()) || PERSONA.contains(&last.as_str())
+    let lower = word.to_lowercase();
+    let conversation = lower
+        .split('/')
+        .any(|p| p == "chat.jsonl" || p == "chat.jsonl.1")
+        || lower.contains("inbox/")
+        || lower.contains("stop/");
+    MANAGED.contains(&last.as_str()) || PERSONA.contains(&last.as_str()) || conversation
 }
 
 fn own_dir_name(word: &str) -> bool {
@@ -436,6 +450,18 @@ mod tests {
         }
         // Files of the same name further down are Moss's own.
         assert_eq!(write(&p, "memory/SOUL.md"), Decision::Allow);
+        // The conversation is cc-moss's record.
+        for path in [
+            "chat.jsonl",
+            "chat.jsonl.1",
+            "inbox/0000000000001-aaaaaa.json",
+            "stop/123",
+            "waiting",
+            "Inbox/x.json",
+        ] {
+            assert!(denied(&write(&p, path)), "{path}");
+        }
+        assert_eq!(write(&p, "memory/inbox.md"), Decision::Allow);
     }
 
     #[test]
@@ -510,6 +536,8 @@ mod tests {
             // The profile command next to a plain copy is still a copy.
             "cc-moss moss profile soul < x; cp evil IDENTITY.md",
             "sudo tee CLAUDE.md < x",
+            "echo '{}' >> chat.jsonl",
+            "rm inbox/*.json",
         ] {
             assert!(denied(&bash(bad)), "{bad}");
         }
@@ -519,6 +547,8 @@ mod tests {
             "cat SOUL.md 2>&1",
             "cat SOUL.md > /dev/null",
             "echo hi >> journal/today.md",
+            "tail -n 5 chat.jsonl",
+            "echo stop > journal/notes.md",
             "cc-moss moss profile soul < /tmp/new-soul.md",
             // Words that only contain a command name are not that command.
             "grep platform CLAUDE.md",

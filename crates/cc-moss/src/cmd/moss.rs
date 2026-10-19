@@ -17,6 +17,7 @@ use moss_core::moss::guard::{self, Decision};
 use moss_core::moss::home::{self, File, Kind};
 use moss_core::moss::keeper::{self, Action, Keeper};
 use moss_core::moss::{self, Stored};
+use moss_core::moss::{chat, inbox, reply};
 use moss_core::proc::Liveness;
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339};
@@ -30,9 +31,13 @@ const IDENTITY_MD: &str = include_str!("../../templates/moss/IDENTITY.md");
 const SOUL_MD: &str = include_str!("../../templates/moss/SOUL.md");
 const USER_MD: &str = include_str!("../../templates/moss/USER.md");
 const PROFILE_SKILL: &str = include_str!("../../templates/moss/skills/moss-profile/SKILL.md");
+const SESSIONS_SKILL: &str = include_str!("../../templates/moss/skills/moss-sessions/SKILL.md");
 
 /// What the guard hook is called as: `cc-moss hook moss-guard`.
 pub const GUARD_EVENT: &str = "moss-guard";
+
+/// What Moss's Stop hook is called as: `cc-moss hook moss-stop`.
+pub const STOP_EVENT: &str = "moss-stop";
 
 /// How long tmux may take to answer.
 const TMUX_TIMEOUT: Duration = Duration::from_secs(5);
@@ -55,6 +60,7 @@ pub fn files(exe: &str, state: &Path) -> Vec<File> {
         managed("SECURITY.md", SECURITY_MD),
         managed(".claude/settings.json", &settings_json(exe, state)),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
+        managed(".claude/skills/moss-sessions/SKILL.md", SESSIONS_SKILL),
         user("IDENTITY.md", IDENTITY_MD),
         user("SOUL.md", SOUL_MD),
         user("USER.md", USER_MD),
@@ -79,6 +85,7 @@ const PROFILE_COMMAND: &str = "cc-moss moss profile *";
 
 /// Moss's project settings.
 ///
+/// - The Stop hook marks every ended turn, so the daemon takes the reply.
 /// - The guard before every tool call (`*`). The `|| exit 2` blocks the
 ///   tool also when cc-moss cannot run at all (missing, crashed): Claude
 ///   Code lets a tool through on any other failure. The home is in the
@@ -94,17 +101,29 @@ fn settings_json(exe: &str, state: &Path) -> String {
         shell_quote(exe),
         shell_quote(&home.to_string_lossy())
     );
+    let stop = format!(
+        "{} hook {STOP_EVENT} --home {}",
+        shell_quote(exe),
+        shell_quote(&home.to_string_lossy())
+    );
     let registry = state.join("registry.db").to_string_lossy().into_owned();
     let allow_write: Vec<String> = ["", "-wal", "-shm", "-journal"]
         .iter()
         .map(|suffix| format!("{registry}{suffix}"))
         .collect();
-    let deny_write: Vec<String> = SHELL_READ_ONLY.iter().map(|f| format!("./{f}")).collect();
+    let deny_write: Vec<String> = SHELL_READ_ONLY
+        .iter()
+        .chain(guard::CONVERSATION)
+        .map(|f| format!("./{f}"))
+        .collect();
     let value = serde_json::json!({
         "hooks": {
             "PreToolUse": [{
                 "matcher": "*",
                 "hooks": [{ "type": "command", "command": command }]
+            }],
+            "Stop": [{
+                "hooks": [{ "type": "command", "command": stop }]
             }]
         },
         "sandbox": {
@@ -151,7 +170,7 @@ fn socket() -> Option<String> {
 /// `tmux -L <socket> -f /dev/null <args>`: Moss's server never reads the
 /// user's tmux.conf (no plugins, no `remain-on-exit` or `destroy-unattached`
 /// that would change how Moss lives and dies).
-fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
+pub(super) fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
     run_with_timeout(
         Command::new("tmux")
             .arg("-L")
@@ -165,7 +184,7 @@ fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
 
 /// What Moss's tmux server holds. A dead Moss kept on screen by
 /// `remain-on-exit` is cleared away here.
-fn look(socket: &str) -> keeper::Seen {
+pub(super) fn look(socket: &str) -> keeper::Seen {
     let seen = match tmux(socket, &["list-panes", "-a", "-F", keeper::PANES_FORMAT]) {
         Ok(out) => keeper::classify_panes(
             out.status.success(),
@@ -215,6 +234,12 @@ fn config_file() -> PathBuf {
 
 fn enabled() -> Result<bool> {
     Ok(Config::load_from(&config_file())?.moss.enabled)
+}
+
+/// `[moss]` in the config file the daemon reads: on, and news on.
+fn switches() -> Result<(bool, bool)> {
+    let moss = Config::load_from(&config_file())?.moss;
+    Ok((moss.enabled, moss.digest))
 }
 
 // ---------------------------------------------------------------- start / stop / status
@@ -334,7 +359,134 @@ pub fn report() -> moss::Report {
         Some(Liveness::Unknown) => stored.is_some() && daemon_running,
     };
     let last_error = moss::read_error(&state);
-    moss::Report::new(on, running, stored.as_ref(), daemon_running, last_error)
+    let mut r = moss::Report::new(on, running, stored.as_ref(), daemon_running, last_error);
+    let home = moss::home_dir(&state);
+    r.queued = inbox::count(&home);
+    r.last_reply_at = chat::last_reply_at(&home);
+    let turn = if running {
+        transcript_of_moss(&state).and_then(|t| moss_core::transcript::turn_open(&t))
+    } else {
+        None
+    };
+    let waiting = reply::waiting_path(&home).exists();
+    r.activity = moss::activity(on, running, daemon_running, waiting, turn);
+    r
+}
+
+/// The transcript of the Moss that runs, from its record.
+fn transcript_of_moss(state: &Path) -> Option<PathBuf> {
+    let db = state.join("registry.db");
+    if !db.exists() {
+        return None;
+    }
+    Registry::open(&db)
+        .ok()?
+        .slots()
+        .ok()?
+        .into_iter()
+        .filter(|s| s.is_moss() && s.status != moss_core::slot::Status::Closed)
+        .max_by_key(|s| s.last_active_at_ms)?
+        .transcript_path
+        .map(PathBuf::from)
+}
+
+// ---------------------------------------------------------------- say / chat
+
+/// `cc-moss moss say -- <text>`: leave a message for Moss. The daemon types
+/// it in when Moss is free; the reply lands in chat.jsonl.
+pub fn say(json: bool, text: &str) -> Result<()> {
+    if text.trim().is_empty() {
+        bail!(tr!(
+            "There is nothing to say: the message is empty.",
+            "没有内容：消息是空的。"
+        ));
+    }
+    if text
+        .chars()
+        .any(|c| c.is_control() && c != '\n' && c != '\t')
+    {
+        bail!(tr!(
+            "The message has control characters in it; send plain text.",
+            "消息里有控制字符；请发普通文字。"
+        ));
+    }
+    if !enabled()? {
+        bail!(tr!(
+            "Moss is off, so it can't hear you. Turn it on in Settings › Moss (or run `cc-moss moss start`).",
+            "Moss 已关闭，听不到你说话。去设置 › Moss 打开它（或运行 `cc-moss moss start`）。"
+        ));
+    }
+    if !daemon::report().running {
+        bail!(tr!(
+            "The cc-moss daemon that passes your messages to Moss is not running. Start it: cc-moss daemon start",
+            "负责把消息转给 Moss 的 cc-moss 守护进程没在运行。启动它：cc-moss daemon start"
+        ));
+    }
+    let home = moss::home_dir(&state());
+    let now = now_ms();
+    let message = inbox::Message {
+        schema: 1,
+        id: inbox::new_id(now),
+        at: rfc3339(now),
+        from: chat::FROM_YOU.to_string(),
+        text: text.to_string(),
+    };
+    store_dir::ensure_private_dir(&home).with_context(|| format!("{}", home.display()))?;
+    // The chat first: the daemon's "sent" for it never comes before it.
+    chat::append(
+        &home,
+        &chat::Line::message(&message.id, &message.at, chat::FROM_YOU, text),
+    )
+    .context("cannot write chat.jsonl")?;
+    if let Err(e) = inbox::put(&home, &message) {
+        let error = format!("{e}");
+        let _ = chat::append(
+            &home,
+            &chat::Line::state(&message.id, &message.at, "failed", Some(&error)),
+        );
+        return Err(e).context("cannot leave the message in Moss's inbox");
+    }
+    if json {
+        println!("{}", serde_json::json!({ "schema": 1, "id": message.id }));
+    }
+    Ok(())
+}
+
+/// `cc-moss moss chat [--json] [--limit N]`: the conversation so far.
+pub fn chat(json: bool, limit: usize) -> Result<()> {
+    let messages = chat::fold(&moss::home_dir(&state()), limit);
+    if json {
+        println!("{}", chat::to_json(&messages));
+        return Ok(());
+    }
+    if messages.is_empty() {
+        println!("{}", tr!("Nothing said yet.", "还没有对话。"));
+    }
+    for m in &messages {
+        let who = match m.from.as_str() {
+            chat::FROM_YOU => tr!("You", "你"),
+            chat::FROM_MOSS => "Moss",
+            _ => tr!("Update", "动态"),
+        };
+        let state = match m.state.as_deref() {
+            Some("queued") => tr!(" (queued)", "（排队中）"),
+            Some("failed") => tr!(" (not delivered)", "（没送到）"),
+            _ => "",
+        };
+        println!("{} {who}{state}: {}", m.at, m.text);
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------- stop hook
+
+/// `cc-moss hook moss-stop --home <home>`: Moss's Stop hook marks the end
+/// of a turn for the daemon. Never fails, prints nothing.
+pub fn stop_hook(args: &[std::ffi::OsString]) -> ExitCode {
+    if let Some(home) = home_arg(args) {
+        let _ = reply::mark_stop(&home, now_ms());
+    }
+    ExitCode::SUCCESS
 }
 
 /// `cc-moss moss status [--json]`.
@@ -633,6 +785,9 @@ fn is_executable(path: &Path) -> bool {
 /// the daemon; it decides itself when to read the switch and ask tmux.
 pub struct Looker {
     keeper: Keeper,
+    talk: super::moss_talk::Talk,
+    /// `[moss] digest`.
+    digest: bool,
     socket: String,
     state: PathBuf,
     exe: String,
@@ -652,6 +807,8 @@ pub struct Looker {
 const CONFIG_EVERY: Duration = Duration::from_secs(1);
 /// How often SESSIONS.md is rewritten at the latest.
 const SESSIONS_EVERY: Duration = Duration::from_secs(60);
+/// SESSIONS.md also lists the sessions closed within this.
+const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 /// How often the registry is asked whether anything changed.
 const SEQ_EVERY: Duration = Duration::from_secs(2);
 
@@ -672,6 +829,8 @@ impl Looker {
         let now = Instant::now();
         Some(Looker {
             keeper: Keeper::new(steps),
+            talk: super::moss_talk::Talk::new(state),
+            digest: true,
             socket,
             state: state.to_path_buf(),
             exe,
@@ -689,9 +848,10 @@ impl Looker {
     pub fn tick(&mut self, now: Instant, log: &dyn Fn(&str)) {
         if now >= self.next_config {
             self.next_config = now + CONFIG_EVERY;
-            match enabled() {
-                Ok(on) => {
+            match switches() {
+                Ok((on, digest)) => {
                     self.enabled = Some(on);
+                    self.digest = digest;
                     self.config_error = false;
                 }
                 Err(e) if !self.config_error => {
@@ -729,6 +889,7 @@ impl Looker {
         }
         if enabled && self.keeper.is_up() {
             self.refresh_sessions(now, log);
+            self.talk.tick(&self.socket, now, self.digest, log);
         }
     }
 
@@ -925,9 +1086,11 @@ impl Looker {
                 }
             };
             let home_dir = moss::home_dir(&self.state);
-            if let Err(e) =
-                home::write_generated(&home_dir, home::SESSIONS_MD, &home::sessions_md(&rows))
-            {
+            if let Err(e) = home::write_generated(
+                &home_dir,
+                home::SESSIONS_MD,
+                &home::sessions_md_since(&rows, now_ms() - DAY_MS),
+            ) {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }
             self.next_sessions = now + SESSIONS_EVERY;
@@ -950,7 +1113,7 @@ fn startup_grace() -> Duration {
     test_millis("CC_MOSS_STARTUP_GRACE_MS").unwrap_or(Duration::from_millis(500))
 }
 
-fn test_millis(var: &str) -> Option<Duration> {
+pub(super) fn test_millis(var: &str) -> Option<Duration> {
     app::test_override(var)
         .and_then(|v| v.to_str()?.parse().ok())
         .map(Duration::from_millis)
@@ -983,6 +1146,11 @@ mod tests {
             hook["hooks"][0]["command"],
             r"'/Users/a b/it'\''s/cc-moss' hook moss-guard --home '/s t/state/moss' || exit 2"
         );
+        // Every ended turn is marked for the daemon, which takes the reply.
+        assert_eq!(
+            v["hooks"]["Stop"][0]["hooks"][0]["command"],
+            r"'/Users/a b/it'\''s/cc-moss' hook moss-stop --home '/s t/state/moss'"
+        );
     }
 
     #[test]
@@ -1013,6 +1181,10 @@ mod tests {
             "./SOUL.md",
             "./IDENTITY.md",
             "./USER.md",
+            "./chat.jsonl",
+            "./inbox",
+            "./stop",
+            "./waiting",
         ] {
             assert!(deny.contains(&f.into()), "{f}");
         }
@@ -1051,6 +1223,7 @@ mod tests {
             "SECURITY.md",
             ".claude/settings.json",
             ".claude/skills/moss-profile/SKILL.md",
+            ".claude/skills/moss-sessions/SKILL.md",
         ] {
             assert_eq!(kind(managed), Some(Kind::Managed), "{managed}");
         }

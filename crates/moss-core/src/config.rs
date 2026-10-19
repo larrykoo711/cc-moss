@@ -121,11 +121,16 @@ impl Default for AskConfig {
 pub struct MossConfig {
     /// On by default; off means the daemon ends Moss and leaves it off.
     pub enabled: bool,
+    /// Tell Moss when other sessions need you, drop or finish (on by default).
+    pub digest: bool,
 }
 
 impl Default for MossConfig {
     fn default() -> Self {
-        MossConfig { enabled: true }
+        MossConfig {
+            enabled: true,
+            digest: true,
+        }
     }
 }
 
@@ -195,6 +200,7 @@ pub const KEYS: &[&str] = &[
     "claude.permission_mode",
     "ask.enabled",
     "moss.enabled",
+    "moss.digest",
 ];
 
 /// What `ui.language` may be set to.
@@ -207,7 +213,7 @@ pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
 pub const BOOLS: &[&str] = &["true", "false"];
 
 /// Keys stored as TOML booleans rather than strings.
-const BOOL_KEYS: &[&str] = &["ask.enabled", "moss.enabled"];
+const BOOL_KEYS: &[&str] = &["ask.enabled", "moss.enabled", "moss.digest"];
 
 /// Why a key or value is refused.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -223,7 +229,7 @@ pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
-        "ask.enabled" | "moss.enabled" => BOOLS,
+        "ask.enabled" | "moss.enabled" | "moss.digest" => BOOLS,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -247,6 +253,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
         "claude.permission_mode" => Ok(config.claude.permission_mode.as_str().into()),
         "ask.enabled" => Ok(config.ask.enabled.to_string()),
         "moss.enabled" => Ok(config.moss.enabled.to_string()),
+        "moss.digest" => Ok(config.moss.digest.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }
