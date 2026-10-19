@@ -211,8 +211,21 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
     assert_eq!(
         st,
         serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0,
-            "daemon_running":false,"activity":"offline","queued":0})
+            "daemon_running":false,"activity":"offline","queued":0,
+            "account":st["account"].clone()})
     );
+    // The account kind comes along (this test's HOME has no Claude Code).
+    let account = st["account"].as_str().unwrap_or_default().to_string();
+    assert!(
+        ["subscription", "api", "cloud", "unknown"].contains(&account.as_str()),
+        "{st}"
+    );
+    // The daemon's view wins: it is what Moss runs with.
+    std::fs::create_dir_all(state.join("daemon")).unwrap();
+    std::fs::write(state.join("daemon/moss-account.txt"), "api\n").unwrap();
+    let st: serde_json::Value =
+        serde_json::from_slice(&run(&["moss", "status", "--json"]).stdout).unwrap();
+    assert_eq!(st["account"], "api", "{st}");
     // Text stuck in Moss's input is said, not silent.
     std::fs::create_dir_all(state.join("moss")).unwrap();
     std::fs::write(state.join("moss/input-busy"), "").unwrap();

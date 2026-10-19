@@ -86,13 +86,20 @@ wait_for_esc() {
 slash() {
   case "$1" in
     /usage)
-      printf '\e[2J\e[H> /usage\n\n  Usage\n  Skills %% of usage\n  Subagents         12%%\n  MCP servers        0%%\n  Loops              3%%\n\n  d to day · w to week\n  Usage credits: 40 left\n\n  Esc to cancel\n'
-      wait_for_esc
-      printf '\e[2J\e[H' ;;
-    /status|/context|/cost|/help|/stats)
-      printf '\e[2J\e[H> %s\n\n  Settings  Status   Config   Usage   Stats\n\n  Version: 2.1.303\n  Model: fake\n\n  Esc to cancel\n' "$1"
-      wait_for_esc
-      printf '\e[2J\e[H' ;;
+      # Taller than the window: its top scrolls off, as on a real 100x50.
+      printf '\n> /usage\n\n  Current session   12%% used\n  Current week      40%% used\n'
+      i=0; while [ $i -lt 60 ]; do printf '  Skills %% of usage, line %s\n' "$i"; i=$((i+1)); done
+      printf '  0%% used\n\n  d to day · w to week\n  Usage credits: 40 left\n\n  Esc to cancel\n'
+      wait_for_esc ;;
+    /status|/context|/help)
+      printf '\n> %s\n\n  Settings  Status   Config   Usage   Stats\n\n  Version: 2.1.303\n  Model: fake\n\n  Esc to cancel\n' "$1"
+      wait_for_esc ;;
+    # A line and straight back to the prompt (an API account's /cost).
+    /cost)
+      printf '\n> /cost\n  Total cost: $0.12\n' ;;
+    # Nothing new at all.
+    /stats)
+      printf '\n> /stats\n' ;;
     /clear)
       sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")
       transcript="$CC_MOSS_FAKE_DIR/$sid.jsonl"

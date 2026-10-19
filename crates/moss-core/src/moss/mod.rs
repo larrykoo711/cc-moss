@@ -2,6 +2,7 @@
 //! lives, what it is called, and what the daemon records about it. Starting
 //! it (tmux) is the binary's job; the rules are here.
 
+pub mod account;
 pub mod chat;
 pub mod digest;
 pub mod guard;
@@ -107,6 +108,14 @@ pub fn read_error(state: &Path) -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
+/// `<state>/daemon/moss-account.txt`: the account kind as the daemon (and
+/// so Moss) sees it.
+pub fn account_path(state: &Path) -> PathBuf {
+    crate::daemon::Paths::new(state)
+        .dir
+        .join("moss-account.txt")
+}
+
 pub fn clear_error(state: &Path) {
     let _ = remove(&error_path(state));
 }
@@ -142,6 +151,9 @@ pub struct Report {
     /// goes in until someone clears it in its terminal.
     #[serde(skip_serializing_if = "std::ops::Not::not")]
     pub input_busy: bool,
+    /// The kind of Claude Code account Moss runs on: `subscription`, `api`,
+    /// `cloud` or `unknown` ([`account`]).
+    pub account: String,
     /// When its last reply came in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_reply_at: Option<String>,
@@ -192,6 +204,7 @@ impl Report {
             activity: activity(enabled, running, daemon_running, false, None),
             queued: 0,
             input_busy: false,
+            account: "unknown".into(),
             last_reply_at: None,
         }
     }
@@ -219,13 +232,13 @@ mod tests {
             serde_json::to_value(&r).unwrap(),
             serde_json::json!({"schema":1,"enabled":true,"running":true,
                 "since":"1970-01-01T00:00:01Z","restarts":2,"session_id":"abc",
-                "daemon_running":true,"activity":"idle","queued":0})
+                "daemon_running":true,"activity":"idle","queued":0,"account":"unknown"})
         );
         let down = Report::new(false, false, Some(&s), false, Some("old".into()));
         assert_eq!(
             serde_json::to_value(&down).unwrap(),
             serde_json::json!({"schema":1,"enabled":false,"running":false,"restarts":0,
-                "daemon_running":false,"activity":"off","queued":0})
+                "daemon_running":false,"activity":"off","queued":0,"account":"unknown"})
         );
         let failing = Report::new(true, false, None, true, Some("no claude".into()));
         assert_eq!(

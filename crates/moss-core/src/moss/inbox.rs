@@ -118,6 +118,16 @@ pub trait Pane {
     /// Make the window at least this big (panels are cut short in a small
     /// one).
     fn fit(&mut self, _columns: u32, _rows: u32) {}
+    /// Where the cursor is, counted from the top of the scrollback, so
+    /// what is drawn after it can be read back even once it scrolled off.
+    fn mark(&mut self) -> Option<i64> {
+        None
+    }
+    /// What the pane holds from line `mark` (see [`Pane::mark`]) to its
+    /// bottom, scrollback included.
+    fn screen_since(&mut self, _mark: i64) -> Result<String, String> {
+        self.screen()
+    }
 }
 
 /// The size Moss's window is started at, and grown to before a command
@@ -553,6 +563,40 @@ pub(crate) mod fake {
         /// What a command shows on Enter, until Escape.
         pub panels: Vec<(String, String)>,
         pub showing: Option<String>,
+        /// What a command prints on Enter before the prompt comes back.
+        pub answers: Vec<(String, String)>,
+        /// What scrolled by above the input box.
+        pub history: String,
+        /// Lines on screen; what is above goes to the scrollback.
+        pub rows: Option<usize>,
+    }
+
+    impl FakePane {
+        fn tail(&self, text: &str) -> String {
+            match self.rows {
+                Some(rows) => {
+                    let lines: Vec<&str> = text.lines().collect();
+                    let from = lines.len().saturating_sub(rows);
+                    lines[from..].join("\n") + "\n"
+                }
+                None => text.to_string(),
+            }
+        }
+
+        fn whole(&self) -> String {
+            if let Some(s) = self.showing.as_ref().or(self.screen_override.as_ref()) {
+                return format!("{}{s}", self.history);
+            }
+            let shown = if self.garbled {
+                "#".repeat(self.input.chars().count())
+            } else {
+                self.input.replace('\n', "\n  ")
+            };
+            format!(
+                "Moss\n{}\u{1b}[2m────\u{1b}[0m\n❯ {shown}\u{1b}[7m \u{1b}[27m\n\u{1b}[2m────\u{1b}[0m\n  ? for shortcuts\n",
+                self.history
+            )
+        }
     }
 
     impl Pane for FakePane {
@@ -574,17 +618,18 @@ pub(crate) mod fake {
             Ok(())
         }
         fn screen(&mut self) -> Result<String, String> {
-            if let Some(s) = self.showing.as_ref().or(self.screen_override.as_ref()) {
-                return Ok(s.clone());
+            if self.history.is_empty() && self.rows.is_none() {
+                if let Some(s) = self.showing.as_ref().or(self.screen_override.as_ref()) {
+                    return Ok(s.clone());
+                }
             }
-            let shown = if self.garbled {
-                "#".repeat(self.input.chars().count())
-            } else {
-                self.input.replace('\n', "\n  ")
-            };
-            Ok(format!(
-                "Moss\n\u{1b}[2m────\u{1b}[0m\n❯ {shown}\u{1b}[7m \u{1b}[27m\n\u{1b}[2m────\u{1b}[0m\n  ? for shortcuts\n"
-            ))
+            Ok(self.tail(&self.whole()))
+        }
+        fn mark(&mut self) -> Option<i64> {
+            Some(0)
+        }
+        fn screen_since(&mut self, _mark: i64) -> Result<String, String> {
+            Ok(self.whole())
         }
         fn key(&mut self, key: &str) -> Result<(), String> {
             self.calls.push(format!("key {key}"));
@@ -593,6 +638,9 @@ pub(crate) mod fake {
                     let typed = std::mem::take(&mut self.input);
                     if let Some((_, panel)) = self.panels.iter().find(|(c, _)| *c == typed) {
                         self.showing = Some(panel.clone());
+                    }
+                    if let Some((_, said)) = self.answers.iter().find(|(c, _)| *c == typed) {
+                        self.history.push_str(&format!("> {typed}\n{said}"));
                     }
                     self.submitted.push(typed);
                 }

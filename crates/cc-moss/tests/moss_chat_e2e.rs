@@ -148,7 +148,9 @@ fn slash_command_shows_its_screen() {
     let shown = reply_to(&w, &usage);
     assert_eq!(shown["command"], "/usage", "{shown}");
     let text = shown["text"].as_str().unwrap();
-    assert!(text.contains("Skills % of usage"), "{text}");
+    // Taller than the window: its top came back from the scrollback.
+    assert!(text.starts_with("  Current session   12% used"), "{text}");
+    assert!(text.contains("Skills % of usage, line 59"), "{text}");
     assert!(text.contains("Usage credits"), "{text}");
     assert!(!text.contains("Esc to cancel"), "{text}");
     assert!(
@@ -161,6 +163,18 @@ fn slash_command_shows_its_screen() {
     // The panel was closed: the next message goes in and is answered.
     let after = say(&w, "back at the prompt?");
     assert_eq!(reply_to(&w, &after)["text"], "echo: back at the prompt?");
+
+    // A line and straight back to the prompt; then nothing at all.
+    let cost = say(&w, "/cost");
+    let costed = reply_to(&w, &cost);
+    assert_eq!(costed["text"], "  Total cost: $0.12", "{costed}");
+    let stats = say(&w, "/stats");
+    assert_eq!(
+        reply_to(&w, &stats)["text"],
+        "That command printed nothing."
+    );
+    let again = say(&w, "still here?");
+    assert_eq!(reply_to(&w, &again)["text"], "echo: still here?");
 
     // /clear: a new transcript, and the next message is still claimed.
     let clear = say(&w, "/clear");
@@ -177,7 +191,7 @@ fn slash_command_shows_its_screen() {
     let answer = reply_to(&w, &next);
     assert_eq!(answer["text"], "echo: after the clear", "{answer}");
     assert_eq!(answer["fallback"], false);
-    assert_eq!(commands(&w), "/usage\n/clear\n");
+    assert_eq!(commands(&w), "/usage\n/cost\n/stats\n/clear\n");
 }
 
 #[test]
