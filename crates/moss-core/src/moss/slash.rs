@@ -86,19 +86,24 @@ pub fn run(pane: &mut dyn Pane, command: &str) -> Result<(), String> {
     }
 }
 
-/// Run a display command and bring its screen back, cleaned; then close
-/// the panel (Esc, and once more if the prompt does not come back).
+/// Run a display command and bring back what it showed, cleaned (empty when
+/// it showed nothing). It is done once the screen settles on something new,
+/// or settles back at the ready prompt (a line printed, or nothing). What
+/// scrolled off the top is read from the scrollback. A panel left open is
+/// closed with Esc, and with a second one only while a panel still shows:
+/// two in a row at an empty prompt open Claude Code's rewind menu.
 pub fn show(pane: &mut dyn Pane, command: &str, t: Timing) -> Result<String, String> {
     let before = pane.screen().unwrap_or_default();
+    let mark = pane.mark();
     run(pane, command)?;
     let mut last = String::new();
     let mut still = Duration::ZERO;
     for _ in 0..steps(t.show, t.poll) {
         pane.wait(t.poll);
         let now = pane.screen().unwrap_or_default();
-        if now == last && now != before {
+        if now == last {
             still += t.poll;
-            if still >= t.settled {
+            if still >= t.settled && (now != before || inbox::input_empty(&now)) {
                 break;
             }
         } else {
@@ -106,8 +111,15 @@ pub fn show(pane: &mut dyn Pane, command: &str, t: Timing) -> Result<String, Str
         }
         last = now;
     }
-    let text = clean(&before, &last, command);
+    let whole = match mark {
+        Some(m) => pane.screen_since(m).unwrap_or_else(|_| last.clone()),
+        None => last.clone(),
+    };
+    let text = clean(&before, &whole, command);
     for _ in 0..2 {
+        if inbox::input_empty(&pane.screen().unwrap_or_default()) {
+            break;
+        }
         let _ = pane.key("Escape");
         if wait_ready(pane, t) {
             break;
@@ -142,7 +154,11 @@ pub fn clean(before: &str, after: &str, command: &str) -> String {
     // Where the panel starts.
     let echo = lines.iter().rposition(|l| {
         let t = l.trim_start_matches(|c: char| c.is_whitespace() || c == '❯' || c == '>');
-        t.trim() == command.trim()
+        // A rule's leftover may trail it.
+        let t = t.trim_end_matches(|c: char| {
+            c.is_whitespace() || ('\u{2500}'..='\u{257f}').contains(&c)
+        });
+        t == command.trim()
     });
     let start = match echo {
         Some(i) => i + 1,
@@ -241,6 +257,64 @@ mod tests {
             "  Settings  Status   Config\n  Version: 2.1.303"
         );
         assert_eq!(clean(&before, "", "/usage"), "");
+        // An echo line with a rule's leftover after it is still the echo.
+        assert_eq!(
+            clean(&before, "> /cost───\n  Total cost: $0.12\n", "/cost"),
+            "  Total cost: $0.12"
+        );
+    }
+
+    #[test]
+    fn slash_show_reads_a_tall_panel_from_the_scrollback() {
+        let mut tall = String::from(
+            "> /usage\n\n  Current session   12% used\n  Current week      40% used\n",
+        );
+        for i in 0..60 {
+            tall.push_str(&format!("  line {i}\n"));
+        }
+        tall.push_str("  0% used\n\n  Esc to cancel\n");
+        let mut pane = FakePane {
+            rows: Some(20),
+            ..FakePane::default()
+        };
+        pane.panels.push(("/usage".into(), tall));
+        let text = show(&mut pane, "/usage", Timing::default()).unwrap();
+        assert!(text.starts_with("  Current session   12% used"), "{text}");
+        assert!(text.ends_with("  0% used"), "{text}");
+    }
+
+    #[test]
+    fn slash_show_takes_a_line_and_the_prompt_back() {
+        let mut pane = FakePane::default();
+        pane.answers
+            .push(("/cost".into(), "  Total cost: $0.12\n".into()));
+        let text = show(&mut pane, "/cost", Timing::default()).unwrap();
+        assert_eq!(text, "  Total cost: $0.12");
+        assert!(
+            !pane.calls.iter().any(|c| c == "key Escape"),
+            "{:?}",
+            pane.calls
+        );
+    }
+
+    #[test]
+    fn slash_show_says_when_nothing_came() {
+        let mut pane = FakePane::default();
+        pane.answers.push(("/stats".into(), String::new()));
+        assert_eq!(show(&mut pane, "/stats", Timing::default()).unwrap(), "");
+        assert!(
+            !pane.calls.iter().any(|c| c == "key Escape"),
+            "{:?}",
+            pane.calls
+        );
+        // Nothing at all changes: done as well, still no Esc.
+        let mut pane = FakePane::default();
+        assert_eq!(show(&mut pane, "/help", Timing::default()).unwrap(), "");
+        assert!(
+            !pane.calls.iter().any(|c| c == "key Escape"),
+            "{:?}",
+            pane.calls
+        );
     }
 
     #[test]

@@ -30,9 +30,15 @@ Put either anywhere in a reply; cc-moss takes it out before the user sees the te
 ## Plan, usage, context, cost
 
 You can't see the user's plan, quota or spend yourself, but the panel can show Claude Code's own screens.
-When asked about the plan, subscription, usage, limits or quota, offer `[[buttons: /usage | /status]]`; about
-how full your context is, `[[buttons: /context]]`; about cost, `[[buttons: /cost]]`. Say in one line that
-tapping one shows it right here. Don't send them to a terminal for these. Other commands (`/login`, `/model`
+Which ones fit depends on the account, written at the top of `SESSIONS.md` ("Claude Code account: …"):
+
+- `subscription`: for plan, usage, limits or quota offer `[[buttons: /usage | /status]]`.
+- `api` (an API key or a third-party gateway) or `cloud` (Bedrock, Vertex, Foundry): there is no plan
+  panel; offer `[[buttons: /cost | /status]]`.
+- `unknown`: offer `[[buttons: /status]]`.
+
+For how full your context is, `[[buttons: /context]]`. Say in one line that tapping one shows it right here.
+Don't send them to a terminal for these. Other commands (`/login`, `/model`
 and the rest) need the terminal; say so if asked.
 
 ## "[动态]" and "[Update]" lines

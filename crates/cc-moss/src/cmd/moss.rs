@@ -379,6 +379,12 @@ pub fn report() -> moss::Report {
     } else {
         None
     };
+    // What the daemon (and so Moss) runs with; else this process's view.
+    r.account = std::fs::read_to_string(moss::account_path(&state))
+        .ok()
+        .map(|t| t.trim().to_string())
+        .filter(|t| !t.is_empty())
+        .unwrap_or_else(|| moss::account::current().as_str().to_string());
     let waiting = reply::waiting_path(&home).exists();
     r.activity = moss::activity(on, running, daemon_running, waiting, turn);
     r
@@ -806,6 +812,8 @@ fn is_executable(path: &Path) -> bool {
 pub struct Looker {
     keeper: Keeper,
     talk: super::moss_talk::Talk,
+    /// The Claude Code account kind and when it was read.
+    account: Option<(moss::account::Account, Instant)>,
     /// `[moss] digest`.
     digest: bool,
     socket: String,
@@ -853,6 +861,7 @@ impl Looker {
         Some(Looker {
             keeper: Keeper::new(steps),
             talk,
+            account: None,
             digest: true,
             socket,
             state: state.to_path_buf(),
@@ -1128,10 +1137,24 @@ impl Looker {
                 }
             };
             let home_dir = moss::home_dir(&self.state);
+            // Read at most once a minute: ~/.claude.json can be large.
+            let account = match self.account {
+                Some((a, at)) if now < at + SESSIONS_EVERY => a,
+                _ => {
+                    let a = moss::account::current();
+                    self.account = Some((a, now));
+                    let _ = home::write_if_changed(
+                        &moss::account_path(&self.state),
+                        &format!("{}\n", a.as_str()),
+                    );
+                    a
+                }
+            }
+            .as_str();
             if let Err(e) = home::write_generated(
                 &home_dir,
                 home::SESSIONS_MD,
-                &home::sessions_md_since(&rows, now_ms() - DAY_MS),
+                &home::sessions_md_since(&rows, now_ms() - DAY_MS, Some(account)),
             ) {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }

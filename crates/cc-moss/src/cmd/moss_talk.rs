@@ -96,6 +96,42 @@ impl Pane for TmuxPane<'_> {
         std::thread::sleep(how_long);
     }
 
+    fn mark(&mut self) -> Option<i64> {
+        let target = self.target().ok()?;
+        let at = self
+            .run(&[
+                "display-message",
+                "-p",
+                "-t",
+                &target,
+                "#{history_size} #{cursor_y}",
+            ])
+            .ok()?;
+        let mut it = at.split_whitespace().map(|n| n.parse::<i64>().ok());
+        Some(it.next()?? + it.next()??)
+    }
+
+    fn screen_since(&mut self, mark: i64) -> Result<String, String> {
+        let target = self.target()?;
+        let history: i64 = self
+            .run(&["display-message", "-p", "-t", &target, "#{history_size}"])?
+            .trim()
+            .parse()
+            .map_err(|_| "tmux did not say its history size".to_string())?;
+        // Lines above the visible screen are negative.
+        let start = (mark - history).to_string();
+        self.run(&[
+            "capture-pane",
+            "-p",
+            "-J",
+            "-e",
+            "-S",
+            &start,
+            "-t",
+            &target,
+        ])
+    }
+
     fn fit(&mut self, columns: u32, rows: u32) {
         let Ok(target) = self.target() else {
             return;
@@ -375,11 +411,8 @@ impl Talk {
                     Ok(text) if !text.trim().is_empty() => answer(self, &text, false, false),
                     Ok(_) => answer(
                         self,
-                        tr!(
-                            "Nothing came back from that command; see Moss's terminal.",
-                            "这个命令没有显示出东西；去 Moss 的终端看看。"
-                        ),
-                        true,
+                        tr!("That command printed nothing.", "这个命令没有输出。"),
+                        false,
                         false,
                     ),
                     Err(e) => failed(self, &e),
