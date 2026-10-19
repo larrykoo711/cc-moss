@@ -1357,6 +1357,14 @@ mod tests {
     }
 
     #[test]
+    fn sessions_skill_keeps_updates_quiet() {
+        // Updates are answered silently unless the user has to act.
+        assert!(SESSIONS_SKILL.contains("`[[silent]]` by default"));
+        assert!(SESSIONS_SKILL.contains("Never announce that a session finished a turn"));
+        assert!(SESSIONS_SKILL.contains("one or two short sentences"));
+    }
+
+    #[test]
     fn home_files_split_managed_from_users() {
         let all = files("/bin/cc-moss", Path::new("/s"));
         let kind = |p: &str| all.iter().find(|f| f.path == p).map(|f| f.kind);
