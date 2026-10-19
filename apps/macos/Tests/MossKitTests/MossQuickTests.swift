@@ -10,7 +10,7 @@ import Testing
     @Test func theItemsAreActionsThenCommandsForTheAccount() {
         #expect(ids(MossQuick.items(account: .subscription)) == [
             "action:needs-you", "action:stuck", "action:today",
-            "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats", "cmd:/help", "cmd:/clear", "cmd:/compact",
+            "cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats", "cmd:/help",
         ])
         #expect(!ids(MossQuick.items(account: .api)).contains("cmd:/usage"))
         #expect(ids(MossQuick.items(account: .api)).contains("cmd:/cost"))
@@ -26,10 +26,18 @@ import Testing
         #expect(usage?.title(.zh) == "用量" && usage?.text(.zh) == "/usage")
     }
 
-    @Test func clearAndCompactOnlyBehindMore() {
-        let ranked = MossQuick.ranked(MossQuick.items(), uses: [], context: .init(), now: now)
-        #expect(!ids(ranked).contains("cmd:/clear") && !ids(ranked).contains("cmd:/compact"))
-        #expect(MossQuick.items().filter(\.careful).map(\.id) == ["cmd:/clear", "cmd:/compact"])
+    @Test func clearAndCompactAreNotOffered() {
+        let all = ids(MossQuick.items())
+        #expect(!all.contains("cmd:/clear") && !all.contains("cmd:/compact"))
+        #expect(MossQuick.item(sent: "/clear") == nil, "typed, it's still sent, just not counted")
+    }
+
+    @Test func moreListsOnlyWhatTheBarDoesntShowOnce() {
+        let ranked = MossQuick.ranked(MossQuick.items(account: .subscription), uses: [], context: .init(), now: now)
+        let more = MossQuick.overflow(ranked, shown: 3)
+        #expect(ids(more) == ["cmd:/usage", "cmd:/status", "cmd:/context", "cmd:/stats", "cmd:/help"])
+        #expect(Set(ids(more)).isDisjoint(with: ids(Array(ranked.prefix(3)))))
+        #expect(MossQuick.overflow(ranked, shown: ranked.count).isEmpty)
     }
 
     @Test func withNoHistoryTheDefaultOrderStands() {

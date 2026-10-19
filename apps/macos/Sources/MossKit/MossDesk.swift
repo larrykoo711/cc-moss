@@ -1,6 +1,43 @@
 import Foundation
 import Observation
 
+/// A reply is on its way: the thinking bubble at the end of the
+/// conversation, from the moment you send (a command never opens a turn,
+/// and status polls lag behind).
+public struct MossWaiting: Equatable, Sendable {
+    /// "/usage" when what you sent is a command: "Running /usage…".
+    public var command: String?
+    /// Still in line behind something else Moss is doing.
+    public var queued: Bool
+
+    public init(command: String? = nil, queued: Bool = false) {
+        self.command = command
+        self.queued = queued
+    }
+
+    /// Waiting when your newest message has no reply yet and didn't fail;
+    /// otherwise only while Moss is in a turn of its own.
+    public static func of(_ messages: [MossMessage], activity: MossActivity?) -> MossWaiting? {
+        if let i = messages.lastIndex(where: { $0.from == .you }) {
+            let mine = messages[i]
+            // A reply to it, or anything Moss said after it (a reply cc-moss couldn't tie back).
+            let answered = messages.contains { $0.from == .moss && $0.replyTo == mine.id }
+                || messages[(i + 1)...].contains { $0.from == .moss && $0.replyTo == nil }
+            let open = mine.delivery == nil || mine.delivery == .sending || mine.delivery == .queued || mine.delivery == .sent
+            if open && !answered {
+                let text = mine.text.trimmingCharacters(in: .whitespacesAndNewlines)
+                let command = MossCommand.looksLikeCommand(text)
+                    ? text.split(whereSeparator: \.isWhitespace).first.map { String($0).lowercased() } : nil
+                // In line only when Moss is busy with something else; queued with
+                // Moss free means it's being handed over right now.
+                let queued = mine.delivery == .queued && (activity == .thinking || activity == .waiting)
+                return MossWaiting(command: command, queued: queued)
+            }
+        }
+        return activity == .thinking ? MossWaiting() : nil
+    }
+}
+
 /// The Moss page's state: the conversation cc-moss keeps, what the panel
 /// sent that cc-moss hasn't logged yet, and Moss's status. Sending goes
 /// through `say` (`cc-moss moss say`); nothing here touches Moss itself.
@@ -37,6 +74,9 @@ public final class MossDesk {
     }
 
     public var activity: MossActivity? { status?.activity }
+
+    /// What the conversation's end shows while a reply is on its way, if anything.
+    public var waiting: MossWaiting? { MossWaiting.of(messages, activity: activity) }
 
     /// Moss can take a message now. Unknown status: let cc-moss decide.
     public var canTalk: Bool { status?.activity.canTalk ?? true }

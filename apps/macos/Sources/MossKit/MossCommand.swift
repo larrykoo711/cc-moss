@@ -36,8 +36,6 @@ public struct MossCommand: Identifiable, Equatable, Sendable {
         MossCommand(name: "/cost", details: ("Cost so far", "这次花了多少"), accounts: [.api, .cloud]),
         MossCommand(name: "/stats", details: ("Stats", "使用统计")),
         MossCommand(name: "/help", details: ("Help", "帮助")),
-        MossCommand(name: "/clear", details: ("Clear Moss's conversation", "清空 Moss 的对话")),
-        MossCommand(name: "/compact", details: ("Compact Moss's conversation", "压缩 Moss 的对话")),
     ]
 
     /// Whether `name` (`/usage`, any case) is one Moss runs from the panel.
