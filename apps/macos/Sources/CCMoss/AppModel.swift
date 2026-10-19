@@ -178,6 +178,8 @@ final class AppModel {
     /// and the cards that answer them.
     var asks: [Ask] = []
     var askDesk = AskDesk()
+    /// Failed `ask list` reads in a row (one alone changes nothing).
+    @ObservationIgnored var askFeed = AskFeed()
     /// Everything waiting on you, worked through on the panel's "To Do" page.
     var askQueue = AskQueue()
     /// The panel page the side rail has picked.
