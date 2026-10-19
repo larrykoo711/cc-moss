@@ -397,6 +397,12 @@ fn ls_on_an_unchanged_registry_writes_nothing() {
     );
     // The first look may record what it finds (the lost session, the scan mark).
     ls_json(dir.path(), false);
+    // Writes are announced on the one file the app watches.
+    let changed = dir.path().join("registry.changed");
+    let announced = std::fs::metadata(&changed)
+        .expect("a write touches registry.changed")
+        .modified()
+        .unwrap();
     let db = dir.path().join("registry.db");
     let before = std::fs::read(&db).unwrap();
     let modified = std::fs::metadata(&db).unwrap().modified().unwrap();
@@ -417,6 +423,19 @@ fn ls_on_an_unchanged_registry_writes_nothing() {
         "registry.db was written"
     );
     assert!(std::fs::read(&db).unwrap() == before, "registry.db changed");
+    assert_eq!(
+        std::fs::metadata(&changed).unwrap().modified().unwrap(),
+        announced,
+        "a look announced a change"
+    );
+    // A real change is announced.
+    hook(
+        dir.path(),
+        "session-end",
+        &end_json("A", "prompt_input_exit"),
+        Some(std::process::id()),
+    );
+    assert!(std::fs::metadata(&changed).unwrap().modified().unwrap() > announced);
 }
 
 /// `claude agents` starts a process; the app refreshes often, so ask it at

@@ -254,7 +254,10 @@ final class AppModel {
     private func watch(_ dir: String) {
         guard dir != watchedDir else { return }
         watcher?.stop()
-        watcher = DirectoryWatcher(path: dir, latency: 1.0, filter: { StateChange.matters($0, in: dir) }) { [weak self] in
+        watcher = DirectoryWatcher(path: dir, latency: 1.0, filter: { path in
+            let announced = FileManager.default.fileExists(atPath: dir + "/registry.changed")
+            return StateChange.matters(path, in: dir, announced: announced)
+        }) { [weak self] in
             Task { @MainActor in self?.changed() }
         }
         watchedDir = dir

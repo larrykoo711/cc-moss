@@ -34,6 +34,26 @@ pub struct Registry {
     conn: Connection,
     /// The schema version on disk when it is newer than this binary's.
     newer: Option<i64>,
+    /// Touched when this handle closes after changing a row (see
+    /// [`CHANGED_FILE`]); none for an in-memory registry.
+    stamp: Option<std::path::PathBuf>,
+    /// Rows changed by opening (migrations), so they don't count.
+    opened_changes: u64,
+}
+
+/// Beside the registry: touched whenever a cc-moss process closes the
+/// registry after writing to it. The app watches this one file instead of
+/// the database, whose SQLite side files come and go on every read.
+pub const CHANGED_FILE: &str = "registry.changed";
+
+impl Drop for Registry {
+    fn drop(&mut self) {
+        if let Some(stamp) = &self.stamp {
+            if self.conn.total_changes() > self.opened_changes {
+                let _ = std::fs::write(stamp, b"");
+            }
+        }
+    }
 }
 
 /// A write was refused because the registry was written by a newer cc-moss,
@@ -75,7 +95,10 @@ impl Registry {
         conn.busy_timeout(BUSY_TIMEOUT)?;
         enable_wal(&conn)?;
         conn.pragma_update(None, "synchronous", "NORMAL")?;
-        Self::init(conn)
+        let mut registry = Self::init(conn)?;
+        registry.stamp = path.parent().map(|dir| dir.join(CHANGED_FILE));
+        registry.opened_changes = registry.conn.total_changes();
+        Ok(registry)
     }
 
     pub fn open_in_memory() -> Result<Self> {
@@ -91,11 +114,18 @@ impl Registry {
             return Ok(Registry {
                 conn,
                 newer: Some(version),
+                stamp: None,
+                opened_changes: 0,
             });
         }
         migrate(&mut conn)?;
         ensure_columns(&conn)?;
-        Ok(Registry { conn, newer: None })
+        Ok(Registry {
+            conn,
+            newer: None,
+            stamp: None,
+            opened_changes: 0,
+        })
     }
 
     /// The on-disk schema version when a newer cc-moss wrote this registry.
