@@ -229,6 +229,19 @@ impl<R: Runner> Tmux<R> {
             .and_then(|out| parse_pane(&out))
     }
 
+    /// Each session's display name ([`NAME_OPTION`]) by session id, empty
+    /// where none is set; `None` when tmux did not answer.
+    pub fn display_names(&self) -> Option<std::collections::HashMap<String, String>> {
+        let format = format!("#{{session_id}}{SEP}#{{{NAME_OPTION}}}");
+        let out = self.run(&["list-sessions", "-F", &format]).ok()?;
+        Some(
+            out.lines()
+                .filter_map(|l| l.split_once(SEP))
+                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .collect(),
+        )
+    }
+
     /// Give session `session_id` (`$N`) its own display name, for terminal
     /// titles ([`NAME_OPTION`]).
     pub fn set_display_name(&self, session_id: &str, name: &str) -> Result<()> {

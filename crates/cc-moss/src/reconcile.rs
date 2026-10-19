@@ -49,9 +49,57 @@ pub fn run() -> Result<Registry> {
             let _ = crate::cmd::hook::sync_tmux_name_of(&registry, &slot);
         }
     }
+    label_tmux(&registry);
     record_lost(&registry)?;
     registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
+}
+
+/// Give every running session's tmux session its own name for terminal
+/// titles where it is missing or out of date (sessions from before titles,
+/// and idle ones that fire no hook). One tmux call per server, then only the
+/// ones that differ; by session id, the slot that owns the tmux session
+/// only. Moss's server is the keeper's. Nothing goes to the registry.
+fn label_tmux(registry: &Registry) {
+    let Ok(slots) = registry.slots() else {
+        return;
+    };
+    let moss_sockets: Vec<&str> = slots
+        .iter()
+        .filter(|s| s.is_moss())
+        .filter_map(|s| s.tmux.as_ref().map(|t| t.socket.as_str()))
+        .collect();
+    let mut servers: std::collections::HashMap<
+        String,
+        Option<std::collections::HashMap<String, String>>,
+    > = std::collections::HashMap::new();
+    for slot in &slots {
+        if slot.is_moss() || slot.status != Status::Running {
+            continue;
+        }
+        let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
+            continue;
+        };
+        let Some(id) = loc.session_id.as_deref() else {
+            continue;
+        };
+        if moss_sockets.contains(&loc.socket.as_str())
+            || !registry.is_tmux_primary(slot).unwrap_or(false)
+        {
+            continue;
+        }
+        let tmux = Tmux::with_socket(Socket::Path(loc.socket.clone()));
+        let shown = servers
+            .entry(loc.socket.clone())
+            .or_insert_with(|| tmux.display_names());
+        let Some(shown) = shown else {
+            continue;
+        };
+        // Only a session tmux has, and only when it says something else.
+        if shown.get(id).is_some_and(|now| now != name) {
+            let _ = tmux.set_display_name(id, name);
+        }
+    }
 }
 
 /// How often to ask Claude Code for running sessions the hooks never saw.

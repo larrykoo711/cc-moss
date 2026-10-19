@@ -51,6 +51,23 @@ fn new_sessions_carry_their_own_name_for_the_tab_title() {
 }
 
 #[test]
+fn ls_labels_sessions_that_have_no_title_yet() {
+    let w = World::new("ls-title");
+    w.new_session("api");
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&"host_api".to_string())
+            .then_some(())
+    });
+    w.session_id("api");
+    // A session from before cc-moss set titles: no name on it.
+    w.tmux(&["set-option", "-u", "-t", "=host_api:", "@cc-moss-name"]);
+    assert_eq!(display_name(&w, "host_api").0, "");
+    common::ls_json(&w.state(), false);
+    assert_eq!(display_name(&w, "host_api").0, "api");
+}
+
+#[test]
 fn bypass_in_pane() {
     let w = World::new("bypass-pane");
     // No `default_args`: bypass comes from cc-moss itself.
