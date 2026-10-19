@@ -394,7 +394,7 @@ const TASKS = [
   {id:'T2.1', t:'守护进程', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'kill -9 后自动回来', steps:[]},
   {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'—', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
   {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'doing', sdd:'—', ac:'面板发一句、看到回复', steps:[]},
-  {id:'T2.4', t:'Doctor', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'体检报告正确、关闭先问', steps:[]},
+  {id:'T2.4', t:'Doctor', repo:'cc-moss', dep:'T2.3,T1.3', st:'doing', sdd:'—', ac:'体检报告正确、关闭先问', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},

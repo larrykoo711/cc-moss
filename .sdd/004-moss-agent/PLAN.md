@@ -161,7 +161,7 @@ R1 ◄── 全部
 | **T2.1** 守护进程 | cc-moss | — | ✅ Done | done/T2.1-daemon.spec.md | kill -9 后自动回来 |
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | 🟨 In Progress | — | 面板发一句、看到回复 |
-| **T2.4** Doctor | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 体检报告正确、关闭先问 |
+| **T2.4** Doctor | cc-moss | T2.3,T1.3 | 🟨 In Progress | — | 体检报告正确、关闭先问 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
