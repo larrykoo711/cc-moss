@@ -363,7 +363,7 @@ pub fn sessions_md_since(
         return out;
     }
     out.push_str(
-        "```text\n| Name | State | Folder | Last active | Note |\n|---|---|---|---|---|\n",
+        "```text\n| Name | State | Folder | Last active | Note | Id |\n|---|---|---|---|---|---|\n",
     );
     for (st, s) in shown {
         let state = match (st, s.attention.as_deref(), s.busy) {
@@ -388,12 +388,14 @@ pub fn sessions_md_since(
             .or_else(|| s.notes.goal.clone())
             .unwrap_or_default();
         out.push_str(&format!(
-            "| {} | {} | {} | {} | {} |\n",
+            "| {} | {} | {} | {} | {} | {} |\n",
             cell(&name, 60),
             cell(&state, 80),
             cell(&s.cwd, 120),
             rfc3339(s.last_active_at_ms),
-            cell(&note, 120)
+            cell(&note, 120),
+            // The session id's first letters: enough to name it to cc-moss.
+            cell(&s.session_id.chars().take(8).collect::<String>(), 8)
         ));
     }
     out.push_str("```\n");
@@ -678,6 +680,12 @@ mod tests {
         ];
         let md = sessions_md(&rows);
         assert!(md.contains("| web | interrupted | /p/web |"), "{md}");
+        assert!(md.contains("| Note | Id |"), "{md}");
+        let web = md.lines().find(|l| l.starts_with("| web")).unwrap();
+        assert!(
+            web.ends_with(" | web-0000 |"),
+            "the id, to name it by: {web}"
+        );
         assert!(md.contains("| api | working | /p/api |"), "{md}");
         assert!(md.find("| web").unwrap() < md.find("| api").unwrap());
         assert!(!md.contains("| old") && !md.contains("| moss"), "{md}");

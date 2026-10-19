@@ -1427,6 +1427,10 @@ mod tests {
         assert!(CLAUDE_MD.contains("with `[[silent]]`, unless the user has to act now"));
         assert!(CLAUDE_MD.contains("Never announce that a session finished a turn"));
         assert!(CLAUDE_MD.contains("one or two short sentences"));
+        // Finding a session ends in cards, never a plain list.
+        assert!(CLAUDE_MD.contains("[[sessions: <name or Id>"));
+        assert!(SESSIONS_SKILL.contains("## Finding a session"));
+        assert!(SESSIONS_SKILL.contains("Never\n  list sessions as plain text"));
     }
 
     #[test]

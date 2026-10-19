@@ -503,6 +503,19 @@ impl Registry {
         Ok(renamed)
     }
 
+    /// What a session last did, from its transcript when the hooks missed
+    /// it: the prompt's preview and when, if later than what is recorded.
+    /// True when it changed anything.
+    pub fn refresh_activity(&self, slot_id: &str, prompt: &str, at_ms: i64) -> Result<bool> {
+        let preview = crate::slot::prompt_preview(prompt);
+        let changed = self.write()?.execute(
+            "UPDATE slots SET last_prompt = COALESCE(?2, last_prompt), last_active_at = ?3
+             WHERE slot_id = ?1 AND last_active_at < ?3",
+            params![slot_id, preview, at_ms],
+        )?;
+        Ok(changed == 1)
+    }
+
     /// Whether Claude is working on a prompt (from outside the hooks).
     pub fn set_busy(&self, slot_id: &str, busy: bool) -> Result<()> {
         self.write()?.execute(

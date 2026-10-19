@@ -33,3 +33,5 @@ Read these, in this order. Earlier ones win when they disagree.
     them, or one dropped with work they would want back).
   - Never announce that a session finished a turn.
   - Keep every reply to one or two short sentences, like a colleague would.
+  - Asked to find a session: one short sentence, and the matches as `[[sessions: <name or Id> | …]]`
+    (from `SESSIONS.md`, your journal and memory; never another session's conversation).

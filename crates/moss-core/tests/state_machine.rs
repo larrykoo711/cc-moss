@@ -47,6 +47,24 @@ fn only_slot(reg: &Registry) -> Slot {
 }
 
 #[test]
+fn activity_refreshes_from_a_later_prompt_only() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    let id = only_slot(&reg).slot_id;
+    // The transcript says more happened since: taken.
+    assert!(reg
+        .refresh_activity(&id, "fix the login page\nand more", 5_000)
+        .unwrap());
+    let s = only_slot(&reg);
+    assert_eq!(s.last_prompt.as_deref(), Some("fix the login page"));
+    assert_eq!(s.last_active_at_ms, 5_000);
+    // Older than what the registry has: left alone.
+    assert!(!reg.refresh_activity(&id, "old", 2_000).unwrap());
+    assert_eq!(only_slot(&reg).last_active_at_ms, 5_000);
+}
+
+#[test]
 fn startup_creates_running_slot() {
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(

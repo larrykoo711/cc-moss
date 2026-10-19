@@ -572,6 +572,7 @@ impl Talk {
             silent: parsed.silent || routine,
             buttons: parsed.buttons,
             quick: parsed.quick,
+            sessions: self.sessions(&parsed.sessions, now_ms),
             ..Line::message(
                 &inbox::new_id(now_ms),
                 &rfc3339(now_ms),
@@ -579,6 +580,22 @@ impl Talk {
                 &parsed.text,
             )
         }
+    }
+
+    /// The sessions Moss pointed at, checked against the registry.
+    fn sessions(&self, items: &[String], now_ms: i64) -> Vec<String> {
+        if items.is_empty() {
+            return Vec::new();
+        }
+        let db = self.state.join("registry.db");
+        let slots = if db.exists() {
+            Registry::open(&db)
+                .and_then(|r| r.slots())
+                .unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        markers::resolve_sessions(items, &slots, now_ms)
     }
 
     /// `<home>/input-busy` while text that could not be cleared blocks

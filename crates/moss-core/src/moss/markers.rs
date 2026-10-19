@@ -12,6 +12,68 @@ pub struct Parsed {
     /// What to pin on the panel's quick bar: built-in action ids and
     /// Claude Code commands the panel may run.
     pub quick: Vec<String>,
+    /// Sessions Moss points at (`[[sessions:]]`), as written: names, slot
+    /// ids or id prefixes; [`resolve_sessions`] makes them slot ids.
+    pub sessions: Vec<String>,
+}
+
+/// At most this many sessions in one reply.
+const MAX_SESSIONS: usize = 6;
+
+/// Closed sessions this recent can still be pointed at.
+const CLOSED_WITHIN_MS: i64 = 30 * 86_400_000;
+
+/// An id prefix this long or longer counts.
+const MIN_PREFIX: usize = 6;
+
+/// The slot ids of the sessions `items` name, in order, each once. An item
+/// is a session's name, its tmux name, its slot id, or a prefix (six or
+/// more characters) of its slot id or session id. Open sessions and those
+/// closed in the last 30 days count, Moss never; an item that names none or
+/// several is dropped.
+pub fn resolve_sessions(items: &[String], slots: &[crate::slot::Slot], now_ms: i64) -> Vec<String> {
+    use crate::slot::{Slot, Status};
+    let known: Vec<&Slot> = slots
+        .iter()
+        .filter(|s| !s.is_moss())
+        .filter(|s| {
+            s.status != Status::Closed
+                || s.ended_at_ms.unwrap_or(s.last_active_at_ms) >= now_ms - CLOSED_WITHIN_MS
+        })
+        .collect();
+    let mut out: Vec<String> = Vec::new();
+    for item in items {
+        let q = item.as_str();
+        let long = q.chars().count() >= MIN_PREFIX;
+        let tiers: [&dyn Fn(&Slot) -> bool; 5] = [
+            &|s| s.name.as_deref() == Some(q),
+            &|s| s.tmux.as_ref().and_then(|t| t.session_name.as_deref()) == Some(q),
+            &|s| s.slot_id == q,
+            &|s| long && s.slot_id.starts_with(q),
+            &|s| {
+                long && std::iter::once(&s.session_id)
+                    .chain(&s.session_ids)
+                    .any(|id| id.starts_with(q))
+            },
+        ];
+        for tier in tiers {
+            let found: Vec<&&Slot> = known.iter().filter(|s| tier(s)).collect();
+            let open: Vec<&&Slot> = found
+                .iter()
+                .copied()
+                .filter(|s| s.status != Status::Closed)
+                .collect();
+            let pick = if open.is_empty() { found } else { open };
+            match pick.as_slice() {
+                [] => continue,
+                [one] if !out.contains(&one.slot_id) => out.push(one.slot_id.clone()),
+                // Named already, or several: no telling which.
+                _ => {}
+            }
+            break;
+        }
+    }
+    out
 }
 
 /// At most this many buttons; more would not fit a chat bubble.
@@ -55,6 +117,13 @@ pub fn parse(reply: &str) -> Parsed {
             for label in list.split('|').map(str::trim).filter(|l| !l.is_empty()) {
                 if out.buttons.len() < MAX_BUTTONS && !out.buttons.iter().any(|b| b == label) {
                     out.buttons.push(label.to_string());
+                }
+            }
+            true
+        } else if let Some(list) = strip_prefix_ci(inner, "sessions:") {
+            for item in list.split('|').map(str::trim).filter(|i| !i.is_empty()) {
+                if out.sessions.len() < MAX_SESSIONS && !out.sessions.iter().any(|s| s == item) {
+                    out.sessions.push(item.to_string());
                 }
             }
             true
@@ -124,6 +193,79 @@ mod tests {
         assert_eq!(p.text, "Restore it now?");
         assert_eq!(p.buttons, ["好的", "先不用"]);
         assert!(!p.silent);
+    }
+
+    fn slot(id: &str, sid: &str, name: Option<&str>) -> crate::slot::Slot {
+        crate::slot::Slot {
+            slot_id: id.into(),
+            agent: "claude".into(),
+            session_id: sid.into(),
+            session_ids: vec![sid.into()],
+            name: name.map(String::from),
+            cwd: "/w".into(),
+            pid: None,
+            pid_start: None,
+            tmux: None,
+            status: crate::slot::Status::Running,
+            end_reason: None,
+            notes: Default::default(),
+            launch_args: vec![],
+            transcript_path: None,
+            busy: false,
+            attention: None,
+            last_prompt: None,
+            restore_started_at_ms: None,
+            role: None,
+            created_at_ms: 0,
+            last_active_at_ms: 0,
+            ended_at_ms: None,
+        }
+    }
+
+    #[test]
+    fn reply_markers_sessions() {
+        const DAY: i64 = 86_400_000;
+        let now = 100 * DAY;
+        let mut moss = slot("SLOTMOSS", "99999999-moss", Some("Moss"));
+        moss.role = Some("moss".into());
+        let mut old = slot("SLOTOLD1", "77777777-old", Some("ancient"));
+        old.status = crate::slot::Status::Closed;
+        old.ended_at_ms = Some(now - 40 * DAY);
+        let mut recent = slot("SLOTDONE", "66666666-done", Some("docs"));
+        recent.status = crate::slot::Status::Closed;
+        recent.ended_at_ms = Some(now - 2 * DAY);
+        let slots = vec![
+            slot("SLOTAPI1", "a1b2c3d4-0000", Some("api")),
+            slot("SLOTWEB1", "e5f6a7b8-0000", Some("web")),
+            slot("SLOTTWIN", "abcabc11-0000", Some("twin")),
+            slot("SLOTTWIN2", "abcabc22-0000", Some("twin2")),
+            moss,
+            old,
+            recent,
+        ];
+        let p = parse(
+            "Two match. [[sessions: api | e5f6a7b8 | SLOTDONE | ancient | Moss | api | abcabc | nobody]] [[buttons: Open | Later]] [[quick: today]]",
+        );
+        assert_eq!(p.text, "Two match.");
+        assert_eq!(p.buttons, ["Open", "Later"]);
+        assert_eq!(p.quick, ["today"]);
+        // As written, repeats once, at most six.
+        assert_eq!(
+            p.sessions,
+            ["api", "e5f6a7b8", "SLOTDONE", "ancient", "Moss", "abcabc"]
+        );
+        // By name, by session id prefix, by slot id; closed within 30 days.
+        // Unknown, Moss, ambiguous (abcabc) and closed long ago are dropped.
+        assert_eq!(
+            resolve_sessions(&p.sessions, &slots, now),
+            ["SLOTAPI1", "SLOTWEB1", "SLOTDONE"]
+        );
+        assert!(resolve_sessions(&["nobody".into()], &slots, now).is_empty());
+        // At most six, and with silent too.
+        let p = parse("[[silent]][[sessions: a|b|c|d|e|f|g|h]]");
+        assert!(p.silent);
+        assert_eq!(p.sessions.len(), 6);
+        assert!(parse("plain").sessions.is_empty());
     }
 
     #[test]
