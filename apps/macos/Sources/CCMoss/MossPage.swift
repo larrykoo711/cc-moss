@@ -22,6 +22,7 @@ struct MossPage: View {
             if desk.messages.isEmpty {
                 MossIntro(enabled: desk.canTalk, muted: desk.activity == .off) { model.doMoss($0) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { MossGuessInset(model: model) }
             } else {
                 MossConversation(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -288,6 +289,13 @@ private struct MossConversation: View {
                 .padding(.bottom, 6)
             }
             .scrollIndicators(.never)
+            // Moss's guess sits under the conversation, which ends above it:
+            // it never covers the last reply or card (user 2026-10-19).
+            .safeAreaInset(edge: .bottom, spacing: 0) { MossGuessInset(model: model) }
+            .onChange(of: model.mossShownGuess != nil) { _, _ in
+                grewAt = Date()
+                if following { toEnd(proxy) }
+            }
             .defaultScrollAnchor(model.mossStartAtTop ? .top : .bottom)
             .onAppear {
                 if !model.mossStartAtTop { proxy.scrollTo(Self.bottom, anchor: .bottom) }
@@ -425,6 +433,9 @@ private struct MossMessageView: View {
                                              mentions: m.fallback ? [] : mentionNames, model: model)
                             }
                         }
+                        // A mention's card goes below (or above) all of these words,
+                        // never over a line that holds another mention.
+                        .mentionBlock()
                         .padding(.horizontal, 11)
                         .padding(.vertical, 8)
                     }
@@ -1231,28 +1242,6 @@ private struct MossInputBar: View {
                 .disabled(blocked != nil)
                 .opacity(blocked == nil ? 1 : 0.45)
         }
-        // Moss's guess floats just above the bar, faint; it never moves anything.
-        .overlay(alignment: .topLeading) {
-            if let guess = shownGuess {
-                MossGuessBadge(text: guess) {
-                    model.mossTyping = true
-                } close: {
-                    model.mossGuessHiddenFor = newestReply
-                }
-                // Above the bar's top edge (the bar pads its row by 10).
-                .offset(y: -42)
-                .transition(.opacity)
-            }
-        }
-        .animation(.easeOut(duration: 0.18), value: shownGuess)
-    }
-
-    private var newestReply: String { model.mossDesk.chat.last { $0.from == .moss }?.id ?? "none" }
-
-    /// The guess, unless closed for this reply or Moss can't take a message.
-    private var shownGuess: String? {
-        guard blocked == nil, let s = suggestion, model.mossGuessHiddenFor != newestReply else { return nil }
-        return s
     }
 
     private var text: String {
@@ -1428,6 +1417,45 @@ private struct MossIconButton: View {
 
 /// Moss's guess at your reply, floating faintly over the quick bar: a click
 /// opens typing with it filled in; × puts it away until Moss says something new.
+extension AppModel {
+    private var newestMossReply: String { mossDesk.chat.last { $0.from == .moss }?.id ?? "none" }
+
+    /// Moss's guess at your reply, shown above the bar: unless you're typing,
+    /// closed it for this reply, or Moss can't take a message.
+    var mossShownGuess: String? {
+        guard !mossTyping, mossDesk.status?.inputBlocked() == nil,
+              let s = Suggestion.prefill(text: "", touched: false, suggestion: mossSuggestion),
+              mossGuessHiddenFor != newestMossReply else { return nil }
+        return s
+    }
+
+    func hideMossGuess() {
+        mossGuessHiddenFor = newestMossReply
+    }
+}
+
+/// The guess under the conversation, on the page's background.
+private struct MossGuessInset: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+        Group {
+            if let guess = model.mossShownGuess {
+                MossGuessBadge(text: guess) {
+                    model.mossTyping = true
+                } close: {
+                    model.hideMossGuess()
+                }
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.18), value: model.mossShownGuess)
+    }
+}
+
 private struct MossGuessBadge: View {
     let text: String
     let open: () -> Void
