@@ -51,7 +51,8 @@ extension AppModel {
         }
     }
 
-    /// The pointer came onto a mention: its card after a moment.
+    /// The pointer came onto a mention: its card after a moment, or at once
+    /// when another mention's card is already showing.
     func mentionEntered(_ id: String, anchor: CGRect) {
         mentionPointer.enter(id)
         mentionHide?.cancel()
@@ -60,6 +61,10 @@ extension AppModel {
             return
         }
         mentionShow?.cancel()
+        if mentionHover != nil {
+            mentionHover = MentionHover(id: id, anchor: anchor)
+            return
+        }
         mentionShow = Task { @MainActor in
             try? await Task.sleep(nanoseconds: 350_000_000)
             guard !Task.isCancelled else { return }
@@ -171,6 +176,38 @@ struct MentionParagraph: View {
     }
 }
 
+/// The words a mention's card must not cover: the bubble's text, in global
+/// coordinates. Zero outside one.
+private struct MentionBlockKey: EnvironmentKey {
+    static let defaultValue: CGRect = .zero
+}
+
+extension EnvironmentValues {
+    var mentionBlock: CGRect {
+        get { self[MentionBlockKey.self] }
+        set { self[MentionBlockKey.self] = newValue }
+    }
+}
+
+private struct MentionBlockReader: ViewModifier {
+    @State private var frame: CGRect = .zero
+
+    func body(content: Content) -> some View {
+        content
+            .environment(\.mentionBlock, frame)
+            .background(GeometryReader { g in
+                Color.clear
+                    .onAppear { frame = g.frame(in: .global) }
+                    .onChange(of: g.frame(in: .global)) { _, new in frame = new }
+            })
+    }
+}
+
+extension View {
+    /// Mentions inside place their card below (or above) this whole block.
+    func mentionBlock() -> some View { modifier(MentionBlockReader()) }
+}
+
 /// A session's name as a badge: a soft pill with its state dot; filled in
 /// brand under the pointer, where a card follows after a moment.
 private struct MentionBadge: View {
@@ -181,6 +218,14 @@ private struct MentionBadge: View {
     let weight: Font.Weight
     @State private var frame: CGRect = .zero
     @Environment(\.colorScheme) private var scheme
+    @Environment(\.mentionBlock) private var block
+
+    /// Where the card goes: across from the badge, below or above the whole
+    /// block of words, so it never covers another mention.
+    private var anchor: CGRect {
+        guard block != .zero else { return frame }
+        return CGRect(x: frame.minX, y: block.minY, width: frame.width, height: block.height)
+    }
 
     private var lit: Bool { model.mentionPointer.id == id }
     private var session: Session? { model.mentioned(id) }
@@ -217,11 +262,12 @@ private struct MentionBadge: View {
         .background(GeometryReader { g in
             Color.clear
                 .onAppear { frame = g.frame(in: .global); reportAnchor() }
-                .onChange(of: g.frame(in: .global)) { _, new in frame = new }
+                .onChange(of: g.frame(in: .global)) { _, new in frame = new; followAnchor() }
         })
         .onHover { inside in
-            if inside { model.mentionEntered(id, anchor: frame) } else { model.mentionLeft(id) }
+            if inside { model.mentionEntered(id, anchor: anchor) } else { model.mentionLeft(id) }
         }
+        .onChange(of: block) { _, _ in followAnchor() }
         .accessibilityLabel(name)
         .accessibilityHint(L.t("Go to this session", "去这个会话"))
         .animation(.easeOut(duration: 0.1), value: lit)
@@ -229,7 +275,15 @@ private struct MentionBadge: View {
 
     /// Screenshots: a card asked for before any hover needs to know where.
     private func reportAnchor() {
-        if model.mentionHover?.id == id, model.mentionHover?.anchor == .zero { model.mentionHover?.anchor = frame }
+        if model.mentionHover?.id == id, model.mentionHover?.anchor == .zero { model.mentionHover?.anchor = anchor }
+    }
+
+    /// Its card is showing and the words moved (a scroll, a reflow, the
+    /// block measured): the card follows.
+    private func followAnchor() {
+        if model.mentionHover?.id == id, model.mentionHover?.anchor != anchor, frame != .zero {
+            model.mentionHover?.anchor = anchor
+        }
     }
 }
 
