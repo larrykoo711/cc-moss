@@ -93,6 +93,8 @@ final class AppModel {
     var mossDraft = ""
     /// The quick bar's "⋯" list is open.
     var mossQuickOpen = false
+    /// What the quick bar couldn't fit, for "⋯".
+    var quickOverflow: [MossQuickItem] = []
     /// What was sent from the quick bar and when, for its order (this Mac only).
     var quickUses: [MossQuickUse] = MossQuickLog.load()
     /// Off for screenshots: their made-up uses are never saved.

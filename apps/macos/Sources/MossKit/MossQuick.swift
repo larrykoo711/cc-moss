@@ -13,8 +13,6 @@ public struct MossQuickItem: Identifiable, Equatable, Sendable {
     var texts: (en: String, zh: String)
     /// The slash command, for a command item.
     public var command: String?
-    /// Only behind "⋯", and asks before it's sent (/clear, /compact).
-    public var careful: Bool
 
     public static func == (a: MossQuickItem, b: MossQuickItem) -> Bool { a.id == b.id }
 
@@ -28,16 +26,14 @@ public struct MossQuickItem: Identifiable, Equatable, Sendable {
         titles = (action.title(.en), action.title(.zh))
         texts = (action.text(.en), action.text(.zh))
         command = nil
-        careful = false
     }
 
-    init(command: MossCommand, symbol: String, titles: (en: String, zh: String), careful: Bool = false) {
+    init(command: MossCommand, symbol: String, titles: (en: String, zh: String)) {
         id = "cmd:\(command.name)"
         self.symbol = symbol
         self.titles = titles
         texts = (command.name, command.name)
         self.command = command.name
-        self.careful = careful
     }
 }
 
@@ -61,11 +57,7 @@ public enum MossQuick {
         "/cost": ("dollarsign.circle", "Cost", "花费"),
         "/stats": ("chart.bar", "Stats", "统计"),
         "/help": ("questionmark.circle", "Help", "帮助"),
-        "/clear": ("trash", "Clear chat", "清空对话"),
-        "/compact": ("arrow.down.right.and.arrow.up.left", "Compact chat", "压缩对话"),
     ]
-
-    static let careful: Set<String> = ["/clear", "/compact"]
 
     /// Everything, in the default order: the actions, then the commands
     /// that fit the account.
@@ -73,7 +65,7 @@ public enum MossQuick {
         let actions = MossAction.all.map(MossQuickItem.init(action:))
         let commands = MossCommand.all.filter { $0.fits(account) }.map { c in
             let look = commandLooks[c.name] ?? ("terminal", c.name, c.name)
-            return MossQuickItem(command: c, symbol: look.symbol, titles: (look.en, look.zh), careful: careful.contains(c.name))
+            return MossQuickItem(command: c, symbol: look.symbol, titles: (look.en, look.zh))
         }
         return actions + commands
     }
@@ -129,10 +121,9 @@ public enum MossQuick {
     }
 
     /// The bar's order: Moss's picks first (in its order), then by use and
-    /// the moment's boosts; ties keep the default order. Items only for
-    /// "⋯" are left out.
+    /// the moment's boosts; ties keep the default order.
     public static func ranked(_ items: [MossQuickItem], uses: [MossQuickUse], context: Context, now: Date) -> [MossQuickItem] {
-        let bar = items.filter { !$0.careful }
+        let bar = items
         let picks = context.mossPicks.compactMap { id in bar.first { $0.id == id } }
         let pickedIDs = Set(picks.map(\.id))
         func total(_ item: MossQuickItem) -> Double {
@@ -165,6 +156,11 @@ public enum MossQuick {
         if let at = picked.at, now.timeIntervalSince(at) > 86_400 { return [] }
         var seen = Set<String>()
         return picked.items.compactMap(id(fromMoss:)).filter { seen.insert($0).inserted }
+    }
+
+    /// What "⋯" lists: everything the bar couldn't show, each once, in rank order.
+    public static func overflow(_ ranked: [MossQuickItem], shown: Int) -> [MossQuickItem] {
+        Array(ranked.dropFirst(max(0, shown)))
     }
 
     /// The last /usage result showed a limit at 80% or more.

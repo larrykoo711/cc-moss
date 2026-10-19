@@ -25,7 +25,8 @@ import Testing
     }
 
     @Test func theAllowlist() {
-        #expect(MossCommand.all.map(\.name) == ["/usage", "/status", "/context", "/cost", "/stats", "/help", "/clear", "/compact"])
+        #expect(MossCommand.all.map(\.name) == ["/usage", "/status", "/context", "/cost", "/stats", "/help"])
+        #expect(!MossCommand.isAllowed("/clear") && !MossCommand.isAllowed("/compact"), "Moss's context is managed for it")
         #expect(MossCommand.isAllowed("/usage"))
         #expect(MossCommand.isAllowed("/USAGE "))
         #expect(!MossCommand.isAllowed("/login"))
@@ -42,8 +43,9 @@ import Testing
 
     @Test func suggestionsFollowThePrefix() {
         #expect(MossCommand.suggestions(for: "/").count == MossCommand.all.count)
-        #expect(MossCommand.suggestions(for: "/c").map(\.name) == ["/context", "/cost", "/clear", "/compact"])
-        #expect(MossCommand.suggestions(for: "/co").map(\.name) == ["/context", "/cost", "/compact"])
+        #expect(MossCommand.suggestions(for: "/c").map(\.name) == ["/context", "/cost"])
+        #expect(MossCommand.suggestions(for: "/co").map(\.name) == ["/context", "/cost"])
+        #expect(MossCommand.suggestions(for: "/cl").isEmpty, "no /clear")
         #expect(MossCommand.suggestions(for: "/St").map(\.name) == ["/status", "/stats"])
     }
 
@@ -68,15 +70,15 @@ import Testing
     }
 
     @Test func aSubscriptionGetsUsageNotCost() {
-        #expect(names(.subscription) == ["/usage", "/status", "/context", "/stats", "/help", "/clear", "/compact"])
+        #expect(names(.subscription) == ["/usage", "/status", "/context", "/stats", "/help"])
     }
 
     @Test func anAPIKeyGetsCostNotUsage() {
-        #expect(names(.api) == ["/status", "/context", "/cost", "/stats", "/help", "/clear", "/compact"])
+        #expect(names(.api) == ["/status", "/context", "/cost", "/stats", "/help"])
     }
 
     @Test func aCloudAccountGetsCostNotUsage() {
-        #expect(names(.cloud) == ["/status", "/context", "/cost", "/stats", "/help", "/clear", "/compact"])
+        #expect(names(.cloud) == ["/status", "/context", "/cost", "/stats", "/help"])
     }
 
     @Test func unknownShowsEverything() {

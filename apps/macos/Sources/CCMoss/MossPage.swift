@@ -242,7 +242,8 @@ private struct MossConversation: View {
         let desk = model.mossDesk
         let messages = desk.messages
         let lastMoss = messages.last { $0.from == .moss }?.id
-        let thinking = desk.activity == .thinking
+        let waiting = desk.waiting
+        let thinking = waiting != nil
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
@@ -256,8 +257,8 @@ private struct MossConversation: View {
                         MossMessageView(model: model, message: m,
                                         buttons: m.id == lastMoss && desk.canTalk ? m.buttons : [])
                     }
-                    if thinking {
-                        MossThinking()
+                    if let waiting {
+                        MossThinking(waiting: waiting)
                             .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
@@ -529,8 +530,10 @@ private struct MossRichText: View {
     }
 }
 
-/// Moss is mid-turn: three dots where its answer will be.
+/// A reply is on its way: three dots where it will be, and what's running
+/// when it's a command, or that it's in line.
 private struct MossThinking: View {
+    var waiting = MossWaiting()
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -539,12 +542,20 @@ private struct MossThinking: View {
             MossAvatar(size: 22)
             TimelineView(.animation(minimumInterval: 1 / 20, paused: reduceMotion)) { context in
                 let t = context.date.timeIntervalSinceReferenceDate
-                HStack(spacing: 4) {
-                    ForEach(0..<3) { i in
-                        Circle()
-                            .fill(Color.secondary)
-                            .frame(width: 5, height: 5)
-                            .opacity(reduceMotion ? 0.6 : 0.3 + 0.6 * max(0, sin((t * 2.2 - Double(i) * 0.35) * .pi)))
+                HStack(spacing: 8) {
+                    HStack(spacing: 4) {
+                        ForEach(0..<3) { i in
+                            Circle()
+                                .fill(Color.secondary)
+                                .frame(width: 5, height: 5)
+                                .opacity(reduceMotion ? 0.6 : 0.3 + 0.6 * max(0, sin((t * 2.2 - Double(i) * 0.35) * .pi)))
+                        }
+                    }
+                    if let label {
+                        label
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
                 }
                 .padding(.horizontal, 12)
@@ -555,6 +566,18 @@ private struct MossThinking: View {
             Spacer()
         }
         .accessibilityLabel(L.t("Moss is thinking", "Moss 正在想"))
+    }
+
+    /// "Running /usage…" (the command monospaced), "In line", or nothing.
+    private var label: Text? {
+        let name = waiting.command.map { Text($0).font(.system(size: 11, design: .monospaced)) }
+        if waiting.queued {
+            // Not running yet: say it's in line, and which command.
+            let inLine = Text(L.t("In line", "排队中"))
+            return name.map { inLine + Text(" · ") + $0 } ?? inLine
+        }
+        guard let name else { return nil }
+        return L.lang == .zh ? Text("正在运行 ") + name + Text("…") : Text("Running ") + name + Text("…")
     }
 }
 
@@ -659,12 +682,13 @@ private struct MossQuickRow: View {
     let enabled: Bool
     @State private var ranked: [MossQuickItem] = []
     @State private var pinned: Set<String> = []
+    @State private var width: CGFloat = 0
     static let spacing: CGFloat = 6
     static let moreWidth: CGFloat = 34
 
     var body: some View {
+        let shown = Self.fit(ranked, in: width)
         GeometryReader { geo in
-            let shown = Self.fit(ranked, in: geo.size.width)
             HStack(spacing: Self.spacing) {
                 ForEach(ranked.prefix(shown)) { item in
                     MossChip(title: item.title(), icon: item.symbol, enabled: enabled, pinned: pinned.contains(item.id)) {
@@ -673,14 +697,18 @@ private struct MossQuickRow: View {
                     .tip(pinned.contains(item.id) ? L.t("Suggested by Moss · \(item.text())", "Moss 推荐 · \(item.text())")
                                                   : item.text())
                 }
-                if shown < ranked.count || model.quickItems.contains(where: \.careful) {
+                if shown < ranked.count {
                     more
                 }
             }
             .frame(maxHeight: .infinity)
+            .onAppear { width = geo.size.width }
+            .onChange(of: geo.size.width) { _, w in width = w }
         }
         .frame(height: 30)
         .onAppear(perform: rank)
+        .onChange(of: shown) { _, _ in publish() }
+        .onChange(of: ranked) { _, _ in publish() }
         .onChange(of: model.quickSends) { _, _ in rank() }
         .onChange(of: model.quickContext.mossPicks) { _, _ in rank() }
         .onChange(of: model.mossDesk.status?.account) { _, _ in rank() }
@@ -708,6 +736,14 @@ private struct MossQuickRow: View {
         let context = model.quickContext
         ranked = MossQuick.ranked(model.quickItems, uses: model.quickUses, context: context, now: Date())
         pinned = Set(context.mossPicks)
+        publish()
+    }
+
+    /// What "⋯" lists: what the row couldn't show.
+    private func publish() {
+        let more = MossQuick.overflow(ranked, shown: Self.fit(ranked, in: width))
+        if more != model.quickOverflow { model.quickOverflow = more }
+        if more.isEmpty { model.mossQuickOpen = false }
     }
 
     /// How many chips fit in `width` in order, leaving room for "⋯" when
@@ -727,22 +763,23 @@ private struct MossQuickRow: View {
     }
 }
 
-/// Everything behind "⋯": the most used, then every command (/clear and
-/// /compact ask first).
+/// Everything the bar couldn't show, each once, in its order: Moss's
+/// abilities, a hairline, then the commands.
 private struct MossQuickMenu: View {
     @Bindable var model: AppModel
-    @State private var confirming: String?
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let ranked = MossQuick.ranked(model.quickItems, uses: model.quickUses, context: model.quickContext, now: Date())
+        let items = model.quickOverflow
+        let actions = items.filter { $0.command == nil }
+        let commands = items.filter { $0.command != nil }
         let picks = Set(model.quickContext.mossPicks)
         VStack(alignment: .leading, spacing: 2) {
-            heading(L.t("Frequent", "常用"))
-            ForEach(ranked.prefix(5)) { item in row(item, pinned: picks.contains(item.id)) }
-            Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).padding(.vertical, 4)
-            heading(L.t("Commands", "命令"))
-            ForEach(model.quickItems.filter { $0.command != nil }) { item in row(item, pinned: false) }
+            ForEach(actions) { item in row(item, pinned: picks.contains(item.id)) }
+            if !actions.isEmpty && !commands.isEmpty {
+                Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).padding(.vertical, 3).padding(.horizontal, 6)
+            }
+            ForEach(commands) { item in row(item, pinned: picks.contains(item.id)) }
         }
         .padding(6)
         .frame(width: 268)
@@ -751,45 +788,8 @@ private struct MossQuickMenu: View {
         .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 14, y: 4)
     }
 
-    private func heading(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 10.5, weight: .semibold))
-            .foregroundStyle(.tertiary)
-            .padding(.horizontal, 8)
-            .padding(.top, 4)
-            .padding(.bottom, 2)
-    }
-
-    @ViewBuilder private func row(_ item: MossQuickItem, pinned: Bool) -> some View {
-        if confirming == item.id {
-            HStack(spacing: 6) {
-                Text(item.command == "/clear" ? L.t("Clear Moss's conversation?", "清空 Moss 的对话？")
-                                              : L.t("Compact Moss's conversation?", "压缩 Moss 的对话？"))
-                    .font(.system(size: 12, weight: .medium))
-                    .lineLimit(1)
-                Spacer(minLength: 4)
-                Button(L.t("Cancel", "取消")) { confirming = nil }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11.5))
-                    .foregroundStyle(.secondary)
-                    .handCursor()
-                Button(item.title()) {
-                    confirming = nil
-                    model.doQuick(item)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 11.5, weight: .semibold))
-                .foregroundStyle(item.command == "/clear" ? Theme.red : Theme.brand)
-                .handCursor()
-            }
-            .padding(.horizontal, 8)
-            .frame(height: 30)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.selection(scheme)))
-        } else {
-            MossQuickMenuRow(item: item, pinned: pinned) {
-                if item.careful { confirming = item.id } else { model.doQuick(item) }
-            }
-        }
+    private func row(_ item: MossQuickItem, pinned: Bool) -> some View {
+        MossQuickMenuRow(item: item, pinned: pinned) { model.doQuick(item) }
     }
 }
 
@@ -805,7 +805,7 @@ private struct MossQuickMenuRow: View {
             HStack(spacing: 8) {
                 Text(Image(systemName: item.symbol))
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(item.careful ? AnyShapeStyle(.secondary) : AnyShapeStyle(Theme.brand))
+                    .foregroundStyle(Theme.brand)
                     .frame(width: 16)
                 Text(item.title())
                     .font(.system(size: 12.5))
