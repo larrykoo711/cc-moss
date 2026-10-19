@@ -207,6 +207,14 @@ enum Command {
         #[arg(last = true, required = true)]
         text: Vec<String>,
     },
+    /// The next prompt Claude Code suggests in a session's input (the dim text).
+    Suggest {
+        /// Session name (Claude name, tmux name or id prefix).
+        name: String,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
     /// The resident cc-moss daemon that launchd keeps running (macOS).
     Daemon {
         #[command(subcommand)]
@@ -587,6 +595,7 @@ fn main() -> std::process::ExitCode {
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
+        Command::Suggest { name, json } => report(cmd::suggest::run(&name, json)),
         Command::Daemon { action } => match action {
             DaemonCommand::Run => match cmd::daemon::run() {
                 Ok(true) => std::process::ExitCode::SUCCESS,

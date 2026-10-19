@@ -23,6 +23,7 @@ pub mod note;
 pub mod restore;
 pub mod send;
 pub mod setup;
+pub mod suggest;
 pub mod update;
 
 /// `text` padded with spaces to `width` terminal columns (Chinese takes two).

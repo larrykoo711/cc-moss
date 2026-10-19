@@ -161,10 +161,16 @@ pub(crate) fn prompt_line(plain_line: &str) -> bool {
         == Some(PROMPT)
 }
 
-/// A line that closes the input box: only borders (and blanks), with at
-/// least one border.
+/// A rule of the input box: only borders (and blanks), with at least one
+/// border; or a rule with a label in it, as Claude Code puts the session's
+/// name at the right end of the top one (`──── api ─`).
 fn rule_line(plain_line: &str) -> bool {
-    plain_line.chars().any(border) && plain_line.chars().all(|c| c.is_whitespace() || border(c))
+    let line = plain_line.trim();
+    let only_borders =
+        line.chars().any(border) && line.chars().all(|c| c.is_whitespace() || border(c));
+    let labelled = line.chars().take(3).filter(|c| border(*c)).count() == 3
+        && line.chars().last().is_some_and(border);
+    only_borders || labelled
 }
 
 /// Where Claude Code's input box starts in `plain_lines`: the top rule of
@@ -222,6 +228,58 @@ fn input(screen: &str) -> Option<bool> {
     let line = styled[i];
     let after = &line[line.find(PROMPT).unwrap_or(0) + PROMPT.len_utf8()..];
     Some(typed(after))
+}
+
+/// Claude Code's dim suggestion for the next prompt, from a screen with its
+/// colours (`capture-pane -p -e`).
+/// It is the dim text in an otherwise empty input box while the session is
+/// idle; Claude Code's own placeholder (`Try "…"`) is not one. A
+/// suggestion wrapped over several lines comes back as one.
+pub fn suggestion(screen: &str) -> Option<String> {
+    let styled: Vec<&str> = screen.lines().collect();
+    let lines: Vec<String> = styled.iter().map(|l| plain(l)).collect();
+    if lines
+        .iter()
+        .any(|l| l.to_lowercase().contains("esc to interrupt"))
+    {
+        return None;
+    }
+    let i = (0..lines.len()).rev().find(|i| prompt_line(&lines[*i]))?;
+    if i == 0 || !rule_line(&lines[i - 1]) {
+        return None;
+    }
+    let end = (i + 1..lines.len()).find(|k| rule_line(&lines[*k]))?;
+    let mut parts: Vec<String> = Vec::new();
+    for (k, line) in styled[i..end].iter().enumerate() {
+        let segment = if k == 0 {
+            &line[line.find(PROMPT)? + PROMPT.len_utf8()..]
+        } else {
+            line
+        };
+        if typed(segment) {
+            return None;
+        }
+        let text: String = plain(segment).chars().filter(|c| !border(*c)).collect();
+        let text = text.trim();
+        if !text.is_empty() {
+            parts.push(text.to_string());
+        }
+    }
+    let mut joined = String::new();
+    for part in parts {
+        // Words wrapped at a space get it back; Chinese runs on.
+        let spaced = joined.chars().last().is_some_and(|c| c.is_ascii())
+            && part.chars().next().is_some_and(|c| c.is_ascii());
+        if !joined.is_empty() && spaced {
+            joined.push(' ');
+        }
+        joined.push_str(&part);
+    }
+    let joined = joined.trim().to_string();
+    if joined.is_empty() || joined.starts_with("Try \"") {
+        return None;
+    }
+    Some(joined)
 }
 
 /// Whether `styled` shows a character in plain (not dim, not inverse) style.
@@ -1122,6 +1180,68 @@ mod tests {
         assert!(!c.input_busy());
     }
 
+    /// Claude Code 2.1.303 at rest with a suggestion, as tmux captures it.
+    fn suggested(rule_top: &str, prompt: &str) -> String {
+        let rule = format!("\u{1b}[38;5;244m{}\u{1b}[39m", "─".repeat(60));
+        format!(
+            "⏺ Done: the about page is live.\n\n\u{1b}[38;5;244m{rule_top}\u{1b}[39m\n{prompt}\n{rule}\n  \u{1b}[2m⏵⏵ bypass permissions on (shift+tab to cycle)\u{1b}[0m\n"
+        )
+    }
+
+    const PLAIN_TOP: &str = "────────────────────────────────────────────────────────────";
+    const NAMED_TOP: &str = "──────────────────────────────────────────────── em-pi-docs ─";
+    const REAL: &str = "\u{1b}[39m❯\u{a0}\u{1b}[2m在浏览器打开 about 页看下\u{1b}[0m";
+
+    #[test]
+    fn suggestion_reads_the_dim_next_prompt() {
+        assert_eq!(
+            suggestion(&suggested(PLAIN_TOP, REAL)).as_deref(),
+            Some("在浏览器打开 about 页看下")
+        );
+        // The top rule may carry the session's name.
+        assert_eq!(
+            suggestion(&suggested(NAMED_TOP, REAL)).as_deref(),
+            Some("在浏览器打开 about 页看下")
+        );
+    }
+
+    #[test]
+    fn suggestion_is_not_the_placeholder_or_typing() {
+        let placeholder =
+            "\u{1b}[39m❯\u{a0}\u{1b}[7mT\u{1b}[27m\u{1b}[2mry \"fix lint errors\"\u{1b}[0m";
+        assert_eq!(suggestion(&suggested(PLAIN_TOP, placeholder)), None);
+        let placeholder = "\u{1b}[39m❯\u{a0}\u{1b}[2mTry \"refactor the api\"\u{1b}[0m";
+        assert_eq!(suggestion(&suggested(PLAIN_TOP, placeholder)), None);
+        let typed = "\u{1b}[39m❯\u{a0}open the\u{1b}[2m about page\u{1b}[0m";
+        assert_eq!(suggestion(&suggested(PLAIN_TOP, typed)), None);
+        let empty = "\u{1b}[39m❯\u{a0}\u{1b}[7m \u{1b}[27m";
+        assert_eq!(suggestion(&suggested(PLAIN_TOP, empty)), None);
+    }
+
+    #[test]
+    fn suggestion_needs_an_idle_box() {
+        // Mid-turn.
+        let busy = format!(
+            "✢ Tinkering… (esc to interrupt)\n{}",
+            suggested(PLAIN_TOP, REAL)
+        );
+        assert_eq!(suggestion(&busy), None);
+        // No box: a bare prompt mark, or nothing at all.
+        assert_eq!(suggestion(&format!("{REAL}\n")), None);
+        assert_eq!(suggestion(""), None);
+    }
+
+    #[test]
+    fn suggestion_joins_a_wrapped_line() {
+        let first = "\u{1b}[39m❯\u{a0}\u{1b}[2mopen the about page in the browser and check that the\u{1b}[0m";
+        let second = "  \u{1b}[2mfooter links all work\u{1b}[0m";
+        let screen = suggested(PLAIN_TOP, &format!("{first}\n{second}"));
+        assert_eq!(
+            suggestion(&screen).as_deref(),
+            Some("open the about page in the browser and check that the footer links all work")
+        );
+    }
+
     #[test]
     fn input_line_reads_hints_and_cursor_as_empty() {
         let rule = "─".repeat(80);
@@ -1149,6 +1269,9 @@ mod tests {
     fn input_is_ready_only_with_its_box_on_screen() {
         let ready = READY.replace("%RULE%", &"─".repeat(80));
         assert!(input_empty(&ready), "the real resting screen");
+        // The top rule may carry the session's name.
+        let rule = "─".repeat(60);
+        assert!(input_empty(&format!("{rule} api ─\n❯ \n{rule}\n")));
         // Starting up: nothing on screen yet, or the banner without the box.
         assert!(!input_empty(""));
         assert!(!input_empty("\n\n\n\n"));
