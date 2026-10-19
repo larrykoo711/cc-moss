@@ -7,8 +7,6 @@
 //! resumed in tmux the way `restore` does it: same session id, same launch
 //! arguments, its name.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
@@ -256,12 +254,10 @@ fn audit(slot: &Slot, outcome: &str, message: &str) {
         "schema": 1, "at": rfc3339(now_ms()), "by": "you", "action": "adopt",
         "args": [slot.slot_id], "outcome": outcome, "message": message,
     });
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .mode(0o600)
-        .open(moss_core::moss::act::audit_path(&store_dir::state_dir()))
-        .and_then(|mut f| f.write_all(format!("{line}\n").as_bytes()));
+    let _ = moss_core::moss::act::append_audit(
+        &moss_core::moss::act::audit_path(&store_dir::state_dir()),
+        &line.to_string(),
+    );
 }
 
 #[cfg(test)]

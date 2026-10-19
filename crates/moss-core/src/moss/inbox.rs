@@ -54,32 +54,52 @@ pub fn new_id(now_ms: i64) -> String {
 
 /// Drop `message` in the inbox. Never replaces a file (`O_EXCL`).
 pub fn put(home: &Path, message: &Message) -> io::Result<PathBuf> {
-    let dir = dir(home);
-    crate::store_dir::ensure_private_dir(&dir)?;
+    let dir = super::home::ensure_real_dir(home, "inbox")?;
     let path = dir.join(format!("{}.json", message.id));
     let mut text = serde_json::to_string(message).map_err(io::Error::other)?;
     text.push('\n');
+    put_whole(&path, &text)?;
+    Ok(path)
+}
+
+/// Write `text` as the new file `path`, whole: into `<name>.tmp` first,
+/// then linked into place (never replacing a file already there), so a
+/// reader never sees half of it.
+pub fn put_whole(path: &Path, text: &str) -> io::Result<()> {
+    let tmp = path.with_extension("tmp");
+    let _ = std::fs::remove_file(&tmp);
     let mut file = std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .mode(0o600)
-        .open(&path)?;
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(&tmp)?;
     file.write_all(text.as_bytes())?;
-    Ok(path)
+    drop(file);
+    let linked = std::fs::hard_link(&tmp, path);
+    let _ = std::fs::remove_file(&tmp);
+    linked
+}
+
+/// Plain files in `dir` (never links), with extension `ext`, sorted.
+pub fn plain_files(dir: &Path, ext: &str) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut files: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|x| x == ext))
+        .collect();
+    files.sort();
+    files
 }
 
 /// What waits, oldest first. A file that does not read as a message comes
 /// with `None`, so it can be put aside rather than block the rest.
 pub fn waiting(home: &Path) -> Vec<(PathBuf, Option<Message>)> {
-    let Ok(entries) = std::fs::read_dir(dir(home)) else {
-        return Vec::new();
-    };
-    let mut files: Vec<PathBuf> = entries
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|x| x == "json"))
-        .collect();
-    files.sort();
-    files
+    plain_files(&dir(home), "json")
         .into_iter()
         .map(|p| {
             let m = std::fs::read_to_string(&p)
@@ -925,6 +945,34 @@ mod tests {
         let out = Courier::default().step(h, &mut pane, Some(false), 1);
         assert!(matches!(&out[..], [Outcome::Sent(_)]), "{out:?}");
         assert_eq!(pane.submitted, [" /login\nwhy the terminal?"]);
+    }
+
+    #[test]
+    fn inbox_takes_only_whole_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(h, "0000000000002-aaaaaa", "whole");
+        // Half written, and a link: neither is a message, neither is removed.
+        std::fs::write(super::dir(h).join("0000000000001-aaaaaa.tmp"), "{\"sch").unwrap();
+        let elsewhere = h.join("elsewhere.json");
+        std::fs::write(&elsewhere, "{}").unwrap();
+        std::os::unix::fs::symlink(&elsewhere, super::dir(h).join("0000000000000-cccccc.json"))
+            .unwrap();
+        let ids: Vec<String> = waiting(h)
+            .into_iter()
+            .map(|(p, _)| p.file_name().unwrap().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(ids, ["0000000000002-aaaaaa.json"]);
+        // Nothing half written is left behind by a put.
+        let left: Vec<_> = std::fs::read_dir(super::dir(h))
+            .unwrap()
+            .flatten()
+            .filter(|e| {
+                e.file_name().to_string_lossy().ends_with(".tmp")
+                    && !e.file_name().to_string_lossy().starts_with("0000000000001")
+            })
+            .collect();
+        assert!(left.is_empty());
     }
 
     #[test]

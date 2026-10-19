@@ -197,6 +197,15 @@ pub fn write_generated(home: &Path, name: &str, text: &str) -> io::Result<bool> 
     write_if_changed(&home.join(name), text)
 }
 
+/// `<home>/<sub>` as a real folder: a link or file there is replaced by a
+/// folder, never followed. For the folders the daemon reads and writes in
+/// Moss's home, which Moss could otherwise swap for a link elsewhere.
+pub fn ensure_real_dir(home: &Path, sub: &str) -> io::Result<PathBuf> {
+    let dir = home.join(sub);
+    real_dir(home, &dir, &mut Outcome::default())?;
+    Ok(dir)
+}
+
 /// Write `text` to `path` if it differs. True when it changed. A link at
 /// `path` is replaced by a file, never written through.
 pub fn write_if_changed(path: &Path, text: &str) -> io::Result<bool> {

@@ -98,10 +98,12 @@ impl Line {
 pub fn append(home: &Path, line: &Line) -> io::Result<()> {
     let mut text = serde_json::to_string(line).map_err(io::Error::other)?;
     text.push('\n');
+    // Never through a link at chat.jsonl.
     std::fs::OpenOptions::new()
         .create(true)
         .append(true)
         .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path(home))?
         .write_all(text.as_bytes())
 }

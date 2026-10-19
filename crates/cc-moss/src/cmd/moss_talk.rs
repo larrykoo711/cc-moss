@@ -344,7 +344,10 @@ impl Talk {
             return;
         }
         self.next_inbox = now + INBOX_EVERY;
-        if inbox::count(&self.home) == 0 {
+        // The inbox is a real folder, never a link elsewhere.
+        if moss::home::ensure_real_dir(&self.home, "inbox").is_err()
+            || inbox::count(&self.home) == 0
+        {
             return;
         }
         let transcript = self.transcript.clone().unwrap_or_default();
@@ -654,7 +657,7 @@ impl Talk {
         let path = self.home.join(inbox::INPUT_BUSY);
         if busy {
             if !path.exists() {
-                let _ = std::fs::write(&path, b"");
+                let _ = moss::home::write_if_changed(&path, "");
             }
         } else {
             let _ = moss::remove(&path);
@@ -668,7 +671,7 @@ impl Talk {
         }
         let path = reply::waiting_path(&self.home);
         let done = if waiting {
-            std::fs::write(&path, b"").is_ok()
+            moss::home::write_if_changed(&path, "").is_ok()
         } else {
             moss::remove(&path).is_ok()
         };

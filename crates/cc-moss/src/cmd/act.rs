@@ -10,8 +10,6 @@
 //! Moss cannot write the conversation file, so it cannot make one up.
 //! Nothing is ever done to Moss itself.
 
-use std::io::Write;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
@@ -188,17 +186,12 @@ pub fn run(action: &str, args: &[String], because: Option<&str>, wait: bool) -> 
         args: args.to_vec(),
         because: because.map(String::from),
     };
-    let actions = dir(&home);
-    store_dir::ensure_private_dir(&actions).with_context(|| format!("{}", actions.display()))?;
+    let actions = moss::home::ensure_real_dir(&home, "actions")
+        .with_context(|| format!("{}", dir(&home).display()))?;
     let path = actions.join(format!("{}.json", request.id));
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .open(&path)
+    // Whole or not at all: the daemon never sees half a request.
+    inbox::put_whole(&path, &serde_json::to_string(&request)?)
         .with_context(|| format!("{}", path.display()))?;
-    file.write_all(serde_json::to_string(&request)?.as_bytes())?;
-    drop(file);
     if !wait {
         println!("{}", serde_json::json!({ "schema": 1, "id": request.id }));
         return Ok(true);
@@ -211,6 +204,8 @@ pub fn run(action: &str, args: &[String], because: Option<&str>, wait: bool) -> 
             .and_then(|t| serde_json::from_str::<Outcome>(&t).ok())
         {
             println!("{}", serde_json::to_string(&out)?);
+            // Read: gone. The audit log is the record.
+            let _ = std::fs::remove_file(&result);
             return Ok(out.outcome == "done");
         }
         if Instant::now() >= until {
@@ -251,19 +246,21 @@ impl Hands {
             return;
         }
         self.next = now + Duration::from_millis(300);
-        let Ok(entries) = std::fs::read_dir(dir(&self.home)) else {
+        if !self.home.exists() {
+            return;
+        }
+        // A real folder, never a link Moss put there.
+        let Ok(actions) = moss::home::ensure_real_dir(&self.home, "actions") else {
             return;
         };
-        let mut pending: Vec<PathBuf> = entries
-            .flatten()
-            .map(|e| e.path())
-            .filter(|p| {
-                p.extension().is_some_and(|x| x == "json")
-                    && !p.to_string_lossy().ends_with(".result.json")
-            })
+        self.prune_results(&actions);
+        let pending: Vec<PathBuf> = inbox::plain_files(&actions, "json")
+            .into_iter()
+            .filter(|p| !p.to_string_lossy().ends_with(".result.json"))
             .collect();
-        pending.sort();
-        for path in pending {
+        // One a go: a long restore never holds up Moss's conversation more
+        // than once in a row.
+        if let Some(path) = pending.into_iter().next() {
             let id = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
@@ -298,6 +295,20 @@ impl Hands {
         }
     }
 
+    /// Results nobody read within an hour.
+    fn prune_results(&self, actions: &Path) {
+        let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
+        for p in inbox::plain_files(actions, "json") {
+            let result = p.to_string_lossy().ends_with(".result.json");
+            let old = std::fs::metadata(&p)
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t < hour_ago);
+            if result && old {
+                let _ = std::fs::remove_file(&p);
+            }
+        }
+    }
+
     fn audit(&self, id: &str, request: Option<&Request>, outcome: &str, message: &str) {
         let line = serde_json::json!({
             "schema": 1,
@@ -310,12 +321,7 @@ impl Hands {
             "outcome": outcome,
             "message": message,
         });
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .mode(0o600)
-            .open(audit_path(&self.state))
-            .and_then(|mut f| f.write_all(format!("{line}\n").as_bytes()));
+        let _ = moss_core::moss::act::append_audit(&audit_path(&self.state), &line.to_string());
     }
 
     fn carry_out(&self, r: &Request) -> (&'static str, String) {
@@ -405,7 +411,7 @@ impl Hands {
 
     fn restore(&self, slot: &Slot) -> Result<String> {
         let out = moss_core::command::run_with_timeout(
-            Command::new(&self.exe).args(["restore", "--yes", "--json", &slot.session_id]),
+            Command::new(&self.exe).args(["restore", "--yes", "--json", "--", &slot.session_id]),
             Duration::from_secs(90),
         )
         .map_err(|e| anyhow::anyhow!("restore did not finish: {e:?}"))?;
@@ -612,6 +618,83 @@ mod tests {
 
     fn as_recorded(s: &Slot) -> Status {
         s.status
+    }
+
+    #[test]
+    fn act_never_follows_a_linked_actions_folder() {
+        use std::os::unix::fs::symlink;
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let home = moss::home_dir(&state);
+        std::fs::create_dir_all(&home).unwrap();
+        // Somewhere else, full of things that look like requests.
+        let elsewhere = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&elsewhere).unwrap();
+        let request = r#"{"schema":1,"id":"x","at":"t","action":"setup-fix","args":[]}"#;
+        std::fs::write(elsewhere.join("0000000000001-aaaaaa.json"), request).unwrap();
+        std::fs::write(elsewhere.join("keep.json"), "{}").unwrap();
+        symlink(&elsewhere, home.join("actions")).unwrap();
+        let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
+        hands.tick(Instant::now(), true, &|_| {});
+        assert!(elsewhere.join("0000000000001-aaaaaa.json").exists());
+        assert!(elsewhere.join("keep.json").exists());
+        assert!(!elsewhere.join("0000000000001-aaaaaa.result.json").exists());
+        let meta = std::fs::symlink_metadata(home.join("actions")).unwrap();
+        assert!(
+            meta.file_type().is_dir(),
+            "the link was replaced by a folder"
+        );
+        // A link inside the folder is not a request either.
+        std::fs::write(dir.path().join("target.json"), request).unwrap();
+        symlink(
+            dir.path().join("target.json"),
+            home.join("actions/0000000000002-bbbbbb.json"),
+        )
+        .unwrap();
+        hands.next = Instant::now();
+        hands.tick(Instant::now(), true, &|_| {});
+        assert!(dir.path().join("target.json").exists());
+        assert!(!home
+            .join("actions/0000000000002-bbbbbb.result.json")
+            .exists());
+    }
+
+    #[test]
+    fn act_takes_only_whole_requests_one_at_a_time() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let actions = moss::home_dir(&state).join("actions");
+        std::fs::create_dir_all(&actions).unwrap();
+        // Half written: left alone.
+        std::fs::write(actions.join("0000000000001-aaaaaa.tmp"), "{\"schema\":1,").unwrap();
+        for id in ["0000000000002-aaaaaa", "0000000000003-aaaaaa"] {
+            std::fs::write(
+                actions.join(format!("{id}.json")),
+                format!(
+                    r#"{{"schema":1,"id":"{id}","at":"t","action":"forget","args":["nobody"]}}"#
+                ),
+            )
+            .unwrap();
+        }
+        let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
+        hands.tick(Instant::now(), false, &|_| {});
+        assert!(actions.join("0000000000001-aaaaaa.tmp").exists());
+        // One per go: the daemon's loop is never held up by a queue.
+        assert!(actions.join("0000000000002-aaaaaa.result.json").exists());
+        assert!(!actions.join("0000000000003-aaaaaa.result.json").exists());
+        // Old results go.
+        let old = actions.join("0000000000002-aaaaaa.result.json");
+        let hour_ago = std::time::SystemTime::now() - Duration::from_secs(2 * 3600);
+        std::fs::File::options()
+            .write(true)
+            .open(&old)
+            .unwrap()
+            .set_modified(hour_ago)
+            .unwrap();
+        hands.next = Instant::now();
+        hands.tick(Instant::now(), false, &|_| {});
+        assert!(!old.exists(), "results over an hour old are cleared");
+        assert!(actions.join("0000000000003-aaaaaa.result.json").exists());
     }
 
     #[test]
