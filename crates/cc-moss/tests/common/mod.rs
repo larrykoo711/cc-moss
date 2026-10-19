@@ -30,6 +30,8 @@ pub fn bin() -> Command {
         .env_remove("XDG_CONFIG_HOME")
         .env_remove("CC_MOSS_CONFIG")
         .env("CC_MOSS_CLAUDE_BIN", "/nonexistent/claude")
+        // Ask `claude agents` on every look; `ls_asks_claude_at_most_every_30_s` tests the limit.
+        .env("CC_MOSS_ADOPT_ALWAYS", "1")
         // Never the machine's own managed Claude Code settings.
         .env(
             "CC_MOSS_CLAUDE_MANAGED_SETTINGS",

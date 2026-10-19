@@ -361,3 +361,61 @@ fn json_has_state_dir_and_worktree() {
     );
     assert!(by_name("plain")["worktree"].is_null());
 }
+
+/// The app refreshes whenever the registry changes; an `ls` that finds
+/// nothing new must not write it, or each refresh wakes the next one
+/// (user 2026-10-19: "session 当前的检测刷新是不是太频繁了").
+#[test]
+fn ls_on_an_unchanged_registry_writes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let transcript = dir.path().join("A.jsonl");
+    std::fs::write(&transcript, "{\"type\":\"custom-title\",\"customTitle\":\"job-a\"}\n").unwrap();
+    let start = serde_json::json!({
+        "session_id": "A",
+        "transcript_path": transcript,
+        "cwd": "/work",
+        "hook_event_name": "SessionStart",
+        "source": "startup",
+        "session_title": "job-a",
+    })
+    .to_string();
+    hook(dir.path(), "session-start", &start, Some(std::process::id()));
+    hook(dir.path(), "session-start", &start_json("B", "startup", Some("gone")), Some(dead_pid()));
+    // The first look may record what it finds (the lost session, the scan mark).
+    ls_json(dir.path(), false);
+    let db = dir.path().join("registry.db");
+    let before = std::fs::read(&db).unwrap();
+    let modified = std::fs::metadata(&db).unwrap().modified().unwrap();
+    std::thread::sleep(std::time::Duration::from_millis(1100));
+    // A working session's transcript grows between looks (no new name).
+    use std::io::Write;
+    let mut t = std::fs::OpenOptions::new().append(true).open(&transcript).unwrap();
+    writeln!(t, "{{\"type\":\"user\",\"message\":\"more work\"}}").unwrap();
+    ls_json(dir.path(), false);
+    writeln!(t, "{{\"type\":\"assistant\",\"message\":\"done\"}}").unwrap();
+    ls_json(dir.path(), true);
+    assert_eq!(std::fs::metadata(&db).unwrap().modified().unwrap(), modified, "registry.db was written");
+    assert!(std::fs::read(&db).unwrap() == before, "registry.db changed");
+}
+
+/// `claude agents` starts a process; the app refreshes often, so ask it at
+/// most every 30 seconds.
+#[test]
+fn ls_asks_claude_at_most_every_30_s() {
+    let dir = tempfile::tempdir().unwrap();
+    let count = dir.path().join("asked");
+    let stub = dir.path().join("claude");
+    std::fs::write(&stub, format!("#!/bin/sh\necho x >> '{}'\necho '[]'\n", count.display())).unwrap();
+    std::fs::set_permissions(&stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    for _ in 0..3 {
+        let out = bin()
+            .env("CC_MOSS_STATE_DIR", dir.path())
+            .env("CC_MOSS_CLAUDE_BIN", &stub)
+            .env_remove("CC_MOSS_ADOPT_ALWAYS")
+            .args(["ls", "--json"])
+            .output()
+            .unwrap();
+        assert!(out.status.success());
+    }
+    assert_eq!(std::fs::read_to_string(&count).unwrap().lines().count(), 1);
+}

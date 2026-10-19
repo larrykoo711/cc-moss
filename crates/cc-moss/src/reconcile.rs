@@ -3,6 +3,8 @@
 //! (started before `cc-moss setup`, or resumed without a name in the
 //! payload) still show up correctly.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 use moss_core::agent::claude::{self, LiveSession};
 use moss_core::config::Config;
@@ -25,12 +27,22 @@ pub fn run() -> Result<Registry> {
         );
         return Ok(registry);
     }
-    let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
-    let live = claude::live_sessions(&claude_bin);
-    if !live.is_empty() {
-        adopt(&mut registry, &live)?;
+    // Asking Claude Code which sessions run starts a process (a few hundred
+    // ms); the app refreshes far more often than sessions appear unseen.
+    if adoption_due() {
+        let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+        let live = claude::live_sessions(&claude_bin);
+        if !live.is_empty() {
+            adopt(&mut registry, &live)?;
+        }
     }
-    for slot_id in registry.backfill_names()? {
+    let mut scanned = load_scanned();
+    let before = scanned.clone();
+    let renamed = registry.backfill_names(&mut scanned)?;
+    if scanned != before {
+        save_scanned(&scanned);
+    }
+    for slot_id in renamed {
         // The panel's rename goes through `/rename`, which fires no hook: the
         // tmux name follows here instead.
         if let Some(slot) = registry.slots()?.into_iter().find(|s| s.slot_id == slot_id) {
@@ -38,8 +50,57 @@ pub fn run() -> Result<Registry> {
         }
     }
     record_lost(&registry)?;
-    registry.prune_events(now_ms() - EVENT_RETENTION_MS)?;
+    registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
+}
+
+/// How often to ask Claude Code for running sessions the hooks never saw.
+const ADOPT_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+
+/// True at most once per [`ADOPT_EVERY`], marked by a stamp file's time.
+/// `CC_MOSS_ADOPT_ALWAYS` (tests) asks every time.
+fn adoption_due() -> bool {
+    if std::env::var_os("CC_MOSS_ADOPT_ALWAYS").is_some() {
+        return true;
+    }
+    let stamp = store_dir::state_dir().join("adopt.stamp");
+    let fresh = std::fs::metadata(&stamp)
+        .and_then(|m| m.modified())
+        .ok()
+        .and_then(|t| t.elapsed().ok())
+        .is_some_and(|age| age < ADOPT_EVERY);
+    if fresh {
+        return false;
+    }
+    let _ = std::fs::write(&stamp, b"");
+    true
+}
+
+/// Old events go an hour's worth at a time, not on every look.
+const PRUNE_SLACK_MS: i64 = 60 * 60 * 1000;
+
+/// How far each transcript was read for names, kept beside the registry
+/// rather than in it (see `Registry::backfill_names`).
+fn scanned_path() -> std::path::PathBuf {
+    store_dir::state_dir().join("name-scan.json")
+}
+
+fn load_scanned() -> HashMap<String, u64> {
+    std::fs::read(scanned_path())
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or_default()
+}
+
+/// Best effort: losing it only means reading some transcript again.
+fn save_scanned(scanned: &HashMap<String, u64>) {
+    let path = scanned_path();
+    let tmp = path.with_extension("json.tmp");
+    if let Ok(bytes) = serde_json::to_vec(scanned) {
+        if std::fs::write(&tmp, bytes).is_ok() {
+            let _ = std::fs::rename(&tmp, &path);
+        }
+    }
 }
 
 /// Report running slots whose process is gone without a SessionEnd

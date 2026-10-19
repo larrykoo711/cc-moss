@@ -4,6 +4,7 @@
 //! through one `BEGIN IMMEDIATE` transaction and rely on WAL plus a busy
 //! timeout for concurrency.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::time::Duration;
 
@@ -431,7 +432,13 @@ impl Registry {
     /// out of hook payloads after `--resume`, and `/rename` itself fires no
     /// hook, so an idle session renamed from the panel would keep its old
     /// name until it next did something.
-    pub fn backfill_names(&self) -> Result<Vec<String>> {
+    ///
+    /// `scanned` says how far each slot's transcript was read (slot id →
+    /// byte offset); the caller keeps it outside the registry. Writing the
+    /// offsets here would change the registry on every look while a session
+    /// works, and the app, which refreshes when the registry changes, would
+    /// never rest.
+    pub fn backfill_names(&self, scanned: &mut HashMap<String, u64>) -> Result<Vec<String>> {
         self.write()?;
         let mut renamed = Vec::new();
         for slot in self.slots()? {
@@ -443,18 +450,21 @@ impl Registry {
                 continue;
             };
             // Transcripts grow to tens of megabytes: only read what was
-            // appended since the last look.
-            let from: i64 = self.conn.query_row(
-                "SELECT name_scanned_to FROM slots WHERE slot_id = ?1",
-                [&slot.slot_id],
-                |r| r.get(0),
-            )?;
-            let (title, scanned) =
-                crate::transcript::custom_title_since(Path::new(path), from.max(0) as u64);
-            self.write()?.execute(
-                "UPDATE slots SET name_scanned_to = ?2 WHERE slot_id = ?1",
-                params![slot.slot_id, scanned as i64],
-            )?;
+            // appended since the last look (an older cc-moss kept the
+            // offset in the registry; start from there).
+            let from = match scanned.get(&slot.slot_id) {
+                Some(&at) => at,
+                None => self
+                    .conn
+                    .query_row(
+                        "SELECT name_scanned_to FROM slots WHERE slot_id = ?1",
+                        [&slot.slot_id],
+                        |r| r.get::<_, i64>(0),
+                    )?
+                    .max(0) as u64,
+            };
+            let (title, to) = crate::transcript::custom_title_since(Path::new(path), from);
+            scanned.insert(slot.slot_id.clone(), to);
             if let Some(name) = title.filter(|t| slot.name.as_deref() != Some(t.as_str())) {
                 self.set_name(&slot.slot_id, &name)?;
                 renamed.push(slot.slot_id);
@@ -686,6 +696,20 @@ impl Registry {
         Ok(self
             .write()?
             .execute("DELETE FROM events WHERE at < ?1", [before_ms])?)
+    }
+
+    /// [`Registry::prune_events`], but only once the oldest event is `slack_ms`
+    /// past the cut, so pruning happens in batches instead of on every look
+    /// (each prune changes the registry and wakes the app).
+    pub fn prune_events_batched(&self, before_ms: i64, slack_ms: i64) -> Result<usize> {
+        if !has_events_table(&self.conn)? {
+            return Ok(0);
+        }
+        let oldest: Option<i64> = self.conn.query_row("SELECT MIN(at) FROM events", [], |r| r.get(0))?;
+        match oldest {
+            Some(at) if at < before_ms - slack_ms => self.prune_events(before_ms),
+            _ => Ok(0),
+        }
     }
 
     /// Events after `since` in order, at most `limit`; without `since`, the
