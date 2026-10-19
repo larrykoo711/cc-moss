@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1760608680000-aa0001",
+   "at": "2026-10-16T09:58:00Z",
+   "from": "you",
+   "text": "/usage",
+   "state": "replied",
+   "fallback": false,
+   "buttons": []
+  },
+  {
+   "id": "1760608686000-aa0002",
+   "at": "2026-10-16T09:58:06Z",
+   "from": "moss",
+   "text": "────────────────────────────────────────────────────────────────────────────────────────────────────\n  Settings  Status   Config   Usage   Stats\n\n  Session\n\n  Total cost:            $1.2400\n  Total duration (API):  3m 12s\n  Total duration (wall): 41m 5s\n  Total code changes:    120 lines added, 8 lines removed\n  Usage by model:\n      claude-haiku-9-9:  1.2k input, 353 output, 0 cache read, 0 cache write ($0.0003)\n       claude-opus-9-9:  18.2k input, 4.1k output, 210k cache read, 12k cache write ($1.2397)\n  Prompt cache (main):   14 requests · 89% of input tokens from cache · no misses · warm (1h TTL,\n  last activity 28s ago)\n\n  Current session\n  ██████▌                                            13% used\n  Resets 1:49pm (Europe/Berlin)\n\n  Current week (all models)\n  ██████████████████████████                         52% used\n  Resets Oct 23 at 12:59am (Europe/Berlin)\n\n  Current week (Sonnet)\n                                                     0% used\n  Resets Oct 23 at 1am (America/Los_Angeles)\n\n  What's contributing to your limits usage?\n  Approximate, based on local sessions on this machine — does not include other devices or\n  claude.ai\n  Last 24h · these are independent characteristics of your usage, not a breakdown\n\n  98% of your usage came from subagent-heavy sessions\n   Each subagent runs its own requests. Be deliberate about spawning them — and\n   consider configuring a cheaper model for simpler subagents.\n\n  85% of your usage was at >150k context\n   Longer sessions are more expensive even when cached. /compact mid-task, /clear\n   when switching to new tasks.\n\n  16% of your usage was while 4+ sessions ran in parallel\n   All sessions share one limit.\n\n  7% of your usage came from something new\n   A hint nobody translated.\n\n  Skills                  % of usage\n  /review                         1%\n  /deploy                         3%\n\n  Subagents               % of usage\n  general-purpose                38%\n  Explore                         1%\n\n  MCP servers             % of usage\n  browser-tools                   3%\n\n  Loops                                      every  runs  tokens  per run last run\n  nightly report check (once a day, rea…   at 10:17     1  206.7k   206.7k   1h ago\n\n  d to day · w to week\n\n  Usage credits\n  Usage credits are off · /usage-credits to turn them on\n\n  Esc to cancel",
+   "reply_to": "1760608680000-aa0001",
+   "command": "/usage",
+   "fallback": false,
+   "buttons": []
+  }
+ ]
+}

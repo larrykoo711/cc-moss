@@ -136,6 +136,25 @@ enum Render {
                 drawView(list.fixedSize().glassPanel(cornerRadius: 16).padding(20), dark: args.contains("--dark"), out: out)
                 exit(0)
             }
+            // `--moss-card <moss chat --json file> [--raw]`: the newest command result on its
+            // own, at the Moss page's width and full height (`--raw`: its terminal text).
+            if let file = value("--moss-card") {
+                guard let data = FileManager.default.contents(atPath: file),
+                      let chat = try? MossChat.decode(data),
+                      let m = chat.messages.last(where: { $0.from == .moss && $0.command != nil }),
+                      let command = m.command else {
+                    FileHandle.standardError.write(Data("--moss-card: no command result in \(file)\n".utf8))
+                    exit(2)
+                }
+                let dark = args.contains("--dark")
+                let graphic = MossScreenCard.make(command: command, text: m.text)
+                let card = MossTerminalCard(command: command, text: m.text, graphic: graphic, raw: args.contains("--raw"))
+                    .frame(width: 362)
+                    .padding(16)
+                    .background(Theme.surface(dark ? .dark : .light))
+                drawView(card.fixedSize(horizontal: false, vertical: true), dark: dark, out: out)
+                exit(0)
+            }
             if let tab = value("--settings") {
                 // `--aliases <alias ls --json file>` for the shortcuts page.
                 let aliasDemo = value("--aliases").flatMap { FileManager.default.contents(atPath: $0) }
