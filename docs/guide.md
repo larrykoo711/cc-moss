@@ -109,7 +109,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss suggest 名字 [--json]` | Claude Code 在这个会话输入框里给的下一句建议（那行灰字）；会话在忙或没有建议时什么都不输出（`--json` 输出 `{"schema":1,"suggestion":…}`，没有时是 `null`） |
 | `cc-moss adopt 名字 [--dry-run] [--json]` | 把一个不在 tmux 里跑的会话移进 tmux，对话接着（见[移进 tmux](#移进-tmux)） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
-| `cc-moss archive 名字… [--json]` / `unarchive 名字… [--json]` | 归档会话、从归档拿回来（见[归档](#归档)） |
+| `cc-moss archive 名字… [--end] [--json]` / `unarchive 名字… [--json]` | 归档会话、从归档拿回来（见[归档](#归档)） |
 | `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
@@ -164,7 +164,7 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 不用的会话会自己收起来，列表只留最近在用的：
 
 - 结束了、超过 30 天没动静的会话，守护进程每天整理时自动归档。天数用 `cc-moss config set sessions.archive_after_days 天数` 改，`0` 关掉自动归档。正在跑的会话再老也不会被归档
-- 手动：`cc-moss archive 名字…` 归档（正在跑的要先结束），`cc-moss unarchive 名字…` 拿回来。用 `claude --resume` 接着用一个归档的会话，它会自己回到列表
+- 手动：`cc-moss archive 名字…` 归档；还在跑但闲着的会话加 `--end`，先结束它再归档（正在干活的不动）。App 里是「⋯」菜单的「归档」，闲着的会话是「结束并归档」，先问你一句。`cc-moss unarchive 名字…` 拿回来。用 `claude --resume` 接着用一个归档的会话，它会自己回到列表
 - `cc-moss ls` 不列归档的，`ls --archived` 只列归档的；`ls --json` 都列，每条带 `archived_at`。选择器里归档的会话只在搜索时出现，单独一组「已归档」
 - 想彻底删掉：在 App 的「已归档」里点「清理」或「全部清理」，或者直接跟 Moss 说。Moss 列出要删哪些、问你一句，你点了确认才删：记录从 cc-moss 里去掉，对话记录文件移到废纸篓（不直接抹掉，删错了还能从废纸篓找回来）。只删归档里的会话
 

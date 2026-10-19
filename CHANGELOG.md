@@ -10,7 +10,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 - **Archive.** Sessions that ended and saw no activity for 30 days are archived each day
   (`sessions.archive_after_days`, `0` turns it off); running sessions never are. `cc-moss archive` / `unarchive`
-  do it by hand, `ls --archived` lists them, and resuming one brings it back by itself. The app keeps them in a
+  do it by hand (`--end` ends an idle running session first; End and Archive in the app), `ls --archived` lists them, and resuming one brings it back by itself. The app keeps them in a
   folded "Archived" group with Bring Back and Clean Up, and has Archive in the menu of sessions that aren't running.
   Clean Up goes through Moss, which asks before deleting; records leave cc-moss and conversation files go to the
   Trash.

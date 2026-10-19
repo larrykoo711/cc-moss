@@ -131,7 +131,7 @@ In the picker:
 | `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
 | `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
-| `cc-moss archive NAMES [--json]` / `unarchive NAMES [--json]` | Archive sessions, or bring them back (see [Archive](#archive)) |
+| `cc-moss archive NAMES [--end] [--json]` / `unarchive NAMES [--json]` | Archive sessions, or bring them back (see [Archive](#archive)) |
 | `cc-moss restart NAMES [--now] [--yes] [--json]` / `restart --stale` | Restart sessions in their own pane after switching API providers (see [Switching API providers](#switching-api-providers)) |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
@@ -217,7 +217,7 @@ Sessions you no longer use get put away, so the list keeps only what you're work
 - Sessions that ended and saw no activity for 30 days are archived when the daemon tidies up each day. Change the
   number with `cc-moss config set sessions.archive_after_days DAYS`; `0` turns it off. A running session is never
   archived, however old.
-- By hand: `cc-moss archive NAMES` (end a running one first) and `cc-moss unarchive NAMES`. Picking an archived
+- By hand: `cc-moss archive NAMES`; for a session that's running but idle, add `--end` to end it first (a busy one is left alone). In the app it's Archive in the "⋯" menu, or End and Archive for an idle session, which asks first. `cc-moss unarchive NAMES` brings them back. Picking an archived
   session back up with `claude --resume` puts it back in the list by itself.
 - `cc-moss ls` leaves archived sessions out and `ls --archived` lists only them; `ls --json` lists both, each with
   `archived_at`. The picker shows archived sessions only when you search, in their own "Archived" group.
