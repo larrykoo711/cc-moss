@@ -128,12 +128,15 @@ In the picker:
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
 | `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT \| --allow \| --deny [--message WHY]) [--json]` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
 | `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
+| `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
+| `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
-| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`) or `ask.enabled` (`true`, `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | The daemon that stays in the background: its status, start it, stop it (macOS; see [The daemon](#the-daemon)) |
-| `cc-moss doctor [--fix]` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases) |
+| `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- TEXT` / `moss chat [--limit N] [--json]` | Moss's switch and status, and talking to it (macOS; see [Moss](#moss)) |
+| `cc-moss doctor [--fix]` / `doctor --sessions --json` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases); `--sessions --json` lists the facts about each session that Moss's checkup reads (see [Checkup](#checkup)) |
 | `cc-moss update [--check] [--yes]` | Look for a new version and install it (`--check` only looks) |
 | `cc-moss setup [--uninstall] [--dry-run] [--yes]` | Install or remove only the hooks and the `t` alias |
 
@@ -162,6 +165,48 @@ the session just waits. So if you haven't set `skipDangerousModePermissionPrompt
 `cc-moss install` sets it to `true` and notes in `~/.local/state/cc-moss/claude-settings-owned.json` that cc-moss
 wrote it. If you set it yourself, `true` or `false`, it's left alone; `cc-moss install --uninstall` takes out only
 what cc-moss wrote.
+
+### Session names
+
+cc-moss names a session's tmux session after the session's own name (the one you gave `cc-moss new`, or set with
+`/rename` in Claude Code), keeping Chinese, capitals and emoji as they are. Only characters tmux and the shell can't
+take become `-`: white space, `.`, `:` and `` ' " $ ` \ ! # ; & | < > ( ) { } [ ] * ? ~ ^ , = / ``. Runs of `-`
+become one, and the name stops at 40 characters. With `[naming] host_prefix` on (the default), `<host>_` goes in
+front. So "api review v1.2" is `<host>_api-review-v1-2` in tmux.
+
+Terminal tabs show the session's own name, not the tmux name: cc-moss's tmux config turns on `set-titles` and takes
+the title from the tmux option `@cc-moss-name` (cc-moss sets it when it starts, restores or renames a session), or
+the tmux session name when there's none. Coming from an older version, run `cc-moss install` once for the new tmux
+config.
+
+A `/rename` inside a session fires no hook, so whenever cc-moss lists sessions (`cc-moss ls`, the picker, the panel
+refreshing) it reads the latest `/rename` from the session's log, and the name and tmux name follow. Idle sessions
+included.
+
+### Moving a session into tmux
+
+A session you started with plain `claude` in some other terminal isn't in tmux: cc-moss can see it, but can't type
+into it for you, and if it drops, bringing it back is the only way. `cc-moss adopt` moves it into tmux:
+
+```sh
+cc-moss adopt NAME --dry-run   # see what it would do; changes nothing
+cc-moss adopt NAME             # end its process in the old terminal and carry on in tmux, same conversation
+```
+
+- If the session has no name of its own yet (just an id), cc-moss first records its folder's name for it (with `-2`,
+  `-3` when taken), and refreshes its last message and activity time from the session's log.
+- It then asks the old process to quit (waiting up to 10 seconds) and resumes the session in tmux the way restore
+  does. The old terminal window stays open, with Claude no longer in it.
+- Only idle sessions move: one that's working or asking you something is refused until the turn is done. So are
+  sessions already in tmux, ones that aren't running (use `restore`), Moss, and any where cc-moss can't be sure which
+  process is the session. If the process doesn't quit within 10 seconds, the session stays where it is and you're
+  told to quit it in its own terminal and try again.
+- `--json` prints one line with `result` set to `moved`, `would-move`, `refused` or `failed`, and a `reason` when
+  refused (`busy`, `in-tmux`, `not-running`, `not-its-process`, `moss`). Every move is noted in `audit.jsonl` in the
+  state directory.
+
+In the panel, a session outside tmux has a Move into tmux button at the end of its row (Tidy up and move into tmux
+when it has no name yet). It says what will happen first and acts only once you confirm.
 
 ### Answering a session's questions from elsewhere
 
@@ -208,9 +253,10 @@ Handle takes you to it.
 
 - **One choice**: click an option and that's your answer.
 - **Several choices**: tick the ones you want, then click Done.
-- **Several questions at once**: answer them one at a time, check your answers, then click Send. Back takes you to
-  the one before.
-- **Your own words**: with a single question, click "Write my own…", type, and press Return.
+- **Several questions at once**: answer them one at a time, then check your answers: each shows as a quote, and
+  pointing at one shows Change to go back to it. Click Send when they look right. Back takes you to the one before.
+- **Your own words**: with a single question, the last row is Type something. It opens a field of 2 to 5 lines:
+  Return starts a new line, ⌘↩ sends, Esc goes back to the options. You can type the same way in Mo's message box.
 - **A permission request** (`--safe` sessions): the card says which tool Claude wants to use and what it would run
   (keys hidden as above). Click Allow or Don't Allow.
 - Once it's sent, the card says how it went: answered, too late (it was answered in the terminal, or the session
@@ -328,8 +374,8 @@ starts it is off), or `"last_error"` with the reason the last start failed. If `
 ended (tmux doesn't answer), it says so and exits with an error; the switch is off all the same, and the daemon
 keeps trying.
 
-- **You can't end it, only turn it off.** The session list, the picker and `cc-moss close` don't end Moss; in the
-  panel it's pinned to the top row with no "Stop Reminding", and it never shows up to bring back. To stop it, switch
+- **You can't end it, only turn it off.** The picker and `cc-moss close` don't end Moss; the panel's session list
+  leaves it out (it has a Moss page of its own), and it never shows up to bring back. To stop it, switch
   it off in the menubar app's Settings › Moss, run `cc-moss moss stop`, or put `[moss] enabled = false` in the config.
   Each way it stays off until you turn it on again.
 - **Where it lives.** `moss/` in the state directory (by default `~/.local/state/cc-moss/moss/`), outside protected
@@ -363,9 +409,12 @@ keeps trying.
 - **Where it runs.** A tmux server of its own (`tmux -L cc-moss-moss`, session `moss`), apart from yours:
   `tmux kill-server` on your side leaves it alone. That server doesn't read your `~/.tmux.conf`, so plugins and
   options there don't change how Moss lives (a `remain-on-exit` left on is treated as the death it is). cc-moss knows
-  Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click its row in the panel.
-  Only the session the daemon started is Moss: a window you open next to it, or `claude --resume` of its id elsewhere,
-  is an ordinary session.
+  Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click Open in Terminal on
+  the panel's Moss page. Only the session the daemon started is Moss: a window you open next to it, or
+  `claude --resume` of its id elsewhere, is an ordinary session.
+- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`), so the ones you set up for Claude
+  Code don't come along. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
+  model's window when that's smaller); at the cap Claude Code compacts it, so the conversation doesn't keep growing.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
   Anthropic like any session you start. While it waits it sends nothing and uses none of your plan; each start begins
   with one short turn to read its notes.
@@ -379,11 +428,42 @@ keeps trying.
 
 #### Talking to Moss
 
-The third page on the panel's side rail is Moss (⌘3). The top line says how it's doing (standing by, thinking, waiting
-for you to confirm, restarting, off); below is your conversation. At the bottom are the things it can do right now; click one to hand it
-over: Who's waiting on me, What's stuck, What got done today. To write your own, click the keyboard icon at the end
-for a text box (Return sends, ⇧Return for a new line), and click again to go back. On the rail, Moss's icon has a softly pulsing dot while it thinks, and a dot in the brand
-color when there's a reply you haven't seen.
+The third page on the panel's side rail is Moss (⌘3). The top line says how it's doing (standing by and for how long,
+thinking, waiting for your OK, restarting, off), with Open in Terminal beside it to watch its terminal; below is your
+conversation, and at the bottom the quick bar. On the rail, Moss's icon has a softly pulsing dot while it thinks, and
+a dot in the brand color when there's a reply you haven't seen.
+
+- **The quick bar.** One click hands something to Moss: Checkup, Who's waiting on me, What's stuck, What got done
+  today and Tidy up, plus the Claude Code commands that suit your account (see below). What doesn't fit on one row
+  goes under ⋯ at the end. The order follows how much you use each one on this Mac, recent uses counting more, and
+  what's going on moves the matching one forward: Who's waiting on me when To Do has something, What's stuck when a
+  session dropped, Usage when your last `/usage` showed something at 80%. Moss can suggest a few too; they go first
+  for 24 hours, with a small sparkle. The order is set when you open the page, so it holds still while you click.
+- **Your own words.** The keyboard icon at the end of the bar swaps in a text box (Return sends, ⇧Return for a new
+  line); click it again to go back. When Claude Code has a suggestion waiting in Moss's input, a faint "↳ …" floats
+  above the bar: click it to put it in the box (it isn't sent), or × to hide it until Moss replies again.
+- **Claude Code commands.** Anything starting with `/` runs as a Claude Code command: the daemon types it into Moss's
+  terminal, waits for the screen to settle and brings what it shows back as Moss's reply; a command that opens a
+  panel has it closed afterwards. The quick bar, and typing `/`, offer the ones that only look: `/usage` (usage),
+  `/status` (account and version), `/context` (context used), `/cost` (cost so far) and `/stats`. Which ones depends
+  on your Claude Code account: `/usage` for a subscription (Pro, Max), `/cost` for an API key or a third-party cloud
+  (Bedrock, Vertex and the like); typed in full, the others still go. `/help`, `/clear` and `/compact` work typed in
+  full too. Any other command gets "This one needs the terminal", so use it in Open in Terminal. `/usage` and
+  `/status` come back drawn as cards; Raw shows the terminal text.
+- **How replies look.** Markdown: headings, lists, quotes, tables and code blocks; only https links can be clicked.
+  Things said in a row by the same side within 10 minutes share one bubble. A long reply is folded; Show more opens
+  it. The conversation starts with the latest 30 messages; Load earlier adds 30 at a time up to 100, and anything
+  older is in the terminal.
+- **Session cards.** When Moss talks about particular sessions (ask Who's waiting on me, say), cards for them sit
+  under the reply: open, bring back, move into tmux, rename or pin right there. A session waiting on you has Handle,
+  which takes you to it in To Do. Once dealt with, a card says Handled and where the session stands now, and with two
+  or more all dealt with, the reply says All handled. Cards only show sessions that are still there or were closed
+  in the last 30 days.
+- **Session names in its words.** A session name in what Moss says shows as a small badge: point at it for the same
+  card, click it to go to that session on the Sessions page (with its reply line open if it's waiting for you to type;
+  a closed one is searched for you).
+- **Ask Moss to find a session.** When a search on the Sessions page finds nothing, Ask Moss → sends Moss "Find me a
+  session: …". It looks through its session overview (`SESSIONS.md`) and answers with cards.
 
 ```sh
 cc-moss moss say -- Which sessions need me right now?   # same as sending from the panel; --json prints {"schema":1,"id":"…"}
@@ -399,15 +479,61 @@ cc-moss moss chat --json                                 # the last 200 messages
   terminal)." A turn still running after 5 minutes is followed for up to 15; if Moss is stopped on a
   confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
 - **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
-  20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. In the
-  conversation it's a small grey line in the middle. To keep Moss out of it, put `[moss] digest = false` in the config.
-- **Reply alerts.** None while you're on the Moss page; otherwise Mo shows a bubble if Mo is on screen, or you get a
-  notification, and either takes you to the Moss page. Moss can also note something quietly without telling you, or
-  put a few buttons under a reply; clicking one sends those words to it.
+  20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. Each change
+  is checked again just before it goes: a session no longer waiting on you, or one that's back, is left out, and if
+  nothing is left, nothing is sent. In the conversation it's a small grey line in the middle. When a note only says
+  turns finished, Moss's answer to it isn't shown and doesn't alert you. To keep Moss out of it, put
+  `[moss] digest = false` in the config.
+- **Reply alerts.** None while you're on the Moss page; otherwise Mo shows a "Moss replied" bubble if Mo is on
+  screen, or you get a notification, and either takes you to the Moss page. Moss can also note something quietly
+  without telling you, or put a few buttons under a reply; clicking one sends those words to it.
 - **Only what you send from the panel or with `moss say` is in the conversation.** What you type straight into
   Moss's terminal stays in the terminal.
 - **Privacy.** cc-moss passes Moss only what you send it and the session updates (names and states), never other
   sessions' conversations, and Moss's guard and sandbox keep it from reading their logs in `~/.claude/projects`.
+
+#### Checkup
+
+Click Checkup or Tidy up on the Moss page. Moss fixes what doesn't need you, then sends a brief of a few lines: what
+it fixed and what's left for you to decide. What needs you comes as buttons, and Moss acts only once you click; if
+nothing's wrong, it says so in one line. Tidy up is about sessions only: names for the ones without, and choices for
+ones dropped or idle for a long time.
+
+| What it finds | What Moss does |
+|---|---|
+| A tmux name that doesn't match the session's name | Matches them up |
+| Hooks or alias links broken or missing | Fixes them (like `cc-moss setup` plus `doctor --fix`) |
+| A session with no name (just an id) | Names it after its folder, with `-2` when taken; a name with spaces, punctuation tmux can't take, or too long, is tidied into a standard one (24 characters at most). Renaming types `/rename` into the session, only while it's idle with nothing typed |
+| Dropped, and its folder is gone | Stops offering it back (it can't come back), and tells you afterwards |
+| Dropped, and it could carry on | Asks: bring them all back, just today's, or drop them (bringing back starts sessions and uses your plan) |
+| Dropped more than 7 days ago | Asks: stop reminding, or keep it |
+| Open but untouched for 3 days | Asks: close it, or keep it (closing ends it) |
+| Waiting on your answer or reply | Leaves it, and tells you how many are in To Do |
+
+**Daily checkup.** Settings › Moss › Checkup has two switches, both on by default:
+- **Daily checkup**: once a day, the first time the daemon sees the menubar app running, it sends Moss the same
+  request as the Checkup button (it doesn't show as something you said).
+- **Daily brief**: off, the daily checkup still runs, but its brief is kept quietly in the conversation; you hear
+  about it only when you need to decide something.
+
+In the config these are `[moss] daily_checkup` and `daily_brief`; `cc-moss config set moss.daily_checkup false`
+works too.
+
+**How Moss acts.** Moss's sandbox can't reach your sessions, so it asks the daemon to act for it
+(`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
+fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
+it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: the daemon
+checks the message id Moss gives it, which has to be something you said in the conversation, in the last 10 minutes,
+in answer to a Moss message with buttons. Otherwise it refuses. Moss can't write the conversation file, so it can't
+make up your answer. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
+say), the action is skipped with a reason. Each one is written to `audit.jsonl` in the state directory (when, what,
+on which session, on the strength of which message, and how it went). For a Moss that only says what to do, set
+`[moss] actions = false` (or `cc-moss config set moss.actions false`).
+
+The checkup reads the facts `cc-moss doctor --sessions --json` gives: for each session, whether its name was made up
+automatically, whether its folder is there, how long it has been dropped or idle, whether it's working or waiting on
+you, whether its tmux name matches, and a suggested name; plus whether the hooks and alias links are in order. What
+can't be told is `"unknown"`, never taken as broken. None of it is from your conversations.
 
 ## The menubar app
 
@@ -458,8 +584,26 @@ you can tell at a glance. "Needs you" wins over "stopped", which wins over "work
 
 ### The panel
 
-Click the menu bar icon, or tap Control twice anywhere, and the panel opens. Sessions are grouped by project, with git
-worktrees marked; the row at the top filters by state (all, working, waiting for you, stopped). Typing searches.
+Click the menu bar icon, or tap Control twice anywhere, and the panel opens. Opening the app again while it runs
+(Spotlight, `open -a cc-moss`, or its Dock icon when that's showing) opens the panel too. So does the link
+`cc-moss://panel`; add `/sessions`, `/queue` or `/moss` to land on that page, handy in Shortcuts or a launcher.
+
+Down the left is a side rail: Sessions (⌘1), To Do (⌘2, with a count of what's left) and Moss (⌘3). The gear at the
+foot of the rail is the app's menu: Settings… (⌘,) and Refresh (⌘R); Update to x when there's a new version (it runs
+`cc-moss update` in your terminal, and the gear gets a small dot), otherwise the current version, which opens
+Settings › About; and Quit cc-moss (⌘Q). Along the bottom are New Session on the left and, on the right, the selected
+session's main action (Open, Bring Back and so on, with a ↵), on the Sessions page only.
+
+The panel picks its height as it opens, by how many sessions you have: shorter for 4 or fewer, medium for 5 to 9,
+and for 10 or more 70% of the screen's height (between 720 and 900 points). It keeps that height while it's open.
+It refreshes by itself when your sessions change, at most every 1.5 seconds while it's open and every 5 seconds
+while it's closed; ⌘R refreshes now.
+
+#### The Sessions page
+
+Sessions are grouped by project, with git worktrees marked; the row at the top filters by state (All, Working,
+Waiting, Interrupted), and Tab / ⇧Tab cycle it. Typing searches (see below). Moss isn't in this list; it has a page
+of its own (see [Talking to Moss](#talking-to-moss)).
 
 On a stopped session, Return brings it back: the same conversation, in tmux, exactly like `cc-moss restore`. When
 several stopped at once (after a restart, say), a "2 sessions stopped" strip at the top has a Bring All Back button.
@@ -470,28 +614,57 @@ On a session you can open, Return opens a new window in your terminal, straight 
 Ghostty (recommended), iTerm2, WezTerm, Kitty and Alacritty are supported; pick yours in Settings › General. Using
 another one? ⇧⌘C copies the command for you to paste.
 
-Each session carries its own actions. Point at one and its buttons appear at the end of the row: Rename, Send a Message
-and Open (Bring Back for a stopped session), then ⋯ for the rest: write a note, copy the command or the folder path,
-stop reminding. Right-click a session, or press ⌘K, for all of them at once. What isn't about one session (new
-session, refresh, settings, quit) is on the cc-moss logo at the bottom left.
+**Pins.** Point at a session and a pin shows after its name; click it to pin the session. ⌘P does the same, and so
+does Pin under ⋯. Pinned sessions sit at the top under Pinned; click the pin again to unpin. Pins are kept by the app
+on this Mac, and drop off by themselves when a session is closed or gone.
+
+**The row's buttons.** Point at a session and its buttons appear at the end of the row, from left to right: Send a
+Message, Open (Bring Back for a stopped session) and Rename, then ⋯ for the rest: write a note, copy the command or
+the folder path, stop reminding, pin. Send a Message and Rename are there for sessions in tmux that are working or
+waiting. A session outside tmux gets Move into tmux in front (see
+[Moving a session into tmux](#moving-a-session-into-tmux)): it's dimmed while the session works or asks you
+something, and pointing at it says why; clicking it says what will happen and waits for your OK. Right-click a
+session, or press ⌘K, for every action at once.
+
+**Reply right in the list.** Click a session waiting for your reply and a line opens under it, already holding
+Claude Code's own suggestion for your next message (the dim text in its terminal). The suggestion stays grey until
+you edit it, press an arrow key or click it; to write something else, just type over it. Return sends, ⇧Return
+starts a new line, Esc closes it, and ↑ ↓ jump to the previous or next session waiting on you. Once sent, it says
+"Sent to X." and opens the next waiting session; when there are none, it stays on the row you just answered (which
+may have moved as its state changed; the list follows it). A busy session gets the line too, saying "It's busy; this
+waits until it's done", without a suggestion. The line is locked while it sends; if sending fails, your text stays
+and the reason shows under it. When the line can't open, it says why: the session isn't in tmux (with Move into
+tmux → when it can move), or it dropped (bring it back first). Sessions asking for your OK or a choice are answered
+in To Do.
+
+**Search.** Typing searches, and the results are one ranked list: names that start with what you typed first, then
+word starts or initials, then anywhere in the name, then the folder, the note and the last thing you said; among
+equals, the most recently active first. Every word you type has to match. Matched letters in a name are highlighted;
+a session found by its folder, note or last message says so under it ("in path: …", "note: …", "last said: …").
+Abbreviations and pinyin initials work too: `kds` finds koo-device-setup, and `jkps` or `jiekou` finds 接口评审.
+Sessions closed in the last 30 days are searched as well and listed under Closed, where Bring Back starts one again
+right where its conversation left off. When nothing matches, it says No match for "…", with Ask Moss →.
 
 | Key | What it does |
 |---|---|
 | Typing | Search sessions |
 | ↑ ↓ | Move the selection |
 | ↵ | Open the selected session; bring it back if it stopped |
-| Tab / ⇧Tab | Cycle the filter: all, working, waiting, stopped |
-| ⌘K | Every action for the selected session, next to it; ↑ ↓ and ↵ pick one |
+| Tab / ⇧Tab | Cycle the filter: all, working, waiting, interrupted |
+| ⌘1 / ⌘2 / ⌘3 | Sessions, To Do, Moss |
+| ⌘K | Every action for the selected session, next to it; ↑ ↓ and ↵ pick one. With nothing selected, the gear's menu |
 | ⌘N | New session: a name and a folder |
-| ⌘E | Send a message: types it into the session's terminal for you (a session outside tmux gets a note instead) |
+| ⌘E | Send a message: types it into the session's terminal for you, with Claude Code's suggestion already filled in; Return for a new line, ⌘↩ sends (a session outside tmux gets a note instead) |
+| ⌘P | Pin or unpin |
 | ⇧⌘C | Copy the command (for a stopped session, the restore command) |
 | ⌘R | Refresh |
 | ⌘, | Settings |
-| Esc | Step back: close the form, the menu, the filter, the search, then the panel |
+| Esc | Step back: close the form, the menu, a confirmation, the filter, the search, then the panel |
 | ⌘Q | Quit the app |
 
 Notes, renames and messages are typed right in the panel and go through `cc-moss note` and `cc-moss send`; a rename
-simply types `/rename <new name>` into the session for you.
+simply types `/rename <new name>` into the session for you. That works on an idle session too: the panel and the
+tmux name follow at the next refresh (see [Session names](#session-names)).
 
 ### Notifications and Mo
 
@@ -540,13 +713,13 @@ Mo can make a sound too, under Settings › Mo › Voice:
 
 | Page | What's there |
 |---|---|
-| General | Open at Login, interface language, whether new sessions work on their own (bypass), workspace, the terminal sessions open in, new tab or new window |
+| General | Open at Login, interface language, appearance (System, Light, Dark), whether new sessions work on their own (bypass), workspace, the terminal sessions open in, new tab or new window |
 | Shortcuts | The shortcut for the panel; short names to type in a terminal (open the session list, start a session, bring stopped ones back…): click the keycap, type, Return saves, and it plays what the name does. Your own commands sit under the folded Your own; the same names as `cc-moss alias` (see [Aliases](#aliases)). The keys inside the panel |
 | Menu Bar | How the icon shows, motion |
 | Mo | On or off, size, interaction, voice |
 | Notifications | Who tells you, answering questions here, what to tell you; a word when notifications are turned off |
 | Permissions | Everything cc-moss asks macOS for, on one page: Accessibility, notifications, control of your terminal (Automation). Each says where it stands and what it's for, with Allow when one is missing. When one is off and something uses it, a small dot shows beside the page |
-| Moss | Moss's switch and status (how long it has run, how often it restarted; see [Moss](#moss)), and whether the daemon is running, with Start when it isn't (see [The daemon](#the-daemon)) |
+| Moss | Moss's switch and status (how long it has run, how often it restarted; see [Moss](#moss)), and whether the daemon is running, with Start when it isn't (see [The daemon](#the-daemon)); Daily checkup and Daily brief (see [Checkup](#checkup)) |
 | About | App and command line versions, software update, where the `cc-moss` program is, the welcome again |
 
 The search field at the top of the sidebar finds any setting.
@@ -662,8 +835,10 @@ cc-moss runs locally and sends nothing about you anywhere. It keeps:
   session events, without prompts (a permission prompt's text is kept to 200 characters).
 - `~/.local/state/cc-moss/hook.log`: hook errors, capped at 1 MB.
 - `~/.local/state/cc-moss/daemon/`: the daemon's status, heartbeat and logs (macOS), each capped at 1 MB.
-- `~/.local/state/cc-moss/moss/`: [Moss](#moss)'s home: its persona, daily journal, memory, and the session
-  overview it reads (macOS).
+- `~/.local/state/cc-moss/moss/`: [Moss](#moss)'s home: its persona, daily journal, memory, the session overview it
+  reads, and your conversation with it in `chat.jsonl` (the older part set aside past 2,000 lines) (macOS).
+- `~/.local/state/cc-moss/audit.jsonl`: what Moss did for you and what `cc-moss adopt` moved: when, what, on which
+  session and how it went; readable only by you.
 - `~/.local/state/cc-moss/asks/`: questions sessions are waiting on (the questions and options, or the first 300
   characters of what a tool wants to do) and their answers; deleted an hour after they expire.
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
@@ -710,6 +885,9 @@ wait_secs = 300           # how long to wait for an answer from elsewhere (1–5
 [moss]
 enabled = true            # keep Moss running (macOS); false turns it off, which is what cc-moss moss start|stop change
 digest = true             # tell Moss when sessions need you, drop or finish; false keeps it out of that
+actions = true            # Moss may ask the daemon to do what a checkup finds; false: it only says what to do
+daily_checkup = true      # a checkup once a day
+daily_brief = true        # the daily brief alerts you; false: only when you need to decide
 ```
 
 You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).
