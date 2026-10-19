@@ -117,6 +117,7 @@ fn settings_json(exe: &str, state: &Path) -> String {
     let deny_write: Vec<String> = SHELL_READ_ONLY
         .iter()
         .chain(guard::CONVERSATION)
+        .chain(&[".claude"])
         .map(|f| format!("./{f}"))
         .collect();
     let value = serde_json::json!({
@@ -155,6 +156,12 @@ fn settings_json(exe: &str, state: &Path) -> String {
             }
         }
     });
+    // Moss starts with project settings only (`--setting-sources project`):
+    // cc-moss's own hooks, which record it, go here too, and the bypass
+    // warning is answered as in the user's settings.
+    let value = moss_core::settings_json::install(&value, exe)
+        .and_then(|v| moss_core::settings_json::accept_bypass_prompt(&v))
+        .unwrap_or(value);
     let mut text = serde_json::to_string_pretty(&value).unwrap_or_default();
     text.push('\n');
     text
@@ -1328,6 +1335,10 @@ fn claude_args(session_id: &str) -> Vec<String> {
     [
         "--dangerously-skip-permissions",
         "--strict-mcp-config",
+        // The user's settings (their sandbox, hooks, permissions) never
+        // widen Moss's fence; what it needs is in its own.
+        "--setting-sources",
+        "project",
         "--session-id",
         session_id,
         boot_prompt(),
@@ -1431,6 +1442,49 @@ mod tests {
         );
         // Offline: no network from its shell.
         assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
+        // Its own .claude folder is not for its shell either.
+        assert!(deny.contains(&"./.claude".into()), "{deny:?}");
+    }
+
+    #[test]
+    fn moss_settings_carry_cc_moss_hooks_of_their_own() {
+        // Moss starts with project settings only: the user's settings (and
+        // any sandbox widening in them) never reach it, so the hooks that
+        // record it are in its own settings.
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"))).unwrap();
+        let commands = |event: &str| -> Vec<String> {
+            v["hooks"][event]
+                .as_array()
+                .unwrap_or(&vec![])
+                .iter()
+                .flat_map(|g| g["hooks"].as_array().cloned().unwrap_or_default())
+                .filter_map(|h| h["command"].as_str().map(String::from))
+                .collect()
+        };
+        assert!(commands("SessionStart")
+            .iter()
+            .any(|c| c.contains("/bin/cc-moss hook session-start")));
+        let stop = commands("Stop");
+        assert!(
+            stop.iter().any(|c| c.contains("hook moss-stop")),
+            "{stop:?}"
+        );
+        assert!(stop.iter().any(|c| c.contains("hook stop")), "{stop:?}");
+        let pre = commands("PreToolUse");
+        assert!(
+            pre.iter().any(|c| c.contains("hook moss-guard")),
+            "the guard stays: {pre:?}"
+        );
+        assert!(commands("SessionEnd")
+            .iter()
+            .any(|c| c.contains("hook session-end")));
+        let args = claude_args("abc");
+        let at = args
+            .iter()
+            .position(|a| a == "--setting-sources")
+            .expect("project settings only");
+        assert_eq!(args[at + 1], "project");
     }
 
     #[test]
@@ -1456,10 +1510,6 @@ mod tests {
         assert!(
             !args.iter().any(|a| a.starts_with("--mcp-config")),
             "zero servers"
-        );
-        assert!(
-            !args.iter().any(|a| a.starts_with("--setting-sources")),
-            "user settings (cc-moss's hooks) still load"
         );
         assert!(args.iter().any(|a| a == "--dangerously-skip-permissions"));
         let at = args.iter().position(|a| a == "--session-id").unwrap();
