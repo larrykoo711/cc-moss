@@ -24,6 +24,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   restarted, and why it isn't running when it isn't; `ls --json` marks it `"role": "moss"`. When it needs you, the
   menu bar icon says so. It uses your Claude Code sign-in and nothing while it waits. Going back to an older cc-moss
   may show an old Moss as an interrupted session to bring back; `cc-moss close` it.
+- **Talk to Moss (macOS).** The panel's side rail has a Moss page (⌘3): how Moss is doing at the top (standing by,
+  thinking, waiting for you to confirm, restarting, off), your conversation below, and at the bottom the things it can do now (who's waiting on you,
+  what's stuck, what got done today) with a keyboard button for writing your own. The daemon
+  pastes what you send into Moss's terminal when it's free, checks it arrived, and brings the reply back; when the
+  reply can't be read it says so instead of hanging. Moss also hears when a session needs you, drops or finishes
+  (batched, not repeated; `[moss] digest = false` turns it off). A reply rings Mo or a notification unless you're on
+  the Moss page. `cc-moss moss say` and `cc-moss moss chat --json` do the same from the terminal.
 - **Answer a session's question from elsewhere.** When a session asks a multiple-choice question, or a `--safe`
   session asks for permission, cc-moss writes it down: `cc-moss ask list` shows it and
   `cc-moss ask answer ID --choice LABEL` (or `--text`, `--allow`, `--deny`) hands the answer back, and the session

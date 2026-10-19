@@ -313,8 +313,8 @@ cc-moss daemon start           # start it again (setting it up first if needed)
 Moss is a Claude Code session cc-moss keeps running for you (macOS). The daemon starts it when you log in; if it's
 killed, crashes or loses its tmux, the daemon starts it again after a wait (30 seconds, 2 minutes, 10 minutes, then
 every hour; a run of 10 minutes starts the count over). Every start is a fresh session: what it knows and what it was
-doing are in files, which it reads first before carrying on; with nothing to do it waits quietly. For now it simply
-stays there; talking to it and handing it work come in later versions.
+doing are in files, which it reads first before carrying on; with nothing to do it waits quietly. You can talk to it
+from the panel (see Talking to Moss below); handing it work comes in a later version.
 
 ```sh
 cc-moss moss status          # on or off, running or not, for how long, how often it restarted
@@ -376,6 +376,38 @@ keeps trying.
   removes cc-moss's files; your persona, journal and memory stay.
 - Going back to a cc-moss from before Moss: it doesn't know which record is Moss, so an old Moss may show up as an
   interrupted session to bring back. Close it with `cc-moss close` (or leave it).
+
+#### Talking to Moss
+
+The third page on the panel's side rail is Moss (⌘3). The top line says how it's doing (standing by, thinking, waiting
+for you to confirm, restarting, off); below is your conversation. At the bottom are the things it can do right now; click one to hand it
+over: Who's waiting on me, What's stuck, What got done today. To write your own, click the keyboard icon at the end
+for a text box (Return sends, ⇧Return for a new line), and click again to go back. On the rail, Moss's icon has a softly pulsing dot while it thinks, and a dot in the brand
+color when there's a reply you haven't seen.
+
+```sh
+cc-moss moss say -- Which sessions need me right now?   # same as sending from the panel; --json prints {"schema":1,"id":"…"}
+cc-moss moss chat --json                                 # the last 200 messages (--limit N for more or fewer)
+```
+
+- **How it reaches Moss.** What you send waits in line. When Moss is free and its input is empty, the daemon pastes
+  it into Moss's terminal in one go and reads the screen back to make sure it arrived; after three misses it's marked
+  "Not sent" with a Resend button, and the rest still go. While Moss is in the middle of something, new messages wait
+  and go in order.
+- **How the reply comes back.** When Moss finishes, cc-moss takes its last words from its conversation log. Claude
+  Code doesn't document that log, so when the reply can't be found it doesn't hang: it says "Moss got it (couldn't
+  fetch the reply; see the terminal)". A turn still running after 5 minutes is followed for up to 15; if Moss is
+  stopped on a confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
+- **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
+  30 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. In the
+  conversation it's a small grey line in the middle. To keep Moss out of it, put `[moss] digest = false` in the config.
+- **Reply alerts.** None while you're on the Moss page; otherwise Mo shows a bubble if Mo is on screen, or you get a
+  notification, and either takes you to the Moss page. Moss can also note something quietly without telling you, or
+  put a few buttons under a reply; clicking one sends those words to it.
+- **Only what you send from the panel or with `moss say` is in the conversation.** What you type straight into
+  Moss's terminal stays in the terminal.
+- **Privacy.** Moss gets only what you send it and the session updates (names and states); it never gets other
+  sessions' conversations.
 
 ## The menubar app
 
@@ -677,6 +709,7 @@ wait_secs = 300           # how long to wait for an answer from elsewhere (1–5
 
 [moss]
 enabled = true            # keep Moss running (macOS); false turns it off, which is what cc-moss moss start|stop change
+digest = true             # tell Moss when sessions need you, drop or finish; false keeps it out of that
 ```
 
 You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).
