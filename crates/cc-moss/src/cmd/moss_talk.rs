@@ -203,6 +203,24 @@ pub struct Talk {
     compacting: Option<Compacting>,
     /// News lines (ids) that were only finished turns.
     quiet: std::collections::HashSet<String>,
+    /// Per news line (id): what it said of each session (slot id → state).
+    told: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
+}
+
+/// Whether a change is still so: a session still waiting on the user, or
+/// still dropped. Finished turns stay news. A session that is gone from the
+/// registry is not.
+fn still_so(c: &Change, slots: &[moss_core::slot::Slot]) -> bool {
+    let Some(slot) = slots.iter().find(|s| s.slot_id == c.slot_id) else {
+        return false;
+    };
+    match c.kind {
+        digest::Kind::NeedsYou => slot.status == Status::Running && slot.attention.is_some(),
+        digest::Kind::Disconnected => {
+            slot.effective_status(moss_core::proc::is_alive) != Status::Running
+        }
+        digest::Kind::Done => true,
+    }
 }
 
 impl Talk {
@@ -232,6 +250,7 @@ impl Talk {
             waiting_shown: true,
             compacting: None,
             quiet: Default::default(),
+            told: Default::default(),
         }
     }
 
@@ -297,12 +316,16 @@ impl Talk {
                 log(&format!("moss: error: reading the registry: {e:#}"));
             }
         }
-        if let Some(line) = self
-            .digest
-            .due(now_ms, crate::i18n::lang() == crate::i18n::Lang::Zh)
-        {
-            if digest_on {
-                self.tell_news(&line, now_ms, log);
+        if self.digest.is_due(now_ms) {
+            // Checked against the registry right before it goes: news that
+            // is no longer so (handled meanwhile) is not told.
+            let slots = self.slots();
+            let still = |c: &Change| still_so(c, &slots);
+            let zh = crate::i18n::lang() == crate::i18n::Lang::Zh;
+            if let Some((line, told)) = self.digest.due_checked(now_ms, zh, &still) {
+                if digest_on {
+                    self.tell_news(&line, &told, now_ms, log);
+                }
             }
         }
         let mut pane = TmuxPane::new(socket, &self.state);
@@ -566,7 +589,13 @@ impl Talk {
     /// Moss's reply as a chat line, its markers read.
     fn reply_line(&self, sent: &InFlight, text: &str, now_ms: i64) -> Line {
         let parsed = markers::parse(text);
-        let sessions = self.sessions(&parsed.sessions, now_ms);
+        let mut sessions = self.sessions(&parsed.sessions, now_ms);
+        // An answer to news: the cards keep what the news said.
+        if sent.from == chat::FROM_EVENTS {
+            if let Some(told) = self.told.get(&sent.id) {
+                sessions = markers::states_as_told(sessions, told);
+            }
+        }
         let routine = sent.from == chat::FROM_EVENTS && self.quiet.contains(&sent.id);
         Line {
             reply_to: Some(sent.id.clone()),
@@ -582,6 +611,17 @@ impl Talk {
                 &parsed.text,
             )
         }
+    }
+
+    /// Every slot in the registry; none when it can't be read.
+    fn slots(&self) -> Vec<moss_core::slot::Slot> {
+        let db = self.state.join("registry.db");
+        if !db.exists() {
+            return Vec::new();
+        }
+        Registry::open(&db)
+            .and_then(|r| r.slots())
+            .unwrap_or_default()
     }
 
     /// The sessions Moss pointed at, checked against the registry, each
@@ -655,8 +695,19 @@ impl Talk {
 
     /// Session news for Moss. Its answer to news that is only finished
     /// turns is kept quiet whatever it says: nothing there for the user.
-    fn tell_news(&mut self, line: &str, now_ms: i64, log: &dyn Fn(&str)) {
+    fn tell_news(&mut self, line: &str, told: &[Change], now_ms: i64, log: &dyn Fn(&str)) {
         if let Some(id) = self.tell(line, now_ms, log) {
+            // What the news said of each session, for the cards of Moss's
+            // answer to it.
+            if self.told.len() > 100 {
+                self.told.clear();
+            }
+            self.told.insert(
+                id.clone(),
+                told.iter()
+                    .map(|c| (c.slot_id.clone(), c.told_state()))
+                    .collect(),
+            );
             if self.digest.last_finished_only() {
                 if self.quiet.len() > 100 {
                     self.quiet.clear();
@@ -791,8 +842,11 @@ mod tests {
                     0,
                 );
             }
-            let line = talk.digest.due(i64::MAX / 2, true).unwrap();
-            talk.tell_news(&line, 1, &|_| {});
+            let (line, told) = talk
+                .digest
+                .due_checked(i64::MAX / 2, true, &|_| true)
+                .unwrap();
+            talk.tell_news(&line, &told, 1, &|_| {});
             chat::lines(&talk.home).last().unwrap().id.clone()
         };
         let sent = |id: &str| InFlight {

@@ -113,7 +113,45 @@ impl Digest {
     }
 }
 
+impl Change {
+    /// The state a session card shows for this news: what it waited on,
+    /// dropped, or idle after a finished turn.
+    pub fn told_state(&self) -> String {
+        match self.kind {
+            Kind::NeedsYou => format!("needs-you-{}", self.why.as_deref().unwrap_or("input")),
+            Kind::Disconnected => "dropped".into(),
+            Kind::Done => "idle".into(),
+        }
+    }
+}
+
 impl Digest {
+    /// Whether a line is due now.
+    pub fn is_due(&self, now_ms: i64) -> bool {
+        self.opened_at.is_some_and(|o| now_ms - o >= self.window)
+    }
+
+    /// [`Digest::due`], keeping only the changes `still` says are still so
+    /// right before sending (a permission handled meanwhile, a session that
+    /// is running again). `None` when nothing is left: nothing is told.
+    pub fn due_checked(
+        &mut self,
+        now_ms: i64,
+        zh: bool,
+        still: &dyn Fn(&Change) -> bool,
+    ) -> Option<(String, Vec<Change>)> {
+        if !self.is_due(now_ms) {
+            return None;
+        }
+        self.pending.retain(|c| still(c));
+        if self.pending.is_empty() {
+            self.opened_at = None;
+            return None;
+        }
+        let kept = self.pending.clone();
+        self.due(now_ms, zh).map(|line| (line, kept))
+    }
+
     /// Whether the line [`Digest::due`] gave last was only finished turns:
     /// nothing the user has to act on.
     pub fn last_finished_only(&self) -> bool {
@@ -253,6 +291,36 @@ mod tests {
         assert!(!text.chars().any(char::is_control), "{text:?}");
         assert!(text.chars().count() < 70, "{text}");
         assert!(text.contains('…'), "{text}");
+    }
+
+    #[test]
+    fn digest_drops_items_resolved_before_sending() {
+        let mut d = digest();
+        let t0 = 1_000_000;
+        d.push(change("api", Kind::NeedsYou), t0);
+        d.push(change("web", Kind::Disconnected), t0);
+        d.push(change("docs", Kind::Done), t0);
+        assert!(!d.is_due(t0));
+        assert!(d.is_due(t0 + 30 * S));
+        // api's permission was handled meanwhile.
+        let (line, kept) = d
+            .due_checked(t0 + 30 * S, true, &|c| c.slot_id != "api")
+            .unwrap();
+        assert_eq!(line, "[动态] web 断了；docs 做完了");
+        assert_eq!(kept.len(), 2);
+        assert_eq!(kept[0].told_state(), "dropped");
+        assert_eq!(kept[1].told_state(), "idle");
+        // Nothing left to tell: nothing is sent at all.
+        d.push(change("api", Kind::NeedsYou), t0 + 40 * S);
+        assert_eq!(d.due_checked(t0 + 70 * S, true, &|_| false), None);
+        assert!(!d.is_due(t0 + 71 * S), "the window is spent");
+        // A dropped item is not "told", so news of it later is not a repeat.
+        d.push(change("api", Kind::NeedsYou), t0 + 80 * S);
+        assert!(d.due_checked(t0 + 110 * S, true, &|_| true).is_some());
+        assert_eq!(
+            change("x", Kind::NeedsYou).told_state(),
+            "needs-you-permission"
+        );
     }
 
     #[test]

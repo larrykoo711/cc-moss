@@ -35,6 +35,20 @@ pub fn session_state(slot: &crate::slot::Slot, status: crate::slot::Status) -> &
     }
 }
 
+/// The cards' states for a reply to session news: what the news said for
+/// the sessions it named (`told`, by slot id), the state now for the rest.
+pub fn states_as_told(
+    now: Vec<(String, String)>,
+    told: &std::collections::BTreeMap<String, String>,
+) -> Vec<(String, String)> {
+    now.into_iter()
+        .map(|(id, state)| {
+            let state = told.get(&id).cloned().unwrap_or(state);
+            (id, state)
+        })
+        .collect()
+}
+
 /// At most this many sessions in one reply.
 const MAX_SESSIONS: usize = 6;
 
@@ -296,6 +310,20 @@ mod tests {
         }
         assert_eq!(state(&s, Status::Interrupted), "dropped");
         assert_eq!(state(&s, Status::Closed), "closed");
+        // A late reply to news: the cards say what the news said, so the
+        // app can show "handled, idle now" against the session as it is.
+        let now = vec![
+            ("A".to_string(), "idle".to_string()),
+            ("B".to_string(), "working".to_string()),
+        ];
+        let told = [("A".to_string(), "needs-you-permission".to_string())].into();
+        assert_eq!(
+            states_as_told(now, &told),
+            [
+                ("A".to_string(), "needs-you-permission".to_string()),
+                ("B".to_string(), "working".to_string())
+            ]
+        );
         // At most six, and with silent too.
         let p = parse("[[silent]][[sessions: a|b|c|d|e|f|g|h]]");
         assert!(p.silent);
