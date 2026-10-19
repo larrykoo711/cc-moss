@@ -379,8 +379,10 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
     );
 }
 
-/// A tmux server name whose "socket" is a plain file: tmux can neither
-/// connect nor say that nothing runs there, so whether Moss runs is unknown.
+/// A tmux server name in a socket folder tmux won't use (anyone may write
+/// to it): tmux neither connects nor says that nothing runs there, so
+/// whether Moss runs is unknown. (A plain file at the socket's path won't
+/// do: Linux tmux reads the refused connection as "no server running".)
 struct UnclearTmux {
     dir: tempfile::TempDir,
     name: String,
@@ -401,9 +403,8 @@ impl UnclearTmux {
         let sockets = dir.path().join(format!("tmux-{}", uid.trim()));
         std::fs::create_dir_all(&sockets).unwrap();
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&sockets, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&sockets, std::fs::Permissions::from_mode(0o777)).unwrap();
         let name = format!("cc-moss-test-{}-unclear", std::process::id());
-        std::fs::write(sockets.join(&name), "not a socket").unwrap();
         UnclearTmux { dir, name }
     }
 }

@@ -130,7 +130,11 @@ fn warm_up() {
     });
 }
 
-const FAST: Duration = Duration::from_millis(100);
+/// A hook that doesn't wait. Well under [`SHORT_WAIT`]'s 3 s, so one that
+/// waits is still caught, with room for a busy CI machine: a hook there
+/// once took 811 ms to start and exit, and 130 ms is common in a Linux
+/// container under load.
+const FAST: Duration = Duration::from_millis(1000);
 /// Long enough that a hook which waits when it should not is caught by
 /// [`FAST`], short enough not to stall the suite if it does.
 const SHORT_WAIT: &str = "[ask]\nwait_secs = 3\n";

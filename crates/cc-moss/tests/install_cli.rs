@@ -117,7 +117,12 @@ impl Home {
         fn walk(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
             for e in fs::read_dir(dir).unwrap().flatten() {
                 let p = e.path();
-                if p.is_dir() {
+                let meta = fs::symlink_metadata(&p).unwrap();
+                if meta.file_type().is_symlink() {
+                    // Where it points, not what: the target may not exist.
+                    let to = fs::read_link(&p).unwrap();
+                    out.push((p, to.into_os_string().into_encoded_bytes()));
+                } else if meta.is_dir() {
                     walk(&p, out);
                 } else {
                     out.push((p.clone(), fs::read(&p).unwrap()));
