@@ -593,6 +593,7 @@ impl Talk {
     fn reply_line(&self, sent: &InFlight, text: &str, now_ms: i64) -> Line {
         let parsed = markers::parse(text);
         let mut sessions = self.sessions(&parsed.sessions, now_ms);
+        let proposals = self.proposals(&parsed, now_ms);
         // An answer to news: the cards keep what the news said.
         if sent.from == chat::FROM_EVENTS {
             if let Some(told) = self.told.get(&sent.id) {
@@ -605,6 +606,7 @@ impl Talk {
             silent: parsed.silent || routine,
             buttons: parsed.buttons,
             quick: parsed.quick,
+            proposals,
             sessions: sessions.iter().map(|(id, _)| id.clone()).collect(),
             session_states: sessions.into_iter().collect(),
             ..Line::message(
@@ -614,6 +616,36 @@ impl Talk {
                 &parsed.text,
             )
         }
+    }
+
+    /// What Moss asked the user to agree to: each `[[confirm:]]` with its
+    /// session found in the registry and its yes among the reply's buttons.
+    fn proposals(&self, parsed: &markers::Parsed, now_ms: i64) -> Vec<chat::Proposal> {
+        if parsed.confirms.is_empty() {
+            return Vec::new();
+        }
+        let slots = self.slots();
+        parsed
+            .confirms
+            .iter()
+            .filter_map(|c| {
+                let slot_id =
+                    markers::resolve_sessions(std::slice::from_ref(&c.session), &slots, now_ms)
+                        .into_iter()
+                        .next()?;
+                let yes: Vec<String> = c
+                    .yes
+                    .iter()
+                    .filter(|y| parsed.buttons.contains(y))
+                    .cloned()
+                    .collect();
+                (!yes.is_empty()).then(|| chat::Proposal {
+                    action: c.action.clone(),
+                    slot_id,
+                    yes,
+                })
+            })
+            .collect()
     }
 
     /// Every slot in the registry; none when it can't be read.
@@ -826,6 +858,52 @@ mod tests {
 
     fn line(id: &str, from: &str) -> Line {
         Line::message(id, "t", from, "x")
+    }
+
+    #[test]
+    fn a_confirm_marker_becomes_a_checked_proposal() {
+        use moss_core::event::{Context, Event, StartSource};
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        std::fs::create_dir_all(&talk.home).unwrap();
+        let mut reg = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let start = Event::Start {
+            source: StartSource::Startup,
+            session_id: "a1b2c3d4-0000".into(),
+            cwd: "/w".into(),
+            title: Some("api".into()),
+            transcript_path: None,
+        };
+        let ctx = Context {
+            pid: None,
+            pid_start: None,
+            tmux: None,
+            launch_args: None,
+            now_ms: 1,
+        };
+        reg.apply(&start, &ctx).unwrap();
+        let slot = reg.slots().unwrap()[0].slot_id.clone();
+        let sent = InFlight {
+            id: "y0".into(),
+            from: chat::FROM_YOU.into(),
+            tail: String::new(),
+            at_ms: 1,
+        };
+        let line = talk.reply_line(
+            &sent,
+            "Bring api back? [[buttons: 找回 | 不要]][[confirm: restore api | 找回 | 好的]][[confirm: end nobody | 找回]]",
+            2,
+        );
+        // Only a session that exists, and only yes buttons that were offered.
+        assert_eq!(
+            line.proposals,
+            [chat::Proposal {
+                action: "restore".into(),
+                slot_id: slot,
+                yes: vec!["找回".into()]
+            }]
+        );
+        assert_eq!(line.text.as_deref(), Some("Bring api back?"));
     }
 
     #[test]

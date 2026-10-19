@@ -59,6 +59,10 @@ pub struct Line {
     /// Sessions Moss points at (`[[sessions:]]`), as slot ids it checked.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub sessions: Vec<String>,
+    /// What a yes to this message would let Moss do (`[[confirm:]]`, checked
+    /// by the daemon): only these, for these sessions, with these buttons.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proposals: Vec<Proposal>,
     /// What each of those was doing when Moss said it, by slot id.
     #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub session_states: std::collections::BTreeMap<String, String>,
@@ -131,6 +135,15 @@ fn read_lines(file: &Path) -> Vec<Line> {
         .filter_map(|l| serde_json::from_str::<Line>(l).ok())
         .filter(|l| !l.id.is_empty())
         .collect()
+}
+
+/// An action Moss asked the user to agree to.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Proposal {
+    pub action: String,
+    pub slot_id: String,
+    /// The buttons that mean yes.
+    pub yes: Vec<String>,
 }
 
 /// A message as `moss chat --json` gives it.

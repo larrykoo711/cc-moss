@@ -96,10 +96,25 @@ impl Action {
     }
 }
 
-/// Whether `because` is the user's go-ahead: a message of theirs in the
-/// conversation, at most ten minutes old, answering a Moss message that
-/// offered buttons.
-pub fn consent(lines: &[Line], because: Option<&str>, now_ms: i64) -> Result<(), String> {
+/// The key a used go-ahead is remembered by.
+pub fn consent_key(because: &str, action: &str, slot_id: &str) -> String {
+    format!("{because} {action} {slot_id}")
+}
+
+/// Whether `because` is the user's go-ahead for `action` on `slot_id`: a
+/// message of theirs, at most ten minutes old, answering the Moss message
+/// right before it, which proposed exactly this action for exactly this
+/// session (`[[confirm:]]`, recorded by the daemon), and whose text is one
+/// of that proposal's yes buttons. Each go-ahead works once per action and
+/// session (`used`).
+pub fn consent(
+    lines: &[Line],
+    because: Option<&str>,
+    action: &str,
+    slot_id: &str,
+    now_ms: i64,
+    used: &dyn Fn(&str) -> bool,
+) -> Result<(), String> {
     let Some(because) = because else {
         return Err("this needs the user's go-ahead (--because <their message id>)".into());
     };
@@ -114,12 +129,25 @@ pub fn consent(lines: &[Line], because: Option<&str>, now_ms: i64) -> Result<(),
     if now_ms - said > CONSENT_MS || said - now_ms > 60_000 {
         return Err("the user's reply is too old; ask again".into());
     }
+    let reply = messages[at].text.as_deref().unwrap_or("").trim();
     let asked = messages[..at]
         .iter()
         .rev()
         .find(|l| l.from.as_deref() == Some(chat::FROM_MOSS));
-    if !asked.is_some_and(|m| !m.buttons.is_empty()) {
-        return Err("that message does not answer a question with options".into());
+    let agreed = asked.is_some_and(|m| {
+        m.proposals
+            .iter()
+            .any(|p| p.action == action && p.slot_id == slot_id && p.yes.iter().any(|y| y == reply))
+    });
+    if !agreed {
+        return Err(
+            "the user's reply is not a yes to this action for this session; ask with \
+             [[buttons:]] and [[confirm:]]"
+                .into(),
+        );
+    }
+    if used(&consent_key(because, action, slot_id)) {
+        return Err("that go-ahead was used already; ask again".into());
     }
     Ok(())
 }
@@ -295,6 +323,30 @@ impl Hands {
         }
     }
 
+    /// `<state>/daemon/consents.txt`: go-aheads already used, one key a
+    /// line (the last 500). In the daemon's folder, out of Moss's reach.
+    fn consents_path(&self) -> PathBuf {
+        moss_core::daemon::Paths::new(&self.state)
+            .dir
+            .join("consents.txt")
+    }
+
+    fn used_consents(&self) -> Vec<String> {
+        std::fs::read_to_string(self.consents_path())
+            .unwrap_or_default()
+            .lines()
+            .map(String::from)
+            .collect()
+    }
+
+    fn use_consent(&self, key: &str) {
+        let mut all = self.used_consents();
+        all.push(key.to_string());
+        let keep = all.len().saturating_sub(500);
+        let text = all[keep..].join("\n") + "\n";
+        let _ = moss::home::write_if_changed(&self.consents_path(), &text);
+    }
+
     /// Results nobody read within an hour.
     fn prune_results(&self, actions: &Path) {
         let hour_ago = std::time::SystemTime::now() - Duration::from_secs(3600);
@@ -329,11 +381,6 @@ impl Hands {
             Ok(a) => a,
             Err(e) => return ("refused", e),
         };
-        if action.needs_consent() {
-            if let Err(e) = consent(&chat::lines(&self.home), r.because.as_deref(), now_ms()) {
-                return ("refused", e);
-            }
-        }
         if action == Action::SetupFix {
             return self.setup_fix();
         }
@@ -368,6 +415,24 @@ impl Hands {
             Check::Refuse(why) => return ("refused", why),
             Check::Skip(why) => return ("skipped", why),
         };
+        if action.needs_consent() {
+            let used = self.used_consents();
+            if let Err(e) = consent(
+                &chat::lines(&self.home),
+                r.because.as_deref(),
+                &r.action,
+                &slot.slot_id,
+                now_ms(),
+                &|key| used.iter().any(|u| u == key),
+            ) {
+                return ("refused", e);
+            }
+            self.use_consent(&consent_key(
+                r.because.as_deref().unwrap_or_default(),
+                &r.action,
+                &slot.slot_id,
+            ));
+        }
         let result = match &action {
             Action::SyncName(_) => sync_name(&registry, &slot),
             Action::Name(_, name) => name_it(&registry, &slot, name),
@@ -778,40 +843,84 @@ mod tests {
         }
     }
 
+    fn proposed(id: &str, at: i64, buttons: &[&str], proposals: &[(&str, &str, &[&str])]) -> Line {
+        Line {
+            proposals: proposals
+                .iter()
+                .map(|(action, slot, yes)| chat::Proposal {
+                    action: action.to_string(),
+                    slot_id: slot.to_string(),
+                    yes: yes.iter().map(|y| y.to_string()).collect(),
+                })
+                .collect(),
+            ..said(id, chat::FROM_MOSS, at, buttons)
+        }
+    }
+
+    fn you(id: &str, at: i64, text: &str) -> Line {
+        Line::message(id, &rfc3339(at), chat::FROM_YOU, text)
+    }
+
     #[test]
-    fn act_consent_reads_the_conversation() {
+    fn act_consent_needs_the_users_yes_to_that_proposal() {
         let now = 1_800_000_000_000;
         let lines = vec![
-            said(
+            proposed(
                 "q1",
-                chat::FROM_MOSS,
                 now - 60_000,
-                &["Bring them back", "Leave them"],
+                &["全部找回", "不要"],
+                &[
+                    ("restore", "SLOT-A", &["全部找回"]),
+                    ("restore", "SLOT-B", &["全部找回"]),
+                ],
             ),
-            said("y1", chat::FROM_YOU, now - 30_000, &[]),
-            said("q2", chat::FROM_MOSS, now - 20_000, &[]),
-            said("y2", chat::FROM_YOU, now - 10_000, &[]),
-            said("old", chat::FROM_YOU, now - 11 * 60_000, &[]),
+            you("y1", now - 30_000, "全部找回"),
+            you("y2", now - 25_000, "不要"),
+            said("q2", chat::FROM_MOSS, now - 20_000, &["Yes"]),
+            you("y3", now - 10_000, "Yes"),
+            proposed(
+                "q3",
+                now - 13 * 60_000,
+                &["找回"],
+                &[("restore", "SLOT-A", &["找回"])],
+            ),
+            you("old", now - 11 * 60_000, "找回"),
         ];
-        assert_eq!(consent(&lines, Some("y1"), now), Ok(()));
-        assert!(consent(&lines, None, now).is_err(), "no reply");
+        let none = |_: &str| false;
+        let ok = |because, action, slot| consent(&lines, Some(because), action, slot, now, &none);
+        assert_eq!(ok("y1", "restore", "SLOT-A"), Ok(()));
+        assert_eq!(
+            ok("y1", "restore", "SLOT-B"),
+            Ok(()),
+            "one yes for each session it named"
+        );
+        assert!(ok("y2", "restore", "SLOT-A").is_err(), "不要 is no yes");
         assert!(
-            consent(&lines, Some("forged"), now).is_err(),
+            ok("y1", "restore", "SLOT-C").is_err(),
+            "a session the proposal didn't name"
+        );
+        assert!(
+            ok("y1", "end", "SLOT-A").is_err(),
+            "an action it didn't propose"
+        );
+        assert!(
+            ok("y3", "restore", "SLOT-A").is_err(),
+            "a reply to a message with no proposal"
+        );
+        assert!(ok("q1", "restore", "SLOT-A").is_err(), "Moss's own words");
+        assert!(
+            ok("forged", "restore", "SLOT-A").is_err(),
             "no such message"
         );
-        assert!(
-            consent(&lines, Some("q1"), now).is_err(),
-            "Moss's own words"
+        assert!(ok("old", "restore", "SLOT-A").is_err(), "too old");
+        assert!(consent(&lines, None, "restore", "SLOT-A", now, &none).is_err());
+        // Used once.
+        let used = |key: &str| key == consent_key("y1", "restore", "SLOT-A");
+        assert!(consent(&lines, Some("y1"), "restore", "SLOT-A", now, &used).is_err());
+        assert_eq!(
+            consent(&lines, Some("y1"), "restore", "SLOT-B", now, &used),
+            Ok(())
         );
-        assert!(
-            consent(&lines, Some("y2"), now).is_err(),
-            "answers no options"
-        );
-        let stale = vec![
-            said("q", chat::FROM_MOSS, now - 12 * 60_000, &["Yes"]),
-            said("old", chat::FROM_YOU, now - 11 * 60_000, &[]),
-        ];
-        assert!(consent(&stale, Some("old"), now).is_err(), "too old");
     }
 
     #[test]

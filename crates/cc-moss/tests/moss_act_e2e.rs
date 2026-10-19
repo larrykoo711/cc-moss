@@ -172,7 +172,26 @@ fn moss_asked(id: &str, at: i64, buttons: &[&str]) -> serde_json::Value {
 }
 
 fn you_said(id: &str, at: i64) -> serde_json::Value {
-    serde_json::json!({"schema":1,"id":id,"at":rfc3339(at),"from":"you","text":"全部找回"})
+    you_said_text(id, at, "全部找回")
+}
+
+fn you_said_text(id: &str, at: i64, text: &str) -> serde_json::Value {
+    serde_json::json!({"schema":1,"id":id,"at":rfc3339(at),"from":"you","text":text})
+}
+
+/// A Moss question proposing to restore `slot` on 全部找回, as the daemon
+/// records it from [[confirm:]].
+fn moss_proposed(id: &str, at: i64, slot: &str) -> serde_json::Value {
+    let mut v = moss_asked(id, at, &["全部找回", "都不要了"]);
+    v["proposals"] = serde_json::json!([{"action":"restore","slot_id":slot,"yes":["全部找回"]}]);
+    v
+}
+
+fn slot_id(w: &World, sid: &str) -> String {
+    session(&ls_json(&w.state(), true), sid).unwrap()["id"]
+        .as_str()
+        .unwrap()
+        .to_string()
 }
 
 fn moss_up(w: &World) {
@@ -350,14 +369,24 @@ fn act_restores_with_your_reply() {
     moss_up(&w);
     let sid = "e1e2e3e4-0000-4000-8000-000000000005";
     dropped(&w, sid, &w.path("work"));
+    let other = "e9e9e9e9-0000-4000-8000-000000000006";
+    dropped(&w, other, &w.path("work"));
+    let slot = slot_id(&w, sid);
     let now = now_ms();
     chat(
         &w,
         &[
-            moss_asked("m1", now - 60_000, &["全部找回", "都不要了"]),
+            moss_proposed("m0", now - 70_000, &slot),
+            you_said_text("n0", now - 65_000, "都不要了"),
+            moss_proposed("m1", now - 60_000, &slot),
             you_said("y1", now - 5_000),
         ],
     );
+    // "No" is not a yes; a yes for one session is not one for another.
+    let (out, ok) = act(&w, &["restore", sid, "--because", "n0"]);
+    assert!(!ok && out["outcome"] == "refused", "{out}");
+    let (out, ok) = act(&w, &["restore", other, "--because", "y1"]);
+    assert!(!ok && out["outcome"] == "refused", "{out}");
     let (out, ok) = act(&w, &["restore", sid, "--because", "y1"]);
     assert!(ok, "{out}");
     assert_eq!(out["outcome"], "done", "{out}");
