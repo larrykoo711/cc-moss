@@ -1,0 +1,20 @@
+{
+ "schema": 1,
+ "messages": [
+  {
+   "id": "1792141000000-q00000",
+   "at": "2026-10-16T09:58:00Z",
+   "from": "you",
+   "text": "How's everyone doing today?",
+   "state": "replied",
+   "buttons": []
+  },
+  {
+   "id": "1792141020000-q00001",
+   "at": "2026-10-16T09:58:20Z",
+   "from": "moss",
+   "text": "Five sessions ran this morning. The busiest is login-page, rewriting the validation in the login form, about 30 more minutes; api-review is stuck on a permission prompt and will run the integration tests once you approve it. Both release-notes and fix-invoice are waiting on you: the first wants you to look over the 0.2 changelog, the second dropped and can be brought back. scratch isn't in tmux; move it in?",
+   "buttons": []
+  }
+ ]
+}

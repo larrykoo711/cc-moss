@@ -117,6 +117,18 @@ import Testing
         #expect(!MossSessionCard.allHandled([]))
     }
 
+    @Test func allHandledIsSaidOnceForTwoOrMoreCards() {
+        let then = ["01A": "needs-you-permission", "01B": "needs-you-permission"]
+        let both = MossSessionCard.cards(["01A", "01B"], among: sessions([sessionJSON(id: "01A"), sessionJSON(id: "01B")]), then: then)
+        #expect(MossSessionCard.showsAllHandled(both))
+        let one = MossSessionCard.cards(["01A"], among: sessions([sessionJSON(id: "01A")]), then: then)
+        #expect(MossSessionCard.allHandled(one))
+        #expect(!MossSessionCard.showsAllHandled(one), "a single card says it itself")
+        let half = MossSessionCard.cards(["01A", "01B"],
+                                         among: sessions([sessionJSON(id: "01A"), sessionJSON(id: "01B", attention: "permission")]), then: then)
+        #expect(!MossSessionCard.showsAllHandled(half), "partly handled: per card, no footer")
+    }
+
     @Test func aMergedGroupKeepsEachSessionsState() {
         let a = MossMessage(id: "a", from: .moss, text: "a", sessions: ["01A"], sessionStates: ["01A": "needs-you-permission"])
         let b = MossMessage(id: "b", from: .moss, text: "b", sessions: ["01B"], sessionStates: ["01B": "needs-you-question"])

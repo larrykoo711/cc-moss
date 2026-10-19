@@ -67,6 +67,13 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
         !cards.isEmpty && cards.allSatisfy(\.resolved)
     }
 
+    /// "✓ All handled" under the cards: only for two or more, all handled.
+    /// Then each card just says what it's doing now; one card alone says
+    /// "✓ Handled" itself, so the check is never shown twice.
+    public static func showsAllHandled(_ cards: [MossSessionCard]) -> Bool {
+        cards.count >= 2 && allHandled(cards)
+    }
+
     public var isGone: Bool { session == nil }
 
     /// Open when it can be opened, "Bring back" when it was interrupted,
