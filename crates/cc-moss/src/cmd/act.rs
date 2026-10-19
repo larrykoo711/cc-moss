@@ -583,7 +583,7 @@ fn name_it(registry: &Registry, slot: &Slot, name: &str) -> Result<String> {
             Busy("it is busy or something is typed in it; try again when it is idle").into(),
         );
     }
-    match inbox::type_in(&mut pane, &format!("/rename {name}")) {
+    match inbox::type_exactly(&mut pane, &format!("/rename {name}")) {
         Typed::Sent { .. } => {}
         Typed::Failed(e) | Typed::Stuck(e) => bail!("/rename did not go in: {e}"),
     }

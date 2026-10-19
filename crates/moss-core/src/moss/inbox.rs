@@ -436,6 +436,36 @@ pub enum Typed {
     Stuck(String),
 }
 
+/// Paste `text` and press Enter only if the input then holds exactly it
+/// (nothing else typed before or after); otherwise clear it (C-u) and fail.
+/// For commands typed into a session for the user (`/rename`).
+pub fn type_exactly(pane: &mut dyn Pane, text: &str) -> Typed {
+    if let Err(e) = pane.paste(text) {
+        return clear_after_failure(pane, format!("tmux: {e}"));
+    }
+    pane.wait(SETTLE);
+    let holds = pane
+        .screen()
+        .ok()
+        .and_then(|s| input_text(&s))
+        .is_some_and(|t| t.trim_start_matches(PROMPT) == squeeze(text));
+    if !holds {
+        return clear_after_failure(
+            pane,
+            "the input held something else; nothing was sent".into(),
+        );
+    }
+    enter(pane, 1)
+}
+
+/// `text` without control characters (escape sequences, bells), keeping
+/// line breaks and tabs: what goes into a terminal is only words.
+pub fn printable(text: &str) -> String {
+    text.chars()
+        .filter(|c| !c.is_control() || *c == '\n' || *c == '\t')
+        .collect()
+}
+
 /// Paste `text` and submit it: paste, look; paste again, look; Esc, paste,
 /// look; then give up. Enter only once the text was seen, or once the
 /// input holds something after a paste (it landed; pasting again would
@@ -676,10 +706,11 @@ impl Courier {
             }
             // Claude Code runs any input starting with `/` as a command: a
             // message that only looks like one goes in after a space.
-            let text = if message.text.starts_with('/') {
-                format!(" {}", message.text)
+            let clean = printable(&message.text);
+            let text = if clean.starts_with('/') {
+                format!(" {clean}")
             } else {
-                message.text.clone()
+                clean
             };
             let typed = type_in(pane, &text);
             let _ = crate::moss::remove(&path);
@@ -688,7 +719,7 @@ impl Courier {
                     let sent = InFlight {
                         id: message.id,
                         from: message.from,
-                        tail: tail(&message.text),
+                        tail: tail(&printable(&message.text)),
                         at_ms: now_ms,
                     };
                     self.in_flight = Some(sent.clone());
@@ -973,6 +1004,51 @@ mod tests {
             })
             .collect();
         assert!(left.is_empty());
+    }
+
+    #[test]
+    fn inbox_pastes_no_control_characters() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        say(
+            h,
+            "0000000000001-aaaaaa",
+            "red \u{1b}[31mtext\u{7}\nnext\tline",
+        );
+        let mut pane = FakePane::default();
+        Courier::default().step(h, &mut pane, Some(false), 1);
+        assert_eq!(pane.submitted, ["red [31mtext\nnext\tline"]);
+    }
+
+    #[test]
+    fn typing_exactly_checks_the_whole_input() {
+        let mut pane = FakePane::default();
+        assert_eq!(
+            type_exactly(&mut pane, "/rename api"),
+            Typed::Sent { pastes: 1 }
+        );
+        assert_eq!(pane.submitted, ["/rename api"]);
+        // Something already there: what would be sent is not the command.
+        let mut pane = FakePane {
+            blind: 0,
+            ..FakePane::default()
+        };
+        pane.paste("x").unwrap();
+        pane.calls.clear();
+        assert!(matches!(
+            type_exactly(&mut pane, "/rename api"),
+            Typed::Failed(_)
+        ));
+        assert!(
+            !pane.calls.iter().any(|c| c == "key Enter"),
+            "{:?}",
+            pane.calls
+        );
+        assert!(
+            pane.calls.iter().any(|c| c == "key C-u"),
+            "cleared: {:?}",
+            pane.calls
+        );
     }
 
     #[test]

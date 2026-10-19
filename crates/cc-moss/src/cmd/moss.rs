@@ -1027,8 +1027,13 @@ impl Looker {
             return;
         }
         let zh = crate::i18n::lang() == crate::i18n::Lang::Zh;
-        self.talk
-            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log);
+        // Marked done only once it went in; else the next look tries again.
+        if !self
+            .talk
+            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log)
+        {
+            return;
+        }
         if let Err(e) = home::write_if_changed(&path, &format!("{today}\n")) {
             log(&format!("moss: error: noting today's checkup: {e}"));
         }

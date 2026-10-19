@@ -115,6 +115,10 @@ pub fn append(home: &Path, line: &Line) -> io::Result<()> {
 /// Start a new file once this one is past [`ROTATE_AT`] lines; the old one
 /// becomes `chat.jsonl.1` (replacing the one before). True when it did.
 pub fn rotate_if_long(home: &Path) -> io::Result<bool> {
+    // Cheap first: a file this small can't hold that many lines.
+    if std::fs::metadata(path(home)).map_or(0, |m| m.len()) < (ROTATE_AT as u64) * 32 {
+        return Ok(false);
+    }
     let text = match std::fs::read(path(home)) {
         Ok(t) => t,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
@@ -199,7 +203,8 @@ fn window(home: &Path, limit: usize) -> Vec<Line> {
 
 fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
     let mut shown: Vec<Shown> = Vec::new();
-    let mut replied: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut replied: std::collections::HashSet<String> = std::collections::HashSet::new();
     let mut states: std::collections::HashMap<String, (String, Option<String>)> =
         std::collections::HashMap::new();
     for l in lines {
@@ -211,9 +216,9 @@ fn fold_lines(lines: &[Line], limit: usize) -> Vec<Shown> {
             continue;
         };
         if let Some(to) = &l.reply_to {
-            replied.push(to.clone());
+            replied.insert(to.clone());
         }
-        if l.silent || shown.iter().any(|s| s.id == l.id) {
+        if l.silent || !seen.insert(l.id.clone()) {
             continue;
         }
         shown.push(Shown {
@@ -566,6 +571,21 @@ mod tests {
         let v = chat_json_with(h, 10, &lookup);
         assert_eq!(v["messages"][3]["session_states"]["SLOT"], "idle");
         assert!(asked.borrow().iter().all(|(_, _, to)| *to == at));
+    }
+
+    #[test]
+    fn chat_folds_many_lines_quickly() {
+        let lines: Vec<Line> = (0..20_000)
+            .map(|i| Line::message(&format!("{i:06}"), "t", FROM_YOU, "x"))
+            .collect();
+        let started = std::time::Instant::now();
+        let shown = fold_lines(&lines, 200);
+        assert_eq!(shown.len(), 200);
+        assert!(
+            started.elapsed() < std::time::Duration::from_millis(500),
+            "{:?}",
+            started.elapsed()
+        );
     }
 
     #[test]

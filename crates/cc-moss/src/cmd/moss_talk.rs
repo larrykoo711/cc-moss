@@ -350,11 +350,19 @@ impl Talk {
         {
             return;
         }
-        let transcript = self.transcript.clone().unwrap_or_default();
         let turn = self
             .transcript
             .as_deref()
             .and_then(moss_core::transcript::turn_open);
+        // Nothing goes in to a Moss whose transcript isn't known yet, or
+        // while its boot turn runs: its reply could not be taken.
+        let Some(transcript) = self
+            .transcript
+            .clone()
+            .filter(|t| ready_to_send(Some(t), turn))
+        else {
+            return;
+        };
         let from = std::fs::metadata(&transcript).map_or(0, |m| m.len());
         // A command of yours at the head of the queue.
         if let Some((path, Some(message))) = inbox::waiting(&self.home).into_iter().next() {
@@ -723,9 +731,10 @@ impl Talk {
 
     /// Session news for Moss: into its inbox, and into the chat.
     /// A request of cc-moss's own for Moss (the daily checkup): queued like
-    /// session news, so it is not shown as something the user said.
-    pub fn ask(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) {
-        let _ = self.tell(text, now_ms, log);
+    /// session news, so it is not shown as something the user said. True
+    /// when it went in.
+    pub fn ask(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) -> bool {
+        self.tell(text, now_ms, log).is_some()
     }
 
     /// Session news for Moss. Its answer to news that is only finished
@@ -842,6 +851,13 @@ impl Talk {
     }
 }
 
+/// Whether messages may go in: Moss's transcript is known (a new Moss's
+/// comes from its first hook) and its turn (the boot prompt first) is
+/// over.
+fn ready_to_send(transcript: Option<&Path>, turn: Option<bool>) -> bool {
+    transcript.is_some() && turn != Some(true)
+}
+
 /// Whether a process with this pid exists (it may not be the one recorded).
 fn process_exists(pid: u32) -> bool {
     let Ok(pid) = libc::pid_t::try_from(pid) else {
@@ -858,6 +874,33 @@ mod tests {
 
     fn line(id: &str, from: &str) -> Line {
         Line::message(id, "t", from, "x")
+    }
+
+    #[test]
+    fn nothing_goes_in_before_moss_is_known_and_done_booting() {
+        assert!(
+            !ready_to_send(None, None),
+            "a new Moss: its transcript not known yet"
+        );
+        let t = Path::new("/t/x.jsonl");
+        assert!(!ready_to_send(Some(t), Some(true)), "its boot turn runs");
+        assert!(ready_to_send(Some(t), Some(false)));
+        assert!(ready_to_send(Some(t), None));
+    }
+
+    #[test]
+    fn a_daily_checkup_that_did_not_go_in_is_not_marked_done() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        std::fs::create_dir_all(&talk.home).unwrap();
+        assert!(talk.ask("checkup", 1, &|_| {}), "it went in");
+        // An inbox it can't write to.
+        let inbox = talk.home.join("inbox");
+        std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o500)).unwrap();
+        let went = talk.ask("checkup", 2, &|_| {});
+        std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o700)).unwrap();
+        assert!(!went);
     }
 
     #[test]
