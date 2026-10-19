@@ -99,7 +99,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 |---|---|
 | `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
 | `cc-moss new [名字] [-C 目录] [--detach] [--yes] [--safe] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用。默认 bypass，`--safe` 这一次按普通模式开，连配置里额外加的 bypass 也不用（见[新会话的权限](#新会话的权限)） |
-| `cc-moss ls [--all] [--json]` | 列出会话（`--json` 给脚本用；1.0 之前格式仍可能调整） |
+| `cc-moss ls [--all] [--archived] [--json]` | 列出会话（`--archived` 只列归档的；`--json` 给脚本用；1.0 之前格式仍可能调整） |
 | `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
@@ -109,6 +109,8 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss suggest 名字 [--json]` | Claude Code 在这个会话输入框里给的下一句建议（那行灰字）；会话在忙或没有建议时什么都不输出（`--json` 输出 `{"schema":1,"suggestion":…}`，没有时是 `null`） |
 | `cc-moss adopt 名字 [--dry-run] [--json]` | 把一个不在 tmux 里跑的会话移进 tmux，对话接着（见[移进 tmux](#移进-tmux)） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
+| `cc-moss archive 名字… [--json]` / `unarchive 名字… [--json]` | 归档会话、从归档拿回来（见[归档](#归档)） |
+| `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
 | `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
@@ -156,6 +158,37 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 - `--json` 输出一行，`result` 是 `moved`、`would-move`、`refused` 或 `failed`，拒绝时带 `reason`（`busy`、`in-tmux`、`not-running`、`not-its-process`、`moss`）。每次搬动都记进状态目录的 `audit.jsonl`。
 
 面板里不在 tmux 里的会话，行末多一个「移进 tmux」按钮（会话还没名字时是「整理并移进 tmux」），点了先说清会发生什么，你确认后才动手。
+
+### 归档
+
+不用的会话会自己收起来，列表只留最近在用的：
+
+- 结束了、超过 30 天没动静的会话，守护进程每天整理时自动归档。天数用 `cc-moss config set sessions.archive_after_days 天数` 改，`0` 关掉自动归档。正在跑的会话再老也不会被归档
+- 手动：`cc-moss archive 名字…` 归档（正在跑的要先结束），`cc-moss unarchive 名字…` 拿回来。用 `claude --resume` 接着用一个归档的会话，它会自己回到列表
+- `cc-moss ls` 不列归档的，`ls --archived` 只列归档的；`ls --json` 都列，每条带 `archived_at`。选择器里归档的会话只在搜索时出现，单独一组「已归档」
+- 想彻底删掉：在 App 的「已归档」里点「清理」或「全部清理」，或者直接跟 Moss 说。Moss 列出要删哪些、问你一句，你点了确认才删：记录从 cc-moss 里去掉，对话记录文件移到废纸篓（不直接抹掉，删错了还能从废纸篓找回来）。只删归档里的会话
+
+### 换 API 供应商
+
+订阅额度用完、用 cc-switch 之类的工具换到别的供应商时，大多数情况不用退出会话：Claude Code 会盯着 `~/.claude/settings.json`，换了地址、token 或模型别名，下一条消息就走新的（2.1.303 实测）。cc-moss 的守护进程也盯着这个文件，换了之后面板顶部提示「已切到 <地址>，下一条消息就走它」。
+
+有两种情况，运行中的会话吃不进去，必须重开：
+
+- 切回官方订阅：工具会删掉 settings 里的那几项，可删掉的值还留在会话进程里，请求照旧发给原来的供应商
+- 新供应商用 `ANTHROPIC_MODEL`（或 settings 顶层的 `model`）指定了模型：这一项只在启动时读
+
+这时受影响的会话在面板里标成「要重开」，点「重开」或「全部重开」；命令行是：
+
+```sh
+cc-moss restart 名字      # 在原来的 tmux 窗格里重开，同一段对话接着聊
+cc-moss restart --stale   # 重开所有需要重开的会话
+```
+
+- 窗格、tmux 会话名都不变，不用重新进 tmux、也不用再敲名字；启动参数沿用当初的（新 settings 指定了模型时去掉原来的 `--model`）
+- 正在干活的会话不会被打断：排队，等这一轮做完自己重开。`--now` 立刻重开，这一轮的回复会丢（重开后发一句 continue 就行），终端里会先问你，`--yes` 跳过
+- 不在 tmux 里的会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这里
+- `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效
+- cc-moss 只读供应商的地址主机名和模型名，token、key 的值从不读出、不记录
 
 ### 替会话接住问题
 
@@ -573,6 +606,9 @@ digest = true             # 把会话动态（需要你、断了、做完了）�
 actions = true            # Moss 可以请守护进程代办体检里的事；false 只说不做
 daily_checkup = true      # 每天自动体检一次
 daily_brief = true        # 每天的体检简报提醒你；false 只在要你拿主意时提醒
+
+[sessions]
+archive_after_days = 30   # 结束了多少天没动静的会话自动归档；0 关掉
 ```
 
 界面语言也可以用命令改，不用打开文件：`cc-moss config set ui.language zh`（设回 `auto` 就重新跟随系统），`cc-moss config get ui.language` 查看当前值。加上 `--json` 输出 `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`，出错时是 `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}`（`code` 还可能是 `bad_value`、`config`）。

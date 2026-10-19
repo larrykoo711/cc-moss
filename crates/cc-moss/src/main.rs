@@ -186,7 +186,7 @@ enum Command {
         #[arg(required = true)]
         names: Vec<String>,
     },
-    /// Put sessions that are not running away: out of the list, still restorable.
+    /// Put away sessions that aren't running: off the list, but you can bring them back.
     Archive {
         /// Session names (Claude name, tmux name or id prefix).
         #[arg(required = true)]

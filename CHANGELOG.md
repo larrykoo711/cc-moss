@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Archive.** Sessions that ended and saw no activity for 30 days are archived each day
+  (`sessions.archive_after_days`, `0` turns it off); running sessions never are. `cc-moss archive` / `unarchive`
+  do it by hand, `ls --archived` lists them, and resuming one brings it back by itself. The app keeps them in a
+  folded "Archived" group with Bring Back and Clean Up, and has Archive in the menu of sessions that aren't running.
+  Clean Up goes through Moss, which asks before deleting; records leave cc-moss and conversation files go to the
+  Trash.
+- **Switching API providers without starting over.** The daemon notices when Claude Code's settings point at a new
+  provider. Most switches apply to running sessions from the next message, and the panel says so. When one can't
+  (back to your subscription, or a provider that fixes the model), the sessions affected are marked, and
+  `cc-moss restart` (Restart / Restart All in the app) restarts them in their own tmux pane, same conversation;
+  busy ones wait for their turn to end. `cc-moss doctor` shows the provider's host. Token and key values are never
+  read or recorded.
+
+### Fixed
+
+- Headless `claude -p` runs (plugins' background summaries, scripts) no longer pile up as interrupted sessions:
+  `claude agents` lists them as interactive, and cc-moss now checks the command line before adopting one.
+
 ## [0.3.0] - 2026-10-19
 
 Sessions start in bypass mode, questions can be answered from the panel or Mo, and Moss moves in: a Claude Code

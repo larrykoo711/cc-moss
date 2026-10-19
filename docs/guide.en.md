@@ -121,7 +121,7 @@ In the picker:
 |---|---|
 | `cc-moss` / `cc-moss pick [QUERY]` | Pick a session, an interrupted session or a folder |
 | `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [--safe] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists. Bypass by default; `--safe` starts this one in normal mode, even over bypass added in the config (see [Permissions for new sessions](#permissions-for-new-sessions)) |
-| `cc-moss ls [--all] [--json]` | List sessions (`--json` for scripts; may still change before 1.0) |
+| `cc-moss ls [--all] [--archived] [--json]` | List sessions (`--archived`: only archived ones; `--json` for scripts; may still change before 1.0) |
 | `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
@@ -131,6 +131,8 @@ In the picker:
 | `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
 | `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
+| `cc-moss archive NAMES [--json]` / `unarchive NAMES [--json]` | Archive sessions, or bring them back (see [Archive](#archive)) |
+| `cc-moss restart NAMES [--now] [--yes] [--json]` / `restart --stale` | Restart sessions in their own pane after switching API providers (see [Switching API providers](#switching-api-providers)) |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
 | `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
@@ -207,6 +209,53 @@ cc-moss adopt NAME             # end its process in the old terminal and carry o
 
 In the panel, a session outside tmux has a Move into tmux button at the end of its row (Tidy up and move into tmux
 when it has no name yet). It says what will happen first and acts only once you confirm.
+
+### Archive
+
+Sessions you no longer use get put away, so the list keeps only what you're working on:
+
+- Sessions that ended and saw no activity for 30 days are archived when the daemon tidies up each day. Change the
+  number with `cc-moss config set sessions.archive_after_days DAYS`; `0` turns it off. A running session is never
+  archived, however old.
+- By hand: `cc-moss archive NAMES` (end a running one first) and `cc-moss unarchive NAMES`. Picking an archived
+  session back up with `claude --resume` puts it back in the list by itself.
+- `cc-moss ls` leaves archived sessions out and `ls --archived` lists only them; `ls --json` lists both, each with
+  `archived_at`. The picker shows archived sessions only when you search, in their own "Archived" group.
+- To delete them for good, click Clean Up or Clean Up All under Archived in the app, or just ask Moss. Moss lists
+  what it would delete and asks first; nothing goes until you click yes. The records leave cc-moss and the
+  conversation files go to the Trash, not straight to oblivion, so a mistake can be undone. Only archived sessions
+  are ever deleted.
+
+### Switching API providers
+
+When your subscription runs out and you switch to another provider with a tool like cc-switch, you usually don't
+have to leave the session: Claude Code watches `~/.claude/settings.json`, and a new address, token or model alias
+applies from your next message (tested on 2.1.303). The cc-moss daemon watches the file too, and the panel says
+"Switched to <host>. Your next message uses it."
+
+Two kinds of switch don't reach a running session; those need a restart:
+
+- Going back to your Claude subscription: the tool removes those settings, but a running session keeps the removed
+  values and goes on talking to the old provider.
+- A provider that sets the model with `ANTHROPIC_MODEL` (or `model` at the top of settings): that one is read only at
+  startup.
+
+The panel marks the sessions affected; click Restart, or Restart All. On the command line:
+
+```sh
+cc-moss restart NAME      # restart it in the same tmux pane, same conversation
+cc-moss restart --stale   # restart every session that needs it
+```
+
+- Same pane, same tmux session name: no getting back into tmux, no typing the name again. It starts with the
+  arguments it had before, minus `--model` when the new settings pick a model.
+- A session that's busy isn't interrupted: it's queued and restarts when the turn is done. `--now` restarts it right
+  away and loses the reply in progress (send "continue" afterwards); it asks first in a terminal, `--yes` skips that.
+- A session outside tmux needs `adopt` first; Moss is looked after by cc-moss and isn't restarted here.
+- `--json` reports `restarted`, `queued` or `refused` (with a `reason`) for each. `cc-moss doctor` has an "API
+  provider" line with the current host and how many sessions need a restart, and points out folders whose own
+  `.claude/settings*.json` pick a provider, where a switch won't apply.
+- cc-moss reads only the provider's host name and model names; token and key values are never read or recorded.
 
 ### Answering a session's questions from elsewhere
 
@@ -898,6 +947,9 @@ digest = true             # tell Moss when sessions need you, drop or finish; fa
 actions = true            # Moss may ask the daemon to do what a checkup finds; false: it only says what to do
 daily_checkup = true      # a checkup once a day
 daily_brief = true        # the daily brief alerts you; false: only when you need to decide
+
+[sessions]
+archive_after_days = 30   # archive sessions that ended and saw no activity for this many days; 0: off
 ```
 
 You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).
