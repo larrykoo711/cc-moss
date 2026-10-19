@@ -154,6 +154,8 @@ final class AppModel {
     var mossCardRenaming: String?
     /// The session mention in Moss's words whose card is showing.
     var mentionHover: MentionHover?
+    /// The mention under the pointer right now: lit at once, before its card.
+    var mentionPointer: String?
     @ObservationIgnored var mentionShow: Task<Void, Never>?
     @ObservationIgnored var mentionHide: Task<Void, Never>?
     /// Screenshots only: the suggestion every session "has".
