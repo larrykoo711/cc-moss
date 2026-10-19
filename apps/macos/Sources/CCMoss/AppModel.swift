@@ -83,8 +83,15 @@ final class AppModel {
     var replyOpenID: String?
     /// What's in that line.
     var replyDraft = ""
-    /// A quiet note under one row for a moment (why it can't be typed into).
-    var rowNote: (id: String, text: String)?
+    /// A quiet note under one row for a moment (why it can't be typed into);
+    /// `adopt`: it ends with "Move into tmux →".
+    var rowNote: (id: String, text: String, adopt: Bool)?
+    /// The row asking "Move into tmux?", and the name cc-moss said it'll get.
+    var adoptAsk: AdoptAsk?
+    /// Sessions being moved into tmux right now.
+    var adopting: Set<String> = []
+    /// Why a move into tmux didn't happen, by session id, shown on its row.
+    var adoptProblems: [String: String] = [:]
 
     /// The Sessions page, flat: headings and rows, each row once, its pin
     /// taken from the section it's in.

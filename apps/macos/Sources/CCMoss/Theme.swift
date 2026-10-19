@@ -84,6 +84,8 @@ enum Icons {
     static let needsYou = "hand.raised"
     /// Bring an interrupted session back.
     static let restore = "arrow.counterclockwise"
+    /// Move a session that runs outside tmux into tmux.
+    static let adopt = "rectangle.stack.badge.plus"
     /// Stop reminding: never offer this session for restore again.
     static let dismiss = "bell.slash"
     /// It could not come back, and why.

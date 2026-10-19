@@ -126,6 +126,21 @@ enum Render {
             model.pins = Pins(value("--pinned")?.split(separator: ",").map(String.init) ?? [])
             // `--moss-card-rename <message id>/<session id>`: that card's name field open.
             model.mossCardRenaming = value("--moss-card-rename")
+            // `--adopt-ask <id> [--adopt-named <name>]`: its "Move into tmux?" line open;
+            // `--adopting <id>`: being moved; `--adopt-problem <id>:<words>`: it couldn't be;
+            // `--row-note <id>`: the "Not in tmux · Move into tmux →" note under it.
+            if let id = value("--adopt-ask") {
+                model.selectedID = id
+                model.adoptAsk = AdoptAsk(id: id, named: value("--adopt-named"), checking: false)
+            }
+            if let id = value("--adopting") { model.adopting = [id] }
+            if let p = value("--adopt-problem"), let cut = p.firstIndex(of: ":") {
+                model.adoptProblems[String(p[..<cut])] = String(p[p.index(after: cut)...])
+            }
+            if let id = value("--row-note") {
+                model.selectedID = id
+                model.rowNote = (id, L.t("Not in tmux", "不在 tmux 里"), true)
+            }
             // `--sessions-count N`: the panel's size for that many sessions (on a
             // 1000-pt-tall screen, or `--screen-height`); `--panel-height`: exactly that.
             if let n = value("--sessions-count").flatMap(Int.init) {

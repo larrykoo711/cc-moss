@@ -341,18 +341,36 @@ struct PanelView: View {
         // selected nothing (user 2026-10-18). Its own buttons still win.
         let shownSession = s
         let lineOpen = model.replyOpenID == s.id
-        let note = model.rowNote.flatMap { $0.id == s.id ? $0.text : nil }
+        let rowNote = model.rowNote.flatMap { $0.id == s.id ? $0 : nil }
+        let note = rowNote?.text
+        let asking = !closed && model.adoptAsk?.id == s.id
+        let open = lineOpen || asking
         return VStack(spacing: 0) {
             rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
-                      lineOpen: lineOpen, pinned: pinned, hit: hit, closed: closed)
+                      lineOpen: open, pinned: pinned, hit: hit, closed: closed)
             if lineOpen {
                 ReplyLineView(model: model, session: s, focused: $replyFocused)
+                    .transition(.opacity)
+            }
+            if asking {
+                AdoptConfirmView(model: model, session: s)
                     .transition(.opacity)
             }
             if let note {
                 HStack(spacing: 5) {
                     Image(systemName: "info.circle").font(.system(size: 10, weight: .semibold))
                     Text(note).font(.system(size: 11.5)).lineLimit(1)
+                    if rowNote?.adopt == true {
+                        Text("·")
+                        Button { model.askToAdopt(s) } label: {
+                            Text(L.t("Move into tmux →", "移进 tmux →"))
+                                .font(.system(size: 11.5, weight: .medium))
+                                .foregroundStyle(Theme.brand)
+                        }
+                        .buttonStyle(.plain)
+                        .focusable(false)
+                        .handCursor()
+                    }
                 }
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 44)
@@ -361,9 +379,9 @@ struct PanelView: View {
                 .transition(.opacity)
             }
         }
-        .background(RoundedRectangle(cornerRadius: 8).fill(lineOpen ? Theme.selection(scheme) : .clear))
+        .background(RoundedRectangle(cornerRadius: 8).fill(open ? Theme.selection(scheme) : .clear))
         .clipped()
-        .animation(.easeOut(duration: 0.18), value: lineOpen)
+        .animation(.easeOut(duration: 0.18), value: open)
         .animation(.easeOut(duration: 0.18), value: note)
         // A hairline of air between rows: two lit neighbours never merge into one block.
         .padding(.vertical, 1)
@@ -376,19 +394,21 @@ struct PanelView: View {
             // Waiting for you: a reply line opens right under it.
             model.openReply(s)
         } label: {
+            let moving = !closed && model.adopting.contains(s.id)
             SessionRow(session: shownSession, selected: !closed && s.id == model.selected?.id, hovered: shown,
-                       actions: closed ? [bringBackClosed(s)] : shown ? actions.inline.map { action($0, for: s) } : [],
-                       more: !closed && shown && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
+                       actions: closed ? [bringBackClosed(s)] : shown && !moving ? actions.inline.map { action($0, for: s) } : [],
+                       more: !closed && shown && !moving && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
                        menuOpen: menuOpen,
                        perform: { perform($0) },
-                       problem: model.restoreProblem(s),
+                       problem: model.restoreProblem(s) ?? (closed ? nil : model.adoptProblems[s.id]),
                        pinned: pinned,
                        lineOpen: lineOpen,
                        pin: s.isMoss ? nil : { model.togglePin(s) },
                        restoring: (s.state == .interrupted || closed) && model.restoreFlow.isRunning(s.id),
                        highlight: hit?.nameRanges ?? [],
                        folder: hit.map { _ in Self.folderName(s) },
-                       reason: hit?.reason.map(Self.reasonText))
+                       reason: hit?.reason.map(Self.reasonText),
+                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…") : nil)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -463,6 +483,11 @@ struct PanelView: View {
 
     private var primaryAction: PanelAction? {
         guard let s = model.selected, model.phase == .ready else { return nil }
+        // Asking "Move into tmux?": Return says yes, and the pill says so.
+        if let ask = model.adoptAsk, ask.id == s.id {
+            return PanelAction(title: AppModel.adoptTitle(s, named: ask.named), icon: Icons.adopt, shortcut: "↵") { model.adopt(s) }
+        }
+        if model.adopting.contains(s.id) { return nil }
         return action(RowActions(s, hopeless: model.restoreIsHopeless(s)).primary, for: s)
     }
 
@@ -553,6 +578,14 @@ struct PanelView: View {
         case .close:
             return PanelAction(title: L.t("Stop Reminding…", "不再提醒…"), icon: Icons.dismiss, shortcut: "") {
                 model.askToClose([s])
+            }
+        case .adopt:
+            let wait = AppModel.adoptWait(s)
+            return PanelAction(title: AppModel.adoptTitle(s), icon: Icons.adopt, shortcut: "",
+                               help: wait ?? L.t("Ends its process in its current terminal and carries on in tmux; the conversation is kept.",
+                                                 "结束它在原终端里的进程，然后在 tmux 里接着跑，对话不会丢。"),
+                               disabled: wait != nil) {
+                model.askToAdopt(s)
             }
         }
     }
@@ -704,6 +737,8 @@ struct PanelView: View {
             dismissForm()
         } else if menu != nil {
             closeMenu()
+        } else if model.adoptAsk != nil {
+            model.cancelAdopt()
         } else if model.openProblem != nil {
             model.openProblem = nil
         } else if model.stateFilter != nil {
@@ -765,6 +800,8 @@ struct PanelAction: Identifiable {
     var help: String?
     /// A brand dot after the title: something new (an update).
     var dot = false
+    /// Shown dimmed; clicking it says why it waits instead.
+    var disabled = false
     let perform: () -> Void
 }
 
