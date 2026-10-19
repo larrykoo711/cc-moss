@@ -160,13 +160,31 @@ fn input_start(lines: &[String]) -> Option<usize> {
 /// typed after its mark. Placeholder hints (dim), the cursor (inverse) and
 /// borders are not typing. No prompt on screen (starting up, a dialog) is
 /// not empty: nothing is pasted then.
+///
+/// Ready means Claude Code's input box is drawn: the prompt line right
+/// under a rule, and a rule below it. A blank screen, the welcome banner
+/// alone (still loading) or a bare prompt mark is never "empty".
 pub fn input_empty(screen: &str) -> bool {
+    input(screen) == Some(false)
+}
+
+/// Whether the drawn input box holds typing (`None`: no box on screen).
+pub fn input_has_text(screen: &str) -> bool {
+    input(screen) == Some(true)
+}
+
+/// Whether the input box holds typing, if the box is on screen.
+fn input(screen: &str) -> Option<bool> {
     let styled: Vec<&str> = screen.lines().collect();
-    let Some(line) = styled.iter().rev().find(|l| prompt_line(&plain(l))) else {
-        return false;
-    };
+    let lines: Vec<String> = styled.iter().map(|l| plain(l)).collect();
+    let i = (0..lines.len()).rev().find(|i| prompt_line(&lines[*i]))?;
+    let boxed = i > 0 && rule_line(&lines[i - 1]) && lines[i + 1..].iter().any(|l| rule_line(l));
+    if !boxed {
+        return None;
+    }
+    let line = styled[i];
     let after = &line[line.find(PROMPT).unwrap_or(0) + PROMPT.len_utf8()..];
-    !typed(after)
+    Some(typed(after))
 }
 
 /// Whether `styled` shows a character in plain (not dim, not inverse) style.
@@ -317,7 +335,7 @@ pub fn type_in(pane: &mut dyn Pane, text: &str) -> Typed {
         for attempt in 1..=3u32 {
             if attempt > 1 {
                 // Not seen, but landed all the same: no second copy.
-                if pane.screen().is_ok_and(|s| !input_empty(&s)) {
+                if pane.screen().is_ok_and(|s| input_has_text(&s)) {
                     return enter(pane, attempt - 1);
                 }
             }
@@ -347,15 +365,15 @@ fn enter(pane: &mut dyn Pane, pastes: u32) -> Typed {
 }
 
 fn clear_after_failure(pane: &mut dyn Pane, error: String) -> Typed {
-    if pane.screen().is_ok_and(|s| input_empty(&s)) {
+    if !pane.screen().is_ok_and(|s| input_has_text(&s)) {
         return Typed::Failed(error);
     }
     let _ = pane.key("C-u");
     pane.wait(SETTLE);
-    if pane.screen().is_ok_and(|s| input_empty(&s)) {
-        Typed::Failed(error)
-    } else {
+    if pane.screen().is_ok_and(|s| input_has_text(&s)) {
         Typed::Stuck(error)
+    } else {
+        Typed::Failed(error)
     }
 }
 
@@ -820,13 +838,40 @@ mod tests {
 
     #[test]
     fn input_line_reads_hints_and_cursor_as_empty() {
-        assert!(input_empty("❯ \n"));
+        let rule = "─".repeat(80);
+        assert!(input_empty(&format!("{rule}\n❯ \n{rule}\n")));
         assert!(input_empty(
-            "> old\n│ ❯ \u{1b}[7mT\u{1b}[27m\u{1b}[2mry \"fix lint errors\"\u{1b}[22m │\n"
+            "> old\n╭────╮\n│ ❯ \u{1b}[7mT\u{1b}[27m\u{1b}[2mry \"fix lint errors\"\u{1b}[22m │\n╰────╯\n"
         ));
-        assert!(!input_empty("❯ hello\u{1b}[7m \u{1b}[27m\n"));
+        assert!(!input_empty(&format!(
+            "{rule}\n❯ hello\u{1b}[7m \u{1b}[27m\n{rule}\n"
+        )));
         assert!(!input_empty("no prompt here\n"));
         assert!(!input_empty("❯ 1. Yes\n"));
+    }
+
+    /// Claude Code 2.1 at rest, 80 columns: the hint is dim.
+    const READY: &str = "\
+  ✻ Welcome back
+\u{1b}[2m%RULE%\u{1b}[0m
+❯ \u{1b}[7mT\u{1b}[27m\u{1b}[2mry \"fix lint errors\"\u{1b}[22m
+\u{1b}[2m%RULE%\u{1b}[0m
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 1 agent ◐ medium · /effort
+";
+
+    #[test]
+    fn input_is_ready_only_with_its_box_on_screen() {
+        let ready = READY.replace("%RULE%", &"─".repeat(80));
+        assert!(input_empty(&ready), "the real resting screen");
+        // Starting up: nothing on screen yet, or the banner without the box.
+        assert!(!input_empty(""));
+        assert!(!input_empty("\n\n\n\n"));
+        assert!(!input_empty(
+            " ▐▛███▜▌   Claude Code v2.1.303\n▝▜█████▛▘  Opus · Claude Max\n  ▘▘ ▝▝    ~/.local/state/cc-moss/moss\n"
+        ));
+        // A prompt mark without its box (a dialog, a half-drawn screen).
+        assert!(!input_empty("❯ \n"));
+        assert!(!input_empty(&format!("{}\n❯ \n", "─".repeat(80))));
     }
 
     #[test]

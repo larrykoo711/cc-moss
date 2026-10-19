@@ -1013,47 +1013,51 @@ impl Looker {
         let which = format!("{}={session_id}", moss::SESSION_ENV);
         // `=moss:`: exactly that session (set-option takes a pane target).
         let target = format!("={}:", moss::SESSION);
+        let args = claude_args(&session_id);
+        let mut command: Vec<&str> = vec![
+            "new-session",
+            "-d",
+            "-s",
+            moss::SESSION,
+            "-c",
+            &cwd,
+            "-e",
+            &role,
+            "-e",
+            &which,
+            &claude,
+        ];
+        command.extend(args.iter().map(String::as_str));
         let out = tmux(
             &self.socket,
             &[
-                "new-session",
-                "-d",
-                "-s",
-                moss::SESSION,
-                "-c",
-                &cwd,
-                "-e",
-                &role,
-                "-e",
-                &which,
-                &claude,
-                "--dangerously-skip-permissions",
-                "--session-id",
-                &session_id,
-                boot_prompt(),
-                // How Moss is known, whatever its name becomes.
-                ";",
-                "set-option",
-                "-t",
-                &target,
-                moss::ROLE_OPTION,
-                moss::ROLE,
-                // A detached Moss stays; a Moss that exits is gone, not kept
-                // as a dead pane.
-                ";",
-                "set-option",
-                "-t",
-                &target,
-                "destroy-unattached",
-                "off",
-                ";",
-                "set-option",
-                "-w",
-                "-t",
-                &target,
-                "remain-on-exit",
-                "off",
-            ],
+                &command[..],
+                &[
+                    // How Moss is known, whatever its name becomes.
+                    ";",
+                    "set-option",
+                    "-t",
+                    &target,
+                    moss::ROLE_OPTION,
+                    moss::ROLE,
+                    // A detached Moss stays; a Moss that exits is gone, not kept
+                    // as a dead pane.
+                    ";",
+                    "set-option",
+                    "-t",
+                    &target,
+                    "destroy-unattached",
+                    "off",
+                    ";",
+                    "set-option",
+                    "-w",
+                    "-t",
+                    &target,
+                    "remain-on-exit",
+                    "off",
+                ],
+            ]
+            .concat(),
         )
         .map_err(|e| Launch::Failed(anyhow::anyhow!("tmux did not answer: {e:?}")))?;
         let said = String::from_utf8_lossy(&out.stderr).to_ascii_lowercase();
@@ -1131,6 +1135,24 @@ enum Launch {
     /// tmux says a `moss` session exists already.
     AlreadyThere,
     Failed(anyhow::Error),
+}
+
+/// Claude Code's arguments for Moss. Bypass mode (the guard and the sandbox
+/// fence it), its own session id, the boot prompt, and no MCP servers: the
+/// user's would load for minutes at every start and fill its context, and
+/// the guard refuses their tools anyway. User settings still load, so
+/// cc-moss's own hooks record Moss.
+fn claude_args(session_id: &str) -> Vec<String> {
+    [
+        "--dangerously-skip-permissions",
+        "--strict-mcp-config",
+        "--session-id",
+        session_id,
+        boot_prompt(),
+    ]
+    .iter()
+    .map(|a| a.to_string())
+    .collect()
 }
 
 /// How long a fresh Moss has to stay up to count as started.
@@ -1227,6 +1249,24 @@ mod tests {
             v["permissions"]["deny"],
             serde_json::json!(["Read(~/.claude/projects/**)"])
         );
+    }
+
+    #[test]
+    fn moss_starts_without_mcp_servers() {
+        let args = claude_args("abc");
+        assert!(args.iter().any(|a| a == "--strict-mcp-config"), "{args:?}");
+        assert!(
+            !args.iter().any(|a| a.starts_with("--mcp-config")),
+            "zero servers"
+        );
+        assert!(
+            !args.iter().any(|a| a.starts_with("--setting-sources")),
+            "user settings (cc-moss's hooks) still load"
+        );
+        assert!(args.iter().any(|a| a == "--dangerously-skip-permissions"));
+        let at = args.iter().position(|a| a == "--session-id").unwrap();
+        assert_eq!(args[at + 1], "abc");
+        assert_eq!(args.last().map(String::as_str), Some(boot_prompt()));
     }
 
     #[test]

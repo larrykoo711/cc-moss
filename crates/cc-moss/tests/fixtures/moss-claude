@@ -39,7 +39,8 @@ stop_hook() {
   cmd=$(sed -n 's/.*"command": "\(.*hook moss-stop.*\)".*/\1/p' .claude/settings.json)
   [ -n "$cmd" ] && sh -c "$cmd" < /dev/null
 }
-prompt() { printf '\n────────\n❯ '; }
+# The input box: a rule, the prompt, a rule; the cursor goes back after ❯.
+prompt() { printf '\n────────\n❯ \n────────\e[1A\r\e[2C'; }
 
 turn() {
   local text=$1 answer
