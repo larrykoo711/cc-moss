@@ -23,12 +23,13 @@ struct AskTile: View {
 }
 
 /// The question and its answers, shared by the panel's card and Mo's bubble.
-/// `canWrite`: "Write my own" opens a field here (the panel); Mo's bubble
-/// can't take typing, so there it is left out.
+/// A single question ends with "Type something", as Claude Code's own list
+/// does: picked, the row becomes a field. `inBubble`: Mo's bubble, which
+/// takes the keyboard only while that field is open.
 struct AskCardBody: View {
     let card: AskCard
     let sessionTitle: String
-    var canWrite = true
+    var inBubble = false
     let act: ((inout AskCard) -> AskReply?) -> Void
     @FocusState private var fieldFocused: Bool
     @Environment(\.colorScheme) private var scheme
@@ -93,14 +94,22 @@ struct AskCardBody: View {
                 }
                 .clickTarget(option.label) { act { $0.choose(option.label) } }
             }
+            if card.offersOwnWords {
+                if card.writing {
+                    OwnWordsField(text: card.draft, focused: $fieldFocused, inBubble: inBubble,
+                                  change: { text in act { $0.draft = text; return nil } },
+                                  send: { act { $0.sendText() } },
+                                  cancel: { act { $0.stopWriting(); return nil } })
+                } else {
+                    OptionButton(option: Ask.Option(label: L.t("Type something", "自己写一个回答")), pencil: true) {
+                        act { $0.startWriting(); return nil }
+                    }
+                    .clickTarget("type something") { act { $0.startWriting(); return nil } }
+                }
+            }
         }
-        if q.multiSelect || card.step > 0 || (canWrite && card.canWrite && !card.writing) {
+        if q.multiSelect || card.step > 0 {
             questionButtons(q)
-        }
-        if canWrite, card.canWrite, card.writing {
-            OwnWordsField(text: card.draft, focused: $fieldFocused,
-                          change: { text in act { $0.draft = text; return nil } },
-                          send: { act { $0.sendText() } })
         }
     }
 
@@ -115,13 +124,6 @@ struct AskCardBody: View {
             if card.step > 0 {
                 SoftButton(title: L.t("Back", "上一题"), icon: "chevron.left") { act { $0.back(); return nil } }
                     .focusable(false)
-            }
-            if canWrite, card.canWrite, !card.writing {
-                SoftButton(title: L.t("Write my own…", "自己写…"), icon: "square.and.pencil") {
-                    act { $0.writing = true; return nil }
-                    fieldFocused = true
-                }
-                .focusable(false)
             }
         }
     }
@@ -185,6 +187,8 @@ struct OptionButton: View {
     let option: Ask.Option
     var multi = false
     var on = false
+    /// "Type something": a pencil instead of the ring.
+    var pencil = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -252,7 +256,12 @@ struct OptionButton: View {
     }
 
     @ViewBuilder private var mark: some View {
-        if multi {
+        if pencil {
+            Image(systemName: "pencil")
+                .font(.system(size: 11.5, weight: .semibold))
+                .foregroundStyle(lit ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+                .frame(width: 14, height: 14)
+        } else if multi {
             Image(systemName: on ? "checkmark.square.fill" : "square")
                 .font(.system(size: 13, weight: .medium))
                 .foregroundStyle(on || lit ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.tertiary))
@@ -266,29 +275,113 @@ struct OptionButton: View {
     }
 }
 
-/// "Write my own": Return sends.
+/// "Type something", picked: the row is a field now, in the options' own
+/// shape. At least two lines, growing with the text up to five, then it
+/// scrolls. Return makes a new line, ⌘↩ sends, Esc goes back to the answers.
 private struct OwnWordsField: View {
     let text: String
     var focused: FocusState<Bool>.Binding
+    /// In Mo's bubble: its window takes the keyboard while this is open.
+    var inBubble = false
     let change: (String) -> Void
     let send: () -> Void
+    let cancel: () -> Void
     @Environment(\.colorScheme) private var scheme
 
+    static let lineHeight: CGFloat = 17
+    private var empty: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
     var body: some View {
-        HStack(spacing: 6) {
-            TextField(L.t("Your answer…", "你的回答…"), text: Binding(get: { text }, set: change))
-                .textFieldStyle(.plain)
-                .font(.system(size: 13))
-                .focused(focused)
-                .onSubmit(send)
-                .padding(.horizontal, 8)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Theme.raised(scheme)))
-                .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(Theme.hairline(scheme)))
-            SoftButton(title: L.t("Send", "发送"), icon: "paperplane", prominent: true, shortcut: "↵", action: send)
-                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+        VStack(alignment: .trailing, spacing: 6) {
+            HStack(alignment: .top, spacing: 5) { // the editor insets its text 5 pt: lines up with the answers
+                Image(systemName: "pencil")
+                    .font(.system(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.brand)
+                    .frame(width: 14, height: 14)
+                    .padding(.top, 2)
+                editor
+            }
+            .padding(.leading, 10)
+            .padding(.trailing, 6)
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.brand.opacity(scheme == .dark ? 0.12 : 0.06)))
+            .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.brand.opacity(0.55)))
+            SoftButton(title: L.t("Send", "发送"), icon: "paperplane", prominent: true, shortcut: "⌘↩", action: send)
+                .disabled(empty)
                 .focusable(false)
                 .clickTarget("send text", send)
+        }
+        .background(inBubble ? KeyboardWhileOpen() : nil)
+        .onAppear {
+            // After the window can take the keyboard.
+            DispatchQueue.main.async { focused.wrappedValue = true }
+        }
+    }
+
+    /// The text sizes the field: an invisible copy, two to five lines tall,
+    /// with the editor laid over it (it scrolls past five).
+    private var editor: some View {
+        ZStack(alignment: .topLeading) {
+            Text(text.isEmpty ? " " : text + (text.hasSuffix("\n") ? " " : ""))
+                .font(.system(size: 13))
+                .lineSpacing(0)
+                .lineLimit(5)
+                .frame(maxWidth: .infinity, minHeight: Self.lineHeight * 2, alignment: .topLeading)
+                .padding(.horizontal, 5)
+                .hidden()
+            if text.isEmpty {
+                Text(L.t("Type your answer…", "写下你的回答…"))
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 5)
+                    .allowsHitTesting(false)
+            }
+            TextEditor(text: Binding(get: { text }, set: change))
+                .font(.system(size: 13))
+                .scrollContentBackground(.hidden)
+                .focused(focused)
+                .onKeyPress(.return, phases: .down) { press in
+                    guard press.modifiers.contains(.command) else { return .ignored }
+                    send()
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    cancel()
+                    return .handled
+                }
+        }
+        .frame(maxHeight: Self.lineHeight * 5)
+    }
+}
+
+/// Mo's bubble never takes the keyboard, except while its "Type something"
+/// field is open: then its panel may become key (non-activating, so the app
+/// you're in stays in front) and gives the keyboard back when the field goes.
+private struct KeyboardWhileOpen: NSViewRepresentable {
+    func makeNSView(context: Context) -> KeyView { KeyView() }
+    func updateNSView(_ view: KeyView, context: Context) {}
+    static func dismantleNSView(_ view: KeyView, coordinator: ()) { view.release() }
+
+    final class KeyView: NSView {
+        private weak var panel: BubblePanel?
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            guard let panel = window as? BubblePanel else { return }
+            self.panel = panel
+            panel.takesTyping = true
+            panel.makeKey()
+        }
+
+        func release() {
+            guard let panel else { return }
+            panel.takesTyping = false
+            if panel.isKeyWindow {
+                // Hand the keyboard back without hiding the bubble.
+                panel.orderOut(nil)
+                panel.orderFrontRegardless()
+            }
         }
     }
 }
@@ -358,8 +451,7 @@ struct ReplyBox: View {
 
 /// Mo's message box detail area for a question: the question and its
 /// answers, answered right there. Live: it reads the card from the model.
-/// No typing here (Mo's bubble never takes the keyboard): "Open Panel" has
-/// "Write my own".
+/// "Type something" takes the keyboard for the bubble while it's open.
 struct AskBubbleDetail: View {
     let model: AppModel
     let askId: String
@@ -372,7 +464,7 @@ struct AskBubbleDetail: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
-                AskCardBody(card: card, sessionTitle: model.askTitle(card.ask), canWrite: false) { body in
+                AskCardBody(card: card, sessionTitle: model.askTitle(card.ask), inBubble: true) { body in
                     model.act(on: askId, body)
                 }
             }

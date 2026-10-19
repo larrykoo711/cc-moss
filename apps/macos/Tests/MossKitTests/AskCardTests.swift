@@ -109,6 +109,28 @@ import Testing
         #expect(card.sendText() == .text("MySQL, please"))
     }
 
+    @Test func typeSomethingIsTheLastRowOfASingleQuestion() {
+        var card = AskCard(ask())
+        #expect(card.offersOwnWords)
+        card.startWriting()
+        #expect(card.writing)
+        card.draft = "Use Postgres"
+        card.stopWriting()
+        #expect(!card.writing, "Esc goes back to the answers")
+        #expect(card.draft == "Use Postgres", "and keeps what was typed")
+        card.startWriting()
+        #expect(card.sendText() == .text("Use Postgres"))
+        #expect(!card.offersOwnWords, "on its way: no more typing")
+    }
+
+    @Test func noTypeSomethingRowForSeveralQuestionsOrPermissions() {
+        var several = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
+        #expect(!several.offersOwnWords)
+        several.startWriting()
+        #expect(!several.writing)
+        #expect(!AskCard(ask(askJSON(kind: "permission"))).offersOwnWords)
+    }
+
     @Test func noWritingWithSeveralQuestions() {
         var card = AskCard(ask(askJSON(questions: [questionJSON("First?"), questionJSON("Second?")])))
         #expect(!card.canWrite)

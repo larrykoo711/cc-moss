@@ -373,7 +373,7 @@ private struct QueueRow: View {
 
     @ViewBuilder private var detail: some View {
         if let card {
-            AskCardBody(card: card, sessionTitle: model.askTitle(card.ask), canWrite: true) { body in
+            AskCardBody(card: card, sessionTitle: model.askTitle(card.ask)) { body in
                 model.act(on: card.id, body)
             }
         } else if let session {

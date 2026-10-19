@@ -44,6 +44,9 @@ public struct AskCard: Equatable, Sendable {
     public var reviewing: Bool { several && step == count }
     /// Your own words fit only a single question (`--text`).
     public var canWrite: Bool { ask.kind == .question && count == 1 }
+    /// The last answer row, "Type something", as Claude Code's own list
+    /// ends: only for a single question still being answered.
+    public var offersOwnWords: Bool { canWrite && phase == .choosing }
     public var submitting: Bool { phase == .submitting }
 
     public func picked(_ label: String) -> Bool {
@@ -101,6 +104,17 @@ public struct AskCard: Equatable, Sendable {
     public mutating func sendAll() -> AskReply? {
         guard reviewing, picks.allSatisfy({ !$0.isEmpty }) else { return nil }
         return submit(.choices(picks))
+    }
+
+    /// "Type something": the row turns into a field.
+    public mutating func startWriting() {
+        guard offersOwnWords else { return }
+        writing = true
+    }
+
+    /// Esc in the field: back to the answers, the draft kept for next time.
+    public mutating func stopWriting() {
+        writing = false
     }
 
     /// Return in "write my own".

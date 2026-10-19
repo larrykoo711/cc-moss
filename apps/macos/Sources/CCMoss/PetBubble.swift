@@ -623,7 +623,8 @@ final class BubbleHost: NSHostingView<PetBubbleRoot> {
     }
 }
 
-/// The bubble's window: transparent, never key, and above everything but menus.
+/// The bubble's window: transparent, key only while you type an answer in it,
+/// and above everything but menus.
 /// It is a message for you, like a notification, so it sits at the status-bar
 /// level: over the Dock and over other apps' always-on-top windows, which share
 /// Mo's own floating level and would otherwise cover it. (Measured: a child
@@ -645,7 +646,10 @@ final class BubblePanel: NSPanel {
         animationBehavior = .none
     }
 
-    override var canBecomeKey: Bool { false }
+    /// Only while a question's "Type something" field is open.
+    var takesTyping = false
+
+    override var canBecomeKey: Bool { takesTyping }
     override var canBecomeMain: Bool { false }
 }
 
