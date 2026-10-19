@@ -782,6 +782,21 @@ fn moss_check(f: &super::moss::Facts) -> Check {
             )),
         );
     }
+    if let Some(dir) = &f.fence_gap {
+        let dir = dir.display();
+        return check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!("CLAUDE_CONFIG_DIR is {dir} here, but Moss isn't kept out of it"),
+                format!("这里的 CLAUDE_CONFIG_DIR 是 {dir}，但 Moss 没被挡在外面")
+            ),
+            Some(tr!(
+                format!("add `config_dir = \"{dir}\"` under [claude] in config.toml, then run `cc-moss install`"),
+                format!("在 config.toml 的 [claude] 下加 `config_dir = \"{dir}\"`，再运行 `cc-moss install`")
+            )),
+        );
+    }
     if f.running {
         check(Mark::Ok, what, tr!("running", "运行中"), None)
     } else {
@@ -949,6 +964,7 @@ mod tests {
             running: false,
             claude_found,
             tmux_found,
+            fence_gap: None,
         };
         let c = moss_check(&facts(false, true));
         assert_eq!(c.mark, Mark::Warn);
@@ -968,13 +984,25 @@ mod tests {
             running: true,
             claude_found: true,
             tmux_found: true,
+            fence_gap: None,
         });
         assert_eq!(fine.mark, Mark::Ok);
+        let gap = moss_check(&super::super::moss::Facts {
+            enabled: true,
+            running: true,
+            claude_found: true,
+            tmux_found: true,
+            fence_gap: Some("/c".into()),
+        });
+        assert_eq!(gap.mark, Mark::Warn);
+        assert!(gap.detail.contains("CLAUDE_CONFIG_DIR"), "{}", gap.detail);
+        assert!(gap.fix.as_deref().is_some_and(|f| f.contains("config_dir")));
         let off = moss_check(&super::super::moss::Facts {
             enabled: false,
             running: false,
             claude_found: false,
             tmux_found: false,
+            fence_gap: None,
         });
         assert_eq!(off.mark, Mark::Note, "off is a choice, not a problem");
     }

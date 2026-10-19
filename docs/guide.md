@@ -258,7 +258,7 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
 - **它能碰什么。** Moss 不弹权限确认（bypass），所以有两道围栏：
   - 工具：项目设置里的防护钩子检查每一次工具调用。Claude Code 的文件工具（Read、Write、Edit、Grep、Glob）对 Moss 是关掉的，它读写文件只能用命令行，也就是在下面说的沙箱里。防护钩子不认识的工具（包括 MCP 工具）一律拒绝；判断不了的时候也拒绝。
   - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它自己的家，不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
-  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude` 和 `~/.claude.json`，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
+  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude`、`~/.claude.json` 和它的备份，或者 `CLAUDE_CONFIG_DIR` 指的文件夹，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
   - 不联网：网页抓取和网页搜索一律拒绝，命令行也连不上网。
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
@@ -314,7 +314,7 @@ cc-moss moss chat --json                    # 最近 200 条对话（--limit N �
 
 配置里是 `[moss] daily_checkup`、`daily_brief`，也可以 `cc-moss config set moss.daily_checkup false`。
 
-**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么（比如「找回 api、db」「结束 work」）。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
+**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么，连同每个会话的文件夹（比如「结束 work · ~/code/work」）。两个开着的会话同名时，Moss 不能用这个名字问你，得先改掉一个。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
 
 体检看的是 `cc-moss doctor --sessions --json` 给的事实：每个会话的名字是不是自动起的、文件夹在不在、断了多久、多久没动、在不在干活或等你、tmux 名对不对得上，以及建议的名字；还有钩子和别名链接好不好。判断不了的写 `"unknown"`，不当成坏了。里面没有会话的对话内容。
 
@@ -547,6 +547,8 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 [claude]
 permission_mode = "bypass"   # 新会话默认 bypass；"default" 改回每一步都先问你
 default_args = ["--model", "opus"]   # 每次 `cc-moss new` 都会带上
+# config_dir = "~/.claude-work"   # 你在 shell 里设了 CLAUDE_CONFIG_DIR 时写这里：Moss 要避开的文件夹
+#                                   （守护进程启动时读不到你的 shell；两边不一致时 `cc-moss doctor` 会提醒）
 
 [naming]
 host_prefix = true        # 默认开启：tmux 会话名为 <主机名>_<名字>，在多台机器间 ssh 时更好区分

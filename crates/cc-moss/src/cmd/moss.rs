@@ -86,15 +86,68 @@ const SHELL_READ_ONLY: &[&str] = &[
 ];
 
 /// Where Claude Code keeps every session's transcript, and its own record
-/// of your projects and history.
-const PRIVATE_READS: &[&str] = &["~/.claude", "~/.claude.json"];
+/// of your projects and history with the copies it keeps of it
+/// (`.claude.json.backup`, `.claude.json.bak.<time>`). The sandbox takes
+/// the `*` as a pattern; the plain names stay in case it ever doesn't.
+const PRIVATE_READS: &[&str] = &[
+    "~/.claude",
+    "~/.claude.json",
+    "~/.claude.json.backup",
+    "~/.claude.json*",
+];
 
-/// `CLAUDE_CONFIG_DIR` when set (absolute): Claude Code keeps there what
-/// it otherwise keeps in `~/.claude` and `~/.claude.json`.
+/// Claude Code's folder when it is not `~/.claude`: `[claude] config_dir`
+/// in cc-moss's config, else `CLAUDE_CONFIG_DIR`. Claude Code keeps there
+/// what it otherwise keeps in `~/.claude` and `~/.claude.json`.
 fn config_dir() -> Option<PathBuf> {
-    std::env::var_os("CLAUDE_CONFIG_DIR")
-        .map(PathBuf::from)
+    let configured = moss_core::config::Config::load()
+        .ok()
+        .and_then(|c| c.claude.config_dir);
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    resolve_config_dir(
+        configured.as_deref(),
+        std::env::var_os("CLAUDE_CONFIG_DIR")
+            .as_deref()
+            .map(Path::new),
+        home.as_deref(),
+    )
+}
+
+/// The config's folder (`~` read as `home`) over the environment's; only
+/// an absolute one.
+fn resolve_config_dir(
+    configured: Option<&str>,
+    env: Option<&Path>,
+    home: Option<&Path>,
+) -> Option<PathBuf> {
+    let configured = configured
+        .map(str::trim)
+        .filter(|c| !c.is_empty())
+        .map(|c| match (c.strip_prefix('~'), home) {
+            (Some(rest), Some(h)) if rest.is_empty() || rest.starts_with('/') => {
+                h.join(rest.trim_start_matches('/'))
+            }
+            _ => PathBuf::from(c),
+        });
+    configured
+        .or_else(|| env.map(Path::to_path_buf))
         .filter(|p| p.is_absolute())
+}
+
+/// `CLAUDE_CONFIG_DIR` as this shell has it, when Moss's settings
+/// (`settings`, the text of its `.claude/settings.json`) don't keep Moss
+/// out of it: the daemon didn't see it.
+pub fn fence_gap(settings: &str, env: Option<&Path>) -> Option<PathBuf> {
+    let env = env.filter(|e| e.is_absolute())?;
+    let value: serde_json::Value = serde_json::from_str(settings).ok()?;
+    let covered = value["sandbox"]["filesystem"]["denyRead"]
+        .as_array()
+        .is_some_and(|all| {
+            all.iter()
+                .filter_map(serde_json::Value::as_str)
+                .any(|d| env.starts_with(d))
+        });
+    (!covered).then(|| env.to_path_buf())
 }
 
 /// The one command Moss runs outside the sandbox: it writes the persona
@@ -862,6 +915,8 @@ pub struct Facts {
     /// On the PATH the daemon runs with (its LaunchAgent's).
     pub claude_found: bool,
     pub tmux_found: bool,
+    /// `CLAUDE_CONFIG_DIR` here, when Moss's fence doesn't cover it.
+    pub fence_gap: Option<PathBuf>,
 }
 
 /// `None` where there is no daemon to run Moss (not macOS, root).
@@ -882,6 +937,16 @@ pub fn facts() -> Option<Facts> {
         // in its environment.
         claude_found: found("claude"),
         tmux_found: found("tmux"),
+        fence_gap: std::fs::read_to_string(moss::home_dir(&state()).join(".claude/settings.json"))
+            .ok()
+            .and_then(|s| {
+                fence_gap(
+                    &s,
+                    std::env::var_os("CLAUDE_CONFIG_DIR")
+                        .as_deref()
+                        .map(Path::new),
+                )
+            }),
     })
 }
 
@@ -1460,18 +1525,13 @@ mod tests {
         // except its own home.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude", "~/.claude.json", "/s"])
-        );
-        // Claude Code's folder where CLAUDE_CONFIG_DIR puts it, too.
-        let moved: serde_json::Value = serde_json::from_str(&settings_json(
-            "/bin/cc-moss",
-            Path::new("/s"),
-            Some(Path::new("/c")),
-        ))
-        .unwrap();
-        assert_eq!(
-            moved["sandbox"]["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude", "~/.claude.json", "/c", "/s"])
+            serde_json::json!([
+                "~/.claude",
+                "~/.claude.json",
+                "~/.claude.json.backup",
+                "~/.claude.json*",
+                "/s"
+            ])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
         // No file tools: Moss reads and writes through the sandboxed shell.
@@ -1483,6 +1543,49 @@ mod tests {
         assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
         // Its own .claude folder is not for its shell either.
         assert!(deny.contains(&"./.claude".into()), "{deny:?}");
+        // Claude Code's folder where CLAUDE_CONFIG_DIR puts it, too.
+        let moved: serde_json::Value = serde_json::from_str(&settings_json(
+            "/bin/cc-moss",
+            Path::new("/s"),
+            Some(Path::new("/c")),
+        ))
+        .unwrap();
+        assert_eq!(
+            moved["sandbox"]["filesystem"]["denyRead"],
+            serde_json::json!([
+                "~/.claude",
+                "~/.claude.json",
+                "~/.claude.json.backup",
+                "~/.claude.json*",
+                "/c",
+                "/s"
+            ])
+        );
+        // What doctor warns about: a CLAUDE_CONFIG_DIR the settings miss.
+        let text = serde_json::to_string(&moved).unwrap();
+        assert_eq!(fence_gap(&text, Some(Path::new("/c"))), None);
+        assert_eq!(fence_gap(&text, Some(Path::new("/c/sub"))), None);
+        assert_eq!(fence_gap(&text, None), None);
+        assert_eq!(
+            fence_gap(&text, Some(Path::new("/other"))),
+            Some(PathBuf::from("/other"))
+        );
+    }
+
+    #[test]
+    fn moss_fence_reads_the_config_dir_from_the_config_first() {
+        let home = Some(Path::new("/Users/me"));
+        assert_eq!(
+            resolve_config_dir(Some("~/cc"), Some(Path::new("/env")), home),
+            Some(PathBuf::from("/Users/me/cc"))
+        );
+        assert_eq!(
+            resolve_config_dir(None, Some(Path::new("/env")), home),
+            Some(PathBuf::from("/env"))
+        );
+        assert_eq!(resolve_config_dir(Some(" "), None, home), None);
+        assert_eq!(resolve_config_dir(Some("relative"), None, home), None);
+        assert_eq!(resolve_config_dir(None, Some(Path::new("rel")), home), None);
     }
 
     #[test]

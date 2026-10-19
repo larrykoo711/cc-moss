@@ -18,8 +18,12 @@ pub const MAX_CHARS: usize = 40;
 pub fn sanitize(name: &str) -> String {
     const SHELL: &str = ".:'\"$`\\!#;&|<>(){}[]*?~^,=/";
     let mut out = String::with_capacity(name.len());
-    for c in name.chars() {
+    let chars: Vec<char> = name.chars().collect();
+    for (i, &c) in chars.iter().enumerate() {
         if c.is_control() && !c.is_whitespace() {
+            continue;
+        }
+        if hidden_at(&chars, i) {
             continue;
         }
         let c = if c.is_whitespace() || SHELL.contains(c) {
@@ -42,6 +46,58 @@ pub fn sanitize(name: &str) -> String {
     } else {
         trimmed.to_string()
     }
+}
+
+/// Whether `name` holds characters that change how text shows without
+/// showing themselves: Unicode format characters (category Cf: direction
+/// overrides such as U+202E, zero-width spaces and joiners, soft hyphens,
+/// tags) and line or paragraph separators (Zl, Zp). A zero-width joiner
+/// between two emoji (👩‍💻) is part of the emoji and stays.
+pub fn has_hidden_chars(name: &str) -> bool {
+    let chars: Vec<char> = name.chars().collect();
+    (0..chars.len()).any(|i| hidden_at(&chars, i))
+}
+
+fn hidden_at(chars: &[char], i: usize) -> bool {
+    let c = chars[i];
+    if c == '\u{200D}' {
+        let before = i.checked_sub(1).map(|j| chars[j]);
+        let after = chars.get(i + 1).copied();
+        return !(before.is_some_and(emoji_part) && after.is_some_and(emoji_part));
+    }
+    format_or_separator(c)
+}
+
+/// Emoji (skin tones among them), and the variation selector that ends one.
+fn emoji_part(c: char) -> bool {
+    matches!(c as u32,
+        0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F)
+}
+
+/// Unicode categories Cf, Zl and Zp.
+fn format_or_separator(c: char) -> bool {
+    matches!(c as u32,
+        0x00AD
+        | 0x0600..=0x0605
+        | 0x061C
+        | 0x06DD
+        | 0x070F
+        | 0x0890..=0x0891
+        | 0x08E2
+        | 0x180E
+        | 0x200B..=0x200F
+        | 0x2028..=0x202E
+        | 0x2060..=0x2064
+        | 0x2066..=0x206F
+        | 0xFEFF
+        | 0xFFF9..=0xFFFB
+        | 0x110BD
+        | 0x110CD
+        | 0x13430..=0x1343F
+        | 0x1BCA0..=0x1BCA3
+        | 0x1D173..=0x1D17A
+        | 0xE0001
+        | 0xE0020..=0xE007F)
 }
 
 /// `<prefix>_<name>`, or just the name without a prefix. The machine's

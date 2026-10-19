@@ -400,8 +400,8 @@ keeps trying.
   - Its shell: commands run in Claude Code's sandbox, which macOS enforces on everything they start. They can write
     only in its home, never `IDENTITY.md`, `SOUL.md`, `USER.md` or cc-moss's files, and they can't retry outside
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
-  - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude` and `~/.claude.json`,
-    where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
+  - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude`, `~/.claude.json` and
+    its backup copies, or the folder `CLAUDE_CONFIG_DIR` names; where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
     the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
     updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
   - No network: web fetch and web search are refused, and its shell can't reach the internet.
@@ -530,9 +530,10 @@ works too.
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
 it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
-first, and cc-moss itself puts the yes button under the question, saying what it agrees to ("Bring back api, db",
-"End work"). Only your tap on that button counts, for exactly what it says, within 10 minutes, and only once;
-Moss's own buttons and anything typed don't. The daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
+first, and cc-moss itself puts the yes button under the question, saying what it agrees to, with each session's
+folder ("End work · ~/code/work"). When two open sessions share a name, Moss can't ask about either by that name
+until one is renamed. Only your tap on that button counts, for exactly what it says, within 10 minutes, and only
+once; Moss's own buttons and anything typed don't. The daemon checks this and otherwise refuses. Moss can't write the conversation file, so it can't make up your tap. It never acts on itself, and if a session has changed meanwhile (you brought it back yourself,
 say), the action is skipped with a reason. Each one is written to `audit.jsonl` in the state directory (when, what,
 on which session, on the strength of which message, and how it went). For a Moss that only says what to do, set
 `[moss] actions = false` (or `cc-moss config set moss.actions false`).
@@ -871,6 +872,8 @@ Optional, in `~/.config/cc-moss/config.toml`:
 [claude]
 permission_mode = "bypass"   # new sessions start in bypass mode; "default" asks before each step
 default_args = ["--model", "opus"]   # added to every `cc-moss new`
+# config_dir = "~/.claude-work"   # if you set CLAUDE_CONFIG_DIR in your shell: the folder Moss must stay out of
+#                                   (the daemon starts without your shell; `cc-moss doctor` warns when they differ)
 
 [naming]
 host_prefix = true        # default: name tmux sessions <host>_<name>, handy when you ssh between machines

@@ -125,6 +125,36 @@ const MAX_BUTTONS: usize = 6;
 /// The actions that need the user's go-ahead (`cc-moss moss act`).
 pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end"];
 
+/// `cwd` as a yes button shows it: the last one or two folders, from `~`
+/// when it is in `home` (`~/code/foo`, `…/srv/app`).
+pub fn short_folder(cwd: &str, home: Option<&std::path::Path>) -> String {
+    let path = std::path::Path::new(cwd);
+    let parts = |p: &std::path::Path| -> Vec<String> {
+        p.components()
+            .filter_map(|c| match c {
+                std::path::Component::Normal(n) => Some(n.to_string_lossy().into_owned()),
+                _ => None,
+            })
+            .collect()
+    };
+    if let Some(rel) = home
+        .filter(|h| h.is_absolute())
+        .and_then(|h| path.strip_prefix(h).ok())
+    {
+        let rel = parts(rel);
+        return match rel.len() {
+            0 => "~".to_string(),
+            1 | 2 => format!("~/{}", rel.join("/")),
+            n => format!("…/{}", rel[n - 2..].join("/")),
+        };
+    }
+    let all = parts(path);
+    match all.len() {
+        0..=2 => cwd.to_string(),
+        n => format!("…/{}", all[n - 2..].join("/")),
+    }
+}
+
 /// At most this many `[[confirm:]]` in one message.
 const MAX_CONFIRMS: usize = 12;
 
@@ -386,6 +416,17 @@ mod tests {
         assert!(p.silent);
         assert_eq!(p.sessions.len(), 6);
         assert!(parse("plain").sessions.is_empty());
+    }
+
+    #[test]
+    fn reply_markers_short_folder() {
+        let home = Some(std::path::Path::new("/Users/me"));
+        assert_eq!(short_folder("/Users/me/code/foo", home), "~/code/foo");
+        assert_eq!(short_folder("/Users/me/foo", home), "~/foo");
+        assert_eq!(short_folder("/Users/me", home), "~");
+        assert_eq!(short_folder("/Users/me/a/b/c", home), "…/b/c");
+        assert_eq!(short_folder("/srv/www/app", home), "…/www/app");
+        assert_eq!(short_folder("/srv/app", None), "/srv/app");
     }
 
     #[test]
