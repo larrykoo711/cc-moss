@@ -14,7 +14,7 @@
    "id": "1792144209000-4d5e6f",
    "at": "2026-10-16T09:50:09Z",
    "from": "moss",
-   "text": " Settings:  Status   Config   Usage\n\n Current session\n █████▌                     23% used\n Resets 3pm\n\n Current week (all models)\n ██████████                 41% used\n Resets Oct 23, 9am\n\n Current week (Opus)\n ███▏                       13% used\n Resets Oct 23, 9am\n\n Skills % of usage\n /larry-sdd                       1%\n /code-review                     1%\n\n Subagents % of usage\n general-purpose                 37%\n Explore                         12%\n Plan                             4%\n\n d to day · w to week\n",
+   "text": " Settings:  Status   Config   Usage\n\n Current session\n █████▌                     23% used\n Resets 3pm\n\n Current week (all models)\n ██████████                 41% used\n Resets Oct 23, 9am\n\n Current week (Opus)\n ███▏                       13% used\n Resets Oct 23, 9am\n\n Skills % of usage\n /spec-flow                       1%\n /code-review                     1%\n\n Subagents % of usage\n general-purpose                 37%\n Explore                         12%\n Plan                             4%\n\n d to day · w to week\n",
    "fallback": false,
    "buttons": [
     "/context",
