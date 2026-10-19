@@ -77,6 +77,10 @@ final class AppModel {
             if page != .moss {
                 mossTyping = false
                 mossQuickOpen = false
+            } else if oldValue != .moss {
+                // Opened again: the latest 30, every reply folded.
+                mossLimit = MossPaging.page
+                mossExpanded = []
             }
             if page == .moss && panelShown { mossDesk.markRead() }
         }
@@ -95,6 +99,17 @@ final class AppModel {
     var mossQuickOpen = false
     /// What the quick bar couldn't fit, for "⋯".
     var quickOverflow: [MossQuickItem] = []
+    /// How many messages the Moss page reads (30, up to 100 with "Load earlier").
+    var mossLimit = MossPaging.page
+    /// Moss's replies you unfolded, while the page is open.
+    var mossExpanded: Set<String> = []
+    /// A Moss read is under way; another one waits for it instead of piling up.
+    @ObservationIgnored var mossLoad: Task<Void, Never>?
+    @ObservationIgnored var mossLoadAgain = false
+    /// Screenshots only: the conversation opens scrolled to its top.
+    @ObservationIgnored var mossStartAtTop = false
+    /// How many messages the last read returned (before digests are hidden).
+    var mossLoaded = 0
     /// What was sent from the quick bar and when, for its order (this Mac only).
     var quickUses: [MossQuickUse] = MossQuickLog.load()
     /// Off for screenshots: their made-up uses are never saved.
@@ -260,12 +275,17 @@ final class AppModel {
         LaunchPlan.restoreCommand(cli: cli, handle: s.target)
     }
 
-    /// Open `s` in the chosen terminal. True when it opened; otherwise
-    /// `openProblem` says why.
-    func open(_ s: Session) -> Bool {
+    /// Open `s` in the chosen terminal, off the main thread (AppleScript and
+    /// `open` can take a while, or wait on a permission prompt). `done` gets
+    /// true when it opened; otherwise `openProblem` says why.
+    func open(_ s: Session, done: (@MainActor (Bool) -> Void)? = nil) {
         terminals.settle()
-        openProblem = Opener.open(handle: s.handle, cli: cli, in: terminals.current, style: terminals.openStyle)
-        return openProblem == nil
+        let handle = s.handle, cli = cli, terminal = terminals.current, style = terminals.openStyle
+        Task {
+            let problem = await Opener.open(handle: handle, cli: cli, in: terminal, style: style)
+            openProblem = problem
+            done?(problem == nil)
+        }
     }
 
     func copy(_ text: String) {

@@ -9,11 +9,37 @@ extension AppModel {
     /// doesn't touch the state folder). A failure keeps what was shown.
     func loadMoss() async {
         guard let client else { return }
-        if let status = try? await client.mossStatus() { mossDesk.update(status: status) }
-        guard let chat = try? await client.mossChat() else { return }
-        let replies = mossDesk.update(chat: chat)
-        if mossOnScreen { mossDesk.markRead() }
-        if !replies.isEmpty { onMossReplies?(replies) }
+        // One read at a time: a refresh during a poll (or the other way
+        // round) waits for it and has it go round once more, never alongside.
+        if let running = mossLoad {
+            mossLoadAgain = true
+            await running.value
+            return
+        }
+        let task = Task { @MainActor in
+            repeat {
+                mossLoadAgain = false
+                if let status = try? await client.mossStatus() { mossDesk.update(status: status) }
+                guard let chat = try? await client.mossChat(limit: mossLimit) else { break }
+                mossLoaded = chat.messages.count
+                let replies = mossDesk.update(chat: chat)
+                if mossOnScreen { mossDesk.markRead() }
+                if !replies.isEmpty { onMossReplies?(replies) }
+            } while mossLoadAgain
+        }
+        mossLoad = task
+        await task.value
+        mossLoad = nil
+    }
+
+    /// What the top of the conversation offers.
+    var mossTop: MossPaging.Top { MossPaging.top(limit: mossLimit, loaded: mossLoaded) }
+
+    /// "Load earlier": 30 more, up to 100.
+    func loadEarlierMoss() async {
+        guard let next = MossPaging.next(after: mossLimit) else { return }
+        mossLimit = next
+        await loadMoss()
     }
 
     /// You're looking at the Moss page right now.
@@ -91,8 +117,8 @@ extension AppModel {
         return moss.inTmux && moss.state != .interrupted
     }
 
-    func openMoss() -> Bool {
-        guard let moss, canOpenMoss else { return false }
-        return open(moss)
+    func openMoss() {
+        guard let moss, canOpenMoss else { return }
+        open(moss)
     }
 }

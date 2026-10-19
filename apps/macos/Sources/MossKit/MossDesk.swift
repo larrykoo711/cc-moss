@@ -68,9 +68,11 @@ public final class MossDesk {
     }
 
     /// Everything to show, oldest first.
+    /// Everything to show, oldest first: the conversation without the
+    /// session digests, then what's still on its way.
     public var messages: [MossMessage] {
         let logged = Set(chat.map(\.id))
-        return chat + pending.filter { !logged.contains($0.id) }
+        return Self.visible(chat) + pending.filter { !logged.contains($0.id) }
     }
 
     public var activity: MossActivity? { status?.activity }

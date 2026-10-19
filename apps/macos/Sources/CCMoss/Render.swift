@@ -76,6 +76,13 @@ enum Render {
             if value("--page") == "queue" { model.showQueue() }
             if value("--page") == "moss" {
                 model.showMoss()
+                // `--moss-limit 100`: as if "Load earlier" had been clicked up to there;
+                // `--moss-top`: scrolled up to the oldest message read.
+                if let limit = value("--moss-limit").flatMap(Int.init) {
+                    model.mossLimit = limit
+                    await model.loadMoss()
+                }
+                model.mossStartAtTop = args.contains("--moss-top")
                 model.mossTyping = args.contains("--moss-typing")
                 // `--moss-typing "/"`: with that typed (a slash shows the command list).
                 if let typed = value("--moss-typing"), !typed.hasPrefix("--") { model.mossDraft = typed }
@@ -602,7 +609,15 @@ struct DemoRunner: CommandRunner {
         case ["ask", "take"]:
             return ok("")
         case ["moss", "chat"]:
-            return CommandResult(status: 0, stdout: mossChat ?? Data(#"{"schema":1,"messages":[]}"#.utf8), stderr: "")
+            let all = mossChat ?? Data(#"{"schema":1,"messages":[]}"#.utf8)
+            // `--limit N`: the newest N, as cc-moss reads them.
+            guard let i = arguments.firstIndex(of: "--limit"), i + 1 < arguments.count, let n = Int(arguments[i + 1]),
+                  var top = try? JSONSerialization.jsonObject(with: all) as? [String: Any],
+                  let list = top["messages"] as? [Any] else {
+                return CommandResult(status: 0, stdout: all, stderr: "")
+            }
+            top["messages"] = Array(list.suffix(n))
+            return CommandResult(status: 0, stdout: (try? JSONSerialization.data(withJSONObject: top)) ?? all, stderr: "")
         case ["moss", "status"]:
             return ok(Self.mossStatus(moss))
         case ["moss", "say"]:

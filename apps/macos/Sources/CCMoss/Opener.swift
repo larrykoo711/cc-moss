@@ -103,7 +103,7 @@ struct OpenProblem: Equatable {
 /// Carries out launch plans.
 @MainActor
 enum Opener {
-    enum Outcome: Equatable {
+    enum Outcome: Equatable, Sendable {
         case opened
         case denied
         case failed(String)
@@ -131,7 +131,7 @@ enum Opener {
         return LaunchContext(style: style, running: running, canSendKeys: AXIsProcessTrusted())
     }
 
-    static func run(command: String, in terminal: InstalledTerminal?, style: OpenStyle = .window) -> OpenProblem? {
+    static func run(command: String, in terminal: InstalledTerminal?, style: OpenStyle = .window) async -> OpenProblem? {
         guard let terminal else {
             return OpenProblem(kind: .noTerminal, terminalName: L.t("a terminal", "终端"), command: command)
         }
@@ -143,17 +143,18 @@ enum Opener {
         } catch {
             return OpenProblem(kind: .unsafeName, terminalName: name, command: command)
         }
-        switch run(plan, terminal: terminal) {
+        switch await run(plan, terminal: terminal) {
         case .opened: return nil
         case .denied: return OpenProblem(kind: .denied, terminalName: name, command: command)
         case .failed(let why): return OpenProblem(kind: .failed(why), terminalName: name, command: command)
         }
     }
 
-    /// Open `handle` in `terminal`. AppleScript runs on the main thread (as
-    /// NSAppleScript requires); the first time, macOS asks the user for
-    /// Automation permission while this waits.
-    static func open(handle: String, cli: String, in terminal: InstalledTerminal?, style: OpenStyle = .default) -> OpenProblem? {
+    /// Open `handle` in `terminal`. The plan is made here; carrying it out
+    /// (AppleScript, `open`) happens off the main thread, so the app never
+    /// waits on it, including the first time, when macOS asks for Automation
+    /// permission.
+    static func open(handle: String, cli: String, in terminal: InstalledTerminal?, style: OpenStyle = .default) async -> OpenProblem? {
         let command = LaunchPlan.attachCommand(cli: cli, handle: handle)
         guard let terminal else {
             return OpenProblem(kind: .noTerminal, terminalName: L.t("a terminal", "终端"), command: command)
@@ -166,15 +167,15 @@ enum Opener {
         } catch {
             return OpenProblem(kind: .unsafeName, terminalName: name, command: command)
         }
-        switch run(plan, terminal: terminal) {
+        switch await run(plan, terminal: terminal) {
         case .opened: return nil
         case .denied: return OpenProblem(kind: .denied, terminalName: name, command: command)
         case .failed(let why): return OpenProblem(kind: .failed(why), terminalName: name, command: command)
         }
     }
 
-    static func run(_ plan: LaunchPlan, terminal: InstalledTerminal) -> Outcome {
-        let outcome = run(plan)
+    static func run(_ plan: LaunchPlan, terminal: InstalledTerminal) async -> Outcome {
+        let outcome = await execute(plan)
         // A tab spawned from the command line (WezTerm) doesn't bring its app
         // forward on its own; scripted terminals already said `activate`.
         if outcome == .opened, case .process = plan {
@@ -183,7 +184,18 @@ enum Opener {
         return outcome
     }
 
-    static func run(_ plan: LaunchPlan) -> Outcome {
+    /// One plan at a time, on a queue of its own: NSAppleScript is used from
+    /// one thread at a time, and the main thread is never the one waiting.
+    private nonisolated static let queue = DispatchQueue(label: "cc-moss.opener", qos: .userInitiated)
+
+    nonisolated static func execute(_ plan: LaunchPlan) async -> Outcome {
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume(returning: runBlocking(plan)) }
+        }
+    }
+
+    /// Carries the plan out and waits for it: never call on the main thread.
+    nonisolated static func runBlocking(_ plan: LaunchPlan) -> Outcome {
         switch plan {
         case .appleScript(let source):
             guard let script = NSAppleScript(source: source) else { return .failed("AppleScript") }

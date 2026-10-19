@@ -834,10 +834,13 @@ struct AboutSettings: View {
     private func runUpdate() {
         guard let cli = model.cliPath else { return }
         let command = LaunchPlan.cliCommand(cli: cli, ["update"])
-        if let failure = Opener.run(command: command, in: model.terminals.current) {
-            model.copy(failure.command)
-            problem = L.t("Couldn't open \(failure.terminalName). The command is on your clipboard: paste it in a terminal.",
-                          "没能打开\(failure.terminalName)。命令已经复制好了，贴到终端里运行就行。")
+        let terminal = model.terminals.current
+        Task {
+            if let failure = await Opener.run(command: command, in: terminal) {
+                model.copy(failure.command)
+                problem = L.t("Couldn't open \(failure.terminalName). The command is on your clipboard: paste it in a terminal.",
+                              "没能打开\(failure.terminalName)。命令已经复制好了，贴到终端里运行就行。")
+            }
         }
     }
 }

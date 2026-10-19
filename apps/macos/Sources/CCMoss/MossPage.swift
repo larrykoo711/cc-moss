@@ -143,7 +143,7 @@ private struct MossStatusBar: View {
                 QuietButton(title: L.t("Settings", "去设置"), icon: Icons.settings, action: settings)
             } else if model.canOpenMoss {
                 QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") {
-                    _ = model.openMoss()
+                    model.openMoss()
                 }
                 .tip(L.t("Moss's own terminal, where you can watch it work", "Moss 自己的终端，能看它在做什么"))
             }
@@ -237,6 +237,12 @@ private struct MossActionRow: View {
 private struct MossConversation: View {
     @Bindable var model: AppModel
     private static let bottom = "moss-bottom"
+    private static let topID = "moss-top"
+
+    /// The newest message is in view: new ones scroll in. Scrolled up to
+    /// read, the page stays where you are.
+    @State private var atBottom = true
+    @State private var loadingEarlier = false
 
     var body: some View {
         let desk = model.mossDesk
@@ -247,6 +253,8 @@ private struct MossConversation: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
+                    top(messages, proxy: proxy)
+                        .id(Self.topID)
                     ForEach(Array(messages.enumerated()), id: \.element.id) { i, m in
                         if let stamp = Self.stamp(m, after: i > 0 ? messages[i - 1] : nil) {
                             Text(stamp)
@@ -262,23 +270,80 @@ private struct MossConversation: View {
                             .transition(.opacity)
                     }
                     Color.clear.frame(height: 1).id(Self.bottom)
+                        .onAppear { atBottom = true }
+                        .onDisappear { atBottom = false }
                 }
                 .padding(.horizontal, 14)
                 .padding(.top, 14)
                 .padding(.bottom, 6)
             }
             .scrollIndicators(.never)
-            .defaultScrollAnchor(.bottom)
-            .onAppear { proxy.scrollTo(Self.bottom, anchor: .bottom) }
-            .onChange(of: messages.count) { _, _ in
+            .defaultScrollAnchor(model.mossStartAtTop ? .top : .bottom)
+            .onAppear {
+                if !model.mossStartAtTop { proxy.scrollTo(Self.bottom, anchor: .bottom) }
+            }
+            .onChange(of: messages.last?.id) { _, _ in
+                // New at the end: follow it if you were there, or if it's yours.
+                guard !loadingEarlier, atBottom || messages.last?.from == .you else { return }
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             }
             .onChange(of: thinking) { _, _ in
+                guard atBottom else { return }
                 withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(Self.bottom, anchor: .bottom) }
             }
         }
         .animation(.easeOut(duration: 0.18), value: messages)
         .animation(.easeOut(duration: 0.18), value: thinking)
+    }
+
+    /// Above the oldest message: "Load earlier" while there may be more, or
+    /// past 100, the way to the full record in the terminal.
+    @ViewBuilder private func top(_ messages: [MossMessage], proxy: ScrollViewProxy) -> some View {
+        switch model.mossTop {
+        case .nothing:
+            EmptyView()
+        case .loadEarlier:
+            Button {
+                // Keep the message you were looking at where it is.
+                let anchor = messages.first?.id
+                loadingEarlier = true
+                Task {
+                    await model.loadEarlierMoss()
+                    if let anchor { proxy.scrollTo(anchor, anchor: .top) }
+                    loadingEarlier = false
+                }
+            } label: {
+                HStack(spacing: 5) {
+                    if loadingEarlier {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Text(Image(systemName: "arrow.up"))
+                            .font(.system(size: 9.5, weight: .semibold))
+                    }
+                    Text(L.t("Load earlier", "加载更早的"))
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .frame(height: 24)
+                .background(Capsule().fill(Color.primary.opacity(0.05)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(PressStyle())
+            .focusable(false)
+            .disabled(loadingEarlier)
+            .padding(.bottom, 2)
+        case .terminal:
+            VStack(spacing: 6) {
+                Text(L.t("Earlier messages are in the terminal", "更早的记录在终端里"))
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.tertiary)
+                if model.canOpenMoss {
+                    QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
+                }
+            }
+            .padding(.bottom, 4)
+        }
     }
 
     /// A quiet time line before the first message and after a long pause.
@@ -292,7 +357,7 @@ private struct MossConversation: View {
     }
 }
 
-/// One message: yours on the right, Moss's on the left, a digest in the middle.
+/// One message: yours on the right, Moss's on the left.
 private struct MossMessageView: View {
     @Bindable var model: AppModel
     let message: MossMessage
@@ -301,32 +366,10 @@ private struct MossMessageView: View {
 
     var body: some View {
         switch message.from {
-        case .events: digest
+        case .events: EmptyView() // digests are for Moss, not the conversation
         case .moss: moss
         case .you, .other: yours
         }
-    }
-
-    private var digest: some View {
-        HStack(spacing: 5) {
-            Image(systemName: "dot.radiowaves.left.and.right")
-                .font(.system(size: 9.5, weight: .semibold))
-            Text(Self.untagged(message.text))
-                .lineLimit(2)
-                .multilineTextAlignment(.center)
-        }
-        .font(.system(size: 11))
-        .foregroundStyle(.tertiary)
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 24)
-        .tip(message.text)
-    }
-
-    /// "[动态] api-review 在等你" → "api-review 在等你": the line itself says it's a digest.
-    static func untagged(_ text: String) -> String {
-        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard t.hasPrefix("["), let end = t.firstIndex(of: "]"), t.distance(from: t.startIndex, to: end) <= 12 else { return t }
-        return t[t.index(after: end)...].trimmingCharacters(in: .whitespaces)
     }
 
     private var moss: some View {
@@ -336,17 +379,21 @@ private struct MossMessageView: View {
             VStack(alignment: .leading, spacing: 6) {
                 if let command = message.command, !message.refused {
                     MossTerminalCard(command: command, text: message.text,
-                                     graphic: MossScreenCard.make(command: command, text: message.text))
+                                     graphic: MossScreenCard.make(command: command, text: message.text),
+                                     fold: (message.id, model))
                 } else {
-                    MossRichText(text: message.shownText(), quiet: message.fallback)
-                        .padding(.horizontal, 11)
-                        .padding(.vertical, 8)
+                    MossFoldable(id: message.id, model: model) {
+                        MossRichText(text: message.shownText(), quiet: message.fallback)
+                            .padding(.horizontal, 11)
+                            .padding(.vertical, 8)
+                    }
                         .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
+                        .clipShape(ChatBubble(mine: false))
                         .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                         .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 }
                 if message.refused, model.canOpenMoss {
-                    QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { _ = model.openMoss() }
+                    QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
                 }
                 if !buttons.isEmpty {
                     MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id)) { i in
@@ -847,12 +894,9 @@ struct MossTerminalCard: View {
     /// The drawn version and the header's badge, when the screen was recognised.
     var graphic: (badge: String?, view: AnyView)?
     @State var raw = false
-    @State private var expanded = false
-    @State private var height: CGFloat = 0
+    /// Folds like any long reply (the message's id); nil: never folds.
+    var fold: (id: String, model: AppModel)?
     @Environment(\.colorScheme) private var scheme
-    static let fold: CGFloat = 260
-
-    private var tall: Bool { height > Self.fold + 20 }
 
     /// One line ("unknown command", "That command printed nothing.") is a
     /// sentence: it wraps. A real screen keeps its columns and scrolls sideways.
@@ -876,9 +920,6 @@ struct MossTerminalCard: View {
                     .fixedSize()
                     .padding(.horizontal, 11)
                     .padding(.vertical, 9)
-                    .background(GeometryReader { geo in
-                        Color.clear.preference(key: TerminalHeightKey.self, value: geo.size.height)
-                    })
             }
             .scrollIndicators(.never)
         }
@@ -950,11 +991,10 @@ struct MossTerminalCard: View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
-            if let graphic, !raw {
-                graphic.view
-                    .transition(.opacity)
+            if let fold {
+                MossFoldable(id: fold.id, model: fold.model) { content }
             } else {
-                rawScreen
+                content
             }
         }
         .background(ChatBubble(mine: false).fill(Theme.raised(scheme)))
@@ -965,27 +1005,57 @@ struct MossTerminalCard: View {
         .accessibilityLabel(L.t("\(command) result", "\(command) 的结果"))
     }
 
-    @ViewBuilder private var rawScreen: some View {
+    @ViewBuilder private var content: some View {
+        if let graphic, !raw {
+            graphic.view
+                .transition(.opacity)
+        } else {
             screen
-            .frame(maxHeight: tall && !expanded ? Self.fold : nil, alignment: .top)
-            .clipped()
-            .overlay(alignment: .bottom) {
-                if tall && !expanded {
-                    LinearGradient(colors: [Theme.raised(scheme).opacity(0), Theme.raised(scheme)],
-                                   startPoint: .top, endPoint: .bottom)
-                        .frame(height: 44)
-                        .allowsHitTesting(false)
+        }
+    }
+}
+
+/// A long reply, folded (user 2026-10-19): cut at `MossFold.height` with a
+/// fade and "Show more". The one fold for words and command cards alike;
+/// what you unfold stays open while the page is.
+struct MossFoldable<Content: View>: View {
+    let id: String
+    @Bindable var model: AppModel
+    @ViewBuilder let content: () -> Content
+    @State private var height: CGFloat = 0
+    @Environment(\.colorScheme) private var scheme
+
+    private var long: Bool { MossFold.folds(Double(height)) }
+    private var folded: Bool { long && !model.mossExpanded.contains(id) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            content()
+                .fixedSize(horizontal: false, vertical: true)
+                .background(GeometryReader { geo in
+                    Color.clear.preference(key: FoldHeightKey.self, value: geo.size.height)
+                })
+                .frame(height: folded ? CGFloat(MossFold.height) : nil, alignment: .top)
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    if folded {
+                        LinearGradient(colors: [Theme.raised(scheme).opacity(0), Theme.raised(scheme)],
+                                       startPoint: .top, endPoint: .bottom)
+                            .frame(height: 48)
+                            .allowsHitTesting(false)
+                    }
                 }
-            }
-            .onPreferenceChange(TerminalHeightKey.self) { height = $0 }
-            if tall {
+                .onPreferenceChange(FoldHeightKey.self) { height = $0 }
+            if long {
                 Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
                 Button {
-                    withAnimation(.easeOut(duration: 0.2)) { expanded.toggle() }
+                    withAnimation(.easeOut(duration: 0.2)) {
+                        if folded { model.mossExpanded.insert(id) } else { model.mossExpanded.remove(id) }
+                    }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(expanded ? L.t("Show less", "收起") : L.t("Show all", "展开"))
-                        Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                        Text(folded ? L.t("Show more", "展开") : L.t("Show less", "收起"))
+                        Image(systemName: folded ? "chevron.down" : "chevron.up")
                             .font(.system(size: 9, weight: .semibold))
                     }
                     .font(.system(size: 11, weight: .medium))
@@ -997,10 +1067,11 @@ struct MossTerminalCard: View {
                 .buttonStyle(PressStyle())
                 .focusable(false)
             }
+        }
     }
 }
 
-private struct TerminalHeightKey: PreferenceKey {
+private struct FoldHeightKey: PreferenceKey {
     static let defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }

@@ -426,8 +426,9 @@ public enum MossMarkdown {
 
 extension MossClient {
     /// `cc-moss moss chat --json`: the conversation, oldest first.
-    public func mossChat() async throws -> MossChat {
-        try MossChat.decode(Data(try await plain(["moss", "chat", "--json"]).utf8))
+    public func mossChat(limit: Int? = nil) async throws -> MossChat {
+        let args = ["moss", "chat", "--json"] + (limit.map { ["--limit", "\($0)"] } ?? [])
+        return try MossChat.decode(Data(try await plain(args).utf8))
     }
 
     /// `cc-moss moss say --json -- <text>`: hand Moss a message; its id.
