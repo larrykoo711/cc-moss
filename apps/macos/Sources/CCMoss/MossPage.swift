@@ -402,6 +402,9 @@ private struct MossMessageView: View {
         }
     }
 
+    private var cards: [MossSessionCard] { model.mossCards(group) }
+    private var allHandled: Bool { MossSessionCard.allHandled(cards) }
+
     private var moss: some View {
         HStack(alignment: .top, spacing: 8) {
             MossAvatar(size: 22)
@@ -415,7 +418,8 @@ private struct MossMessageView: View {
                     MossFoldable(id: group.id, model: model) {
                         VStack(alignment: .leading, spacing: 8) {
                             ForEach(group.messages) { m in
-                                MossRichText(text: m.shownText(), quiet: m.fallback)
+                                // All its sessions handled: Moss's words are history now.
+                                MossRichText(text: m.shownText(), quiet: m.fallback || allHandled)
                             }
                         }
                         .padding(.horizontal, 11)
@@ -426,8 +430,9 @@ private struct MossMessageView: View {
                         .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                         .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 }
-                if !message.sessions.isEmpty {
-                    MossSessionCards(model: model, messageID: message.id, ids: message.sessions)
+                // One stack for the whole bubble: every session its messages name.
+                if !cards.isEmpty {
+                    MossSessionCards(model: model, messageID: group.id, cards: cards)
                 }
                 if message.refused, model.canOpenMoss {
                     QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }

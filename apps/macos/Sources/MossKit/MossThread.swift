@@ -12,6 +12,18 @@ public struct MossGroup: Identifiable, Equatable, Sendable {
     public var from: MossMessage.Sender { messages[0].from }
     public var first: MossMessage { messages[0] }
     public var last: MossMessage { messages[messages.count - 1] }
+
+    /// The sessions its messages point at, in order, each once: one stack of
+    /// cards under the bubble.
+    public var sessions: [String] {
+        var seen = Set<String>()
+        return messages.flatMap(\.sessions).filter { seen.insert($0).inserted }
+    }
+
+    /// Each session's state when Moss named it (the latest reply that did).
+    public var sessionStates: [String: String] {
+        messages.reduce(into: [:]) { out, m in out.merge(m.sessionStates) { _, new in new } }
+    }
 }
 
 public enum MossThread {
@@ -31,9 +43,11 @@ public enum MossThread {
 
     /// Nothing more joins after it: Moss's suggested replies go under the
     /// whole bubble, and a message of yours that didn't get through keeps its
-    /// "Resend" right beside it.
+    /// "Resend" right beside it. Session cards don't close it: replies a few
+    /// minutes apart that each name a session read as one bubble with one
+    /// stack of cards (user 2026-10-19).
     static func closes(_ m: MossMessage) -> Bool {
-        (m.from == .moss && (!m.buttons.isEmpty || !m.sessions.isEmpty)) || (m.from == .you && m.delivery == .failed)
+        (m.from == .moss && !m.buttons.isEmpty) || (m.from == .you && m.delivery == .failed)
     }
 
     public static func groups(_ messages: [MossMessage]) -> [MossGroup] {

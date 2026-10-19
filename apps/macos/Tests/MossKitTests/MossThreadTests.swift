@@ -6,9 +6,21 @@ import Testing
     let start = Date(timeIntervalSince1970: 1_760_600_000)
 
     private func moss(_ id: String, _ minute: Double, buttons: [String] = [], command: String? = nil,
-                      refused: Bool = false, fallback: Bool = false) -> MossMessage {
+                      refused: Bool = false, fallback: Bool = false, sessions: [String] = []) -> MossMessage {
         MossMessage(id: id, at: start.addingTimeInterval(minute * 60), from: .moss, text: "m\(id)",
-                    fallback: fallback, buttons: buttons, command: command, refused: refused)
+                    fallback: fallback, buttons: buttons, command: command, refused: refused, sessions: sessions)
+    }
+
+    @Test func repliesWithCardsShareOneBubbleAndOneStack() {
+        let groups = MossThread.groups([moss("a", 0, sessions: ["01A"]), moss("b", 4, sessions: ["01B", "01A"]), moss("c", 6)])
+        #expect(groups.map { $0.messages.map(\.id) } == [["a", "b", "c"]])
+        #expect(groups[0].sessions == ["01A", "01B"], "in order, each once")
+    }
+
+    @Test func cardsStillSplitAtAGapACommandOrYou() {
+        #expect(shape([moss("a", 0, sessions: ["01A"]), moss("b", 15, sessions: ["01B"])]) == [["a"], ["b"]])
+        #expect(shape([moss("a", 0, sessions: ["01A"]), moss("b", 1, command: "/usage")]) == [["a"], ["b"]])
+        #expect(shape([moss("a", 0, sessions: ["01A"]), you("y", 1), moss("b", 2, sessions: ["01B"])]) == [["a"], ["y"], ["b"]])
     }
 
     private func you(_ id: String, _ minute: Double, _ text: String = "hi", _ delivery: MossMessage.Delivery? = .replied) -> MossMessage {

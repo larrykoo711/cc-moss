@@ -4,14 +4,38 @@ import SwiftUI
 
 /// The sessions Moss points at, as small cards under its words (T2.3
 /// AMEND-4): open or bring back, rename in place, pin, like a Sessions row.
+extension AppModel {
+    /// The cards for a bubble, live: worked out on every redraw, so a To Do
+    /// item handled or a refresh changes them while the page is open.
+    func mossCards(_ group: MossGroup) -> [MossSessionCard] {
+        let ids = group.sessions
+        guard !ids.isEmpty else { return [] }
+        return MossSessionCard.cards(ids, among: sessions + (closedPool ?? []), waiting: mossWaiting(ids),
+                                     then: group.sessionStates)
+    }
+
+    /// What To Do holds for these sessions: an open question or permission,
+    /// else a reply it waits for. Handled, it's gone and the card is plain again.
+    private func mossWaiting(_ ids: [String]) -> [String: MossSessionCard.Waiting] {
+        let replies = Set(waitingForInput.map(\.id))
+        var out: [String: MossSessionCard.Waiting] = [:]
+        for id in ids {
+            if let card = openAsk(forSlot: id) {
+                out[id] = .init(reason: card.ask.kind == .permission ? .permission : .question, item: .ask(card.id))
+            } else if replies.contains(id) {
+                out[id] = .init(reason: .input, item: .reply(id))
+            }
+        }
+        return out
+    }
+}
+
 struct MossSessionCards: View {
     @Bindable var model: AppModel
     let messageID: String
-    let ids: [String]
+    let cards: [MossSessionCard]
 
-    private var cards: [MossSessionCard] {
-        MossSessionCard.cards(ids, among: model.sessions + (model.closedPool ?? []))
-    }
+    private var ids: [String] { cards.map(\.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -21,6 +45,16 @@ struct MossSessionCards: View {
                 } else {
                     GoneCard()
                 }
+            }
+            if MossSessionCard.allHandled(cards) {
+                HStack(spacing: 4) {
+                    Image(systemName: "checkmark").font(.system(size: 9.5, weight: .bold))
+                    Text(L.t("All handled", "都处理好了"))
+                }
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(Color.green.opacity(0.85))
+                .padding(.leading, 4)
+                .padding(.top, 2)
             }
         }
         .frame(maxWidth: 420, alignment: .leading)
@@ -95,14 +129,34 @@ private struct MossSessionCardView: View {
                                 .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                         }
                     }
-                    HStack(spacing: 4) {
-                        Text(PanelView.folderName(session))
-                        Text("·")
-                        Text(L.ago(session.lastActiveAt))
+                    if card.resolved {
+                        // It needed you when Moss said so; it doesn't now.
+                        HStack(spacing: 3) {
+                            Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+                                .foregroundStyle(Color.green.opacity(0.85))
+                            Text(L.t("Handled", "已处理"))
+                            Text("·")
+                            Text(Self.nowText(session))
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                    } else if let waiting = card.waiting {
+                        // Why it waits, in its state's colour, in place of folder · time.
+                        Text(Self.waitingText(waiting.reason))
+                            .font(.system(size: 11, weight: .medium))
+                            .foregroundStyle(stateColor)
+                            .lineLimit(1)
+                    } else {
+                        HStack(spacing: 4) {
+                            Text(PanelView.folderName(session))
+                            Text("·")
+                            Text(L.ago(session.lastActiveAt))
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                        .lineLimit(1)
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.tertiary)
-                    .lineLimit(1)
                 }
                 Spacer(minLength: 6)
                 actions
@@ -169,6 +223,12 @@ private struct MossSessionCardView: View {
                 } else {
                     CardTextButton(title: L.t("Bring back", "找回"), icon: Icons.restore) { model.restore(session) }
                 }
+            case let .handle(item)?:
+                CardTextButton(title: L.t("Handle", "去处理"), icon: "arrow.right") {
+                    // Like the nudge: To Do, on that item.
+                    model.page = .queue
+                    model.askQueue.show(item, in: model.queueItems)
+                }
             case .moveIntoTmux?:
                 if !moving {
                     let wait = AppModel.adoptWait(session)
@@ -233,6 +293,30 @@ private struct MossSessionCardView: View {
         let new = name.trimmingCharacters(in: .whitespaces)
         model.mossCardRenaming = nil
         model.sendMessage(session, text: Message.renameText(new), done: L.t("Renaming to \(new)…", "正在改名为 \(new)…"))
+    }
+
+    /// What it's doing now, after you handled it.
+    static func nowText(_ s: Session) -> String {
+        switch s.state {
+        case .working: L.t("working now", "现在在干活")
+        case .waiting: L.t("idle now", "现在空闲")
+        case .interrupted: L.t("dropped now", "现在断了")
+        case .closed: L.t("ended", "已结束")
+        }
+    }
+
+    static func waitingText(_ reason: MossSessionCard.Waiting.Reason) -> String {
+        switch reason {
+        case .permission: L.t("Waiting for your OK", "在等你批权限")
+        case .question: L.t("Asking you a question", "在问你问题")
+        case .input: L.t("Waiting for your reply", "在等你回话")
+        }
+    }
+
+    /// Its state's colour: brand while it needs you.
+    private var stateColor: Color {
+        session.needsYou || card.waiting?.reason == .permission || card.waiting?.reason == .question
+            ? Theme.brand : Theme.color(session.state)
     }
 
     private var stateIcon: some View {

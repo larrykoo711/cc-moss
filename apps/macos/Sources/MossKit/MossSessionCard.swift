@@ -13,16 +13,58 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
         /// It runs outside tmux: move it in (`cc-moss adopt`), the same move
         /// as its row in the list. A busy one shows it dimmed.
         case moveIntoTmux
+        /// It's waiting on you in To Do: go there, on that item.
+        case handle(AskQueue.Item)
+    }
+
+    /// What it waits on you for, and its place in To Do.
+    public struct Waiting: Equatable, Sendable {
+        public enum Reason: Equatable, Sendable {
+            /// A permission to approve.
+            case permission
+            /// A question to answer.
+            case question
+            /// Its turn is over and it waits for you to type.
+            case input
+        }
+
+        public var reason: Reason
+        public var item: AskQueue.Item
+
+        public init(reason: Reason, item: AskQueue.Item) {
+            self.reason = reason
+            self.item = item
+        }
     }
 
     /// The slot id Moss named.
     public var id: String
     /// Nil when it's gone: no session has this id any more.
     public var session: Session?
+    /// Waiting on you in To Do; nil once that's handled.
+    public var waiting: Waiting?
+    /// Its state when Moss replied (`needs-you-permission`, `working`, …);
+    /// nil from an older cc-moss: then it's never shown as handled.
+    public var then: String?
 
-    public init(id: String, session: Session?) {
+    public init(id: String, session: Session?, waiting: Waiting? = nil, then: String? = nil) {
         self.id = id
         self.session = session
+        self.waiting = session == nil ? nil : waiting
+        self.then = then
+    }
+
+    /// It needed you when Moss replied and doesn't now: nothing in To Do for
+    /// it and no question on screen. The card says "Handled" and opens again.
+    public var resolved: Bool {
+        guard let s = session, then?.hasPrefix("needs-you") == true else { return false }
+        return waiting == nil && !s.needsYou
+    }
+
+    /// Every card needed you when Moss replied, and every one is handled now:
+    /// the bubble quiets down and says "All handled".
+    public static func allHandled(_ cards: [MossSessionCard]) -> Bool {
+        !cards.isEmpty && cards.allSatisfy(\.resolved)
     }
 
     public var isGone: Bool { session == nil }
@@ -31,6 +73,7 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
     /// "Move into tmux" when it runs outside tmux; nothing for one that ended.
     public var main: Main? {
         guard let s = session else { return nil }
+        if let waiting { return .handle(waiting.item) }
         switch s.state {
         case .interrupted: return s.isMoss ? nil : .bringBack
         case .closed: return nil
@@ -59,9 +102,10 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
     }
 
     /// One card per id Moss named, in its order; ids no session has any more
-    /// become "gone" cards.
-    public static func cards(_ ids: [String], among sessions: [Session]) -> [MossSessionCard] {
+    /// become "gone" cards. `waiting`: what To Do holds for each, by id.
+    public static func cards(_ ids: [String], among sessions: [Session],
+                             waiting: [String: Waiting] = [:], then: [String: String] = [:]) -> [MossSessionCard] {
         let byID = Dictionary(sessions.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return ids.map { MossSessionCard(id: $0, session: byID[$0]) }
+        return ids.map { MossSessionCard(id: $0, session: byID[$0], waiting: waiting[$0], then: then[$0]) }
     }
 }
