@@ -126,7 +126,7 @@ In the picker:
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
-| `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT \| --allow \| --deny [--message WHY]) [--json]` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
+| `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT… \| --allow \| --deny [--message WHY]) [--json]` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
 | `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
 | `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
 | `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
@@ -221,7 +221,8 @@ cc-moss ask list                    # see which sessions are waiting on an answe
 cc-moss ask answer 1a2b --choice B  # pick B; the first few characters of the id are enough
 cc-moss ask answer 1a2b --choice Family --choice Friends   # several picks, or several questions: one after another, in order
 cc-moss ask answer 1a2b --choice 1:Yes --choice 2:No       # questions with the same options: say which one with N:LABEL
-cc-moss ask answer 1a2b --text "Either is fine"            # your own answer instead of an option (one question only)
+cc-moss ask answer 1a2b --text "Either is fine"            # your own answer instead of an option
+cc-moss ask answer 1a2b --choice 1:yes --text "2:Next week"  # several questions: N:TEXT answers question N in your own words
 cc-moss ask answer 9c8d0e1f2a3b --allow   # a permission request: allow it; --deny [--message WHY] says no. Give at least 12 characters of the id
 ```
 

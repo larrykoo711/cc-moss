@@ -104,7 +104,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
-| `cc-moss ask list [--json]` / `ask answer id (--choice 选项… \| --text 文字 \| --allow \| --deny [--message 理由]) [--json]` / `ask take --name 名字` | 看、答会话正在等你回答的问题（见[替会话接住问题](#替会话接住问题)） |
+| `cc-moss ask list [--json]` / `ask answer id (--choice 选项… \| --text 文字… \| --allow \| --deny [--message 理由]) [--json]` / `ask take --name 名字` | 看、答会话正在等你回答的问题（见[替会话接住问题](#替会话接住问题)） |
 | `cc-moss send 名字 -- 文字` | 替你在一个正在运行的会话里输入一段话，就像在它的终端里打字；多行会原样整段送达 |
 | `cc-moss suggest 名字 [--json]` | Claude Code 在这个会话输入框里给的下一句建议（那行灰字）；会话在忙或没有建议时什么都不输出（`--json` 输出 `{"schema":1,"suggestion":…}`，没有时是 `null`） |
 | `cc-moss adopt 名字 [--dry-run] [--json]` | 把一个不在 tmux 里跑的会话移进 tmux，对话接着（见[移进 tmux](#移进-tmux)） |
@@ -167,7 +167,8 @@ cc-moss ask list                    # 看看谁在等你回答
 cc-moss ask answer 1a2b --choice B  # 选 B；id 写开头几位就行
 cc-moss ask answer 1a2b --choice 家人 --choice 同事   # 多选，或一次好几题：按题目顺序一个个给
 cc-moss ask answer 1a2b --choice 1:是 --choice 2:否   # 好几题选项一样时，用「题号:选项」说清是哪一题
-cc-moss ask answer 1a2b --text "都行，你定"           # 不选选项，自己写（只限一道题）
+cc-moss ask answer 1a2b --text "都行，你定"           # 不选选项，自己写
+cc-moss ask answer 1a2b --choice 1:是 --text "2:下周再说"  # 好几题时：题号:答案 就是那一题自己写的答案
 cc-moss ask answer 9c8d0e1f2a3b --allow   # 权限请求：同意；--deny [--message 理由] 是不同意。id 至少写 12 位
 ```
 

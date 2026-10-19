@@ -21,7 +21,7 @@ pub enum Action {
     Answer {
         id: String,
         choices: Vec<String>,
-        text: Option<String>,
+        texts: Vec<String>,
         allow: bool,
         deny: bool,
         message: Option<String>,
@@ -40,7 +40,7 @@ pub fn run(action: Action) -> Result<()> {
         Action::Answer {
             id,
             choices,
-            text,
+            texts,
             allow,
             deny,
             message,
@@ -49,7 +49,7 @@ pub fn run(action: Action) -> Result<()> {
         } => {
             let reply = Reply {
                 choices,
-                text,
+                texts,
                 allow,
                 deny,
                 message,
@@ -127,7 +127,7 @@ fn list(store: &Store, as_json: bool) -> Result<()> {
 
 struct Reply {
     choices: Vec<String>,
-    text: Option<String>,
+    texts: Vec<String>,
     allow: bool,
     deny: bool,
     message: Option<String>,
@@ -150,12 +150,12 @@ fn build(ask: &Ask, reply: &Reply, by: By) -> Result<Answer> {
                 ));
             }
             let questions = ask.questions.as_deref().unwrap_or_default();
-            let answers = ask::answers_from(questions, &reply.choices, reply.text.as_deref())
+            let answers = ask::answers_from(questions, &reply.choices, &reply.texts)
                 .map_err(|e| anyhow!(choice_error(&e, questions.len())))?;
             answer.answers = Some(answers);
         }
         Kind::Permission => {
-            if !reply.choices.is_empty() || reply.text.is_some() {
+            if !reply.choices.is_empty() || !reply.texts.is_empty() {
                 bail!(tr!(
                     "this asks for permission: answer with --allow or --deny",
                     "这是在请求权限：用 --allow 或 --deny 回答"
@@ -188,9 +188,9 @@ fn choice_error(e: &ChoiceError, count: usize) -> String {
             "give an answer with --choice or --text".to_string(),
             "用 --choice 或 --text 给个答案".to_string()
         ),
-        ChoiceError::TextNeedsOneQuestion => tr!(
-            "--text works for a single question; this one has several".to_string(),
-            "--text 只能用在只有一题的时候；这里有好几题".to_string()
+        ChoiceError::TextNeedsNumber => tr!(
+            format!("this has {count} questions: write --text N:TEXT for question N (e.g. --text 1:my own answer)"),
+            format!("这里有 {count} 道题：写成 --text 题号:答案（比如 --text 1:我自己的答案）")
         ),
         ChoiceError::OneOnly(n) => tr!(
             format!("question {n} takes one choice"),

@@ -259,16 +259,16 @@ enum AskCommand {
         json: bool,
     },
     /// Answer a question; the session carries on as if you answered in its terminal.
-    #[command(group(clap::ArgGroup::new("reply").required(true).args(["choice", "text", "allow", "deny"])))]
+    #[command(group(clap::ArgGroup::new("reply").required(true).multiple(true).args(["choice", "text", "allow", "deny"])))]
     Answer {
         /// The question's id from `cc-moss ask list` (a prefix is enough; 12 characters for a permission).
         id: String,
         /// The option to pick; repeat for several, in question order, or as N:LABEL for question N.
         #[arg(long, value_name = "LABEL")]
         choice: Vec<String>,
-        /// Your own answer instead of an option (one question only).
-        #[arg(long, conflicts_with_all = ["choice", "allow", "deny"])]
-        text: Option<String>,
+        /// Your own answer instead of an option; with several questions, N:TEXT for question N (repeat per question).
+        #[arg(long, value_name = "TEXT", conflicts_with_all = ["allow", "deny"])]
+        text: Vec<String>,
         /// Let the tool run.
         #[arg(long, conflicts_with_all = ["choice", "deny"])]
         allow: bool,
@@ -671,7 +671,7 @@ fn main() -> std::process::ExitCode {
             } => cmd::ask::Action::Answer {
                 id,
                 choices: choice,
-                text,
+                texts: text,
                 allow,
                 deny,
                 message,

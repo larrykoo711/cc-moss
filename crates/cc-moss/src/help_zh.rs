@@ -248,7 +248,7 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("ask answer", "id", "`cc-moss ask list` 里题目的 id（写开头几位就行；权限请求至少 12 位）"),
     ("ask answer", "choice", "要选的选项；多选或多题就写多次，按题目顺序，或写成 题号:选项"),
-    ("ask answer", "text", "不选选项，自己写答案（只限一道题）"),
+    ("ask answer", "text", "不选选项，自己写答案；有好几题时写成 题号:答案，每题写一次"),
     ("ask answer", "allow", "同意，让它用这个工具"),
     ("ask answer", "deny", "不同意"),
     ("ask answer", "message", "配合 --deny：改为告诉 Claude 的话"),

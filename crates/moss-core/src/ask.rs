@@ -967,34 +967,36 @@ pub enum ChoiceError {
     NotAnOption(String),
     /// Question (1-based) got no answer.
     Unanswered(usize),
-    /// Free text only works for a single question.
-    TextNeedsOneQuestion,
+    /// With several questions, own words go as `N:text` for question `N`.
+    TextNeedsNumber,
     /// A single-choice question got several labels.
     OneOnly(usize),
 }
 
-/// `answers` for `questions` from labels, or from free text when there is
-/// one question. Labels go in question order (several in a row for a
-/// multi-select question), or each as `N:label` for question `N` when every
-/// choice is written that way. Multi-select labels are joined with `", "`.
+/// `answers` for `questions` from labels and your own words. With one
+/// question a text is the whole answer; with several each text is `N:text`
+/// for question `N`. Labels go in question order (several in a row for a
+/// multi-select question), skipping questions answered in your own words, or
+/// each as `N:label` for question `N` when every choice is written that way.
+/// Multi-select labels are joined with `", "`.
 pub fn answers_from(
     questions: &[Value],
     choices: &[String],
-    text: Option<&str>,
+    texts: &[String],
 ) -> Result<BTreeMap<String, String>, ChoiceError> {
     let mut out = BTreeMap::new();
-    if let Some(text) = text {
-        let [q] = questions else {
-            return Err(ChoiceError::TextNeedsOneQuestion);
-        };
-        let key = question_text(q).ok_or(ChoiceError::Unanswered(1))?;
-        out.insert(key.to_string(), text.to_string());
-        return Ok(out);
-    }
+    let own = own_words(questions.len(), texts)?;
     let numbered = numbered(questions.len(), choices);
     let mut rest = choices;
+    let open: Vec<usize> = (0..questions.len())
+        .filter(|i| !own.iter().any(|(n, _)| n == i))
+        .collect();
     for (i, q) in questions.iter().enumerate() {
         let key = question_text(q).ok_or(ChoiceError::Unanswered(i + 1))?;
+        if let Some((_, text)) = own.iter().find(|(n, _)| *n == i) {
+            out.insert(key.to_string(), (*text).to_string());
+            continue;
+        }
         let options = labels(q);
         let mine: Vec<&str> = match &numbered {
             Some(pairs) => pairs
@@ -1003,7 +1005,7 @@ pub fn answers_from(
                 .map(|(_, l)| *l)
                 .collect(),
             None => {
-                let last = i + 1 == questions.len();
+                let last = open.last() == Some(&i);
                 let take = if last {
                     rest.len()
                 } else if multi(q) {
@@ -1030,6 +1032,25 @@ pub fn answers_from(
         out.insert(key.to_string(), mine.join(", "));
     }
     Ok(out)
+}
+
+/// `(question index, text)` for your own words: the whole text when there is
+/// one question, otherwise each written `N:text` with `N` between 1 and
+/// `count`.
+fn own_words(count: usize, texts: &[String]) -> Result<Vec<(usize, &str)>, ChoiceError> {
+    match (count, texts) {
+        (_, []) => Ok(Vec::new()),
+        (1, [text]) => Ok(vec![(0, text.as_str())]),
+        _ => texts
+            .iter()
+            .map(|t| {
+                let (n, text) = t.split_once(':')?;
+                let n: usize = n.trim().parse().ok()?;
+                (1..=count).contains(&n).then_some((n - 1, text))
+            })
+            .collect::<Option<Vec<_>>>()
+            .ok_or(ChoiceError::TextNeedsNumber),
+    }
 }
 
 /// `(question index, label)` for choices all written `N:label` with `N`
@@ -1385,7 +1406,7 @@ mod tests {
         let ask = new_ask("a", "S", NOW)
             .question(&json!({ "questions": [pick()] }))
             .unwrap();
-        let answers = answers_from(ask.questions.as_ref().unwrap(), &["B".into()], None).unwrap();
+        let answers = answers_from(ask.questions.as_ref().unwrap(), &["B".into()], &[]).unwrap();
         let out = hook_output(
             &ask,
             &Answer {
@@ -1405,36 +1426,62 @@ mod tests {
     #[test]
     fn fills_multi_select_joined_with_comma() {
         let qs = [many()];
-        let a = answers_from(&qs, &["X".into(), "Z".into()], None).unwrap();
+        let a = answers_from(&qs, &["X".into(), "Z".into()], &[]).unwrap();
         assert_eq!(a["Which ones?"], "X, Z");
     }
 
     #[test]
     fn fills_free_text() {
-        let a = answers_from(&[pick()], &[], Some("neither, thanks")).unwrap();
+        let a = answers_from(&[pick()], &[], &["neither, thanks".into()]).unwrap();
         assert_eq!(a["Pick one?"], "neither, thanks");
+        // One question: the text is taken whole, even when it looks numbered.
+        let a = answers_from(&[pick()], &[], &["1:1 call, please".into()]).unwrap();
+        assert_eq!(a["Pick one?"], "1:1 call, please");
         assert_eq!(
-            answers_from(&[pick(), many()], &[], Some("x")),
-            Err(ChoiceError::TextNeedsOneQuestion)
+            answers_from(&[pick(), many()], &[], &["x".into()]),
+            Err(ChoiceError::TextNeedsNumber)
+        );
+    }
+
+    #[test]
+    fn mixes_own_words_and_choices_across_questions() {
+        let qs = [pick(), many()];
+        let a = answers_from(&qs, &["2:X".into()], &["1:neither, thanks".into()]).unwrap();
+        assert_eq!(a["Pick one?"], "neither, thanks");
+        assert_eq!(a["Which ones?"], "X");
+        // Choices in order skip the questions answered in your own words.
+        let a = answers_from(&qs, &["X".into(), "Z".into()], &["1:mine".into()]).unwrap();
+        assert_eq!(a["Pick one?"], "mine");
+        assert_eq!(a["Which ones?"], "X, Z");
+        let a = answers_from(&qs, &[], &["2:all of them".into(), "1:B".into()]).unwrap();
+        assert_eq!(a["Which ones?"], "all of them");
+        assert_eq!(a["Pick one?"], "B");
+        assert_eq!(
+            answers_from(&qs, &[], &["3:x".into()]),
+            Err(ChoiceError::TextNeedsNumber)
+        );
+        assert_eq!(
+            answers_from(&qs, &[], &["1:x".into()]),
+            Err(ChoiceError::Unanswered(2))
         );
     }
 
     #[test]
     fn fills_several_questions_in_order() {
         let qs = [many(), pick()];
-        let a = answers_from(&qs, &["Y".into(), "Z".into(), "A".into()], None).unwrap();
+        let a = answers_from(&qs, &["Y".into(), "Z".into(), "A".into()], &[]).unwrap();
         assert_eq!(a["Which ones?"], "Y, Z");
         assert_eq!(a["Pick one?"], "A");
         assert_eq!(
-            answers_from(&qs, &["Y".into()], None),
+            answers_from(&qs, &["Y".into()], &[]),
             Err(ChoiceError::Unanswered(2))
         );
         assert_eq!(
-            answers_from(&[pick()], &["C".into()], None),
+            answers_from(&[pick()], &["C".into()], &[]),
             Err(ChoiceError::NotAnOption("C".into()))
         );
         assert_eq!(
-            answers_from(&[pick()], &["A".into(), "B".into()], None),
+            answers_from(&[pick()], &["A".into(), "B".into()], &[]),
             Err(ChoiceError::OneOnly(1))
         );
     }
@@ -1901,20 +1948,20 @@ mod tests {
         let qs = [yes_no("First?", true), yes_no("Second?", false)];
         // In order, the multi-select question takes both labels.
         assert_eq!(
-            answers_from(&qs, &["yes".into(), "no".into()], None),
+            answers_from(&qs, &["yes".into(), "no".into()], &[]),
             Err(ChoiceError::Unanswered(2))
         );
-        let a = answers_from(&qs, &["1:yes".into(), "2:no".into()], None).unwrap();
+        let a = answers_from(&qs, &["1:yes".into(), "2:no".into()], &[]).unwrap();
         assert_eq!(a["First?"], "yes");
         assert_eq!(a["Second?"], "no");
-        let a = answers_from(&qs, &["2:yes".into(), "1:no".into(), "1:yes".into()], None).unwrap();
+        let a = answers_from(&qs, &["2:yes".into(), "1:no".into(), "1:yes".into()], &[]).unwrap();
         assert_eq!(a["First?"], "no, yes");
         assert_eq!(
-            answers_from(&qs, &["1:yes".into()], None),
+            answers_from(&qs, &["1:yes".into()], &[]),
             Err(ChoiceError::Unanswered(2))
         );
         assert_eq!(
-            answers_from(&qs, &["1:maybe".into(), "2:no".into()], None),
+            answers_from(&qs, &["1:maybe".into(), "2:no".into()], &[]),
             Err(ChoiceError::NotAnOption("maybe".into()))
         );
     }
