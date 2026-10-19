@@ -170,10 +170,22 @@ fn install_hint(tools: &[Tool]) -> Option<String> {
 /// a provider are pointed out: a switch doesn't reach them.
 fn provider_check() -> Option<Check> {
     let now = super::provider::current()?;
-    let where_to = match &now.host {
-        Some(host) => host.clone(),
-        None if now.keys.is_empty() => tr!("your Claude account", "你的 Claude 账号").into(),
-        None => tr!("a key of your own", "你自己的 key").into(),
+    // A model alone (`/model` writes one) is still your Claude account.
+    let own_key = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "apiKeyHelper"]
+        .iter()
+        .any(|k| now.keys.contains(*k));
+    let mut detail = match &now.host {
+        Some(host) => tr!(format!("sessions use {host}"), format!("会话连的是 {host}")),
+        None if own_key => tr!(
+            "sessions use an API key of your own",
+            "会话用的是你自己的 API key"
+        )
+        .into(),
+        None => tr!(
+            "sessions use your Claude account",
+            "会话用的是你的 Claude 账号"
+        )
+        .into(),
     };
     let path = moss_core::store_dir::registry_path();
     let slots = if path.exists() {
@@ -209,10 +221,6 @@ fn provider_check() -> Option<Check> {
             })
         })
         .collect();
-    let mut detail = tr!(
-        format!("sessions use {where_to}"),
-        format!("会话用的是 {where_to}")
-    );
     if !own.is_empty() {
         detail.push_str(&tr!(
             format!(
@@ -223,13 +231,14 @@ fn provider_check() -> Option<Check> {
         ));
     }
     Some(if stale > 0 {
+        detail.push_str(&tr!(
+            format!("; {stale} session(s) need a restart to use it"),
+            format!("；{stale} 个会话要重开才能用上")
+        ));
         check(
             Mark::Warn,
             tr!("API provider", "API 供应商"),
-            tr!(
-                format!("{where_to}; {stale} session(s) need a restart to use it"),
-                format!("{where_to}；{stale} 个会话要重开才能用上")
-            ),
+            detail,
             Some("cc-moss restart --stale".into()),
         )
     } else {
