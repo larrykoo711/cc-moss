@@ -84,8 +84,10 @@ struct PanelView: View {
                                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                         }
                     }
+                // The session list's own bar (cc-moss's menu, new session);
+                // To Do and Moss end with their own controls.
+                actionBar
             }
-            actionBar
         }
         .frame(width: Theme.pageWidth, height: Theme.panelHeight)
         // Keyboard focus lives in the search field; buttons never take it,
