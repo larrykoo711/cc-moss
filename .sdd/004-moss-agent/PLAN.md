@@ -211,6 +211,7 @@ R1 ◄── 全部
 - 反馈车道 F1–F3（Moss 设置：Finder 打开家目录、去技术化文案、引导去快捷操作）延后到下一轮
 - 2026-10-20：其他设备升 0.3.0 时发现 `remember` 插件的 `claude -p` 摘要被 `claude agents` 报成 interactive、经对账收进 registry（一台 118 条、一台 19 条）；修复 `fix/headless-adopt`（对账读进程参数、跳过 `-p`/`--print`，自动名不分大小写）并入 0.3.1
 - 2026-10-20：用户新需求「cc-switch 换供应商后不用退出会话」→ 实测（`notes/provider-switch-probe.md`）：第三方之间热生效，删键 / 换固定模型要重开；立 T2.6，并入 0.3.1；T2.5、T2.6 过 G3
+- AMEND-1 T2.5 2026-10-20（加宽，不弱化）：App 会话行为「没在运行」的会话加「归档」行内操作（spec 只写了 CLI `archive`）；`ls --json` 列出全部会话并带 `archived_at`，由 App 过滤。接口契约统一写在派发纪律里，两路 agent 并行实施
 
 ## 反馈车道（真机反馈）
 
