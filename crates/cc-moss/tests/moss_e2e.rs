@@ -164,6 +164,10 @@ fn moss_comes_up_with_role() {
     wait_until("SESSIONS.md", 10, || {
         home.join("SESSIONS.md").exists().then_some(())
     });
+    // And the checkup's facts, which Moss reads instead of the registry.
+    wait_until("facts.json", 10, || {
+        home.join("facts.json").exists().then_some(())
+    });
     let st = status(&w);
     assert_eq!(st["schema"], 1);
     assert_eq!(st["enabled"], true);

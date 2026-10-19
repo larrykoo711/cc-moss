@@ -60,8 +60,6 @@ const HARMLESS: &[&str] = &[
     "Grep",
     "LS",
     "LSP",
-    "WebFetch",
-    "WebSearch",
     "ToolSearch",
     "Skill",
     "Agent",
@@ -99,7 +97,10 @@ pub fn decide(home: &Path, cwd: &Path, tool: &str, input: &Value) -> Decision {
             return match input.get("command").and_then(Value::as_str) {
                 Some(command) => shell(command),
                 // Monitor's other form watches a WebSocket: nothing written.
-                None if tool == "Monitor" && input.get("url").is_some() => Decision::Allow,
+                // Its other form watches a URL: Moss stays offline.
+                None if tool == "Monitor" && input.get("url").is_some() => {
+                    Decision::deny("Moss looks after sessions on this Mac and stays offline")
+                }
                 None => Decision::deny("cc-moss could not read the command; not running it"),
             };
         }
@@ -125,21 +126,48 @@ pub fn decide(home: &Path, cwd: &Path, tool: &str, input: &Value) -> Decision {
 /// other Claude Code sessions (`~/.claude/projects`, and under
 /// `CLAUDE_CONFIG_DIR` when that is set). Moss hears about sessions only
 /// through cc-moss, never by reading their conversations.
-pub fn private_reads(home: Option<&Path>, config_dir: Option<&Path>) -> Vec<PathBuf> {
-    let mut out = Vec::new();
-    if let Some(home) = home.filter(|h| h.is_absolute()) {
-        out.push(home.join(".claude/projects"));
+/// Where Moss's read tools may not look: `closed` folders, except the
+/// `open` ones inside them. `user_home` is what `~` means.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Fence {
+    pub closed: Vec<PathBuf>,
+    pub open: Vec<PathBuf>,
+    pub user_home: Option<PathBuf>,
+}
+
+/// Moss's fence: all of Claude Code's own folder (`~/.claude`, and
+/// `CLAUDE_CONFIG_DIR` when set: other sessions' transcripts, history,
+/// todos, plans) and cc-moss's state (the registry, other sessions'
+/// questions), except Moss's own home inside it.
+pub fn private_reads(
+    home: Option<&Path>,
+    config_dir: Option<&Path>,
+    state: Option<&Path>,
+    moss_home: &Path,
+) -> Fence {
+    let mut closed = Vec::new();
+    let home = home.filter(|h| h.is_absolute());
+    if let Some(home) = home {
+        closed.push(home.join(".claude"));
     }
     if let Some(config) = config_dir.filter(|c| c.is_absolute()) {
-        out.push(config.join("projects"));
+        closed.push(config.to_path_buf());
     }
-    out
+    if let Some(state) = state.filter(|s| s.is_absolute()) {
+        closed.push(state.to_path_buf());
+    }
+    Fence {
+        closed,
+        open: vec![moss_home.to_path_buf()],
+        user_home: home.map(Path::to_path_buf),
+    }
 }
 
 /// Whether a read tool (Read, Grep, Glob) may look where it is pointed:
 /// not into `private` (links and `..` followed). Other tools are left to
 /// [`decide`].
-pub fn decide_read(private: &[PathBuf], cwd: &Path, tool: &str, input: &Value) -> Decision {
+pub fn decide_read(fence: &Fence, cwd: &Path, tool: &str, input: &Value) -> Decision {
+    let searches = tool == "Grep" || tool == "Glob";
     let mut paths: Vec<&str> = Vec::new();
     let field = |k: &str| {
         input
@@ -164,9 +192,17 @@ pub fn decide_read(private: &[PathBuf], cwd: &Path, tool: &str, input: &Value) -
     if paths.is_empty() {
         paths.push(".");
     }
-    let fenced: Vec<PathBuf> = private.iter().filter_map(|p| resolve(p)).collect();
+    let fenced: Vec<PathBuf> = fence.closed.iter().filter_map(|p| resolve(p)).collect();
+    let open: Vec<PathBuf> = fence.open.iter().filter_map(|p| resolve(p)).collect();
     for raw in paths {
-        let path = Path::new(raw);
+        // `~` is the user's home, as a shell would read it.
+        let expanded = match (raw.strip_prefix('~'), &fence.user_home) {
+            (Some(rest), Some(home)) if rest.is_empty() || rest.starts_with('/') => {
+                home.join(rest.trim_start_matches('/'))
+            }
+            _ => PathBuf::from(raw),
+        };
+        let path = expanded.as_path();
         let absolute = if path.is_absolute() {
             path.to_path_buf()
         } else {
@@ -175,10 +211,15 @@ pub fn decide_read(private: &[PathBuf], cwd: &Path, tool: &str, input: &Value) -
         let Some(target) = resolve(&absolute) else {
             return Decision::deny("cc-moss could not work out where that path leads; not reading");
         };
-        if fenced.iter().any(|f| target.starts_with(f)) {
+        let opened = open.iter().any(|o| target.starts_with(o));
+        let inside = fenced.iter().any(|f| target.starts_with(f));
+        // A search over a folder that holds a private one reaches into it.
+        let around = searches && fenced.iter().any(|f| f.starts_with(&target) && !opened);
+        if (inside && !opened) || around {
             return Decision::deny(
-                "the transcripts of the user's other sessions are private; \
-                 SESSIONS.md and cc-moss's updates are what Moss knows about them",
+                "the user's other sessions are private (their conversations, questions and \
+                 records); SESSIONS.md, facts.json and cc-moss's updates are what Moss knows \
+                 about them",
             );
         }
     }
@@ -244,16 +285,20 @@ fn shell(command: &str) -> Decision {
             "messages to Moss and its turn markers come from cc-moss; Moss answers in its reply",
         );
     }
-    // The profile command runs outside the sandbox: alone, never with
-    // another command riding along.
-    if profile_command(command) {
-        let rest = code.trim();
-        let compound = [";", "&", "|", "\n", "`", "$(", "<(", ">("]
+    // The profile command runs outside the sandbox: exactly
+    // `cc-moss moss profile <name> --from <file>`, alone, nothing redirected
+    // into it and nothing riding along.
+    let names_profile = words
+        .windows(3)
+        .any(|w| w[0].rsplit('/').next() == Some("cc-moss") && w[1] == "moss" && w[2] == "profile");
+    if names_profile {
+        let rest = command.trim();
+        let compound = [";", "&", "|", "\n", "`", "$(", "<", ">"]
             .iter()
             .any(|op| rest.contains(op));
-        if compound {
+        if !profile_command(rest) || compound {
             return Decision::deny(
-                "run `cc-moss moss profile <name> --from <file>` as a command of its own",
+                "run `cc-moss moss profile <name> --from <file>` exactly, as a command of its own",
             );
         }
     }
@@ -291,10 +336,7 @@ fn shell(command: &str) -> Decision {
 /// out).
 fn profile_command(command: &str) -> bool {
     let mut it = command.split_whitespace();
-    let first = it.next().unwrap_or("");
-    first.rsplit('/').next() == Some("cc-moss")
-        && it.next() == Some("moss")
-        && it.next() == Some("profile")
+    it.next() == Some("cc-moss") && it.next() == Some("moss") && it.next() == Some("profile")
 }
 
 /// `cmd <<'TAG'` … `TAG`: the lines in between dropped.
@@ -584,9 +626,13 @@ mod tests {
         let p = place();
         let projects = p.root.join("user/.claude/projects");
         std::fs::create_dir_all(projects.join("-work-api")).unwrap();
-        let private = vec![projects.clone()];
+        let fence = Fence {
+            closed: vec![projects.clone()],
+            open: vec![],
+            user_home: None,
+        };
         let read =
-            |tool: &str, input: serde_json::Value| decide_read(&private, &p.home, tool, &input);
+            |tool: &str, input: serde_json::Value| decide_read(&fence, &p.home, tool, &input);
         let file = projects.join("-work-api/abc.jsonl");
         assert!(denied(&read("Read", json!({ "file_path": file }))));
         assert!(denied(&read(
@@ -626,15 +672,88 @@ mod tests {
             Decision::Allow,
             "writes are decide's"
         );
-        // The list: the user's Claude Code projects, and CLAUDE_CONFIG_DIR's.
-        let list = private_reads(Some("/u".as_ref()), Some("/c".as_ref()));
+        // The fence: all of Claude Code's folder and CLAUDE_CONFIG_DIR, and
+        // cc-moss's state except Moss's own home.
+        let fence = private_reads(
+            Some("/u".as_ref()),
+            Some("/c".as_ref()),
+            Some("/s".as_ref()),
+            "/s/moss".as_ref(),
+        );
         assert_eq!(
-            list,
+            fence.closed,
             [
-                PathBuf::from("/u/.claude/projects"),
-                PathBuf::from("/c/projects")
+                PathBuf::from("/u/.claude"),
+                PathBuf::from("/c"),
+                PathBuf::from("/s")
             ]
         );
+        assert_eq!(fence.open, [PathBuf::from("/s/moss")]);
+    }
+
+    #[test]
+    fn moss_guard_keeps_private_folders_unread() {
+        let p = place();
+        let user = p.root.join("user");
+        std::fs::create_dir_all(user.join(".claude")).unwrap();
+        let state = p.home.parent().unwrap().to_path_buf();
+        std::fs::create_dir_all(state.join("asks")).unwrap();
+        let fence = Fence {
+            closed: vec![user.join(".claude"), state.clone()],
+            open: vec![p.home.clone()],
+            user_home: Some(user.clone()),
+        };
+        let read =
+            |tool: &str, input: serde_json::Value| decide_read(&fence, &p.home, tool, &input);
+        // ~ means the user's home, not a folder named ~.
+        assert!(denied(&read(
+            "Read",
+            json!({ "file_path": "~/.claude/history.jsonl" })
+        )));
+        assert!(denied(&read(
+            "Read",
+            json!({ "file_path": state.join("asks/q.json") })
+        )));
+        assert!(denied(&read(
+            "Read",
+            json!({ "file_path": state.join("registry.db") })
+        )));
+        // Its own home, inside the state folder, stays readable.
+        assert_eq!(
+            read("Read", json!({ "file_path": "SESSIONS.md" })),
+            Decision::Allow
+        );
+        assert_eq!(read("Grep", json!({ "pattern": "x" })), Decision::Allow);
+        // A search over a folder that holds a private one.
+        assert!(denied(&read(
+            "Grep",
+            json!({ "pattern": "x", "path": "~" })
+        )));
+        assert!(denied(&read(
+            "Glob",
+            json!({ "pattern": "**/*", "path": user })
+        )));
+        assert!(denied(&read(
+            "Grep",
+            json!({ "pattern": "x", "path": "/" })
+        )));
+        // Elsewhere is fine.
+        assert_eq!(
+            read("Read", json!({ "file_path": user.join("notes.md") })),
+            Decision::Allow
+        );
+    }
+
+    #[test]
+    fn moss_guard_keeps_moss_offline() {
+        let p = place();
+        for (tool, input) in [
+            ("WebFetch", json!({ "url": "https://example.com" })),
+            ("WebSearch", json!({ "query": "x" })),
+            ("Monitor", json!({ "url": "wss://example.com" })),
+        ] {
+            assert!(denied(&decide(&p.home, &p.home, tool, &input)), "{tool}");
+        }
     }
 
     #[test]
@@ -651,6 +770,11 @@ mod tests {
             "mv stop old",
             "echo x > ./waiting",
             "cc-moss moss profile soul --from drafts/soul.md; cp evil SOUL.md",
+            // Only the --from form, as a command of its own.
+            "cc-moss moss profile soul < /Users/me/.claude/history.jsonl",
+            "cc-moss moss profile soul <<EOF\nanything\nEOF",
+            "X=1 cc-moss moss profile soul --from drafts/soul.md",
+            "/opt/bin/cc-moss moss profile soul --from drafts/soul.md",
             "cc-moss moss profile soul --from drafts/soul.md && rm -rf journal",
             "cc-moss moss profile soul --from drafts/soul.md | tee x",
             "cc-moss moss profile soul --from `echo drafts/soul.md`",
@@ -760,7 +884,7 @@ mod tests {
             "echo hi >> journal/today.md",
             "tail -n 5 chat.jsonl",
             "echo stopped > journal/notes.md",
-            "cc-moss moss profile soul < /tmp/new-soul.md",
+            "cc-moss moss profile soul --from drafts/soul.md",
             // Words that only contain a command name are not that command.
             "grep platform CLAUDE.md",
             "grep -n 'add the' SOUL.md",
@@ -773,7 +897,7 @@ mod tests {
     #[test]
     fn moss_guard_reads_heredoc_bodies_as_text() {
         let p = place();
-        let profile = "cc-moss moss profile soul <<'MOSS_PROFILE'\n\
+        let profile = "cat >> journal/today.md <<'MOSS_PROFILE'\n\
             # Soul\n\
             Never touch SECURITY.md; add > notes to the journal, rm nothing.\n\
             cp IDENTITY.md is not for you.\n\
@@ -811,15 +935,7 @@ mod tests {
                 Decision::Allow => panic!("{tool} was allowed"),
             }
         }
-        for tool in [
-            "Read",
-            "Grep",
-            "Glob",
-            "WebFetch",
-            "WebSearch",
-            "Agent",
-            "Skill",
-        ] {
+        for tool in ["Read", "Grep", "Glob", "Agent", "Skill"] {
             assert_eq!(
                 decide(
                     &p.home,
@@ -838,9 +954,9 @@ mod tests {
             Decision::Allow
         );
         assert!(denied(&monitor(json!({ "command": "echo x > SOUL.md" }))));
-        assert_eq!(
-            monitor(json!({ "url": "wss://example.com" })),
-            Decision::Allow
+        assert!(
+            denied(&monitor(json!({ "url": "wss://example.com" }))),
+            "offline"
         );
         assert!(denied(&monitor(json!({}))));
     }

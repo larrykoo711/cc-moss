@@ -9,7 +9,7 @@ use std::io;
 use std::path::Path;
 use std::process::Command;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, Slot, Status};
 use moss_core::tmux::Socket;
@@ -178,9 +178,25 @@ pub(super) fn prefix() -> Option<String> {
 
 /// `cc-moss doctor --sessions --json`.
 pub fn print_sessions_json() -> Result<()> {
+    // Moss reads the daemon's snapshot in its home: its sandbox keeps it
+    // out of the registry.
+    if std::env::var(moss_core::moss::ROLE_ENV).as_deref() == Ok(moss_core::moss::ROLE) {
+        let path = moss_core::moss::home_dir(&super::daemon::state()).join(FACTS);
+        let text = std::fs::read_to_string(&path).with_context(|| {
+            format!(
+                "{} is not there yet; the daemon writes it within a minute",
+                path.display()
+            )
+        })?;
+        println!("{}", text.trim_end());
+        return Ok(());
+    }
     println!("{}", serde_json::to_string_pretty(&report()?)?);
     Ok(())
 }
+
+/// `<home>/facts.json`: the daemon's copy of these facts for Moss.
+pub const FACTS: &str = "facts.json";
 
 pub fn report() -> Result<Value> {
     let now = now_ms();

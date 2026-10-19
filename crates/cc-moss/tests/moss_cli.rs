@@ -68,8 +68,13 @@ fn moss_reads_sessions_but_changes_none() {
     assert!(out.status.success(), "{out:?}");
     let ls: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(session(&ls, "work-0000-1111")["name"], "work");
+    // The checkup's facts come from the daemon's copy in its home; none yet.
     let out = as_moss(&["doctor", "--sessions", "--json"]);
-    assert!(out.status.success(), "{out:?}");
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("the daemon writes it"),
+        "{out:?}"
+    );
     // Changing does not, and says so plainly.
     let out = as_moss(&["close", "work"]);
     assert!(!out.status.success(), "{out:?}");
@@ -96,6 +101,59 @@ fn moss_reads_sessions_but_changes_none() {
         session(&ls_json(&state, true), "work-0000-1111")["status"],
         "closed"
     );
+}
+
+#[test]
+fn moss_profile_reads_only_from_its_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let home = state.join("moss");
+    std::fs::create_dir_all(home.join("drafts")).unwrap();
+    let outside = dir.path().join("history.jsonl");
+    std::fs::write(&outside, "other sessions' words\n").unwrap();
+    let run = |from: &Path| {
+        bin()
+            .env("CC_MOSS_STATE_DIR", &state)
+            .args(["moss", "profile", "soul", "--from"])
+            .arg(from)
+            .output()
+            .unwrap()
+    };
+    let out = run(&outside);
+    assert!(!out.status.success(), "{out:?}");
+    assert!(!home.join("SOUL.md").exists(), "nothing copied in");
+    // Through a link from the home, too.
+    std::os::unix::fs::symlink(&outside, home.join("drafts/link.md")).unwrap();
+    assert!(!run(&home.join("drafts/link.md")).status.success());
+    assert!(!home.join("SOUL.md").exists());
+    // A draft in its home is fine.
+    std::fs::write(home.join("drafts/soul.md"), "# Soul\nCalm.\n").unwrap();
+    let out = run(&home.join("drafts/soul.md"));
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(
+        std::fs::read_to_string(home.join("SOUL.md")).unwrap(),
+        "# Soul\nCalm.\n"
+    );
+}
+
+#[test]
+fn moss_reads_the_checkup_facts_from_its_home() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let home = state.join("moss");
+    std::fs::create_dir_all(&home).unwrap();
+    // What the daemon wrote for it: Moss's sandbox can't read the registry.
+    let facts = r#"{"schema":1,"sessions":[{"name":"api"}],"install":{}}"#;
+    std::fs::write(home.join("facts.json"), facts).unwrap();
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", &state)
+        .env("CC_MOSS_ROLE", "moss")
+        .args(["doctor", "--sessions", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sessions"][0]["name"], "api", "{v}");
 }
 
 #[test]

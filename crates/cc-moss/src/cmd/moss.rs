@@ -82,7 +82,7 @@ const SHELL_READ_ONLY: &[&str] = &[
 ];
 
 /// Where Claude Code keeps every session's transcript.
-const PRIVATE_READS: &str = "~/.claude/projects";
+const PRIVATE_READS: &str = "~/.claude";
 
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
@@ -111,7 +111,6 @@ fn settings_json(exe: &str, state: &Path) -> String {
         shell_quote(exe),
         shell_quote(&home.to_string_lossy())
     );
-    let _ = state;
     // Nothing outside the home: not even the registry. Moss reads it (cc-moss
     // opens it read-only for Moss); what it changes goes through `moss act`.
     let allow_write: Vec<String> = Vec::new();
@@ -144,8 +143,15 @@ fn settings_json(exe: &str, state: &Path) -> String {
             "filesystem": {
                 "allowWrite": allow_write,
                 "denyWrite": deny_write,
-                // ... nor from the shell.
-                "denyRead": [PRIVATE_READS]
+                // ... nor from the shell: not Claude Code's folder, not
+                // cc-moss's state (the registry, other sessions' questions),
+                // except its own home (the working directory) inside it.
+                "denyRead": [PRIVATE_READS, state.to_string_lossy()],
+                "allowRead": ["."]
+            },
+            // It looks after sessions on this Mac: no network.
+            "network": {
+                "allowedDomains": []
             }
         }
     });
@@ -594,6 +600,24 @@ pub fn profile(name: &str, from: Option<&Path>) -> Result<()> {
     let mut text = String::new();
     match from {
         Some(path) => {
+            // It runs outside Moss's sandbox: only a draft in Moss's own
+            // home, links followed, may become its profile.
+            let home = moss::home_dir(&state());
+            let inside = guard::resolve(&std::path::absolute(path)?)
+                .zip(guard::resolve(&home))
+                .is_some_and(|(p, h)| p.starts_with(&h));
+            if !inside {
+                bail!(tr!(
+                    format!(
+                        "{} is not in Moss's home; save the draft there (drafts/) first",
+                        path.display()
+                    ),
+                    format!(
+                        "{} 不在 Moss 的家里；先把草稿存到那里（drafts/）",
+                        path.display()
+                    )
+                ));
+            }
             text = std::fs::read_to_string(path)
                 .with_context(|| format!("cannot read {}", path.display()))?
         }
@@ -688,6 +712,8 @@ fn guard_decision(home: Option<PathBuf>) -> Result<Decision> {
         std::env::var_os("CLAUDE_CONFIG_DIR")
             .as_deref()
             .map(Path::new),
+        home.parent(),
+        &home,
     );
     match guard::decide_read(&private, &cwd, tool, tool_input) {
         Decision::Allow => Ok(guard::decide(&home, &cwd, tool, tool_input)),
@@ -1257,6 +1283,17 @@ impl Looker {
             ) {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }
+            // The checkup's facts, for Moss (its sandbox can't read the
+            // registry): names, folders, states and times, no conversation.
+            match super::checkup::report() {
+                Ok(facts) => {
+                    let text = serde_json::to_string_pretty(&facts).unwrap_or_default();
+                    if let Err(e) = home::write_generated(&home_dir, super::checkup::FACTS, &text) {
+                        log(&format!("moss: error: facts.json: {e}"));
+                    }
+                }
+                Err(e) => log(&format!("moss: error: facts.json: {e:#}")),
+            }
             self.next_sessions = now + SESSIONS_EVERY;
             seq
         } else {
@@ -1387,15 +1424,19 @@ mod tests {
             serde_json::json!(["cc-moss moss profile *"])
         );
         assert!(deny.contains(&"./input-busy".into()));
-        // Other sessions' transcripts: not for shell commands, nor Read.
+        // Claude Code's folder and cc-moss's state are not for its shell,
+        // except its own home; nor for Read.
         assert_eq!(
             sandbox["filesystem"]["denyRead"],
-            serde_json::json!(["~/.claude/projects"])
+            serde_json::json!(["~/.claude", "/s"])
         );
+        assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
         assert_eq!(
             v["permissions"]["deny"],
-            serde_json::json!(["Read(~/.claude/projects/**)"])
+            serde_json::json!(["Read(~/.claude/**)"])
         );
+        // Offline: no network from its shell.
+        assert_eq!(sandbox["network"]["allowedDomains"], serde_json::json!([]));
     }
 
     #[test]
