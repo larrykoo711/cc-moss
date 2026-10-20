@@ -9,8 +9,8 @@ import SwiftUI
 ///          [--menu full|more|app] [--click x,y [--command key]]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
-///          [--expand-older] [--restore working|done|partial] [--failure <id>:<reason>]
-///          [--form new|note|close|message|rename [--form-name <name>]]
+///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--restore working|done|partial] [--failure <id>:<reason>]
+///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
@@ -111,6 +111,41 @@ enum Render {
             default: break
             }
             if args.contains("--expand-older") { model.olderExpanded = true }
+            // `--waiting-receipt N`: the Moss page just after its waiting card's
+            // last N requests were handled ("Handled N just now").
+            if let n = value("--waiting-receipt").flatMap(Int.init) {
+                model.waitingReceipt.update((0..<n).map { .ask("demo-\($0)") })
+                model.waitingReceipt.update([])
+                model.demoKeepsReceipt = true
+            }
+            // `--notice <action>:<reason> [--notice-on <id>] [--notice-more N]`: a failed
+            // action's notice at the bottom (F25), about that session (else the first
+            // interrupted one), with N older ones behind it.
+            if let spec = value("--notice"), let cut = spec.firstIndex(of: ":") {
+                let action = FailureNotice.Action(rawValue: String(spec[..<cut])) ?? .restore
+                let reason = String(spec[spec.index(after: cut)...])
+                let s = value("--notice-on").flatMap { id in model.sessions.first { $0.id == id } }
+                    ?? model.sessions.first { $0.state == .interrupted }
+                for i in 0..<(value("--notice-more").flatMap(Int.init) ?? 0) {
+                    model.report(FailureNotice(id: "older-\(i)", action: .archive, subject: s.map(FailureNotice.Subject.init)))
+                }
+                model.report(FailureNotice(action: action, subject: s.map(FailureNotice.Subject.init), reason: reason,
+                                           message: reason == "ambiguous" ? nil : L.t("no such file or directory", "没有那个文件或目录"),
+                                           candidates: reason == "ambiguous" ? ["fix-invoice (01c0c1d2)", "fix-invoice (7a3e90b1)"] : []))
+            }
+            // `--waiting-open <id>`: that session's waiting row opened (the full question).
+            if let id = value("--waiting-open") { model.demoWaitingOpen = [id] }
+            // `--expand-archived`: the "Archived" group open.
+            if args.contains("--expand-archived") { model.archivedExpanded = true }
+            // `--provider live|restart [--provider-host h]`: a provider switch a minute ago;
+            // `restart`: some sessions can't pick it up without a restart.
+            if let kind = value("--provider") {
+                let host = value("--provider-host") ?? "api.example.com"
+                model.providerBanner.take([SessionEvent(seq: 1, slotId: "", kind: ProviderChange.kind, at: L.clock().addingTimeInterval(-60),
+                                                        provider: ProviderChange(host: host, live: kind != "restart"))])
+            }
+            // `--restarting <id>`: that row restarting right now.
+            if let id = value("--restarting") { model.restarting = [id] }
             switch value("--restore") {
             case "working": _ = model.restoreFlow.begin(.all(model.restoreGroups.recent.map(\.id)))
             case "done": model.restoreSummary = RestoreSummary(restored: 2, failed: 0)
@@ -185,6 +220,7 @@ enum Render {
                     if args.contains("--sending") { _ = model.sendFlow.begin() }
                 }
             case "rename": if let s = model.selected { model.startRename(s) }
+            case "end-archive": if let s = model.selected { model.askToEndAndArchive(s) }
             default: break
             }
             let command = model.selected.map(model.attachCommand) ?? ""

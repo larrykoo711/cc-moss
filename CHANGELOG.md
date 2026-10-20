@@ -6,6 +6,60 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-20
+
+### Added
+
+- **Archive.** Sessions that ended and saw no activity for 30 days are archived each day
+  (`sessions.archive_after_days`, `0` turns it off); running sessions never are. `cc-moss archive` / `unarchive`
+  do it by hand (`--end` ends an idle running session first; End and Archive in the app), `ls --archived` lists
+  them, and resuming one brings it back by itself. The app keeps them in a folded "Archived" group with Bring Back
+  and Clean Up. Clean Up goes through Moss, which asks before deleting; records leave cc-moss and the session's own
+  conversation files go to the Trash. Moss also asks before archiving a single session, and Clean Up All leaves out
+  what Moss archived in the last day.
+- **Switching API providers without starting over.** The daemon notices when Claude Code's settings point at a new
+  provider. Most switches apply to running sessions from the next message, and the panel says so. When one can't
+  (back to your subscription, or `ANTHROPIC_MODEL` in the settings' `env`), the sessions affected are marked, and
+  `cc-moss restart` (Restart / Restart All in the app) restarts them in their own tmux pane, same conversation;
+  busy ones wait for their turn to end. `/model` never asks for a restart. Each session is judged against the
+  settings file it started with, and `cc-moss doctor` shows the provider's host and warns when sessions read another
+  settings folder. Moss follows the switch too; its key comes from `cc-moss moss provider-key`, never from a file it
+  can read. Token and key values are never shown or recorded.
+- **Waiting on you.** One live card on the Moss page lists every session waiting for an answer or a permission, and
+  you can answer them there. Moss is no longer told about each one.
+- **When something fails, the panel says so.** Bring back, restart, archive, move into tmux and reply all end in a
+  plain-words notice with Copy Details, and Ask Moss to Fix It when Moss is running.
+- The gear menu follows a Mac app's own menu (About cc-moss, Check for Updates, Settings, User Guide, Report a Problem, Quit). The
+  About page shows the slogan, the MIT license and links to the website and GitHub. Jump to bottom on the Moss page is
+  a quiet strip above the composer.
+
+### Fixed
+
+- Headless `claude -p` runs (plugins' background summaries, scripts) no longer pile up as interrupted sessions:
+  `claude agents` lists them as interactive, and cc-moss now reads the process's exact arguments before adopting one.
+- A background task's notice is no longer shown as a session's last message.
+- An ended session brought back from Archived shows in the list again; Bring Back All skips sessions you ended on
+  purpose.
+- A session stopped with Esc no longer stays "working" until restart.
+- Return picks the word while a Chinese input method is composing instead of sending.
+- Settings no longer freezes when macOS's login item service stalls.
+- The app no longer freezes when macOS's file events service (fseventsd) stops answering: the watcher starts off the
+  main thread, and the app looks at the state folder every 2 seconds until it does.
+- Moss's yes buttons wrap instead of being cut off; Mo's options show the pointing hand.
+- `cc-moss doctor` no longer calls a model setting alone "your own API key".
+- Superseded copies of a session close quietly, and `--json` names sessions that share a name.
+- The app acts on the session you clicked by its conversation id, not its name: archiving, bringing back,
+  restarting, replying or opening one of two sessions that share a name no longer fails as ambiguous.
+
+### Security
+
+- Session names are cleaned of control and invisible characters on the way in, and restart refuses arguments
+  that hold them.
+- Purge moves only a session's own transcripts inside Claude Code's folder; on Linux the Trash follows
+  `XDG_DATA_HOME` and never replaces a file.
+- Restart types into a pane only when a known shell holds it; Moss answers the folder trust question only at the
+  bottom of the screen, once per start.
+
 ## [0.3.0] - 2026-10-19
 
 Sessions start in bypass mode, questions can be answered from the panel or Mo, and Moss moves in: a Claude Code
@@ -294,7 +348,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/larrykoo711/cc-moss/compare/v0.2.1...v0.2.2
 [0.2.1]: https://github.com/larrykoo711/cc-moss/compare/v0.2.0...v0.2.1

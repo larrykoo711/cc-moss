@@ -1,0 +1,407 @@
+import MossKit
+import SwiftUI
+
+// The Moss page's "Waiting on you · N" card (F23): everything waiting on
+// you, live, pinned above the text field. Not a message: it isn't in the
+// history, and it goes when nothing waits.
+
+extension AppModel {
+    /// The card's rows, from the same state as the To Do page.
+    var waitingRows: [WaitingRow] {
+        WaitingCard.rows(cards: askDesk.cards, replies: waitingForInput, sessions: (moss.map { [$0] } ?? []) + sessions)
+    }
+
+    /// Every ask and reply the card stands for (rows hide a session's later
+    /// asks), each with its session's Claude id.
+    var waitingItems: [AskQueue.Item: String] {
+        var out: [AskQueue.Item: String] = [:]
+        for c in askDesk.cards where c.phase == .choosing { out[.ask(c.id)] = c.ask.sessionId }
+        for s in waitingForInput { out[.reply(s.id)] = s.sessionId }
+        return out
+    }
+
+    /// Sessions still running: what went from one that ended wasn't handled.
+    var liveSessionIDs: Set<String> {
+        Set(((moss.map { [$0] } ?? []) + sessions).filter { $0.status == "running" }.map(\.sessionId))
+    }
+}
+
+struct MossWaitingCard: View {
+    @Bindable var model: AppModel
+    /// Rows opened to the full question or a reply line.
+    @State private var opened: Set<String>
+    @Environment(\.colorScheme) private var scheme
+
+    init(model: AppModel) {
+        self.model = model
+        _opened = State(initialValue: model.demoWaitingOpen)
+    }
+
+    var body: some View {
+        let rows = model.waitingRows
+        Group {
+            if !rows.isEmpty {
+                card(rows)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+            } else if let n = model.waitingReceipt.receipt() {
+                receipt(n)
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.bottom, rows.isEmpty && model.waitingReceipt.receipt() == nil ? 0 : 8)
+        .animation(.easeOut(duration: 0.2), value: rows.map(\.id))
+        .animation(.easeOut(duration: 0.2), value: model.waitingReceipt)
+        // Only what's handled while the card is on screen counts.
+        .onAppear { if !model.demoKeepsReceipt { model.waitingReceipt.rebaseline(model.waitingItems) } }
+        .onChange(of: model.waitingItems) { _, items in
+            model.waitingReceipt.update(items, live: model.liveSessionIDs)
+        }
+        .task(id: model.waitingReceipt.endsAt) {
+            guard let end = model.waitingReceipt.endsAt else { return }
+            try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
+            model.waitingReceipt.expire()
+        }
+    }
+
+    private func card(_ rows: [WaitingRow]) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 6) {
+                Image(systemName: "tray.full")
+                    .font(.system(size: 10.5, weight: .semibold))
+                    .foregroundStyle(Theme.brand)
+                Text(WaitingCard.title(rows))
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer()
+            }
+            .padding(.horizontal, 12)
+            .padding(.top, 9)
+            .padding(.bottom, 4)
+            ScrollView {
+                VStack(spacing: 0) {
+                    ForEach(Array(rows.enumerated()), id: \.element.id) { i, row in
+                        if i > 0 { Rectangle().fill(Theme.hairline(scheme)).frame(height: 1).padding(.leading, 30).padding(.trailing, 12) }
+                        WaitingRowView(model: model, row: row, open: opened.contains(row.id)) {
+                            if opened.contains(row.id) { opened.remove(row.id) } else { opened.insert(row.id) }
+                        }
+                        .transition(.opacity)
+                    }
+                }
+            }
+            .scrollIndicators(.never)
+            .frame(maxHeight: 260)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Theme.raised(scheme)))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Theme.brand.opacity(0.28)))
+        .shadow(color: .black.opacity(scheme == .dark ? 0.3 : 0.07), radius: 6, y: 2)
+    }
+
+    private func receipt(_ n: Int) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: "checkmark").font(.system(size: 10, weight: .bold))
+            Text(WaitingReceipt.text(n))
+        }
+        .font(.system(size: 11.5, weight: .medium))
+        .foregroundStyle(Theme.okText(scheme))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 6)
+    }
+}
+
+/// One session waiting on you: who, what it wants, and the answer right there.
+private struct WaitingRowView: View {
+    @Bindable var model: AppModel
+    let row: WaitingRow
+    /// The full question, or the reply line, is open under it.
+    let open: Bool
+    let toggle: () -> Void
+
+    private var askCard: AskCard? {
+        if case let .ask(id) = row.item { return model.askDesk.card(id) }
+        return nil
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            header
+            choices
+            if open { detail.padding(.leading, 15) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
+    }
+
+    /// Who and what on the left, the answer on the right, centred on the
+    /// two lines (a notification's layout): nothing sits alone on a line.
+    private var header: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Circle().fill(Theme.brand).frame(width: 7, height: 7)
+            words.layoutPriority(1)
+            Spacer(minLength: 8)
+            RowIconButton(icon: Icons.open, help: L.t("Open the session", "打开会话"), action: openSession)
+            trailing
+        }
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Text(row.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if row.more > 0 { moreBadge }
+            }
+            Text(row.line)
+                .font(.system(size: 12, design: isPermission ? .monospaced : .default))
+                .foregroundStyle(.secondary)
+                // A command you allow is read whole: up to three lines, then "Show all".
+                .lineLimit(isPermission ? 3 : 1)
+                .truncationMode(.tail)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .help(row.line)
+            if row.needsShowAll && !open {
+                Button(action: toggle) {
+                    Text(L.t("Show all", "看全部"))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.brand)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .handCursor()
+                .accessibilityLabel(L.t("Show the whole command", "看完整的命令"))
+            }
+        }
+    }
+
+    private var moreBadge: some View {
+        Text("+\(row.more)")
+            .font(.system(size: 10.5, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .frame(height: 15)
+            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .tip(L.t("\(row.more) more after this one", "这之后还有 \(row.more) 个"))
+    }
+
+    /// A question's answers are what it says, so they read under it.
+    @ViewBuilder private var choices: some View {
+        if case let .question(_, options) = row.want, !options.isEmpty, !open {
+            FlowChips(spacing: 6) {
+                ForEach(options, id: \.self) { label in
+                    OptionChip(title: OptionLabel.split(label).title) { choose(label) }
+                }
+                WriteLink(action: writeOwn)
+            }
+            .padding(.leading, 15)
+        }
+    }
+
+    private func choose(_ label: String) {
+        act { $0.choose(label) }
+    }
+
+    private func writeOwn() {
+        act { card -> AskReply? in
+            card.startWriting()
+            return nil
+        }
+        toggle()
+    }
+
+    private var isPermission: Bool { if case .permission = row.want { true } else { false } }
+
+    /// The answer, at the row's end: the main one last and filled.
+    @ViewBuilder private var trailing: some View {
+        switch row.want {
+        case .permission:
+            HStack(spacing: 6) {
+                RowButton(title: L.t("Deny", "拒绝")) { act { $0.deny() } }
+                RowButton(title: L.t("Allow", "允许"), prominent: true) { act { $0.allow() } }
+            }
+        case let .question(_, options):
+            if options.isEmpty || open {
+                RowButton(title: openTitle(L.t("Answer", "回答")), prominent: !open, action: toggle)
+            }
+        case .input:
+            RowButton(title: openTitle(L.t("Reply", "回一句")), prominent: !open, action: toggle)
+        }
+    }
+
+    private func openTitle(_ closed: String) -> String {
+        open ? L.t("Close", "收起") : closed
+    }
+
+    @ViewBuilder private var detail: some View {
+        if let askCard {
+            AskCardBody(card: askCard, sessionTitle: row.title) { body in model.act(on: askCard.id, body) }
+        } else if let s = row.session {
+            ReplyBox(model: model, session: s)
+        }
+    }
+
+    private func act(_ body: (inout AskCard) -> AskReply?) {
+        guard case let .ask(id) = row.item else { return }
+        model.act(on: id, body)
+    }
+
+    /// Into the session: its terminal when it lives in tmux, else its row.
+    private func openSession() {
+        guard let s = row.session else { return }
+        if s.inTmux { model.open(s) } else { model.goToSession(s.id) }
+    }
+}
+
+/// A compact button at a row's end; the main one is filled.
+private struct RowButton: View {
+    let title: String
+    var prominent = false
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(prominent ? Color.white : Color.primary)
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(fill))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .fixedSize()
+    }
+
+    private var fill: Color {
+        if prominent { return Theme.brand.opacity(hovering ? 0.88 : 1) }
+        return Color.primary.opacity(hovering ? 0.11 : (scheme == .dark ? 0.09 : 0.06))
+    }
+}
+
+/// A quiet icon at a row's end (open the session), named on hover.
+private struct RowIconButton: View {
+    let icon: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(hovering ? 0.08 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .tip(help)
+    }
+}
+
+/// "Write my own…" after a question's answers: a light link, not a fourth pill.
+private struct WriteLink: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(L.t("Write my own…", "自己写…"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? Theme.brand : Color.secondary)
+                .frame(height: 28)
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+    }
+}
+
+/// One answer to a question, as a small pill: a click sends it.
+private struct OptionChip: View {
+    let title: String
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .medium))
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .foregroundStyle(hovering ? Theme.brand : .primary)
+                .padding(.horizontal, 11)
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Theme.brand.opacity(hovering ? 0.14 : (scheme == .dark ? 0.10 : 0.06))))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Theme.brand.opacity(hovering ? 0.5 : 0.28)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .onHover { hovering = $0 }
+        .help(title)
+    }
+}
+
+/// Buttons that wrap onto the next line when they don't fit; one wider than
+/// the row gets the row's width (and truncates).
+private struct FlowChips: Layout {
+    var spacing: CGFloat = 6
+
+    init(spacing: CGFloat = 6) { self.spacing = spacing }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
+        for v in subviews {
+            let size = Self.size(v, within: width)
+            if x > 0 && x + size.width > width {
+                y += line + spacing
+                x = 0
+                line = 0
+            }
+            x += size.width + spacing
+            line = max(line, size.height)
+            widest = max(widest, x - spacing)
+        }
+        return CGSize(width: min(widest, width), height: y + line)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
+        for v in subviews {
+            let size = Self.size(v, within: bounds.width)
+            if x > bounds.minX && x + size.width > bounds.maxX {
+                y += line + spacing
+                x = bounds.minX
+                line = 0
+            }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            line = max(line, size.height)
+        }
+    }
+
+    /// Its own size, but never wider than the row.
+    private static func size(_ v: LayoutSubview, within width: CGFloat) -> CGSize {
+        let natural = v.sizeThatFits(.unspecified)
+        guard width.isFinite, natural.width > width else { return natural }
+        return v.sizeThatFits(ProposedViewSize(width: width, height: natural.height))
+    }
+}

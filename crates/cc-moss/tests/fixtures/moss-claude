@@ -119,6 +119,15 @@ slash() {
   printf '%s\n' "$1" >> "$CC_MOSS_FAKE_DIR/moss-commands.txt"
 }
 
+# With CC_MOSS_FAKE_TRUST set, a fresh machine's first question: trust this
+# folder? It waits for Enter (yes), and asks only once.
+if [ -n "$CC_MOSS_FAKE_TRUST" ] && [ ! -e "$CC_MOSS_FAKE_DIR/trusted" ]; then
+  printf '\n Do you trust the files in this folder?\n\n %s\n\n ❯ 1. Yes, proceed\n   2. No, exit\n\n Enter to confirm · Esc to exit\n' "$PWD"
+  IFS= read -r _
+  touch "$CC_MOSS_FAKE_DIR/trusted"
+  printf '\e[2J\e[H'
+fi
+
 session_start "$source"
 [ -n "$boot" ] && turn "$boot"
 

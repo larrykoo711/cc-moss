@@ -392,7 +392,9 @@ fn project_labels(app: &App, view: &View) -> Vec<String> {
         .iter()
         .zip(&bases)
         .map(|(p, b)| {
-            if bases.iter().filter(|x| *x == b).count() > 1 {
+            if p.archived {
+                tr!("Archived", "已归档").to_string()
+            } else if bases.iter().filter(|x| *x == b).count() > 1 {
                 short_path(&p.path, view.home)
             } else {
                 b.clone()
@@ -410,6 +412,7 @@ fn dot(state: State, now_ms: i64) -> Span<'static> {
         State::Waiting => Span::styled("●", Style::new().fg(AMBER)),
         State::Interrupted => Span::styled("↺", Style::new().fg(RED)),
         State::Plain => Span::styled("○", Style::new().fg(FAINT)),
+        State::Archived => Span::styled("▫", Style::new().fg(FAINT)),
     }
 }
 
@@ -546,7 +549,7 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
                 State::Working => ORANGE,
                 State::Waiting => AMBER,
                 State::Interrupted => RED,
-                State::Plain => GREY,
+                State::Plain | State::Archived => GREY,
             };
             lines.push(Line::styled(
                 display_name(&item, view),
@@ -577,7 +580,7 @@ fn draw_card(frame: &mut Frame, area: Rect, app: &App, view: &View) {
                     s.claude.as_ref().and_then(|c| c.note.clone()),
                     s.claude.as_ref().and_then(|c| c.preview.clone()),
                 ),
-                Item::Interrupted(r) => (r.note.clone(), r.preview.clone()),
+                Item::Interrupted(r) | Item::Archived(r) => (r.note.clone(), r.preview.clone()),
                 Item::New => (None, None),
             };
             if let Some(n) = note {
@@ -818,6 +821,7 @@ fn draw_hint(frame: &mut Frame, area: Rect, app: &App) {
                     _ if app.on_update() => tr!(" update", " 升级"),
                     Some(Item::New) => tr!(" start", " 新建"),
                     Some(Item::Interrupted(_)) => tr!(" restore", " 恢复"),
+                    Some(Item::Archived(_)) => tr!(" bring back", " 拿回来"),
                     _ => tr!(" open", " 打开"),
                 };
                 let esc = if app.query.is_empty() {

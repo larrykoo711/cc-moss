@@ -15,8 +15,8 @@ import Testing
         #expect(Shell.quote(input) == expected)
     }
 
-    @Test func handlePrefersName() {
-        #expect(sessions([sessionJSON(id: "01A", name: "job-a")])[0].handle == "job-a")
+    @Test func handleIsTheConversationId() {
+        #expect(sessions([sessionJSON(id: "01A", name: "job-a")])[0].handle == "01A-sid-0000")
         #expect(sessions([sessionJSON(id: "01B", name: nil)])[0].handle == "01B-sid-0000")
     }
 }

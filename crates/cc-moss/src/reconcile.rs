@@ -63,6 +63,7 @@ pub fn run() -> Result<Registry> {
         }
     }
     label_tmux(&registry);
+    registry.close_superseded_duplicates(&|s| s.effective_status(proc::is_alive), now_ms())?;
     record_lost(&registry)?;
     registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
@@ -173,7 +174,7 @@ fn record_lost(registry: &Registry) -> Result<()> {
         if slot.status == Status::Running
             && slot.effective_status(proc::is_alive) == Status::Interrupted
         {
-            registry.record_lost(&slot.slot_id, now)?;
+            registry.record_lost_of(&slot.slot_id, slot.pid, now)?;
         }
     }
     Ok(())
@@ -201,12 +202,19 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                 }
             }
             None => {
+                let argv = launch_args::argv(s.pid).unwrap_or_default();
+                let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+                // A plugin's or script's `claude -p` (summarizers run one
+                // every few minutes): the hooks skip those, so must this.
+                if launch_args::is_headless(&argv) {
+                    continue;
+                }
                 let transcript = claude::transcript_path(&s.session_id);
                 let ctx = Context {
                     pid: Some(s.pid),
                     pid_start: proc::start_time(s.pid),
                     tmux: locate_in_panes(s.pid, &parents, &panes, &socket_path),
-                    launch_args: Some(launch_args::capture(s.pid)),
+                    launch_args: Some(launch_args::whitelist(&argv)),
                     // Last activity is when Claude last wrote the
                     // transcript, not when cc-moss noticed the session.
                     now_ms: transcript

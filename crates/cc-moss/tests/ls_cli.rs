@@ -161,12 +161,7 @@ fn running_sessions_are_adopted_automatically() {
         {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
          "sessionId": "OLD-1", "name": "job-old", "status": "busy"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -180,6 +175,33 @@ fn running_sessions_are_adopted_automatically() {
     assert_eq!(s["status"], "running");
     assert_eq!(s["busy"], true);
     assert_eq!(s["cwd"], "/work/acme");
+}
+
+#[test]
+fn headless_runs_are_not_adopted() {
+    // A plugin's `claude -p` summarizer: `claude agents` lists it as
+    // interactive, but nobody would want it restored.
+    let dir = tempfile::tempdir().unwrap();
+    let mut headless = std::process::Command::new("sh")
+        .args(["-c", "sleep 60; :", "claude", "-p", "--model", "haiku"])
+        .spawn()
+        .unwrap();
+    let stub = dir.path().join("claude");
+    let agents = serde_json::json!([
+        {"pid": headless.id(), "cwd": "/tmp/T", "kind": "interactive",
+         "sessionId": "SUM-1", "name": "t-89", "status": "busy"}
+    ]);
+    agents_stub(&stub, &agents);
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let _ = headless.kill();
+    let _ = headless.wait();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["sessions"].as_array().unwrap().len(), 0, "{v}");
 }
 
 #[test]
@@ -199,12 +221,7 @@ fn adopting_leaves_sessions_the_hooks_track_alone() {
         {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
          "sessionId": "A", "name": "a", "status": "idle"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -238,12 +255,7 @@ fn adopted_sessions_keep_their_real_last_activity() {
         {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
          "sessionId": "OLD-2", "status": "idle"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -277,12 +289,7 @@ fn busy_after_reconcile(status: &str, last: &str) -> serde_json::Value {
         {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
          "sessionId": "B", "name": "b", "status": status}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -462,4 +469,125 @@ fn ls_asks_claude_at_most_every_30_s() {
         assert!(out.status.success());
     }
     assert_eq!(std::fs::read_to_string(&count).unwrap().lines().count(), 1);
+}
+
+#[test]
+fn superseded_duplicates_are_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "startup", Some("api")),
+        a.pid(),
+    );
+    // A second Claude Code on the same conversation, closed by killing it.
+    let b = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "resume", None),
+        b.pid(),
+    );
+    assert_eq!(
+        ls_json(dir.path(), true)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    drop(b);
+    let all = ls_json(dir.path(), true);
+    let sessions = all["sessions"].as_array().unwrap();
+    let running: Vec<_> = sessions
+        .iter()
+        .filter(|s| s["status"] == "running")
+        .collect();
+    let closed: Vec<_> = sessions
+        .iter()
+        .filter(|s| s["status"] == "closed")
+        .collect();
+    assert_eq!(running.len(), 1, "{all}");
+    assert_eq!(closed.len(), 1, "{all}");
+    assert_eq!(closed[0]["end_reason"], "superseded");
+    // Quietly: no interrupted news, and nothing left to restore.
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .args(["events", "--json", "--since", "0"])
+        .output()
+        .unwrap();
+    let events: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["kind"] != "interrupted"),
+        "{events}"
+    );
+    assert_eq!(
+        ls_json(dir.path(), false)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn json_results_name_ambiguous_names() {
+    let dir = tempfile::tempdir().unwrap();
+    for sid in ["aaaaaaaa-0001", "bbbbbbbb-0002"] {
+        hook(
+            dir.path(),
+            "session-start",
+            &start_json(sid, "startup", Some("api")),
+            Some(dead_pid()),
+        );
+    }
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = bin()
+            .env("CC_MOSS_STATE_DIR", dir.path())
+            .env("CC_MOSS_CLAUDE_BIN", "/bin/true")
+            .args(args)
+            .output()
+            .unwrap();
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}: {out:?}"))
+    };
+    let check = |v: &serde_json::Value, what: &str| {
+        let r = &v["results"][0];
+        assert_eq!(r["reason"], "ambiguous", "{what}: {v}");
+        let mut c: Vec<&str> = r["candidates"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{what}: {v}"))
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        c.sort();
+        assert_eq!(c, ["aaaaaaaa", "bbbbbbbb"], "{what}: {v}");
+        assert!(r["message"].as_str().unwrap().contains("api"), "{what}");
+    };
+    check(&run(&["restore", "--yes", "--json", "api"]), "restore");
+    check(&run(&["archive", "--json", "api"]), "archive");
+    check(&run(&["unarchive", "--json", "api"]), "unarchive");
+    check(&run(&["restart", "--json", "api"]), "restart");
+    let v = run(&["adopt", "--json", "api"]);
+    assert_eq!(v["reason"], "ambiguous", "{v}");
+    assert_eq!(v["candidates"].as_array().unwrap().len(), 2);
+    // A name that matches nothing keeps its own code.
+    let v = run(&["restore", "--yes", "--json", "nobody"]);
+    assert_eq!(v["results"][0]["reason"], "not_found", "{v}");
+}
+
+/// A `claude` that answers `agents --json` with `agents`. It runs once here:
+/// macOS checks a freshly written script on its first run, which under load
+/// can outlast the 3 s that `ls` gives `claude agents`.
+fn agents_stub(stub: &std::path::Path, agents: &serde_json::Value) {
+    std::fs::write(stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert!(std::process::Command::new(stub)
+        .output()
+        .unwrap()
+        .status
+        .success());
 }

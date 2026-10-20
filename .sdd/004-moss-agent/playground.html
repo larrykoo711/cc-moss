@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  larry-sdd playground 模板（通用骨架，自包含单文件）
+  sdd playground 模板（通用骨架，自包含单文件）
 
   ═══ 占位符清单（cp 后必须全部替换；一个都不许留到读者面前）═══
     004 · Moss agent     页面标题，同时用于 <title> 与侧栏 h1。写「卡 <n> · <一句话主题>」
@@ -348,8 +348,8 @@
   </section>
 
   <section id="progress">
-    <h2>进展 <span class="badge ok">P1 + P2 完成 · 0.3.0</span></h2>
-    <p class="lede">P1（T1.1–T1.4）代码齐，T1.4 在真机验收；P2 的 T2.1、T2.2 已完成，T2.3「和 Moss 对话」与 T2.4「体检」在真机上逐条打磨。合并树最近一次：Rust 794、Swift 588 全绿。</p>
+    <h2>进展 <span class="badge info">0.3.1 发版前收尾</span></h2>
+    <p class="lede">0.3.0 已发布。0.3.1 加了会话归档（T2.5）和换 API 供应商后原地重开（T2.6），并修完 0.3.0 之后的真机反馈 F19–F34；三路评审（Rust / App / 安全）的修复全部合入，T2.5、T2.6 已完成；接下来发版、更新网站与更新记录页。合并树：Rust 902、Swift 803 全绿。</p>
     <table><thead><tr><th>日期</th><th>做了什么</th></tr></thead><tbody>
       <tr><td>10-18</td><td>S0–S2 立项与设计（G1、G2）；T1.1 探针、T1.2 默认 bypass（PR #36 进 main）、T1.3 代答中枢、T2.1 守护进程、T2.2 Moss 常驻完成；T1.4 桌面答题合入待真机</td></tr>
       <tr><td>10-19 上午</td><td>P1 先发版分支 <code>release/p1</code> 装本机验收；按反馈加面板侧栏、「待处理」队列页、小莫答题气泡重做；随后并回本分支</td></tr>
@@ -358,12 +358,15 @@
       <tr><td>10-19</td><td>会话页：发送锁定与跟随、置顶、点击行展开回复并预填 Claude Code 的建议、齿轮菜单、面板高度三档、Moss 退出列表、一键「整理并移进 tmux」</td></tr>
       <tr><td>10-19</td><td>性能：刷新从约每秒一次降到按需（<code>registry.changed</code> + 1.5 / 5 秒间隔）；tmux 名保留中文原名</td></tr>
       <tr><td>10-19 晚</td><td>收尾：两轮评审（Rust / App / 安全，第二轮代码 + 安全复核）全部修完；Moss 断网、读不到私密文件、不用文件工具，确认按钮由守护进程生成；冷启动链接、历史卡片回执、多题自写答案；发 0.3.0，T2.5 会话归档排到 0.3.1</td></tr>
+      <tr><td>10-20</td><td>其他设备升 0.3.0 时发现插件的 <code>claude -p</code> 被收进列表（一台 118 条、一台 19 条），清理并修复；用户提出 cc-switch 换供应商不退出会话 → 实测 Claude Code 2.1.303 的热生效边界，立 T2.6</td></tr>
+      <tr><td>10-20</td><td>T2.5 归档与清理、T2.6 原地重开实施完；真机反馈 F22–F34：等你处理卡、Moss 跟随供应商、结束并归档、齿轮菜单与关于页、回到底部朦胧条、失败提示交给 Moss、输入法回车、关于页卡死</td></tr>
+      <tr><td>10-20</td><td>三路评审：Rust 4 高 6 中 5 低、App 2 中 6 低、安全 2 中 7 低；App 与 Rust 修复已合入（AMEND-2：<code>/model</code> 不再要求重开、每个会话对照自己的 settings、重开 3 次失败放弃）；网站首页改版并新增更新记录时间线页</td></tr>
     </tbody></table>
     <p class="lede">两条教训：替换运行中的二进制要先复制到临时名再 <code>mv</code>（<code>cp</code> 覆盖会让签名缓存失效、钩子被系统杀掉）；真机探针起的 claude 会被收编进真实会话记录，结束后必须立刻清理。</p>
   </section>
 
   <section id="lane">
-    <h2>反馈车道 <span class="badge info">19 条 · 15 已修</span></h2>
+    <h2>反馈车道 <span class="badge info">36 条 · 33 已修</span></h2>
     <table><thead><tr><th>#</th><th>反馈</th><th>状态</th></tr></thead><tbody>
       <tr><td>F1</td><td>设置 › Moss「在 Finder 中打开」Moss 的家</td><td><span class="badge mut">待排期</span></td></tr>
       <tr><td>F2</td><td>设置 › Moss 文案太技术，按 C 端重做</td><td><span class="badge mut">待排期</span></td></tr>
@@ -382,8 +385,25 @@
       <tr><td>F15</td><td>冷启动点链接面板不出现</td><td><span class="badge ok">已修</span></td></tr>
       <tr><td>F16</td><td>同一会话的历史卡片一起刷新状态</td><td><span class="badge ok">已修</span></td></tr>
       <tr><td>F17</td><td>小莫气泡多题时不能自己写</td><td><span class="badge ok">已修</span></td></tr>
-      <tr><td>F18</td><td>会话图标上的加载圈漂到左下角</td><td><span class="badge ok">已修</span> <span class="badge mut">待真机确认</span></td></tr>
-      <tr><td>F19</td><td>会话归档：30 天不用自动归档、经 Moss 清理</td><td><span class="badge mut">T2.5 · 0.3.1</span></td></tr>
+      <tr><td>F18</td><td>会话图标上的加载圈漂到左下角</td><td><span class="badge ok">已修</span></td></tr>
+      <tr><td>F19</td><td>会话归档：30 天不用自动归档、经 Moss 清理（T2.5）</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F20</td><td>插件的后台 <code>claude -p</code> 被当成会话收进列表</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F21</td><td>cc-switch 换供应商后要退出会话、重进 tmux（T2.6）</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F22</td><td>Moss 确认按钮被截断、看不全要同意什么</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F23</td><td>两个提问出现四条消息：改成一张实时「等你处理」卡</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F24</td><td>Moss 不跟随 API 供应商切换（0.3.0 回归）</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F25</td><td>找回失败没有任何提示：统一失败提示，可「交给 Moss 处理」；被顶替的副本安静关闭</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F26</td><td>闲着但还在跑的会话没法手动归档：加「结束并归档」</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F27</td><td>会话最后一句显示看不懂的 id（后台任务通知）</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F28</td><td>齿轮菜单按 Mac 习惯重排；关于页加 slogan、MIT 开源、网站与 GitHub</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F29</td><td>展开「已归档」后没滚到可见处</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F30</td><td>「回到最新」改成朦胧条 + 灰色小字，悬停浅 badge</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F31</td><td>已结束的会话从归档拿回后在列表里找不到</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F32</td><td>等你处理卡按钮位置突兀；小莫选项悬停不是手形</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F33</td><td>点「关于」卡死（系统登录项服务卡住主线程）</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F34</td><td>中文输入法回车选词时把消息发出去了</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F35</td><td>本机 App 整个卡死：系统 fseventsd 不回话时主线程卡在启动文件监听</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
+      <tr><td>F36</td><td>同名会话在 App 里归档失败：App 改为按会话 id 下命令</td><td><span class="badge ok">已修 · 0.3.1</span></td></tr>
     </tbody></table>
   </section>
 
@@ -437,7 +457,8 @@ const TASKS = [
   {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'done/T2.2-moss-resident.spec.md', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
   {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'done', sdd:'done/T2.3-talk-to-moss.spec.md', ac:'面板发一句、看到回复（AMEND-1～4，真机验收通过）', steps:[]},
   {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'done', sdd:'done/T2.4-moss-fixes.spec.md', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
-  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'backlog', sdd:'draft/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
+  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'done/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
+  {id:'T2.6', t:'换供应商后原地重开', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'done/T2.6-provider-switch.spec.md', ac:'能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -445,7 +466,7 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题（MVP · 0.3.0）', ids:['T1.1','T1.2','T1.3','T1.4']},
-  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5']},
+  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6']},
   {k:'P3', name:'Moss 派活（0.4.0）', ids:['T3.1']},
   {k:'P4', name:'Slack 与路由（0.5.0）', ids:['T4.1','T4.2']},
   {k:'R', name:'收口', ids:['R1']},
@@ -629,7 +650,7 @@ function initNav(){
 }
 function initTheme(){
   const root=document.documentElement, knob=document.getElementById('knob');
-  const KEY='larrysdd-theme';
+  const KEY='sdd-theme';
   const saved=localStorage.getItem(KEY)||'light';
   root.setAttribute('data-theme',saved); knob.textContent=saved==='dark'?'☾':'☀';
   document.getElementById('themeBtn').onclick=()=>{

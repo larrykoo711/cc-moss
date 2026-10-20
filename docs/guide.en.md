@@ -121,7 +121,7 @@ In the picker:
 |---|---|
 | `cc-moss` / `cc-moss pick [QUERY]` | Pick a session, an interrupted session or a folder |
 | `cc-moss new [NAME] [-C DIR] [--detach] [--yes] [--safe] [-- ARGS]` | Start a named session in its own tmux session; reuse it if the name exists. Bypass by default; `--safe` starts this one in normal mode, even over bypass added in the config (see [Permissions for new sessions](#permissions-for-new-sessions)) |
-| `cc-moss ls [--all] [--json]` | List sessions (`--json` for scripts; may still change before 1.0) |
+| `cc-moss ls [--all] [--archived] [--json]` | List sessions (`--archived`: only archived ones; `--json` for scripts; may still change before 1.0) |
 | `cc-moss events [--json] [--since SEQ] [--limit N]` | What just happened to your sessions, in order (for apps and scripts) |
 | `cc-moss restore [NAMES] [--dry-run] [--yes [--json]]` | Bring interrupted sessions back (`--json` reports each one, failures with a stable reason code: `empty`, `missing_dir`, `exited_at_once`, `tmux_failed`, `already_running`) |
 | `cc-moss attach NAME` | Jump to a session's tmux session |
@@ -131,6 +131,8 @@ In the picker:
 | `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
 | `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
+| `cc-moss archive NAMES [--end] [--json]` / `unarchive NAMES [--json]` | Archive sessions, or bring them back (see [Archive](#archive)) |
+| `cc-moss restart NAMES [--now] [--yes] [--json]` / `restart --stale` | Restart sessions in their own pane after switching API providers (see [Switching API providers](#switching-api-providers)) |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
 | `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
@@ -207,6 +209,68 @@ cc-moss adopt NAME             # end its process in the old terminal and carry o
 
 In the panel, a session outside tmux has a Move into tmux button at the end of its row (Tidy up and move into tmux
 when it has no name yet). It says what will happen first and acts only once you confirm.
+
+### Archive
+
+Sessions you no longer use get put away, so the list keeps only what you're working on:
+
+- Sessions that ended and saw no activity for 30 days are archived when the daemon tidies up each day. Change the
+  number with `cc-moss config set sessions.archive_after_days DAYS`; `0` turns it off. A running session is never
+  archived, however old.
+- By hand: `cc-moss archive NAMES`; for a session that's running but idle, add `--end` to end it first (a busy one is left alone). In the app it's Archive in the "⋯" menu, or End and Archive for an idle session, which asks first. `cc-moss unarchive NAMES` brings them back. Picking an archived
+  session back up with `claude --resume` puts it back in the list by itself.
+- `cc-moss ls` leaves archived sessions out and `ls --archived` lists only them; `ls --json` lists both, each with
+  `archived_at`. The picker shows archived sessions only when you search, in their own "Archived" group.
+- To delete them for good, click Clean Up or Clean Up All under Archived in the app, or just ask Moss. Moss lists
+  what it would delete and asks first; nothing goes until you click yes. The records leave cc-moss and the
+  conversation files go to the Trash, not straight to oblivion, so a mistake can be undone. Only archived sessions
+  are ever deleted, and only their own conversation files inside Claude Code's folder are moved; files elsewhere stay.
+  Moss asks before archiving a single session too, and Clean Up All leaves out what Moss archived in the last day;
+  the yes button names what goes.
+
+### Switching API providers
+
+When your subscription runs out and you switch to another provider with a tool like cc-switch, you usually don't
+have to leave the session: Claude Code watches `~/.claude/settings.json`, and a new address, token or model alias
+applies from your next message (tested on 2.1.303). The cc-moss daemon watches the file too, and the panel says
+"Switched to <host>. Your next message uses it."
+
+Two kinds of switch don't reach a running session; those need a restart:
+
+- Going back to your Claude subscription: the tool removes those settings, but a running session keeps the removed
+  values and goes on talking to the old provider.
+- A provider that sets the model with `ANTHROPIC_MODEL` in the settings' `env`: that one is read only at startup.
+  `model` at the top of settings (what `/model` writes when you change models in a session) doesn't count and never
+  asks for a restart.
+
+The panel marks the sessions affected; click Restart, or Restart All. On the command line:
+
+```sh
+cc-moss restart NAME      # restart it in the same tmux pane, same conversation
+cc-moss restart --stale   # restart every session that needs it
+```
+
+- Same pane, same tmux session name: no getting back into tmux, no typing the name again. It starts with the
+  arguments it had before, minus `--model` when the new settings pick a model with `ANTHROPIC_MODEL` in `env`.
+- A session that's busy isn't interrupted: it's queued and restarts when the turn is done. `--now` restarts it right
+  away and loses the reply in progress (send "continue" afterwards); it asks first in a terminal, `--yes` skips that.
+- If Claude has quit and the pane is back at a shell, restart types `cd '<the session's folder>' && claude --resume <id>
+  --name=<name> <kept arguments>` into that shell. Variables you exported in the shell still apply; ones set only in
+  front of the original command (`FOO=1 claude`) don't. The kept arguments are only `--permission-mode`, `--model`,
+  `--effort`, `--add-dir`, `--agent` and `--dangerously-skip-permissions`.
+- A queued restart that fails 3 times in a row isn't tried again: a `restart-failed` event is recorded, and `doctor`
+  and the panel still mark the session as needing a restart, so you can click it yourself.
+- A session outside tmux needs `adopt` first; Moss is looked after by cc-moss and isn't restarted here.
+- `--json` reports `restarted`, `queued` or `refused` (with a `reason`) for each. `cc-moss doctor` has an "API
+  provider" line with the current host and how many sessions need a restart, and points out folders whose own
+  `.claude/settings*.json` pick a provider, where a switch won't apply. Each session is judged against the settings
+  file it read when it started; when some read a different settings folder than cc-moss watches, `doctor` tells you
+  to set `[claude] config_dir` to the folder you switch in.
+- The panel, `doctor` and the logs show only the provider's host name and model names; token and key values are
+  never shown or recorded. Moss follows your switch: its settings hold only the address and models, and the key
+  stays out of any file it can see. When it sends a request, `cc-moss moss provider-key` reads the key from your
+  settings and hands it to Claude Code (or runs your own `apiKeyHelper` if you set one), so a new key reaches it
+  within a minute.
 
 ### Answering a session's questions from elsewhere
 
@@ -418,12 +482,13 @@ keeps trying.
   Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click Open in Terminal on
   the panel's Moss page. Only the session the daemon started is Moss: a window you open next to it, or
   `claude --resume` of its id elsewhere, is an ordinary session.
-- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only its own project
-  settings (`--setting-sources project`), so the MCP servers, hooks and settings you set up for Claude Code don't
-  come along. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
+- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only the settings in its own
+  home (`--setting-sources project,local`), so the MCP servers, hooks and settings you set up for Claude Code don't
+  come along. Only the API provider's address and models are copied into its `.claude/settings.local.json` (see
+  [Switching API providers](#switching-api-providers)), a file its command line can't read. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
   model's window when that's smaller); at the cap Claude Code compacts it, so the conversation doesn't keep growing.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
-  Anthropic like any session you start. While it waits it sends nothing and uses none of your plan; each start begins
+  Anthropic like any session you start, or to the API provider you switched to. While it waits it sends nothing and uses none of your plan; each start begins
   with one short turn to read its notes.
 - When Moss needs you (a permission or a question), the menu bar icon and its count show it like any session's.
   Moss itself is never counted among your sessions.
@@ -440,6 +505,10 @@ thinking, waiting for your OK, restarting, off), with Open in Terminal beside it
 conversation, and at the bottom the quick bar. On the rail, Moss's icon has a softly pulsing dot while it thinks, and
 a dot in the brand color when there's a reply you haven't seen.
 
+- **Waiting on you.** While sessions wait on you (a permission, a question, a reply), a "Waiting on you · N" card sits
+  under the conversation, above the quick bar: one row per session saying what it wants, the answer at the row's end
+  (Allow, Deny, Answer, Reply), a question's choices under it, and ↗ to open the session. A handled row goes; when all
+  are done it shrinks to "Handled N just now" and leaves by itself. Moss no longer announces these one by one.
 - **The quick bar.** One click hands something to Moss: Checkup, Who's waiting on me, What's stuck, What got done
   today and Tidy up, plus the Claude Code commands that suit your account (see below). What doesn't fit on one row
   goes under ⋯ at the end. The order follows how much you use each one on this Mac, recent uses counting more, and
@@ -485,9 +554,9 @@ cc-moss moss chat --json                                 # the last 200 messages
   Code doesn't document that log, so when the reply can't be found it doesn't hang: it says "Moss got it (couldn't fetch the reply, check the
   terminal)." A turn still running after 5 minutes is followed for up to 15; if Moss is stopped on a
   confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
-- **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
+- **What your sessions are doing.** The daemon tells Moss when a session drops or finishes (sessions waiting on you aren't sent: they're all in the Waiting on you card at the foot of the Moss page): changes within
   20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. Each change
-  is checked again just before it goes: a session no longer waiting on you, or one that's back, is left out, and if
+  is checked again just before it goes: a session that's back is left out, and if
   nothing is left, nothing is sent. In the conversation it's a small grey line in the middle. When a note only says
   turns finished, Moss's answer to it isn't shown and doesn't alert you. To keep Moss out of it, put
   `[moss] digest = false` in the config.
@@ -529,7 +598,7 @@ works too.
 **How Moss acts.** Moss's sandbox can't reach your sessions, so it asks the daemon to act for it
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
-it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
+it does without asking. Bringing back, no longer offering back, ending, archiving and deleting archived sessions need your go-ahead: Moss asks
 first, and cc-moss itself puts the yes button under the question, saying what it agrees to, with each session's
 folder ("End work · ~/code/work"). When two open sessions share a name, Moss can't ask about either by that name
 until one is renamed. Only your tap on that button counts, for exactly what it says, within 10 minutes, and only
@@ -597,9 +666,9 @@ Click the menu bar icon, or tap Control twice anywhere, and the panel opens. Ope
 `cc-moss://panel`; add `/sessions`, `/queue` or `/moss` to land on that page, handy in Shortcuts or a launcher.
 
 Down the left is a side rail: Sessions (⌘1), To Do (⌘2, with a count of what's left) and Moss (⌘3). The gear at the
-foot of the rail is the app's menu: Settings… (⌘,) and Refresh (⌘R); Update to x when there's a new version (it runs
-`cc-moss update` in your terminal, and the gear gets a small dot), otherwise the current version, which opens
-Settings › About; and Quit cc-moss (⌘Q). Along the bottom are New Session on the left and, on the right, the selected
+foot of the rail is the app's menu, in the order a Mac app's own menu has: About cc-moss (with the version), Check for
+Updates… (Update to x… when there's a new version: it runs `cc-moss update` in your terminal, and the gear gets a
+small dot); Settings… (⌘,); User Guide and Report a Problem; and Quit cc-moss (⌘Q). ⌘R refreshes any time. Along the bottom are New Session on the left and, on the right, the selected
 session's main action (Open, Bring Back and so on, with a ↵), on the Sessions page only.
 
 The panel picks its height as it opens, by how many sessions you have: shorter for 4 or fewer, medium for 5 to 9,
@@ -612,6 +681,11 @@ while it's closed; ⌘R refreshes now.
 Sessions are grouped by project, with git worktrees marked; the row at the top filters by state (All, Working,
 Waiting, Interrupted), and Tab / ⇧Tab cycle it. Typing searches (see below). Moss isn't in this list; it has a page
 of its own (see [Talking to Moss](#talking-to-moss)).
+
+When something doesn't work (bringing back, restarting, archiving, moving into tmux, replying…), a notice slides up at
+the bottom of the panel: what happened in plain words, what you can try, and Copy Details; while Moss is running there's
+also Ask Moss to Fix It, which sends Moss the action, the session and the reason and switches to the Moss page, where
+it looks into it and still asks before changing anything.
 
 On a stopped session, Return brings it back: the same conversation, in tmux, exactly like `cc-moss restore`. When
 several stopped at once (after a restart, say), a "2 sessions stopped" strip at the top has a Bring All Back button.
@@ -894,10 +968,13 @@ wait_secs = 300           # how long to wait for an answer from elsewhere (1–5
 
 [moss]
 enabled = true            # keep Moss running (macOS); false turns it off, which is what cc-moss moss start|stop change
-digest = true             # tell Moss when sessions need you, drop or finish; false keeps it out of that
+digest = true             # tell Moss when sessions drop or finish; false keeps it out of that
 actions = true            # Moss may ask the daemon to do what a checkup finds; false: it only says what to do
 daily_checkup = true      # a checkup once a day
 daily_brief = true        # the daily brief alerts you; false: only when you need to decide
+
+[sessions]
+archive_after_days = 30   # archive sessions that ended and saw no activity for this many days; 0: off
 ```
 
 You can also change the interface language without opening the file: `cc-moss config set ui.language zh` (`auto` follows the system again), and `cc-moss config get ui.language` shows the current value. With `--json` you get `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`; errors look like `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}` (`code` can also be `bad_value` or `config`).

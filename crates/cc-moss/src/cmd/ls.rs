@@ -8,23 +8,37 @@ use unicode_width::UnicodeWidthStr;
 
 pub const JSON_SCHEMA: u32 = 1;
 
-pub fn run(all: bool, as_json: bool) -> Result<()> {
+pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
     let mut rows: Vec<(Status, Slot)> = crate::reconcile::run()?
         .slots()?
         .into_iter()
         .map(|s| (s.effective_status(proc::is_alive), s))
-        .filter(|(st, _)| all || *st != Status::Closed)
+        .filter(|(st, s)| shown(*st, s, all, archived, as_json))
         .collect();
     // Most urgent first: interrupted, then running, then closed; newest activity first.
     rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
 
     if as_json {
-        let sessions: Vec<Value> = rows.iter().map(|(st, s)| to_json(*st, s)).collect();
+        let settings = super::provider::current();
+        let queue = super::provider::queued(&store_dir::state_dir());
+        let sessions: Vec<Value> = rows
+            .iter()
+            .map(|(st, s)| {
+                let mut v = to_json(*st, s);
+                // Running sessions the provider switch didn't reach (T2.6).
+                v["provider_restart"] = super::provider::restart_reason(s, *st, settings.as_ref())
+                    .filter(|_| !s.is_moss())
+                    .into();
+                v["restart_queued"] = (*st == Status::Running && queue.contains(&s.slot_id)).into();
+                v
+            })
+            .collect();
         println!(
             "{}",
             serde_json::to_string_pretty(&json!({
                 "schema": JSON_SCHEMA,
                 "state_dir": store_dir::state_dir(),
+                "provider": { "host": settings.as_ref().and_then(|s| s.host.clone()) },
                 "sessions": sessions,
             }))?
         );
@@ -32,6 +46,20 @@ pub fn run(all: bool, as_json: bool) -> Result<()> {
         print_table(&rows);
     }
     Ok(())
+}
+
+/// Whether `ls` lists a session. The list leaves archived sessions out
+/// (`--archived` lists only them); `--json` lists them too, whatever their
+/// status, for the app to sort. Closed ones that are not archived need
+/// `--all`.
+pub fn shown(st: Status, s: &Slot, all: bool, archived: bool, as_json: bool) -> bool {
+    if archived {
+        return s.is_archived();
+    }
+    if s.is_archived() {
+        return as_json;
+    }
+    all || st != Status::Closed
 }
 
 fn rank(st: Status) -> u8 {
@@ -70,6 +98,8 @@ fn to_json(st: Status, s: &Slot) -> Value {
         "worktree": worktree::of(&s.cwd).map(|w| json!({ "root": w.root, "repo": w.repo })),
         // `moss` for Moss (added after schema 1 was set; null otherwise).
         "role": s.role,
+        // When it was archived; null while it is in the list.
+        "archived_at": s.archived_at_ms.map(rfc3339),
     })
 }
 

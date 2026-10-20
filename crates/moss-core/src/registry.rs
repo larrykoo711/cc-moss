@@ -326,6 +326,18 @@ impl Registry {
                         .unwrap_or(false),
                     None => false,
                 };
+                // A session taken up again leaves the archive.
+                let was_archived = match &existing {
+                    Some(id) => tx
+                        .query_row(
+                            "SELECT archived_at_ms IS NOT NULL FROM slots WHERE slot_id = ?1",
+                            [id],
+                            |r| r.get::<_, bool>(0),
+                        )
+                        .optional()?
+                        .unwrap_or(false),
+                    None => false,
+                };
                 let slot_id = match existing {
                     Some(id) => {
                         tx.execute(
@@ -333,7 +345,7 @@ impl Registry {
                                pid=COALESCE(?4, pid), pid_start=COALESCE(?5, pid_start),
                                status='running', end_reason=NULL, ended_at=NULL, last_active_at=?6,
                                restore_started_at=NULL, busy=0, attention=NULL,
-                               lost_reported_at=NULL
+                               lost_reported_at=NULL, archived_at_ms=NULL
                              WHERE slot_id=?1",
                             params![id, session_id, cwd, ctx.pid, ctx.pid_start, ctx.now_ms],
                         )?;
@@ -362,6 +374,10 @@ impl Registry {
                 if let Some(source) = started {
                     let detail = serde_json::json!({ "source": source });
                     record_event(&tx, &slot_id, "started", &detail, ctx.now_ms)?;
+                }
+                if was_archived {
+                    let detail = serde_json::json!({ "by": "resume" });
+                    record_event(&tx, &slot_id, "unarchived", &detail, ctx.now_ms)?;
                 }
                 if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
                     // The name a new slot is born with is part of `started`.
@@ -457,9 +473,18 @@ impl Registry {
                             params![id, status.as_str(), raw, ctx.now_ms],
                         )?;
                         let detail = serde_json::json!({ "reason": raw });
+                        // `cc-moss restart` (or restore) ended it on purpose
+                        // and brings it back right away: no news.
+                        let restarting = tx
+                            .query_row(
+                                "SELECT restore_started_at FROM slots WHERE slot_id = ?1",
+                                [&id],
+                                |r| r.get::<_, Option<i64>>(0),
+                            )?
+                            .is_some_and(|t| ctx.now_ms - t < crate::restore::PENDING_WINDOW_MS);
                         if changed == 1 && status == Status::Closed {
                             record_event(&tx, &id, "ended", &detail, ctx.now_ms)?;
-                        } else if changed == 1 {
+                        } else if changed == 1 && !restarting {
                             record_interrupted(&tx, &id, &detail, ctx.now_ms)?;
                         }
                     }
@@ -574,7 +599,10 @@ impl Registry {
             };
             let (title, to) = crate::transcript::custom_title_since(Path::new(path), from);
             scanned.insert(slot.slot_id.clone(), to);
-            if let Some(name) = title.filter(|t| slot.name.as_deref() != Some(t.as_str())) {
+            let title = title.map(|t| crate::naming::clean_name(&t));
+            if let Some(name) =
+                title.filter(|t| !t.is_empty() && slot.name.as_deref() != Some(t.as_str()))
+            {
                 self.set_name(&slot.slot_id, &name)?;
                 renamed.push(slot.slot_id);
             }
@@ -724,7 +752,8 @@ impl Registry {
         let changed = tx.execute(
             "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL,
                ended_at = NULL, tmux_socket = ?4, tmux_session_id = ?5, tmux_session_name = ?6,
-               tmux_pane = ?7, last_active_at = ?8, attention = NULL, lost_reported_at = NULL
+               tmux_pane = ?7, last_active_at = ?8, attention = NULL, lost_reported_at = NULL,
+               archived_at_ms = NULL
              WHERE slot_id = ?1",
             params![
                 slot_id,
@@ -756,6 +785,44 @@ impl Registry {
         Ok(())
     }
 
+    /// Close, quietly, every copy of a conversation that is not running
+    /// while another copy of it runs (a second Claude Code on the same
+    /// session that was closed): it can't be restored and only gets in the
+    /// way. `end_reason` is `superseded`; no event, no news. `status` is
+    /// each slot's status as shown. The slot ids closed.
+    pub fn close_superseded_duplicates(
+        &self,
+        status: &dyn Fn(&Slot) -> Status,
+        now_ms: i64,
+    ) -> Result<Vec<String>> {
+        let slots = self.slots()?;
+        let shown: Vec<(Status, &Slot)> = slots.iter().map(|s| (status(s), s)).collect();
+        let live: std::collections::HashSet<&str> = shown
+            .iter()
+            .filter(|(st, _)| *st == Status::Running)
+            .map(|(_, s)| s.session_id.as_str())
+            .collect();
+        let mut closed = Vec::new();
+        for (st, slot) in &shown {
+            if *st == Status::Interrupted
+                && slot.status != Status::Closed
+                && !slot.is_moss()
+                && live.contains(slot.session_id.as_str())
+            {
+                let changed = self.write()?.execute(
+                    "UPDATE slots SET status = 'closed', end_reason = 'superseded', ended_at = ?2,
+                       attention = NULL, busy = 0, lost_reported_at = COALESCE(lost_reported_at, ?2)
+                     WHERE slot_id = ?1 AND status <> 'closed'",
+                    params![slot.slot_id, now_ms],
+                )?;
+                if changed == 1 {
+                    closed.push(slot.slot_id.clone());
+                }
+            }
+        }
+        Ok(closed)
+    }
+
     /// Undo [`Registry::mark_restore_started`] when the launch failed.
     pub fn clear_restore_started(&self, slot_id: &str) -> Result<()> {
         self.write()?.execute(
@@ -772,6 +839,181 @@ impl Registry {
             params![slot_id, name],
         )?;
         Ok(())
+    }
+
+    /// Put these sessions in the archive; `by` is `auto` or `you`. Running
+    /// ones and Moss are never archived, whatever the caller says. One
+    /// `archived {count, by}` event for the lot (not tied to one session:
+    /// its slot id is empty). Returns the slot ids archived.
+    pub fn archive(
+        &self,
+        slot_ids: &[String],
+        by: &str,
+        is_running: &dyn Fn(&Slot) -> bool,
+        now_ms: i64,
+    ) -> Result<Vec<String>> {
+        self.write()?;
+        // Whether each runs is asked outside the lock (it spawns `ps`)...
+        let before = self.slots()?;
+        let idle: Vec<&Slot> = before
+            .iter()
+            .filter(|s| slot_ids.contains(&s.slot_id))
+            .filter(|s| !s.is_moss() && !s.is_archived() && !is_running(s))
+            .collect();
+        let tx = self.write_tx()?;
+        // ...and holds only for a slot nothing touched since: one that a
+        // hook brought back meanwhile (a resume) is left alone.
+        let now = read_slots(&tx)?;
+        let mut done = Vec::new();
+        for slot in idle {
+            let same = now.iter().any(|n| {
+                n.slot_id == slot.slot_id
+                    && n.pid == slot.pid
+                    && n.pid_start == slot.pid_start
+                    && n.status == slot.status
+                    && n.last_active_at_ms == slot.last_active_at_ms
+                    && !n.is_archived()
+            });
+            if !same {
+                continue;
+            }
+            let changed = tx.execute(
+                "UPDATE slots SET archived_at_ms = ?2, archived_by = ?3
+                 WHERE slot_id = ?1 AND archived_at_ms IS NULL",
+                params![slot.slot_id, now_ms, by],
+            )?;
+            if changed == 1 {
+                done.push(slot.slot_id.clone());
+            }
+        }
+        if !done.is_empty() {
+            let detail = serde_json::json!({ "count": done.len(), "by": by, "slot_ids": done });
+            record_event(&tx, GLOBAL, "archived", &detail, now_ms)?;
+        }
+        tx.commit()?;
+        Ok(done)
+    }
+
+    /// Take these sessions out of the archive, back into the list; one
+    /// `unarchived {by}` event each. Returns the slot ids brought back.
+    pub fn unarchive(&self, slot_ids: &[String], by: &str, now_ms: i64) -> Result<Vec<String>> {
+        let tx = self.write_tx()?;
+        let mut done = Vec::new();
+        for id in slot_ids {
+            // One that had ended comes back as something to bring back:
+            // the list leaves ended sessions out, so it would vanish. Quietly:
+            // it is marked as told, so nobody hears it dropped.
+            let changed = tx.execute(
+                "UPDATE slots SET archived_at_ms = NULL,
+                   status = CASE status WHEN 'closed' THEN 'interrupted' ELSE status END,
+                   lost_reported_at = CASE status WHEN 'closed' THEN COALESCE(lost_reported_at, ?2)
+                                      ELSE lost_reported_at END
+                 WHERE slot_id = ?1 AND archived_at_ms IS NOT NULL",
+                params![id, now_ms],
+            )?;
+            if changed == 1 {
+                record_event(
+                    &tx,
+                    id,
+                    "unarchived",
+                    &serde_json::json!({ "by": by }),
+                    now_ms,
+                )?;
+                done.push(id.clone());
+            }
+        }
+        tx.commit()?;
+        Ok(done)
+    }
+
+    /// Forget archived sessions for good: their rows, their session ids
+    /// and their events go. Only archived ones are touched, whatever the
+    /// caller passes; the caller checks that none runs (a process gone
+    /// without a SessionEnd is still recorded as running). Returns the slot
+    /// ids removed.
+    pub fn purge(&self, slot_ids: &[String]) -> Result<Vec<String>> {
+        let tx = self.write_tx()?;
+        let mut done = Vec::new();
+        for id in slot_ids {
+            let archived = tx
+                .query_row(
+                    "SELECT archived_at_ms IS NOT NULL FROM slots WHERE slot_id = ?1",
+                    [id],
+                    |r| r.get::<_, bool>(0),
+                )
+                .optional()?
+                .unwrap_or(false);
+            if !archived {
+                continue;
+            }
+            tx.execute("DELETE FROM events WHERE slot_id = ?1", [id])?;
+            tx.execute("DELETE FROM slot_sessions WHERE slot_id = ?1", [id])?;
+            tx.execute("DELETE FROM slots WHERE slot_id = ?1", [id])?;
+            done.push(id.clone());
+        }
+        tx.commit()?;
+        Ok(done)
+    }
+
+    /// The transcripts of `slot_id` (one per session id it ran) that no
+    /// other session in the registry uses: what may go with it.
+    pub fn own_transcripts(&self, slot_id: &str, leaving: &[String]) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT ss.session_id, ss.transcript_path FROM slot_sessions ss
+              WHERE ss.slot_id = ?1 AND ss.transcript_path IS NOT NULL",
+        )?;
+        let rows: Vec<(String, String)> = stmt
+            .query_map([slot_id], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<rusqlite::Result<_>>()?;
+        let mut shared = self.conn.prepare(
+            "SELECT slot_id FROM slot_sessions WHERE session_id = ?1
+             UNION SELECT slot_id FROM slots WHERE session_id = ?1",
+        )?;
+        let mut out = Vec::new();
+        for (session_id, path) in rows {
+            let users: Vec<String> = shared
+                .query_map([&session_id], |r| r.get(0))?
+                .collect::<rusqlite::Result<_>>()?;
+            if users.iter().all(|u| u == slot_id || leaving.contains(u)) && !out.contains(&path) {
+                out.push(path);
+            }
+        }
+        Ok(out)
+    }
+
+    /// The provider a session started with, and the keys seen so far
+    /// (both JSON, from [`crate::provider`]: never a key's value).
+    pub fn set_provider(&self, slot_id: &str, started: &str, seen: &str) -> Result<()> {
+        self.write()?.execute(
+            "UPDATE slots SET provider_started = ?2, provider_seen_keys = ?3 WHERE slot_id = ?1",
+            params![slot_id, started, seen],
+        )?;
+        Ok(())
+    }
+
+    /// The provider key names a session has seen (JSON array).
+    pub fn set_provider_seen(&self, slot_id: &str, seen: &str) -> Result<()> {
+        self.write()?.execute(
+            "UPDATE slots SET provider_seen_keys = ?2 WHERE slot_id = ?1",
+            params![slot_id, seen],
+        )?;
+        Ok(())
+    }
+
+    /// Record one event for a session.
+    pub fn record(
+        &self,
+        slot_id: &str,
+        kind: &str,
+        detail: &serde_json::Value,
+        now_ms: i64,
+    ) -> Result<()> {
+        record_event(self.write()?, slot_id, kind, detail, now_ms)
+    }
+
+    /// Record an event about no one session (`slot_id` empty).
+    pub fn record_global(&self, kind: &str, detail: &serde_json::Value, now_ms: i64) -> Result<()> {
+        record_event(self.write()?, GLOBAL, kind, detail, now_ms)
     }
 
     /// All slots, oldest first.
@@ -805,7 +1047,37 @@ impl Registry {
     /// (SIGKILL, power loss). Once per interruption: nothing is recorded when
     /// the slot's latest event already is `interrupted`.
     pub fn record_lost(&self, slot_id: &str, now_ms: i64) -> Result<bool> {
+        self.record_lost_of(slot_id, None, now_ms)
+    }
+
+    /// [`Registry::record_lost`] for the process `pid` that was seen gone:
+    /// nothing when the slot runs another process by now (restarted).
+    pub fn record_lost_of(&self, slot_id: &str, pid: Option<u32>, now_ms: i64) -> Result<bool> {
         let tx = self.write_tx()?;
+        if let Some(seen) = pid {
+            let now: Option<u32> = tx
+                .query_row("SELECT pid FROM slots WHERE slot_id = ?1", [slot_id], |r| {
+                    r.get(0)
+                })
+                .optional()?
+                .flatten();
+            if now != Some(seen) {
+                return Ok(false);
+            }
+        }
+        // On its way back (`restart`, `restore`): not lost.
+        let returning = tx
+            .query_row(
+                "SELECT restore_started_at FROM slots WHERE slot_id = ?1",
+                [slot_id],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .optional()?
+            .flatten()
+            .is_some_and(|t| now_ms - t < crate::restore::PENDING_WINDOW_MS);
+        if returning {
+            return Ok(false);
+        }
         let detail = serde_json::json!({ "reason": "process-gone" });
         let recorded = record_interrupted(&tx, slot_id, &detail, now_ms)?;
         clear_attention(&tx, slot_id)?;
@@ -949,6 +1221,10 @@ fn has_events_table(conn: &Connection) -> Result<bool> {
         .exists([])?)
 }
 
+/// The slot id of an event about no one session (`provider-changed`, an
+/// automatic `archived`).
+pub const GLOBAL: &str = "";
+
 fn empty() -> serde_json::Value {
     serde_json::json!({})
 }
@@ -994,6 +1270,12 @@ fn record_interrupted(
 
 /// Set a slot's name; a change is recorded as `renamed` when `announce`.
 fn rename(conn: &Connection, slot_id: &str, name: &str, announce: bool, at_ms: i64) -> Result<()> {
+    // Names come from hook payloads and transcripts: no control or hidden
+    // characters get in (they could fake a line or a name in the panel).
+    let name = &crate::naming::clean_name(name);
+    if name.is_empty() {
+        return Ok(());
+    }
     let from: Option<String> = conn
         .query_row(
             "SELECT name FROM slots WHERE slot_id = ?1",
@@ -1033,7 +1315,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
                     attention,
                     (SELECT transcript_path FROM slot_sessions ss
                       WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id),
-                    role
+                    role, archived_at_ms, provider_started, provider_seen_keys, archived_by
              FROM slots ORDER BY created_at, slot_id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -1076,6 +1358,10 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             created_at_ms: r.get(13)?,
             last_active_at_ms: r.get(14)?,
             ended_at_ms: r.get(15)?,
+            archived_at_ms: r.get(26)?,
+            provider_started: r.get(27)?,
+            provider_seen_keys: r.get(28)?,
+            archived_by: r.get(29)?,
         })
     })?;
     let mut slots = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1131,6 +1417,15 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         ("lost_reported_at", "lost_reported_at INTEGER"),
         // After 0.2.2: what cc-moss runs the session as (`moss`).
         ("role", "role TEXT"),
+        // After 0.3.0: when the session was archived (none: in the list).
+        ("archived_at_ms", "archived_at_ms INTEGER"),
+        // Who archived it: `auto`, `you` or `moss`.
+        ("archived_by", "archived_by TEXT"),
+        // After 0.3.0: the API provider the session started with (key
+        // names, host and models as JSON; never a key's value), and every
+        // provider key name seen in the settings while it ran.
+        ("provider_started", "provider_started TEXT"),
+        ("provider_seen_keys", "provider_seen_keys TEXT"),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
@@ -1382,7 +1677,7 @@ fn touch_and_repair(
     }
     conn.execute(
         "UPDATE slots SET pid = ?2, pid_start = ?3, status = 'running', end_reason = NULL, ended_at = NULL,
-           lost_reported_at = NULL
+           lost_reported_at = NULL, archived_at_ms = NULL
          WHERE slot_id = ?1",
         params![slot_id, pid, ctx.pid_start],
     )?;

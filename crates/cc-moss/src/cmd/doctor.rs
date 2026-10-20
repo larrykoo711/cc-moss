@@ -165,6 +165,108 @@ fn install_hint(tools: &[Tool]) -> Option<String> {
     })
 }
 
+/// The API provider Claude Code's settings name, and whether running
+/// sessions still use an older one (T2.6). Folders whose own settings pick
+/// a provider are pointed out: a switch doesn't reach them.
+fn provider_check() -> Option<Check> {
+    let now = super::provider::current()?;
+    // A model alone (`/model` writes one) is still your Claude account.
+    let own_key = ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY", "apiKeyHelper"]
+        .iter()
+        .any(|k| now.keys.contains(*k));
+    let mut detail = match &now.host {
+        Some(host) => tr!(format!("sessions use {host}"), format!("会话连的是 {host}")),
+        None if own_key => tr!(
+            "sessions use an API key of your own",
+            "会话用的是你自己的 API key"
+        )
+        .into(),
+        None => tr!(
+            "sessions use your Claude account",
+            "会话用的是你的 Claude 账号"
+        )
+        .into(),
+    };
+    let path = moss_core::store_dir::registry_path();
+    let slots = if path.exists() {
+        moss_core::registry::Registry::open(&path)
+            .and_then(|r| r.slots())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let running: Vec<_> = slots
+        .iter()
+        .filter(|s| !s.is_moss())
+        .filter(|s| {
+            s.effective_status(moss_core::proc::is_alive) == moss_core::slot::Status::Running
+        })
+        .collect();
+    let stale = running
+        .iter()
+        .filter(|s| {
+            super::provider::restart_reason(s, moss_core::slot::Status::Running, Some(&now))
+                .is_some()
+        })
+        .count();
+    let own: std::collections::BTreeSet<&str> = running
+        .iter()
+        .map(|s| s.cwd.as_str())
+        .filter(|cwd| {
+            ["settings.json", "settings.local.json"].iter().any(|f| {
+                moss_core::provider::Snapshot::read(
+                    &std::path::Path::new(cwd).join(".claude").join(f),
+                )
+                .is_some_and(|s| !s.keys.is_empty())
+            })
+        })
+        .collect();
+    if !own.is_empty() {
+        detail.push_str(&tr!(
+            format!(
+                "; {} folder(s) pick their own, a switch doesn't reach them",
+                own.len()
+            ),
+            format!("；{} 个目录自己指定了供应商，切换对它们不生效", own.len())
+        ));
+    }
+    // Sessions whose Claude Code reads another settings folder than the
+    // daemon (a CLAUDE_CONFIG_DIR of their own): a switch has to happen there.
+    let daemon_reads = super::provider::settings_path();
+    let elsewhere = running
+        .iter()
+        .filter(|s| {
+            super::provider::settings_of(s).is_some_and(|p| Some(&p) != daemon_reads.as_ref())
+        })
+        .count();
+    let mut mark = Mark::Note;
+    if elsewhere > 0 {
+        mark = Mark::Warn;
+        detail.push_str(&tr!(
+            format!(
+                "; {elsewhere} session(s) read another Claude Code settings folder than cc-moss does; set [claude] config_dir to the folder you switch in"
+            ),
+            format!(
+                "；{elsewhere} 个会话读的 Claude Code 设置目录和 cc-moss 看的不一样；把 [claude] config_dir 设成你切换供应商的那个目录"
+            )
+        ));
+    }
+    Some(if stale > 0 {
+        detail.push_str(&tr!(
+            format!("; {stale} session(s) need a restart to use it"),
+            format!("；{stale} 个会话要重开才能用上")
+        ));
+        check(
+            Mark::Warn,
+            tr!("API provider", "API 供应商"),
+            detail,
+            Some("cc-moss restart --stale".into()),
+        )
+    } else {
+        check(mark, tr!("API provider", "API 供应商"), detail, None)
+    })
+}
+
 fn checks() -> Result<Vec<Check>> {
     let paths = Paths::detect()?;
     let zshrc = read_optional(&paths.zshrc)?.unwrap_or_default();
@@ -189,6 +291,7 @@ fn checks() -> Result<Vec<Check>> {
     out.extend(app_check());
     out.extend(daemon_check());
     out.extend(super::moss::facts().map(|f| moss_check(&f)));
+    out.extend(provider_check());
 
     // Claude Code and the hooks that register its sessions.
     out.push(if on_path(&["claude"]) {

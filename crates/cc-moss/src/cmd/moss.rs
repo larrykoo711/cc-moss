@@ -99,7 +99,7 @@ const PRIVATE_READS: &[&str] = &[
 /// Claude Code's folder when it is not `~/.claude`: `[claude] config_dir`
 /// in cc-moss's config, else `CLAUDE_CONFIG_DIR`. Claude Code keeps there
 /// what it otherwise keeps in `~/.claude` and `~/.claude.json`.
-fn config_dir() -> Option<PathBuf> {
+pub(super) fn config_dir() -> Option<PathBuf> {
     let configured = moss_core::config::Config::load()
         .ok()
         .and_then(|c| c.claude.config_dir);
@@ -150,6 +150,12 @@ pub fn fence_gap(settings: &str, env: Option<&Path>) -> Option<PathBuf> {
     (!covered).then(|| env.to_path_buf())
 }
 
+/// Moss's own copy of the user's API provider (F24), in its home: the
+/// provider's `env` keys and `apiKeyHelper`, values included, mode 600.
+/// Claude Code reads it as local settings (`--setting-sources
+/// project,local`); Moss's shell may not read it.
+pub const PROVIDER_FILE: &str = ".claude/settings.local.json";
+
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
 const PROFILE_COMMAND: &str = "cc-moss moss profile *";
@@ -191,6 +197,12 @@ fn settings_json(exe: &str, state: &Path, config_dir: Option<&Path>) -> String {
         .map(|p| p.to_string())
         .chain(config_dir.map(|c| c.to_string_lossy().into_owned()))
         .chain([state.to_string_lossy().into_owned()])
+        // Inside its home, which it may read otherwise: the provider's
+        // token is Claude Code's, not its shell's.
+        .chain([
+            format!("./{PROVIDER_FILE}"),
+            home.join(PROVIDER_FILE).to_string_lossy().into_owned(),
+        ])
         .collect();
     let value = serde_json::json!({
         "hooks": {
@@ -985,6 +997,14 @@ pub struct Looker {
     next_seq: Instant,
     last_seq: Option<i64>,
     config_error: bool,
+    /// When the user's provider is next compared with Moss's copy.
+    next_provider: Instant,
+    /// Until when a folder-trust question on Moss's screen is answered.
+    trust_until: Option<Instant>,
+    next_trust: Instant,
+    trust_told: bool,
+    /// Said once: the base URL held a password and was left out.
+    url_told: bool,
 }
 
 /// How often the switch in config.toml is read.
@@ -993,6 +1013,78 @@ const CONFIG_EVERY: Duration = Duration::from_secs(1);
 const SESSIONS_EVERY: Duration = Duration::from_secs(60);
 /// How often the daemon looks whether the daily checkup is due.
 const DAILY_EVERY: Duration = Duration::from_secs(30);
+
+/// How often Moss's provider is compared with the user's.
+const PROVIDER_EVERY: Duration = Duration::from_secs(1);
+/// How long after a start a folder-trust question is answered.
+const TRUST_WINDOW: Duration = Duration::from_secs(60);
+
+/// What [`sync_provider`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Synced {
+    Same,
+    /// Changed; a running Moss takes it in by itself.
+    Live,
+    /// Changed so that a running Moss can't take it in.
+    Restart,
+}
+
+/// Write Moss's copy of the user's provider ([`PROVIDER_FILE`]) when it
+/// differs. A user settings file that can't be read or parsed changes
+/// nothing (the last good copy stays).
+fn sync_provider(
+    state: &Path,
+    exe: &str,
+    url_told: &mut bool,
+    log: &dyn Fn(&str),
+) -> Result<Synced> {
+    let user = match super::provider::settings_path() {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
+            Err(_) => return Ok(Synced::Same),
+        },
+        None => "{}".to_string(),
+    };
+    // The token is handed over by cc-moss itself, never written here.
+    let helper = format!("{} moss provider-key", shell_quote(exe));
+    let Some(made) = moss_core::provider::moss_settings(&user, &helper) else {
+        return Ok(Synced::Same);
+    };
+    if made.dropped_url && !*url_told {
+        *url_told = true;
+        log("moss: the API base URL holds a user or password, so Moss doesn't get it; set the password as the token instead");
+    }
+    let new = made.text;
+    let path = moss::home_dir(state).join(PROVIDER_FILE);
+    let old = std::fs::read_to_string(&path).ok();
+    if old.as_deref() == Some(new.as_str()) {
+        return Ok(Synced::Same);
+    }
+    if let Some(dir) = path.parent() {
+        moss_core::store_dir::ensure_private_dir(dir)?;
+    }
+    home::write_if_changed(&path, &new)?;
+    let now = moss_core::provider::Snapshot::parse(&new).unwrap_or_default();
+    // No copy before (a Moss from before 0.3.1 never read one): only a
+    // fresh start takes a provider in.
+    let Some(before) = old
+        .as_deref()
+        .and_then(moss_core::provider::Snapshot::parse)
+    else {
+        return Ok(if now.keys.is_empty() {
+            Synced::Live
+        } else {
+            Synced::Restart
+        });
+    };
+    Ok(
+        match moss_core::provider::verdict(&before, &before.keys, &now) {
+            moss_core::provider::Verdict::Live => Synced::Live,
+            moss_core::provider::Verdict::NeedsRestart(_) => Synced::Restart,
+        },
+    )
+}
 
 /// SESSIONS.md also lists the sessions closed within this.
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -1037,6 +1129,11 @@ impl Looker {
             next_seq: now,
             last_seq: None,
             config_error: false,
+            next_provider: now,
+            trust_until: None,
+            next_trust: now,
+            trust_told: false,
+            url_told: false,
         })
     }
 
@@ -1097,6 +1194,8 @@ impl Looker {
             self.hands.tick(now, self.actions, log);
         }
         if enabled && self.keeper.is_up() {
+            self.follow_provider(now, log);
+            self.accept_trust(now, log);
             self.refresh_sessions(now, log);
             self.daily_checkup(now, log);
             self.talk.tick(&self.socket, now, self.digest, log);
@@ -1137,6 +1236,60 @@ impl Looker {
         log("moss: daily checkup asked for");
     }
 
+    /// Keep Moss's copy of the user's API provider in step (F24). Claude
+    /// Code takes a changed value or a new key in by itself; a removed key
+    /// or another fixed model needs a fresh Moss, so it is ended and the
+    /// keeper starts it again.
+    fn follow_provider(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if now < self.next_provider {
+            return;
+        }
+        self.next_provider = now + PROVIDER_EVERY;
+        match sync_provider(&self.state, &self.exe, &mut self.url_told, log) {
+            Ok(Synced::Same) => {}
+            Ok(Synced::Live) => {
+                log("moss: the API provider changed; Moss uses it from its next message")
+            }
+            Ok(Synced::Restart) => {
+                log("moss: the API provider changed; starting Moss again to use it");
+                // On purpose, not a crash: a fresh Moss right away, past
+                // the crash ladder's waits, and not counted as a restart.
+                match end_moss(&self.state, "provider-changed") {
+                    Ok(_) => self.start(now, log),
+                    Err(e) => log(&format!(
+                        "moss: error: could not end it for the new provider: {e:#}"
+                    )),
+                }
+            }
+            Err(e) => log(&format!("moss: error: its API provider: {e:#}")),
+        }
+    }
+
+    /// A fresh machine asks whether to trust Moss's folder before it
+    /// starts: the keeper answers yes, in Moss's own pane, for a while
+    /// after each start.
+    fn accept_trust(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if self.trust_until.is_none_or(|until| now >= until) || now < self.next_trust {
+            return;
+        }
+        // One look a second is plenty.
+        self.next_trust = now + Duration::from_secs(1);
+        let target = format!("={}:", moss::SESSION);
+        let Ok(out) = tmux(&self.socket, &["capture-pane", "-p", "-t", &target]) else {
+            return;
+        };
+        if !reply::trust_prompt(&String::from_utf8_lossy(&out.stdout)) {
+            return;
+        }
+        let _ = tmux(&self.socket, &["send-keys", "-t", &target, "Enter"]);
+        // Once per start: a second question is not answered blindly.
+        self.trust_until = None;
+        if !self.trust_told {
+            self.trust_told = true;
+            log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
+        }
+    }
+
     fn start(&mut self, now: Instant, log: &dyn Fn(&str)) {
         // It may be back by itself, or still there from before the daemon
         // restarted: look after that one rather than start a second.
@@ -1144,9 +1297,10 @@ impl Looker {
             self.adopt(now, log);
             return;
         }
-        match self.launch() {
+        match self.launch(log) {
             Ok(session_id) => {
                 self.keeper.started(now);
+                self.trust_until = Some(now + TRUST_WINDOW);
                 // A fresh Moss: whatever the old one had in hand is lost.
                 self.talk.moss_restarted(log);
                 let restarts = self.keeper.restarts();
@@ -1219,10 +1373,14 @@ impl Looker {
 
     /// Lay out the home and start a fresh Moss. The old records are left to
     /// the caller, once this one runs.
-    fn launch(&self) -> std::result::Result<String, Launch> {
+    fn launch(&mut self, log: &dyn Fn(&str)) -> std::result::Result<String, Launch> {
         let home = moss::home_dir(&self.state);
         home::lay_out(&home, &files(&self.exe, &self.state))
             .with_context(|| format!("cannot lay out {}", home.display()))
+            .map_err(Launch::Failed)?;
+        // The provider it starts with is the user's now.
+        sync_provider(&self.state, &self.exe.clone(), &mut self.url_told, log)
+            .context("cannot give it the API provider")
             .map_err(Launch::Failed)?;
         let claude = launch::claude_bin().map_err(Launch::Failed)?;
         if !moss_core::platform::on_path(&["tmux"]) {
@@ -1429,7 +1587,69 @@ fn session_env(session_id: &str) -> Vec<String> {
         format!("{}={}", moss::ROLE_ENV, moss::ROLE),
         format!("{}={session_id}", moss::SESSION_ENV),
         format!("{AUTO_COMPACT_ENV}={AUTO_COMPACT_WINDOW}"),
+        // `cc-moss moss provider-key` is asked again a minute after the last
+        // time: a switch of token reaches Moss without a restart.
+        format!("{KEY_TTL_ENV}={KEY_TTL_MS}"),
     ]
+}
+
+/// How long Claude Code keeps what its `apiKeyHelper` said.
+const KEY_TTL_ENV: &str = "CLAUDE_CODE_API_KEY_HELPER_TTL_MS";
+const KEY_TTL_MS: u32 = 60_000;
+
+/// `cc-moss moss provider-key`: Moss's `apiKeyHelper`. Prints the user's
+/// token (`ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`) from their
+/// Claude Code settings, or what their own `apiKeyHelper` prints (run in
+/// their home folder), and nothing else; fails when there is none or the
+/// settings can't be read. Claude Code runs it outside Moss's sandbox;
+/// Moss's own shell can't read those settings, so there it fails.
+pub fn provider_key() -> ExitCode {
+    let Some(path) = super::provider::settings_path() else {
+        eprintln!("cc-moss: no Claude Code settings to read");
+        return ExitCode::FAILURE;
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("cc-moss: cannot read {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Some(key) = moss_core::provider::settings_key(&text) {
+        println!("{key}");
+        return ExitCode::SUCCESS;
+    }
+    let Some(helper) = moss_core::provider::settings_helper(&text) else {
+        eprintln!("cc-moss: the Claude Code settings hold no API key");
+        return ExitCode::FAILURE;
+    };
+    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+        eprintln!("cc-moss: HOME is not set");
+        return ExitCode::FAILURE;
+    };
+    let out = run_with_timeout(
+        Command::new("/bin/sh")
+            .args(["-c", &helper])
+            .current_dir(&home)
+            .stdin(std::process::Stdio::null()),
+        Duration::from_secs(30),
+    );
+    match out {
+        Ok(o) if o.status.success() => {
+            let said = String::from_utf8_lossy(&o.stdout);
+            let key = said.trim();
+            if key.is_empty() {
+                eprintln!("cc-moss: your apiKeyHelper printed nothing");
+                return ExitCode::FAILURE;
+            }
+            println!("{key}");
+            ExitCode::SUCCESS
+        }
+        _ => {
+            eprintln!("cc-moss: your apiKeyHelper did not work");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Claude Code's context window before it compacts on its own.
@@ -1443,7 +1663,9 @@ fn claude_args(session_id: &str) -> Vec<String> {
         // The user's settings (their sandbox, hooks, permissions) never
         // widen Moss's fence; what it needs is in its own.
         "--setting-sources",
-        "project",
+        // Its own settings, and the user's provider copied into its home
+        // ([`PROVIDER_FILE`]).
+        "project,local",
         "--session-id",
         session_id,
         boot_prompt(),
@@ -1543,7 +1765,9 @@ mod tests {
                 "~/.claude.json",
                 "~/.claude.json.backup",
                 "~/.claude.json*",
-                "/s"
+                "/s",
+                "./.claude/settings.local.json",
+                "/s/moss/.claude/settings.local.json"
             ])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
@@ -1571,7 +1795,9 @@ mod tests {
                 "~/.claude.json.backup",
                 "~/.claude.json*",
                 "/c",
-                "/s"
+                "/s",
+                "./.claude/settings.local.json",
+                "/s/moss/.claude/settings.local.json"
             ])
         );
         // What doctor warns about: a CLAUDE_CONFIG_DIR the settings miss.
@@ -1583,6 +1809,29 @@ mod tests {
             fence_gap(&text, Some(Path::new("/other"))),
             Some(PathBuf::from("/other"))
         );
+    }
+
+    #[test]
+    fn moss_cannot_read_its_provider_file() {
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
+        let deny = v["sandbox"]["filesystem"]["denyRead"].as_array().unwrap();
+        assert!(
+            deny.contains(&"/s/moss/.claude/settings.local.json".into()),
+            "{deny:?}"
+        );
+        assert!(
+            deny.contains(&"./.claude/settings.local.json".into()),
+            "{deny:?}"
+        );
+        // Nor write it: its .claude folder is cc-moss's.
+        let deny = v["sandbox"]["filesystem"]["denyWrite"].as_array().unwrap();
+        assert!(deny.contains(&"./.claude".into()));
+        // And the file tools stay off.
+        assert!(v["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .contains(&"Read".into()));
     }
 
     #[test]
@@ -1638,8 +1887,8 @@ mod tests {
         let at = args
             .iter()
             .position(|a| a == "--setting-sources")
-            .expect("project settings only");
-        assert_eq!(args[at + 1], "project");
+            .expect("its own settings only");
+        assert_eq!(args[at + 1], "project,local");
     }
 
     #[test]
@@ -1654,6 +1903,11 @@ mod tests {
         // smaller model's window by itself.
         assert!(
             env.contains(&"CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000".to_string()),
+            "{env:?}"
+        );
+        // A switched token reaches it within a minute.
+        assert!(
+            env.contains(&"CLAUDE_CODE_API_KEY_HELPER_TTL_MS=60000".to_string()),
             "{env:?}"
         );
     }
@@ -1702,10 +1956,34 @@ mod tests {
         assert!(CLAUDE_MD.contains("with `[[silent]]`, unless the user has to act now"));
         assert!(CLAUDE_MD.contains("Never announce that a session finished a turn"));
         assert!(CLAUDE_MD.contains("one or two short sentences"));
+        // Waiting sessions are the panel's card, not Moss's news (F23).
+        assert!(CLAUDE_MD.contains("Don't announce sessions waiting on the user"));
+        assert!(SESSIONS_SKILL.contains("so don't announce them"));
         // Finding a session ends in cards, never a plain list.
         assert!(CLAUDE_MD.contains("[[sessions: <name or Id>"));
         assert!(SESSIONS_SKILL.contains("## Finding a session"));
         assert!(SESSIONS_SKILL.contains("Never\n  list sessions as plain text"));
+    }
+
+    #[test]
+    fn doctor_skill_maps_every_failure_reason() {
+        assert!(DOCTOR_SKILL.contains("## When the user hands you a failure"));
+        for reason in [
+            "empty",
+            "missing_dir",
+            "exited_at_once",
+            "tmux_failed",
+            "already_running",
+            "ambiguous",
+            "busy",
+            "running",
+            "not-in-tmux",
+            "moss",
+            "not-found",
+        ] {
+            assert!(DOCTOR_SKILL.contains(&format!("`{reason}`")), "{reason}");
+        }
+        assert!(DOCTOR_SKILL.contains("never make one up"));
     }
 
     #[test]

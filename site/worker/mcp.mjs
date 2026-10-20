@@ -79,6 +79,6 @@ export function twinFor(input) {
   if (!path.startsWith("/")) path = `/${path}`;
   if (!path.endsWith("/")) path += "/";
   if (path.includes("..")) return null;
-  const pages = ["/", "/zh/", "/guide/", "/zh/guide/"];
+  const pages = ["/", "/zh/", "/changelog/", "/zh/changelog/", "/guide/", "/zh/guide/"];
   return pages.includes(path) ? { path, twin: `${path}index.md` } : null;
 }

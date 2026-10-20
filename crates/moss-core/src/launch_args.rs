@@ -133,17 +133,124 @@ pub fn normalize_new(args: &[String]) -> Vec<String> {
     own
 }
 
-/// Whitelisted arguments of a running process, from `ps`. Arguments that
-/// contain spaces cannot be recovered exactly (see the T1.3 spec).
-pub fn capture(pid: u32) -> Vec<String> {
-    let Some(out) = output_with_timeout(
+/// Whether `argv` (program name first) runs Claude Code headless (`-p`,
+/// `--print`): a script's one-shot call, nothing a person would resume.
+/// `claude agents` lists those as interactive too.
+/// A cluster of short flags counts (`-cp`) when it is only flags that take
+/// no value; anything after `--` is not a flag.
+pub fn is_headless(argv: &[&str]) -> bool {
+    argv.iter().skip(1).take_while(|a| **a != "--").any(|a| {
+        *a == "--print"
+            || a.starts_with("--print=")
+            || a.strip_prefix('-').is_some_and(|short| {
+                !short.starts_with('-')
+                    && short.contains('p')
+                    && short.chars().all(|c| SHORT_SWITCHES.contains(c))
+            })
+    })
+}
+
+/// Claude Code's one-letter switches that take no value (`-p` print, `-c`
+/// continue, `-d` debug, `-v` version, `-h` help).
+const SHORT_SWITCHES: &str = "pcdvh";
+
+/// The arguments of a running process, exactly as it was given them
+/// (macOS: `sysctl` KERN_PROCARGS2; Linux: `/proc/<pid>/cmdline`), else
+/// from `ps` split on whitespace (where an argument with spaces in it
+/// can't be told apart). None when neither works.
+pub fn argv(pid: u32) -> Option<Vec<String>> {
+    exact_argv(pid).or_else(|| ps_argv(pid))
+}
+
+#[cfg(target_os = "macos")]
+fn exact_argv(pid: u32) -> Option<Vec<String>> {
+    let pid = libc::c_int::try_from(pid).ok()?;
+    let mut argmax: libc::c_int = 0;
+    let mut size = std::mem::size_of::<libc::c_int>();
+    let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+    // SAFETY: sysctl with a valid MIB and out-pointer of the stated size.
+    let got = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            2,
+            (&mut argmax as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if got != 0 || argmax <= 0 {
+        return None;
+    }
+    let mut buf = vec![0u8; argmax as usize];
+    let mut size = buf.len();
+    let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
+    // SAFETY: as above; the kernel writes at most `size` bytes.
+    let got = unsafe {
+        libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            buf.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        )
+    };
+    if got != 0 {
+        return None;
+    }
+    parse_procargs2(&buf[..size.min(buf.len())])
+}
+
+#[cfg(not(target_os = "macos"))]
+fn exact_argv(pid: u32) -> Option<Vec<String>> {
+    let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
+    if raw.is_empty() {
+        return None;
+    }
+    let mut out: Vec<String> = raw
+        .split(|b| *b == 0)
+        .map(|w| String::from_utf8_lossy(w).into_owned())
+        .collect();
+    if out.last().is_some_and(String::is_empty) {
+        out.pop();
+    }
+    Some(out)
+}
+
+/// macOS's KERN_PROCARGS2: `argc` (a native int), the executable's path,
+/// padding NULs, then `argc` NUL-terminated arguments (the environment
+/// follows and is not read).
+pub fn parse_procargs2(buf: &[u8]) -> Option<Vec<String>> {
+    let argc = i32::from_ne_bytes(buf.get(..4)?.try_into().ok()?);
+    let argc = usize::try_from(argc).ok()?;
+    let rest = &buf[4..];
+    let path_end = rest.iter().position(|b| *b == 0)?;
+    let mut at = path_end;
+    while rest.get(at) == Some(&0) {
+        at += 1;
+    }
+    let mut out = Vec::with_capacity(argc);
+    for word in rest[at..].split(|b| *b == 0).take(argc) {
+        out.push(String::from_utf8_lossy(word).into_owned());
+    }
+    (out.len() == argc).then_some(out)
+}
+
+fn ps_argv(pid: u32) -> Option<Vec<String>> {
+    let out = output_with_timeout(
         Command::new("ps")
             .args(["-o", "args=", "-p", &pid.to_string()])
             .env("LC_ALL", "C"),
         Duration::from_millis(500),
-    ) else {
-        return Vec::new();
-    };
+    )?;
     let line = String::from_utf8_lossy(&out.stdout);
-    whitelist(&line.split_whitespace().collect::<Vec<_>>())
+    Some(line.split_whitespace().map(String::from).collect())
+}
+
+/// Whitelisted arguments of a running process.
+pub fn capture(pid: u32) -> Vec<String> {
+    argv(pid).map_or_else(Vec::new, |a| {
+        whitelist(&a.iter().map(String::as_str).collect::<Vec<_>>())
+    })
 }

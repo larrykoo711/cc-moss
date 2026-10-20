@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="{{html_lang}}" data-lang="{{lang}}" data-page="changelog" data-theme="dark" class="bg-bg">
+<head>
+<!--@head-->
+</head>
+<body class="bg-bg text-fg font-sans selection:bg-coral/40">
+
+<!--@sprites-->
+<!--@nav-->
+
+<main id="top">
+  <!-- Header: the loop, quieter than on the home page -->
+  <section class="relative overflow-hidden pt-36 sm:pt-44 pb-12 sm:pb-16">
+    <div class="sky absolute inset-0 opacity-70"></div>
+    <svg class="absolute left-1/2 top-10 -translate-x-1/2 w-[min(1100px,170vw)] h-auto pointer-events-none" viewBox="2 14 60 36" fill="none" aria-hidden="true">
+      <path class="loop-base" d="__CONTINUUM__" pathLength="100" stroke-width="0.06"/>
+      <path class="loop-glow" d="__CONTINUUM__" pathLength="100" stroke-width="0.5" stroke-linecap="round"/>
+      <path class="loop-comet" d="__CONTINUUM__" pathLength="100" stroke-width="0.1" stroke-linecap="round"/>
+    </svg>
+    <div class="relative mx-auto max-w-5xl px-5 sm:px-8">
+      <p class="reveal text-coral text-sm font-medium"><span lang="zh">更新记录</span><span lang="en">Changelog</span></p>
+      <h1 class="reveal mt-4 text-[clamp(2.5rem,6.4vw,4.75rem)] font-semibold tracking-[-0.045em] leading-[1.0]" style="--d:80ms">
+        <span lang="zh">每一版，<br>都多照看一点。</span><span lang="en">What&rsquo;s new,<br>version by version.</span>
+      </h1>
+      <p class="reveal mt-6 max-w-xl text-lg text-fg/60 leading-relaxed" style="--d:160ms">
+        <span lang="zh">这里只写每一版让你多做到了什么。想看每一处改动，完整的技术记录在 <a class="underline underline-offset-4 decoration-fg/30 hover:text-fg hover:decoration-fg" href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md">GitHub 上的 CHANGELOG</a>。</span>
+        <span lang="en">What each version lets you do, in plain words. For every last change, the full technical notes are in <a class="underline underline-offset-4 decoration-fg/30 hover:text-fg hover:decoration-fg" href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md">CHANGELOG on GitHub</a>.</span>
+      </p>
+    </div>
+  </section>
+
+  <section id="releases" class="pb-28 sm:pb-36">
+    <div class="mx-auto max-w-5xl px-5 sm:px-8 lg:grid lg:grid-cols-[9rem_minmax(0,1fr)] lg:gap-12">
+      <!-- A jump list: a row of chips on phones, a quiet column on wide screens -->
+      <nav data-agent="skip" class="cl-index lg:sticky lg:top-32 self-start mb-8 lg:mb-0 -mx-5 px-5 sm:mx-0 sm:px-0 overflow-x-auto [scrollbar-width:none]" aria-labelledby="cl-index-label">
+        <p id="cl-index-label" class="hidden lg:block px-3 mb-2 text-xs text-fg/35"><span lang="zh">版本</span><span lang="en">Versions</span></p>
+        <ol class="flex lg:flex-col gap-1 w-max lg:w-auto">
+          <!--@index-->
+        </ol>
+      </nav>
+
+      <div class="relative">
+        <!-- The line every release hangs on -->
+        <div class="cl-line absolute left-[0.8rem] sm:left-[1.55rem] top-2 bottom-2 w-px" aria-hidden="true"></div>
+        <ol class="relative" data-agent="unwrap">
+        <!--@timeline-->
+        </ol>
+
+        <div class="reveal mt-16 pl-10 sm:pl-16 flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6 text-sm">
+          <a href="{{home}}#install" class="inline-flex items-center justify-center gap-2 rounded-full bg-fg text-bg font-medium px-5 py-2.5 hover:opacity-90 active:scale-[0.98] transition"><span lang="zh">安装最新版</span><span lang="en">Get the latest</span></a>
+          <a href="https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md" class="text-fg/55 underline underline-offset-4 decoration-fg/25 hover:text-fg hover:decoration-fg transition-colors"><span lang="zh">完整技术记录（GitHub）</span><span lang="en">Full technical notes on GitHub</span></a>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!--@footer-->
+
+<script src="/app.js"></script>
+</body>
+</html>

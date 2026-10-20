@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { discoveryFiles, llmsFull, llmsTxt, searchRecords } from "./lib/agent.mjs";
+import { anchorOf, changelogIndex, changelogTimeline, loadChangelog } from "./lib/changelog.mjs";
 import { guideImages, guideMarkdown } from "./lib/guide.mjs";
 import { assemble, localize, pageMarkdown, serialize, visibleFaq, withFrontmatter } from "./lib/pages.mjs";
 import { headTags, robots, sitemap, twinPath } from "./lib/seo.mjs";
@@ -23,6 +24,10 @@ execFileSync("node_modules/.bin/tailwindcss", ["-i", "src/styles.css", "-o", "di
 const continuum = readFileSync("../docs/assets/logo.svg", "utf8").match(/<path d="([^"]+)"/)[1];
 const partial = (name) => readFileSync(`src/partials/${name}.html`, "utf8").replaceAll("__CONTINUUM__", continuum);
 const slots = { head: partial("head"), sprites: partial("sprites"), nav: partial("nav"), footer: partial("footer") };
+// The Changelog page's timeline, and the home page's "what's new" badge, come from one file.
+const releases = loadChangelog();
+const latest = releases[0];
+const pageSlots = { changelog: { index: changelogIndex(releases), timeline: changelogTimeline(releases) } };
 const meta = (doc, locale, path, updated) => ({
   title: doc.title[locale],
   description: doc.description[locale],
@@ -46,14 +51,21 @@ for (const page of PAGES) {
       home: localePath(locale, "/"),
       url_en: localePath("en", page.path),
       url_zh: localePath("zh", page.path),
+      latest_version: latest.version,
+      latest_anchor: anchorOf(latest.version),
+      latest_short: `<span lang="zh">${latest.short.zh}</span><span lang="en">${latest.short.en}</span>`,
     };
-    const document = localize(assemble(page.template, slots, tokens).replaceAll("__CONTINUUM__", continuum), locale);
+    const document = localize(assemble(page.template, { ...slots, ...pageSlots[page.id] }, tokens).replaceAll("__CONTINUUM__", continuum), locale);
+    // The nav says which page you're on.
+    for (const a of document.querySelectorAll(`[data-nav="${page.id}"]`)) a.setAttribute("aria-current", "page");
     const faq = visibleFaq(document);
     out(`${path}index.html`, serialize(document).replace("<!--@seo-->", headTags({ page, locale, updated, faq })));
     const markdown = withFrontmatter(meta(page, locale, path, updated), pageMarkdown(document, url(path)));
     out(twinPath(path), markdown);
     const ids = new Set([...document.querySelectorAll("[id]")].map((el) => el.id));
-    docs.push({ locale, path, title: "cc-moss", markdown, ids });
+    // Headings that carry their own anchor, so search can link straight to them.
+    const anchors = new Map([...document.querySelectorAll("h2[id], h3[id]")].map((h) => [h.textContent.replace(/\s+/g, " ").trim(), h.id]));
+    docs.push({ locale, path, title: page.id === "home" ? "cc-moss" : page.title[locale], markdown, ids, anchors });
     entries.push({ page, locale, updated });
   }
 }
@@ -84,14 +96,14 @@ out("search-records.json", JSON.stringify(searchRecords(docs)));
 for (const [path, content] of Object.entries(discoveryFiles())) out(path, content);
 
 // A 404 that helps: where to go, for people and for agents.
-const notFound = assemble("src/404.template.html", slots, { lang: "en", html_lang: "en", home: "/", url_en: "/", url_zh: "/zh/" }).replaceAll(
+const notFound = assemble("src/404.template.html", slots, { lang: "en", html_lang: "en", home: "/", url_en: "/", url_zh: "/zh/", latest_version: "", latest_anchor: "", latest_short: "" }).replaceAll(
   "__CONTINUUM__",
   continuum,
 );
 out("404.html", serialize(localize(notFound, "en")).replace("<!--@seo-->", '  <title>Page not found · cc-moss</title>\n  <meta name="robots" content="noindex">'));
 out(
   "404.md",
-  `# Page not found\n\nThere is no page at this address. Try:\n\n- [Overview and FAQ](${url("/index.md")})\n- [Full guide](${url("/guide/index.md")})\n- [All pages for AI assistants](${url("/llms.txt")})\n- [Sitemap](${url("/sitemap.xml")})\n`,
+  `# Page not found\n\nThere is no page at this address. Try:\n\n- [Overview and FAQ](${url("/index.md")})\n- [Changelog](${url("/changelog/index.md")})\n- [Full guide](${url("/guide/index.md")})\n- [All pages for AI assistants](${url("/llms.txt")})\n- [Sitemap](${url("/sitemap.xml")})\n`,
 );
 
 for (const f of ["app.js", "favicon.svg"]) cpSync(`src/${f}`, `dist/${f}`);

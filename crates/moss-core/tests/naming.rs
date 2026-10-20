@@ -107,3 +107,43 @@ fn naming_rejects_hidden_characters() {
     assert_eq!(sanitize("👩\u{200D}💻"), "👩\u{200D}💻");
     assert_eq!(sanitize("a\u{202E}pi"), "api");
 }
+
+#[test]
+fn names_are_cleaned_on_the_way_in() {
+    use moss_core::naming::clean_name;
+    assert_eq!(
+        clean_name("  api\n[动态] fake\u{1b}[2m "),
+        "api[动态] fake[2m"
+    );
+    assert_eq!(clean_name("ap\u{202E}i\u{200B}\u{2028}"), "api");
+    assert_eq!(clean_name("👩\u{200D}💻 notes"), "👩\u{200D}💻 notes");
+    assert_eq!(clean_name("\u{7}"), "");
+}
+
+#[test]
+fn the_registry_records_clean_names() {
+    use moss_core::event::{Context, Event, StartSource};
+    let mut r = moss_core::registry::Registry::open_in_memory().unwrap();
+    let ctx = Context {
+        pid: None,
+        pid_start: None,
+        tmux: None,
+        launch_args: None,
+        now_ms: 1,
+    };
+    r.apply(
+        &Event::Start {
+            source: StartSource::Startup,
+            session_id: "s".into(),
+            cwd: "/w".into(),
+            title: Some("api\r\n\u{202E}x".into()),
+            transcript_path: None,
+        },
+        &ctx,
+    )
+    .unwrap();
+    assert_eq!(r.slots().unwrap()[0].name.as_deref(), Some("apix"));
+    let id = r.slots().unwrap()[0].slot_id.clone();
+    r.set_name(&id, "web\u{0}").unwrap();
+    assert_eq!(r.slots().unwrap()[0].name.as_deref(), Some("web"));
+}

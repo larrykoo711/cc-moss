@@ -1,0 +1,214 @@
+{
+  "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
+  "versions": [
+    {
+      "version": "0.3.1",
+      "date": "2026-10-20",
+      "icon": "archive",
+      "short": {
+        "zh": "旧会话自动收好",
+        "en": "Old sessions tidy themselves away"
+      },
+      "headline": {
+        "zh": "旧会话自己收好，换供应商不用从头来。",
+        "en": "Old sessions put themselves away. New providers, same conversation."
+      },
+      "highlights": [
+        {
+          "zh": "结束了、30 天没动的会话自动归档，列表只留正在用的。想要时一点就拿回来；不要了让 Moss 清理，它先问你，对话文件进废纸篓。",
+          "en": "Sessions that ended and sat untouched for 30 days are archived on their own. Bring one back with a click, or have Moss clean up: it asks first, and the conversations go to the Trash."
+        },
+        {
+          "zh": "用 cc-switch 这类工具换了 API 供应商，多数会话下一条消息就用上，Moss 也跟着换；需要重开的会标出来，在原地重开，对话接着聊。",
+          "en": "Switch API providers with a tool like cc-switch and most sessions, Moss included, use the new one from your next message. The few that need a restart are marked, and restart in place, same conversation."
+        },
+        {
+          "zh": "Moss 页上多了一张「等你处理」卡片，在等你的会话在这一张卡里就能答完。",
+          "en": "A live Waiting on you card on the Moss page: answer every session that's waiting, all in one place."
+        },
+        {
+          "zh": "找回、重开、归档这类事没做成时，面板会用大白话说清原因，还能一键「交给 Moss 处理」。",
+          "en": "When bringing back, restarting or archiving doesn't work, the panel says why in plain words, and Ask Moss to Fix It is one click away."
+        },
+        {
+          "zh": "用中文输入法打字时，回车是选词，不会把半句话发出去。",
+          "en": "Typing with a Chinese input method, Return picks the word instead of sending half a sentence."
+        }
+      ]
+    },
+    {
+      "version": "0.3.0",
+      "date": "2026-10-19",
+      "icon": "moss",
+      "short": {
+        "zh": "Moss 住进来了",
+        "en": "Moss moves in"
+      },
+      "headline": {
+        "zh": "会话放手干活，Moss 住了进来。",
+        "en": "Sessions get on with it, and Moss moves in."
+      },
+      "highlights": [
+        {
+          "zh": "新会话默认直接放手干，不再每一步都停下来等你点头；想让它先问，关一个开关就行。",
+          "en": "New sessions get to work without stopping for your OK at every step. Want them to ask? Flip one switch."
+        },
+        {
+          "zh": "会话问你选择题、或者要你同意时，在面板或小莫那儿点一下就答了，不用进终端。",
+          "en": "When a session asks you to pick an option or wants your OK, answer from the panel or Mo. No terminal needed."
+        },
+        {
+          "zh": "认识 Moss：cc-moss 在后台替你一直开着的一个 Claude Code。你可以和它聊天，它帮你把会话整理好。",
+          "en": "Meet Moss, a Claude Code that cc-moss keeps running in the background. Chat with it, and it keeps your sessions in order."
+        },
+        {
+          "zh": "每天一次体检：能修的直接修好，要找回、结束会话之前，先问你。",
+          "en": "A daily checkup: Moss fixes what it can, and asks before it brings back or ends a session."
+        },
+        {
+          "zh": "面板多了一条侧栏：会话、待处理、Moss。会话能置顶，搜索也认得缩写和拼音首字母。",
+          "en": "The panel gets a side rail: Sessions, To Do and Moss. Pin the sessions you care about; search understands abbreviations."
+        }
+      ]
+    },
+    {
+      "version": "0.2.2",
+      "date": "2026-10-18",
+      "icon": "rows",
+      "headline": {
+        "zh": "每个会话自带按钮，权限一页看全。",
+        "en": "Every session carries its own buttons. Permissions, on one page."
+      },
+      "highlights": [
+        {
+          "zh": "鼠标移到会话上，改名、发消息、打开就在这一行的末尾。",
+          "en": "Point at a session: rename, send a message and open sit right at the end of its row."
+        },
+        {
+          "zh": "设置里新增「权限」页：缺了哪一项、拿来做什么，一眼看清，点一下去允许。",
+          "en": "A new Permissions page in Settings: what's missing, what it's for, and a button to allow it."
+        },
+        {
+          "zh": "更新后辅助功能被关掉时，面板会直接告诉你，不再一声不响地失灵。",
+          "en": "If an update turns Accessibility off, the panel tells you, instead of the shortcut going quiet."
+        },
+        {
+          "zh": "为新会话挑文件夹更顺手了，离开快捷键设置太快也不会再让 App 退出。",
+          "en": "Picking a folder for a new session is smoother, and leaving Shortcuts too quickly no longer closes the app."
+        }
+      ]
+    },
+    {
+      "version": "0.2.1",
+      "date": "2026-10-17",
+      "icon": "tabs",
+      "headline": {
+        "zh": "会话在标签页里打开，快捷键一页管完。",
+        "en": "Sessions open as tabs. Every shortcut on one page."
+      },
+      "highlights": [
+        {
+          "zh": "会话在终端的新标签页里打开，不再堆一摞窗口。Ghostty、iTerm2、WezTerm 都行。",
+          "en": "Sessions open as tabs instead of a pile of windows, in Ghostty, iTerm2, WezTerm and more."
+        },
+        {
+          "zh": "新的「快捷键」设置页：唤出面板的键、在终端里敲的短名字，都在这一页改。",
+          "en": "A new Shortcuts page: the key for the panel and the short names you type in a terminal, all in one place."
+        },
+        {
+          "zh": "设置页看起来更安静了。",
+          "en": "Settings look quieter."
+        },
+        {
+          "zh": "更新之后，辅助功能那一步不会再卡住。",
+          "en": "The Accessibility step no longer gets stuck after an update."
+        }
+      ]
+    },
+    {
+      "version": "0.2.0",
+      "date": "2026-10-17",
+      "icon": "menubar",
+      "headline": {
+        "zh": "状态栏 App 来了。",
+        "en": "cc-moss moves into your menu bar."
+      },
+      "highlights": [
+        {
+          "zh": "菜单栏图标跟着会话变：在忙、在等你、断了，抬眼就知道。",
+          "en": "A menu bar icon that changes with your sessions: busy, waiting for you, stopped."
+        },
+        {
+          "zh": "连按两下 Control 唤出面板，打字就搜，回车就打开。断了的会话一键找回。",
+          "en": "Double-tap Control for the panel. Type to search, Return to open, one click to bring stopped sessions back."
+        },
+        {
+          "zh": "会话需要你时，系统通知或小莫告诉你，同一件事只说一次。",
+          "en": "When a session needs you, a notification or Mo tells you. Once, never both."
+        },
+        {
+          "zh": "小莫：住在桌面一角的小伙伴，安静、日常、积极三种性子任你挑。",
+          "en": "Mo: a little friend in the corner of your desktop. Quiet, everyday or lively, your pick."
+        },
+        {
+          "zh": "第一次打开有一段欢迎引导，一分钟就装好。",
+          "en": "A welcome sets everything up in about a minute."
+        }
+      ]
+    },
+    {
+      "version": "0.1.1",
+      "date": "2026-10-16",
+      "icon": "picker",
+      "headline": {
+        "zh": "选择器更顺手。",
+        "en": "A tidier picker."
+      },
+      "highlights": [
+        {
+          "zh": "会话的菜单和便条就在会话旁边打开，不再跑到终端最底下。",
+          "en": "A session's menu and notes open right beside it, not at the bottom of a tall terminal."
+        },
+        {
+          "zh": "别的会话发来的消息，「最后一句话」只显示里面的字，不再是一串标记。",
+          "en": "Messages from other sessions show their words under Last message, not Claude Code's markup."
+        },
+        {
+          "zh": "斜杠命令也一样，只留该看的。",
+          "en": "Slash commands too: just what you need to see."
+        }
+      ]
+    },
+    {
+      "version": "0.1.0",
+      "date": "2026-10-16",
+      "icon": "restore",
+      "headline": {
+        "zh": "第一版：会话不怕崩溃，也不怕重启。",
+        "en": "The first release: sessions that survive crashes and restarts."
+      },
+      "highlights": [
+        {
+          "zh": "你照常用 Claude Code，每个会话都被自动记下来。",
+          "en": "Use Claude Code as usual. Every session is noted for you."
+        },
+        {
+          "zh": "重启或崩溃之后，一条命令把所有中断的会话接回原来的对话。",
+          "en": "After a restart or a crash, one command brings every interrupted session back to its conversation."
+        },
+        {
+          "zh": "在终端里敲 t，所有会话一目了然，回车就进去。",
+          "en": "Type t in a terminal to see every session. Return to jump in."
+        },
+        {
+          "zh": "给会话留张便条：在做什么、停在哪。",
+          "en": "Leave a note on a session: what it's doing, where it stopped."
+        },
+        {
+          "zh": "中文和英文都有，macOS 和 Linux 都能用。",
+          "en": "In Chinese and English, on macOS and Linux."
+        }
+      ]
+    }
+  ]
+}

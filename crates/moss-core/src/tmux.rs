@@ -337,6 +337,63 @@ impl<R: Runner> Tmux<R> {
             .map(|s| s.trim_end().to_string())
             .filter(|s| !s.is_empty())
     }
+
+    /// Pane `%N`'s process and whether it is dead (`remain-on-exit`);
+    /// `None` when there is no such pane.
+    pub fn pane_process(&self, pane_id: &str) -> Option<(u32, bool)> {
+        let out = self
+            .run(&[
+                "display-message",
+                "-p",
+                "-t",
+                pane_id,
+                "#{pane_id}|:|#{pane_pid}|:|#{pane_dead}",
+            ])
+            .ok()?;
+        let mut f = out.trim_end().splitn(3, SEP);
+        // display-message falls back to the current pane for a gone target.
+        if f.next()? != pane_id {
+            return None;
+        }
+        Some((f.next()?.parse().ok()?, f.next()? == "1"))
+    }
+
+    /// A pane option as set on the pane itself; `None` when it isn't.
+    pub fn pane_option(&self, pane_id: &str, name: &str) -> Option<String> {
+        self.run(&["show-options", "-p", "-q", "-v", "-t", pane_id, name])
+            .ok()
+            .map(|s| s.trim_end().to_string())
+            .filter(|s| !s.is_empty())
+    }
+
+    /// Set a pane option on the pane only (never globally), or unset it.
+    pub fn set_pane_option(&self, pane_id: &str, name: &str, value: Option<&str>) -> Result<()> {
+        match value {
+            Some(v) => self.run(&["set-option", "-p", "-t", pane_id, name, v]),
+            None => self.run(&["set-option", "-p", "-u", "-t", pane_id, name]),
+        }
+        .map(drop)
+    }
+
+    /// Run `argv` in pane `%N` again, in `cwd`: same pane, window and
+    /// session. The pane's program must have exited (`remain-on-exit`).
+    /// With `kill`, whatever is left in the pane is ended first (`-k`).
+    pub fn respawn_pane(&self, pane_id: &str, cwd: &str, argv: &[&str], kill: bool) -> Result<()> {
+        let cwd = escape_cwd(cwd);
+        let argv: Vec<String> = argv.iter().map(|a| escape_semicolon(a)).collect();
+        let mut args = vec!["respawn-pane", "-t", pane_id, "-c", &cwd];
+        if kill {
+            args.push("-k");
+        }
+        args.extend(argv.iter().map(String::as_str));
+        self.run(&args).map(drop)
+    }
+
+    /// Type `text` into pane `%N` as it is, then Enter.
+    pub fn type_line(&self, pane_id: &str, text: &str) -> Result<()> {
+        self.run(&["send-keys", "-t", pane_id, "-l", text])?;
+        self.run(&["send-keys", "-t", pane_id, "Enter"]).map(drop)
+    }
 }
 
 /// Locate the current pane from the `TMUX` / `TMUX_PANE` values a hook inherits.

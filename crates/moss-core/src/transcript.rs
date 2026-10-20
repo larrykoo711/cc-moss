@@ -202,8 +202,9 @@ fn prompt(line: &[u8]) -> Option<(String, i64)> {
         return None;
     }
     let v: serde_json::Value = serde_json::from_slice(line).ok()?;
-    if v.get("type")?.as_str()? != "user" || v.get("isMeta").and_then(|m| m.as_bool()) == Some(true)
-    {
+    // Meta records and the summary a compaction writes are Claude Code's.
+    let flag = |k: &str| v.get(k).and_then(|m| m.as_bool()) == Some(true);
+    if v.get("type")?.as_str()? != "user" || flag("isMeta") || flag("isCompactSummary") {
         return None;
     }
     let content = v.get("message")?.get("content")?;
@@ -219,6 +220,7 @@ fn prompt(line: &[u8]) -> Option<(String, i64)> {
     if text.is_empty()
         || text.starts_with("[Request interrupted")
         || LOCAL_COMMAND.iter().any(|tag| text.starts_with(tag))
+        || crate::slot::is_notice(text)
     {
         return None;
     }

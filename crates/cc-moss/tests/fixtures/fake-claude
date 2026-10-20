@@ -1,7 +1,7 @@
 #!/bin/bash
 # Stand-in for Claude Code in e2e tests: emits the hook events cc-moss
 # listens to, then takes commands from a FIFO named after the current session
-# id: "prompt <title>", "clear", "exit", "ask", "answered". Like Claude Code,
+# id: "prompt <title>", "stop", "clear", "exit", "ask", "answered". Like Claude Code,
 # the transcript file only appears with the first prompt (F8).
 # "ask" asks one AskUserQuestion the way 2.1.302 does (PreToolUse, then
 # PermissionRequest, which runs in the background so the terminal could still
@@ -21,6 +21,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=cli
+# CC_MOSS_FAKE_ON_TERM: "linger" exits on SIGTERM but leaves a child on the
+# terminal for a moment (tmux sees the pane dead late); "ignore" doesn't quit.
+# CC_MOSS_FAKE_CWD: work there, whatever folder it was started in.
+[ -n "$CC_MOSS_FAKE_CWD" ] && cd "$CC_MOSS_FAKE_CWD"
+case "$CC_MOSS_FAKE_ON_TERM" in
+  linger) trap '(sleep 3 < /dev/null) & exit 0' TERM ;;
+  ignore) trap '' TERM ;;
+esac
 hook() { printf '%s' "$2" | "$CC_MOSS_BIN" hook "$1" >/dev/null; }
 transcript() { echo "$CC_MOSS_FAKE_DIR/$1.jsonl"; }
 question='{"questions":[{"question":"Pick one?","header":"Pick","options":[{"label":"A","description":"first"},{"label":"B","description":"second"}],"multiSelect":false}]}'
@@ -42,6 +50,9 @@ while true; do
       [ -n "$arg" ] && name="$arg"
       echo '{}' >> "$(transcript "$sid")"
       hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+    stop)
+      # The reply is done (Stop).
+      hook stop "{\"session_id\":\"$sid\",\"hook_event_name\":\"Stop\"}" ;;
     rename)
       # Claude Code's `/rename`: written to the transcript, no hook.
       name="$arg"

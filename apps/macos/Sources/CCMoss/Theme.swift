@@ -30,6 +30,11 @@ enum Theme {
     /// don't compete with the title above them.
     static let caption = Color.primary.opacity(0.42)
 
+    /// Green words ("Handled 2 just now"): dark enough on white for 4.5:1.
+    static func okText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.green.opacity(0.85) : Color(red: 0.10, green: 0.50, blue: 0.22)
+    }
+
     static func hairline(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)
     }
@@ -69,6 +74,8 @@ enum Icons {
     static let settings = "gearshape"
     static let general = "gearshape"
     static let about = "info.circle"
+    static let guide = "book"
+    static let feedback = "exclamationmark.bubble"
     static let shortcuts = "command"
     static let permissions = "hand.raised"
     static let notifications = "bell.badge"
@@ -93,6 +100,18 @@ enum Icons {
     /// The folded group of sessions that stopped long ago.
     static let older = "clock.arrow.circlepath"
     static let expand = "chevron.right"
+    /// Archived sessions, and putting one there.
+    static let archive = "archivebox"
+    /// Back out of Archived.
+    static let unarchive = "tray.and.arrow.up"
+    /// Ask Moss to delete archived sessions.
+    static let cleanUp = "trash"
+    /// Restart in place to use the new provider.
+    static let restart = "arrow.clockwise.circle"
+    /// A provider switch that just works.
+    static let provider = "arrow.left.arrow.right"
+    /// One that needs a restart.
+    static let providerRestart = "arrow.clockwise.circle.fill"
     /// Start a new named session.
     static let newSession = "plus"
     /// Pick another folder for it.

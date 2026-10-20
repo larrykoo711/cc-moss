@@ -7,7 +7,7 @@ import { test } from "node:test";
 
 const ORIGIN = "https://cc-moss.larrykoo.com";
 const read = (p) => readFileSync(`dist/${p.replace(/^\//, "")}`, "utf8");
-const PAGES = ["/", "/zh/"];
+const PAGES = ["/", "/zh/", "/changelog/", "/zh/changelog/"];
 const AGENT_DOCS = ["/guide/", "/zh/guide/"];
 
 /** A site URL as the file the Worker would serve for it. */
@@ -57,9 +57,12 @@ test("llms.txt links every page's Markdown, and every link it gives resolves", (
 
 test("each page holds only its own language", () => {
   const visible = (p) => read(p).replace(/<head>[\s\S]*?<\/head>|<script[\s\S]*?<\/script>|<svg[\s\S]*?<\/svg>/g, "").replace(/<[^>]+>/g, " ");
-  const cjk = visible("/index.html").match(/[一-鿿]+/g) || [];
-  assert.deepEqual(cjk, ["中"], "only the language switch is Chinese");
+  for (const p of ["/index.html", "/changelog/index.html"]) {
+    const cjk = visible(p).match(/[一-鿿]+/g) || [];
+    assert.deepEqual(cjk, ["中"], `${p}: only the language switch is Chinese`);
+  }
   assert.doesNotMatch(visible("/zh/index.html"), /Questions people ask|Every session\./);
+  assert.doesNotMatch(visible("/zh/changelog/index.html"), /Latest|version by version/);
 });
 
 test("canonical and hreflang agree on every page", () => {
@@ -78,7 +81,7 @@ test("FAQPage structured data is the FAQ the page shows", () => {
     const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])["@graph"];
     const faq = graph.find((n) => n["@type"] === "FAQPage");
     const shown = [...html.matchAll(/<h3 class="faq-q[^"]*">([\s\S]*?)<\/h3>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").trim());
-    assert.equal(shown.length, 10);
+    assert.equal(shown.length, 13);
     assert.deepEqual(faq.mainEntity.map((q) => q.name), shown);
     assert.ok(graph.some((n) => n["@type"] === "SoftwareApplication" && n.offers.price === "0"));
     assert.ok(!JSON.stringify(graph).includes("aggregateRating"), "no ratings we don't have");
@@ -119,7 +122,7 @@ test("search records cover both languages and both pages, and every anchor exist
     assert.ok(read(`${page}index.html`).includes(`id="${anchor}"`), r.url);
   }
   for (const locale of ["en", "zh"])
-    for (const page of ["/", "/guide/"]) {
+    for (const page of ["/", "/changelog/", "/guide/"]) {
       const prefix = `${ORIGIN}${locale === "zh" ? "/zh" : ""}${page}`;
       assert.ok(records.some((r) => r.locale === locale && r.url.startsWith(prefix)), `${locale} ${page}`);
     }
@@ -147,4 +150,24 @@ test("every link and picture on a page resolves to a file the site serves", () =
       assert.ok(existsSync(`dist${file}`), `${p}: ${ref} → dist${file}`);
     }
   }
+});
+
+test("the Changelog page has a card for every release, newest first, and links to the full notes", () => {
+  const versions = JSON.parse(readFileSync("src/changelog.json", "utf8")).versions.map((v) => v.version);
+  for (const p of ["/changelog/", "/zh/changelog/"]) {
+    const html = read(`${p}index.html`);
+    const ids = [...html.matchAll(/<h2 id="(v\d+-\d+-\d+)"/g)].map((m) => m[1]);
+    assert.deepEqual(ids, versions.map((v) => `v${v.replaceAll(".", "-")}`), p);
+    assert.match(html, /href="https:\/\/github\.com\/larrykoo711\/cc-moss\/blob\/main\/CHANGELOG\.md"/);
+    assert.match(html, /data-nav="changelog"[^>]*aria-current="page"|aria-current="page"[^>]*data-nav="changelog"/);
+    // Agents read the same releases, each under its own heading.
+    const md = read(`${p}index.md`);
+    for (const v of versions) assert.match(md, new RegExp(`^## ${v.replaceAll(".", "\\.")} · `, "m"), `${p}index.md: ${v}`);
+  }
+  // Search links each release to its card.
+  const records = JSON.parse(read("search-records.json"));
+  assert.ok(records.some((r) => r.url === `${ORIGIN}/changelog/#v${versions[0].replaceAll(".", "-")}`));
+  // The home page's badge points at the newest card.
+  assert.ok(read("/index.html").includes(`href="/changelog/#v${versions[0].replaceAll(".", "-")}"`));
+  assert.ok(read("/zh/index.html").includes(`href="/zh/changelog/#v${versions[0].replaceAll(".", "-")}"`));
 });

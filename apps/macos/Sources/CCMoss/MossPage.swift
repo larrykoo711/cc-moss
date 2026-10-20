@@ -27,6 +27,8 @@ struct MossPage: View {
                 MossConversation(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // Everything waiting on you, live, just above the field (F23).
+            MossWaitingCard(model: model)
             MossInputBar(model: model, keys: keys)
         }
         .overlay(alignment: .bottomTrailing) {
@@ -44,6 +46,8 @@ struct MossPage: View {
         .overlay { MentionHoverLayer(model: model) }
         .animation(.easeOut(duration: 0.12), value: model.mossQuickOpen)
         .animation(.easeOut(duration: 0.18), value: desk.messages.isEmpty)
+        // The next message ends the "Handled N just now" line.
+        .onChange(of: desk.messages.last?.id) { _, _ in model.waitingReceipt.messageArrived() }
         .task(id: model.panelShown) {
             // Moss thinking doesn't touch the state folder: look again every
             // few seconds while the page is on screen.
@@ -304,16 +308,14 @@ private struct MossConversation: View {
             .scrollIndicators(.never)
             // Scrolled up: a way back to the newest, floating over the
             // conversation (above the guess), so nothing moves.
-            .overlay(alignment: .bottomTrailing) {
+            .overlay(alignment: .bottom) {
                 if !following {
                     JumpToLatest(count: newBelow) {
                         following = true
                         newBelow = 0
                         toEnd(proxy)
                     }
-                    .padding(.trailing, 14)
-                    .padding(.bottom, 10)
-                    .transition(.opacity.combined(with: .scale(scale: 0.9)))
+                    .transition(.opacity)
                 }
             }
             .animation(.easeOut(duration: 0.18), value: following)
@@ -488,15 +490,16 @@ private struct MossMessageView: View {
                         .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                         .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 }
-                // One stack for the whole bubble: every session its messages name.
-                if !cards.isEmpty {
+                // One stack for the whole bubble: every session its messages name
+                // that has something to do from here (F23).
+                if MossSessionCards.anyShown(cards, roles: cardRoles) {
                     MossSessionCards(model: model, messageID: group.id, cards: cards, roles: cardRoles)
                 }
                 if message.refused, model.canOpenMoss {
                     QuietButton(title: L.t("Open in Terminal", "在终端打开"), icon: "terminal") { model.openMoss() }
                 }
                 if !buttons.isEmpty {
-                    MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id)) { i in
+                    MossChips(titles: buttons.map { ($0, nil) }, enabled: !model.mossDesk.answered.contains(message.id), stacks: true) { i in
                         model.chooseForMoss(buttons[i], on: message.id)
                     }
                 }
@@ -744,11 +747,15 @@ private struct MossThinking: View {
 // MARK: - Chips
 
 /// Small buttons in a row: Moss's abilities, or the replies it suggests.
-/// When they don't fit, they drop their icons, then scroll.
+/// When they don't fit, they drop their icons, then scroll; replies stack
+/// instead, each one wrapping, because a yes button must be read in full
+/// (it says which sessions the tap agrees to).
 private struct MossChips: View {
     /// Title and an optional symbol.
     let titles: [(String, String?)]
     var enabled = true
+    /// Stack and wrap instead of scrolling when the row doesn't fit.
+    var stacks = false
     let tap: (Int) -> Void
 
     var body: some View {
@@ -756,10 +763,18 @@ private struct MossChips: View {
             row(icons: true)
             row(icons: false)
             row(icons: false, compact: true)
-            ScrollView(.horizontal) { row(icons: false, compact: true).padding(.horizontal, 1) }
-                .scrollIndicators(.never)
-                .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
-                                     startPoint: .leading, endPoint: .trailing))
+            if stacks {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(Array(titles.enumerated()), id: \.offset) { i, item in
+                        MossChip(title: item.0, icon: nil, enabled: enabled, wraps: true) { tap(i) }
+                    }
+                }
+            } else {
+                ScrollView(.horizontal) { row(icons: false, compact: true).padding(.horizontal, 1) }
+                    .scrollIndicators(.never)
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.88), .init(color: .clear, location: 1)],
+                                         startPoint: .leading, endPoint: .trailing))
+            }
         }
     }
 
@@ -780,6 +795,8 @@ private struct MossChip: View {
     var enabled = true
     /// Moss suggested it: a small sparkle on the corner.
     var pinned = false
+    /// Long titles wrap onto more lines instead of being cut.
+    var wraps = false
     let action: () -> Void
     @State private var hovering = false
     @Environment(\.colorScheme) private var scheme
@@ -795,15 +812,19 @@ private struct MossChip: View {
                 Text(title)
                     .font(.system(size: compact ? 11.5 : 12, weight: .medium,
                                   design: MossCommand.looksLikeCommand(title) ? .monospaced : .default))
-                    .lineLimit(1)
-                    .fixedSize()
+                    .lineLimit(wraps ? nil : 1)
+                    .multilineTextAlignment(.leading)
+                    .fixedSize(horizontal: !wraps, vertical: true)
             }
             .foregroundStyle(.primary)
             .padding(.horizontal, compact ? 7 : 10)
-            .frame(height: 28)
-            .background(Capsule().fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10) : Theme.raised(scheme)))
-            .overlay(Capsule().strokeBorder(hovering ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
-            .contentShape(Capsule())
+            .padding(.vertical, wraps ? 6 : 0)
+            .frame(minHeight: 28)
+            .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(hovering ? Theme.brand.opacity(scheme == .dark ? 0.20 : 0.10) : Theme.raised(scheme)))
+            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(hovering ? Theme.brand.opacity(0.45) : Theme.hairline(scheme)))
+            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         }
         .buttonStyle(PressStyle())
         .focusable(false)
@@ -1340,6 +1361,8 @@ private struct MossInputBar: View {
                 .lineLimit(1...5)
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
+                    // Picking a word in an input method: its Return, not ours.
+                    guard !imeComposing() else { return .ignored }
                     if press.modifiers.contains(.shift) {
                         // A line break where the cursor is, the way AppKit's own fields do it.
                         NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
@@ -1352,14 +1375,14 @@ private struct MossInputBar: View {
                     }
                     return .handled
                 }
-                .onKeyPress(.downArrow) { move(1) }
-                .onKeyPress(.upArrow) { move(-1) }
+                .onKeyPress(.downArrow) { imeComposing() ? .ignored : move(1) }
+                .onKeyPress(.upArrow) { imeComposing() ? .ignored : move(-1) }
                 .onKeyPress(.tab) {
-                    guard let command = litCommand else { return .ignored }
+                    guard !imeComposing(), let command = litCommand else { return .ignored }
                     fill(command)
                     return .handled
                 }
-                .onKeyPress(phases: .down) { press in keys(press) }
+                .onKeyPress(phases: .down) { press in imeComposing() ? .ignored : keys(press) }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .frame(minHeight: 30)
@@ -1503,8 +1526,9 @@ private struct MossGuessInset: View {
     }
 }
 
-/// "Jump to latest": a small round button over the conversation's end, with
-/// how many of Moss's messages came while you were scrolled up.
+/// "Jump to bottom": a hazy strip along the conversation's lower edge, the
+/// words small and grey in the middle; hovered, they sit on a faint badge.
+/// How many of Moss's messages came while you were scrolled up leads them.
 private struct JumpToLatest: View {
     let count: Int
     let action: () -> Void
@@ -1512,36 +1536,40 @@ private struct JumpToLatest: View {
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: 6) {
-                if count > 0 {
-                    Text(L.t("\(count) new", "\(count) 条新消息"))
-                        .font(.system(size: 11.5, weight: .semibold))
-                        .foregroundStyle(Theme.brand)
-                        .padding(.leading, 4)
+        ZStack {
+            // The haze: the page's own colour rising over the last lines.
+            LinearGradient(stops: [.init(color: Theme.surface(scheme).opacity(0), location: 0),
+                                   .init(color: Theme.surface(scheme).opacity(0.92), location: 0.55),
+                                   .init(color: Theme.surface(scheme), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+            Button(action: action) {
+                HStack(spacing: 5) {
+                    if count > 0 {
+                        Text(L.t("\(count) new", "\(count) 条新消息"))
+                            .foregroundStyle(Theme.brand)
+                        Text("·").foregroundStyle(.tertiary)
+                    }
+                    Text(L.t("Jump to bottom", "回到底部"))
+                    Image(systemName: "arrow.down").font(.system(size: 9.5, weight: .semibold))
                 }
-                Image(systemName: "arrow.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(hovering ? .primary : .secondary)
+                .font(.system(size: 11.5, weight: .medium))
+                .foregroundStyle(hovering ? .secondary : .tertiary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 4)
+                .background(Capsule().fill(Color.primary.opacity(hovering ? (scheme == .dark ? 0.10 : 0.06) : 0)))
+                .contentShape(Capsule())
             }
-            .padding(.horizontal, count > 0 ? 10 : 0)
-            .frame(minWidth: 32, minHeight: 32)
-            .background(Capsule().fill(Theme.raised(scheme)))
-            .overlay(Capsule().strokeBorder(Theme.hairline(scheme)))
-            .overlay(alignment: .topTrailing) {
-                if count > 0 {
-                    Circle().fill(Theme.brand).frame(width: 7, height: 7).offset(x: -2, y: 2)
-                }
-            }
-            .shadow(color: .black.opacity(scheme == .dark ? 0.4 : 0.12), radius: 8, y: 3)
-            .contentShape(Capsule())
+            .buttonStyle(PressStyle())
+            .focusable(false)
+            .handCursor()
+            .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+            .padding(.top, 10)
         }
-        .buttonStyle(PressStyle())
-        .focusable(false)
-        .handCursor()
-        .onHover { hovering = $0 }
-        .tip(L.t("Jump to latest", "回到最新"))
-        .accessibilityLabel(L.t("Jump to latest", "回到最新"))
+        .frame(height: 40)
+        .frame(maxWidth: .infinity)
+        .accessibilityLabel(count > 0 ? L.t("Jump to bottom, \(count) new", "回到底部，\(count) 条新消息")
+                                       : L.t("Jump to bottom", "回到底部"))
     }
 }
 

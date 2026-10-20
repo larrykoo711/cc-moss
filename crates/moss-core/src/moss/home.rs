@@ -348,7 +348,19 @@ pub fn sessions_md_since(
         .iter()
         .filter(|(st, s)| {
             let recent = s.ended_at_ms.is_some_and(|e| e >= closed_since_ms);
-            (*st != Status::Closed || recent) && s.role.as_deref() != Some(super::ROLE)
+            (*st != Status::Closed || recent)
+                && s.role.as_deref() != Some(super::ROLE)
+                && !s.is_archived()
+        })
+        .collect();
+    let archived: Vec<String> = rows
+        .iter()
+        .map(|(_, s)| s)
+        .filter(|s| s.is_archived() && s.role.as_deref() != Some(super::ROLE))
+        .map(|s| {
+            s.name
+                .clone()
+                .unwrap_or_else(|| s.session_id.chars().take(8).collect())
         })
         .collect();
     let rank = |st: Status| match st {
@@ -369,6 +381,7 @@ pub fn sessions_md_since(
     }
     if shown.is_empty() {
         out.push_str("No sessions right now.\n");
+        push_archived(&mut out, &archived);
         return out;
     }
     out.push_str(
@@ -408,7 +421,28 @@ pub fn sessions_md_since(
         ));
     }
     out.push_str("```\n");
+    push_archived(&mut out, &archived);
     out
+}
+
+/// The archived sessions, apart from the list: how many, and their names
+/// (`cc-moss ls --archived` has the rest).
+fn push_archived(out: &mut String, names: &[String]) {
+    if names.is_empty() {
+        return;
+    }
+    let shown: Vec<String> = names.iter().take(50).map(|n| cell(n, 60)).collect();
+    let more = names.len().saturating_sub(shown.len());
+    out.push_str(&format!(
+        "\nArchived ({}), out of the list above (`cc-moss ls --archived`):\n\n```text\n{}{}\n```\n",
+        names.len(),
+        shown.join(", "),
+        if more > 0 {
+            format!(", and {more} more")
+        } else {
+            String::new()
+        }
+    ));
 }
 
 /// One short line that cannot break the table or close the block: `|`
@@ -668,6 +702,10 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: at,
             ended_at_ms: None,
+            archived_at_ms: None,
+            archived_by: None,
+            provider_started: None,
+            provider_seen_keys: None,
         }
     }
 

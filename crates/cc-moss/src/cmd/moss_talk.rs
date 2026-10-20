@@ -207,15 +207,14 @@ pub struct Talk {
     told: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
-/// Whether a change is still so: a session still waiting on the user, or
-/// still dropped. Finished turns stay news. A session that is gone from the
+/// Whether a change is still so: a session still dropped. Finished turns
+/// stay news. A session that is gone from the
 /// registry is not.
 fn still_so(c: &Change, slots: &[moss_core::slot::Slot]) -> bool {
     let Some(slot) = slots.iter().find(|s| s.slot_id == c.slot_id) else {
         return false;
     };
     match c.kind {
-        digest::Kind::NeedsYou => slot.status == Status::Running && slot.attention.is_some(),
         digest::Kind::Disconnected => {
             slot.effective_status(moss_core::proc::is_alive) != Status::Running
         }
@@ -654,12 +653,34 @@ impl Talk {
         }
         let slots = self.slots();
         let mut found: Vec<(String, String, String)> = Vec::new();
+        // `purge-archived`: every archived session there is now, under one
+        // yes worded with their number; one archived later is not covered.
+        let mut purge_all: Vec<String> = Vec::new();
         for c in &parsed.confirms {
-            let Some(slot_id) =
+            if c.action == markers::PURGE_ARCHIVED {
+                // Only what the user or the daily tidy-up archived, or what
+                // was archived a day before: never a session Moss itself
+                // archived just now.
+                purge_all = slots
+                    .iter()
+                    .filter(|s| s.is_archived() && !s.is_moss())
+                    .filter(|s| {
+                        matches!(s.archived_by.as_deref(), Some("auto" | "you"))
+                            || s.archived_at_ms
+                                .is_some_and(|at| now_ms - at > 24 * 60 * 60 * 1000)
+                    })
+                    .map(|s| s.slot_id.clone())
+                    .collect();
+                continue;
+            }
+            let resolved = if c.action == "purge" {
+                // Only an archived session can be deleted, however long ago
+                // it closed.
+                markers::resolve_archived(std::slice::from_ref(&c.session), &slots)
+            } else {
                 markers::resolve_sessions(std::slice::from_ref(&c.session), &slots, now_ms)
-                    .into_iter()
-                    .next()
-            else {
+            };
+            let Some(slot_id) = resolved.into_iter().next() else {
                 continue;
             };
             let Some(slot) = slots.iter().find(|s| s.slot_id == slot_id) else {
@@ -699,8 +720,28 @@ impl Talk {
             }
         }
         let chinese = tr!(false, true);
+        let everything = (!purge_all.is_empty()).then(|| {
+            let mut names: Vec<String> = purge_all
+                .iter()
+                .filter_map(|id| slots.iter().find(|s| &s.slot_id == id))
+                .map(|s| {
+                    s.name
+                        .clone()
+                        .filter(|n| !n.trim().is_empty())
+                        .unwrap_or_else(|| s.session_id.chars().take(8).collect())
+                })
+                .collect();
+            names.sort();
+            let yes = markers::purge_archived_label(&names, chinese);
+            purge_all.iter().map(move |slot_id| chat::Proposal {
+                action: markers::PURGE_ARCHIVED.to_string(),
+                slot_id: slot_id.clone(),
+                yes: vec![yes.clone()],
+            })
+        });
         markers::CONSENT_ACTIONS
             .iter()
+            .filter(|action| **action != markers::PURGE_ARCHIVED)
             .flat_map(|action| {
                 let these: Vec<&(String, String, String)> =
                     found.iter().filter(|(a, _, _)| a == action).collect();
@@ -715,6 +756,7 @@ impl Talk {
                     })
                     .collect::<Vec<_>>()
             })
+            .chain(everything.into_iter().flatten())
             .collect()
     }
 
@@ -865,7 +907,12 @@ impl Talk {
                 self.transcript = Some(PathBuf::from(path));
             }
         }
-        for s in &slots {
+        // A second copy of a conversation that runs elsewhere is no news.
+        let superseded = registry.close_superseded_duplicates(
+            &|s| s.effective_status(moss_core::proc::is_alive),
+            now_ms,
+        )?;
+        for s in slots.iter().filter(|s| !superseded.contains(&s.slot_id)) {
             // `kill(pid, 0)` first: only a process that seems gone costs a
             // closer look (a `ps` on macOS).
             let gone = s.status == Status::Running
@@ -873,7 +920,7 @@ impl Talk {
                 && s.pid.is_some_and(|pid| !process_exists(pid))
                 && s.effective_status(moss_core::proc::is_alive) == Status::Interrupted;
             if gone {
-                registry.record_lost(&s.slot_id, now_ms)?;
+                registry.record_lost_of(&s.slot_id, s.pid, now_ms)?;
             }
         }
         let since = self.cursor.unwrap_or(0);
@@ -893,18 +940,11 @@ impl Talk {
                 .clone()
                 .or_else(|| slot.name.clone())
                 .unwrap_or_else(|| slot.session_id.chars().take(8).collect());
-            let why = e
-                .detail
-                .get("reason")
-                .and_then(|r| r.as_str())
-                .filter(|_| kind == digest::Kind::NeedsYou)
-                .map(String::from);
             self.digest.push(
                 Change {
                     slot_id: e.slot_id.clone(),
                     name,
                     kind,
-                    why,
                 },
                 now_ms,
             );
@@ -1049,6 +1089,98 @@ mod tests {
     }
 
     #[test]
+    fn purge_archived_never_covers_what_moss_just_archived() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api", "db", "web"]);
+        let reg = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let day = 24 * 60 * 60 * 1000;
+        // Moss archived api a moment ago, and db two days ago; web the user.
+        reg.archive(&ids[..1], "moss", &|_| false, 10 * day)
+            .unwrap();
+        reg.archive(&ids[1..2], "moss", &|_| false, 8 * day)
+            .unwrap();
+        reg.archive(&ids[2..], "you", &|_| false, 10 * day).unwrap();
+        let line = talk.reply_line(
+            &sent_by_you(),
+            "Delete them? [[confirm: purge-archived]][[confirm: archive api]]",
+            10 * day + 5,
+        );
+        let mut covered: Vec<&str> = line
+            .proposals
+            .iter()
+            .filter(|p| p.action == "purge-archived")
+            .map(|p| p.slot_id.as_str())
+            .collect();
+        covered.sort();
+        let mut want = vec![ids[1].as_str(), ids[2].as_str()];
+        want.sort();
+        assert_eq!(covered, want, "not the one Moss archived just now");
+        let chinese = tr!(false, true);
+        assert!(line.buttons.contains(&markers::purge_archived_label(
+            &["db".into(), "web".into()],
+            chinese
+        )));
+    }
+
+    #[test]
+    fn archive_by_moss_asks_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api"]);
+        let line = talk.reply_line(&sent_by_you(), "Put it away? [[confirm: archive api]]", 2);
+        let chinese = tr!(false, true);
+        let yes = markers::yes_label("archive", &["api · /w/api".into()], chinese);
+        assert_eq!(
+            line.proposals,
+            [chat::Proposal {
+                action: "archive".into(),
+                slot_id: ids[0].clone(),
+                yes: vec![yes.clone()]
+            }]
+        );
+        assert!(yes.starts_with(tr!("Archive ", "归档 ")));
+    }
+
+    #[test]
+    fn purge_proposals_cover_archived_sessions_only() {
+        let dir = tempfile::tempdir().unwrap();
+        let (talk, ids) = talk_with_sessions(dir.path(), &["api", "db", "web"]);
+        let reg = Registry::open(&dir.path().join("registry.db")).unwrap();
+        reg.archive(&ids[..2], "you", &|_| false, 5).unwrap();
+        let line = talk.reply_line(
+            &sent_by_you(),
+            "Delete them? [[confirm: purge-archived]][[confirm: purge web]][[confirm: purge api]]",
+            6,
+        );
+        let chinese = tr!(false, true);
+        let all = markers::purge_archived_label(&["api".into(), "db".into()], chinese);
+        let one = markers::yes_label("purge", &["api · /w/api".into()], chinese);
+        // web is not archived: no yes for it. The yes for all of them says
+        // how many it deletes.
+        let mut got = line.proposals.clone();
+        got.sort_by(|a, b| (&a.action, &a.slot_id).cmp(&(&b.action, &b.slot_id)));
+        let mut want = vec![
+            chat::Proposal {
+                action: "purge".into(),
+                slot_id: ids[0].clone(),
+                yes: vec![one.clone()],
+            },
+            chat::Proposal {
+                action: "purge-archived".into(),
+                slot_id: ids[0].clone(),
+                yes: vec![all.clone()],
+            },
+            chat::Proposal {
+                action: "purge-archived".into(),
+                slot_id: ids[1].clone(),
+                yes: vec![all.clone()],
+            },
+        ];
+        want.sort_by(|a, b| (&a.action, &a.slot_id).cmp(&(&b.action, &b.slot_id)));
+        assert_eq!(got, want);
+        assert_eq!(line.buttons, [one, all]);
+    }
+
+    #[test]
     fn a_name_two_open_sessions_share_gets_no_yes_button() {
         let dir = tempfile::tempdir().unwrap();
         // Moss renamed work to api: two open sessions now read "api".
@@ -1120,7 +1252,6 @@ mod tests {
                         slot_id: slot.to_string(),
                         name: slot.to_string(),
                         kind: *kind,
-                        why: None,
                     },
                     0,
                 );
@@ -1149,9 +1280,12 @@ mod tests {
         // Something the user has to act on: Moss may speak.
         let asks = news(
             &mut talk,
-            &[("db", digest::Kind::NeedsYou), ("ui", digest::Kind::Done)],
+            &[
+                ("db", digest::Kind::Disconnected),
+                ("ui", digest::Kind::Done),
+            ],
         );
-        let line = talk.reply_line(&sent(&asks), "db 在等你批权限。", 3);
+        let line = talk.reply_line(&sent(&asks), "db 断了，要找回吗？", 3);
         assert!(!line.silent, "{line:?}");
         // The user's own messages are never forced quiet.
         let mine = InFlight {

@@ -16,6 +16,7 @@ pub struct Config {
     pub update: UpdateConfig,
     pub ask: AskConfig,
     pub moss: MossConfig,
+    pub sessions: SessionsConfig,
     /// Native aliases: `name = "subcommand args…"` (see [`crate::aliases`]).
     /// An entry that is not a string is skipped (doctor names it) instead of
     /// making the whole file unreadable for every command.
@@ -148,6 +149,23 @@ impl Default for MossConfig {
     }
 }
 
+/// `[sessions]`: how the list of sessions is kept tidy.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct SessionsConfig {
+    /// Archive sessions that are not running and were last active this
+    /// many days ago, at the daemon's daily tidy-up; 0 never does.
+    pub archive_after_days: u32,
+}
+
+impl Default for SessionsConfig {
+    fn default() -> Self {
+        SessionsConfig {
+            archive_after_days: crate::archive::DEFAULT_AFTER_DAYS,
+        }
+    }
+}
+
 /// Whether to draw Nerd Font icons.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -218,6 +236,7 @@ pub const KEYS: &[&str] = &[
     "moss.actions",
     "moss.daily_checkup",
     "moss.daily_brief",
+    "sessions.archive_after_days",
 ];
 
 /// What `ui.language` may be set to.
@@ -228,6 +247,15 @@ pub const PERMISSION_MODES: &[&str] = &["bypass", "default"];
 
 /// What a true/false setting may be set to.
 pub const BOOLS: &[&str] = &["true", "false"];
+
+/// What a number of days may be: a whole number, 0 for never.
+pub const DAYS: &[&str] = &["0 (never)", "1", "…", "3650"];
+
+/// Keys stored as TOML integers (days).
+const DAY_KEYS: &[&str] = &["sessions.archive_after_days"];
+
+/// The longest a number of days may be (ten years).
+const MAX_DAYS: u32 = 3650;
 
 /// Keys stored as TOML booleans rather than strings.
 const BOOL_KEYS: &[&str] = &[
@@ -250,6 +278,12 @@ pub enum SettingError {
 
 /// The value as it is stored (trimmed, lowercase), if `key` may hold it.
 pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
+    if DAY_KEYS.contains(&key) {
+        return match value.trim().parse::<u32>() {
+            Ok(n) if n <= MAX_DAYS => Ok(n.to_string()),
+            _ => Err(SettingError::BadValue(DAYS)),
+        };
+    }
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
@@ -282,6 +316,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
         "moss.actions" => Ok(config.moss.actions.to_string()),
         "moss.daily_checkup" => Ok(config.moss.daily_checkup.to_string()),
         "moss.daily_brief" => Ok(config.moss.daily_brief.to_string()),
+        "sessions.archive_after_days" => Ok(config.sessions.archive_after_days.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }
@@ -303,7 +338,10 @@ pub fn set_in_text(text: &str, key: &str, value: &str) -> Result<String> {
     let mut new = match (BOOL_KEYS.contains(&key), value) {
         (true, "true") => toml_edit::Value::from(true),
         (true, "false") => toml_edit::Value::from(false),
-        _ => toml_edit::Value::from(value),
+        _ => match value.parse::<i64>() {
+            Ok(n) if DAY_KEYS.contains(&key) => toml_edit::Value::from(n),
+            _ => toml_edit::Value::from(value),
+        },
     };
     if let Some(old) = table.get(name).and_then(toml_edit::Item::as_value) {
         *new.decor_mut() = old.decor().clone();

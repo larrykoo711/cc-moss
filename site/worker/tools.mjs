@@ -17,7 +17,7 @@ export const TOOLS = [
     name: "search_docs",
     title: "Search the cc-moss docs",
     description:
-      "Search the cc-moss site and guide (install, commands, the t picker, the menu bar app, Mo, notifications, configuration, privacy, FAQ). Returns the best-matching sections with their URLs.",
+      "Search the cc-moss site and guide (install, commands, the t picker, the menu bar app, Mo, Moss, archive, switching providers, notifications, configuration, privacy, FAQ, changelog). Returns the best-matching sections with their URLs.",
     inputSchema: {
       type: "object",
       properties: {
@@ -34,7 +34,7 @@ export const TOOLS = [
     name: "read_doc",
     title: "Read a cc-moss page",
     description:
-      "Read a whole cc-moss page as Markdown: / (overview and FAQ) or /guide/ (the full guide); /zh/ and /zh/guide/ for Chinese. A full URL from search_docs works too.",
+      "Read a whole cc-moss page as Markdown: / (overview and FAQ), /changelog/ (every release in plain words) or /guide/ (the full guide); /zh/, /zh/changelog/ and /zh/guide/ for Chinese. A full URL from search_docs works too.",
     inputSchema: {
       type: "object",
       properties: {

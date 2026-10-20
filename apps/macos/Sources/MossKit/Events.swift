@@ -11,23 +11,34 @@ public struct SessionEvent: Decodable, Equatable, Sendable {
     public var at: Date?
     /// `needs_you`'s `detail.reason`: `permission`, `question`, `input`.
     public var reason: String?
+    /// `provider-changed`: what Claude Code's settings switched to. Nil for
+    /// every other kind.
+    public var provider: ProviderChange?
 
-    public init(seq: Int, slotId: String, name: String? = nil, kind: String, at: Date? = nil, reason: String? = nil) {
+    public init(seq: Int, slotId: String, name: String? = nil, kind: String, at: Date? = nil, reason: String? = nil,
+                provider: ProviderChange? = nil) {
         self.seq = seq
         self.slotId = slotId
         self.name = name
         self.kind = kind
         self.at = at
         self.reason = reason
+        self.provider = provider
     }
 
     enum CodingKeys: String, CodingKey { case seq, slotId, name, kind, at, detail }
-    private struct Detail: Decodable { var reason: String? }
+    private struct Detail: Decodable {
+        var reason: String?
+        var host: String?
+        var live: Bool?
+        var restartNeeded: [String]?
+    }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         seq = try c.decode(Int.self, forKey: .seq)
-        slotId = try c.decode(String.self, forKey: .slotId)
+        // Global events (`provider-changed`, `archived`) carry "" here.
+        slotId = (try? c.decodeIfPresent(String.self, forKey: .slotId)) ?? ""
         name = try c.decodeIfPresent(String.self, forKey: .name)
         kind = try c.decode(String.self, forKey: .kind)
         // Both are extras: a shape we don't expect must not cost the event.
@@ -35,6 +46,9 @@ public struct SessionEvent: Decodable, Equatable, Sendable {
         at = rawAt.flatMap(parseTimestamp)
         let detail = (try? c.decodeIfPresent(Detail.self, forKey: .detail)) ?? nil
         reason = detail?.reason
+        provider = kind == ProviderChange.kind
+            ? ProviderChange(host: detail?.host, live: detail?.live ?? true, restartNeeded: detail?.restartNeeded ?? [])
+            : nil
     }
 }
 
