@@ -704,10 +704,7 @@ struct AboutSettings: View {
                 }
                 ProgramRow(model: model)
             }
-            SettingsCard(title: L.t("Learn More", "了解更多")) {
-                LinkRow(icon: "sparkles", title: L.t("Show the Welcome Again", "再看一遍欢迎引导")) {
-                    WelcomeWindow.show(model: model)
-                }
+            SettingsCard(title: L.t("Help", "帮助")) {
                 LinkRow(icon: "book", title: L.t("User Guide", "使用手册"),
                         url: L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
                                  "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
@@ -715,8 +712,9 @@ struct AboutSettings: View {
                         url: "https://github.com/larrykoo711/cc-moss/blob/main/CHANGELOG.md")
                 LinkRow(icon: "exclamationmark.bubble", title: L.t("Report a Problem", "报告问题"),
                         url: "https://github.com/larrykoo711/cc-moss/issues/new/choose")
-                LinkRow(icon: Icons.github, title: L.t("Source Code", "源代码"),
-                        url: "https://github.com/larrykoo711/cc-moss", divider: false)
+                LinkRow(icon: "sparkles", title: L.t("Show the Welcome Again", "再看一遍欢迎引导"), divider: false) {
+                    WelcomeWindow.show(model: model)
+                }
             }
             Text(L.t("Civilizations carry on. So do conversations.", "文明会延续，对话也是。"))
                 .font(.system(size: 11))
@@ -745,6 +743,15 @@ struct AboutSettings: View {
                     if let cli = cliVersion { alignButton(cli: cli) }
                 }
                 .padding(.top, 2)
+                HStack(spacing: 14) {
+                    HeroLink(title: "cc-moss.larrykoo.com", url: "https://cc-moss.larrykoo.com") {
+                        Image(systemName: "globe").font(.system(size: 11, weight: .medium))
+                    }
+                    HeroLink(title: "GitHub", url: "https://github.com/larrykoo711/cc-moss") {
+                        GitHubMark().frame(width: 12, height: 12)
+                    }
+                }
+                .padding(.top, 4)
             }
             Spacer(minLength: 0)
         }
@@ -878,6 +885,52 @@ struct VersionChip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
+    }
+}
+
+/// A link under the name in About: an icon and words, brand-coloured on hover.
+struct HeroLink<Icon: View>: View {
+    let title: String
+    let url: String
+    @ViewBuilder let icon: () -> Icon
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            if let u = URL(string: url) { NSWorkspace.shared.open(u) }
+        } label: {
+            HStack(spacing: 5) {
+                icon()
+                Text(title).font(.system(size: 12, weight: .medium))
+            }
+            .foregroundStyle(hovering ? AnyShapeStyle(Theme.brand) : AnyShapeStyle(.secondary))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .onHover { inside in withAnimation(.easeOut(duration: 0.12)) { hovering = inside } }
+        .help(url)
+    }
+}
+
+/// GitHub's mark (SF Symbols has none), drawn from its SVG as a template
+/// image so it takes the surrounding colour.
+struct GitHubMark: View {
+    private static let image: NSImage? = {
+        let svg = """
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path fill="#000" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+        """
+        let image = NSImage(data: Data(svg.utf8))
+        image?.isTemplate = true
+        return image
+    }()
+
+    var body: some View {
+        if let image = Self.image {
+            Image(nsImage: image).resizable().scaledToFit()
+        } else {
+            Image(systemName: Icons.github).resizable().scaledToFit()
+        }
     }
 }
 
