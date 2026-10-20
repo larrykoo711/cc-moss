@@ -1282,6 +1282,8 @@ impl Looker {
             return;
         }
         let _ = tmux(&self.socket, &["send-keys", "-t", &target, "Enter"]);
+        // Once per start: a second question is not answered blindly.
+        self.trust_until = None;
         if !self.trust_told {
             self.trust_told = true;
             log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
