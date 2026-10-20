@@ -947,6 +947,26 @@ fn app_check() -> Option<Check> {
     };
     let have = app::version(&installed).unwrap_or_else(|| "?".into());
     let place = app::display(&installed);
+    // Two copies run two menu bar icons and say everything twice.
+    let extras = app::extra_copies(&installed);
+    if !extras.is_empty() {
+        let others: Vec<String> = extras.iter().map(|p| app::display(p)).collect();
+        return Some(check(
+            Mark::Warn,
+            what,
+            tr!(
+                format!(
+                    "two copies: {place} and {}; `cc-moss install` keeps the first and moves the other to the Trash",
+                    others.join(", ")
+                ),
+                format!(
+                    "有两份：{place} 和 {}；`cc-moss install` 留下前一份，另一份移到废纸篓",
+                    others.join("、")
+                )
+            ),
+            fix_install,
+        ));
+    }
     if have == current {
         return Some(check(
             Mark::Ok,

@@ -1448,3 +1448,98 @@ fn install_updates_managed_moss_files() {
     assert_eq!(settings["sandbox"]["enabled"], true);
     assert_eq!(h.read(&format!("{home}/SOUL.md")), "my own soul\n");
 }
+
+// ---- F39: one menubar app, wherever it was put ------------------------
+
+#[test]
+fn app_in_the_system_folder_is_updated_where_it_is() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let system = h.path("system-Applications/cc-moss.app");
+    app::fake_app(&system, "0.0.1");
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert_eq!(app::version(&system).as_deref(), Some(CURRENT), "{out}");
+    assert!(!h.user_app().exists(), "no second copy: {out}");
+}
+
+#[test]
+fn app_two_copies_keep_the_users_and_trash_the_other() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let system = h.path("system-Applications/cc-moss.app");
+    app::fake_app(&h.user_app(), "0.0.1");
+    app::fake_app(&system, "0.0.1");
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert_eq!(
+        app::version(&h.user_app()).as_deref(),
+        Some(CURRENT),
+        "{out}"
+    );
+    assert!(!system.exists(), "the other copy goes: {out}");
+    let trashed = h.path(".Trash/cc-moss.app");
+    assert_eq!(
+        app::version(&trashed).as_deref(),
+        Some("0.0.1"),
+        "to the Trash: {out}"
+    );
+    assert!(out.contains("Trash"), "{out}");
+}
+
+#[test]
+fn app_two_copies_of_the_same_version_still_end_as_one() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let system = h.path("system-Applications/cc-moss.app");
+    app::fake_app(&h.user_app(), CURRENT);
+    app::fake_app(&system, CURRENT);
+    fs::create_dir_all(h.path(".Trash/cc-moss.app")).unwrap();
+    let out = ok(h.run_mac(&["install", "--yes"], Some(&keg)));
+    assert!(!system.exists(), "{out}");
+    assert!(
+        h.path(".Trash/cc-moss.app").is_dir(),
+        "nothing in the Trash replaced"
+    );
+    assert_eq!(fs::read_dir(h.path(".Trash")).unwrap().count(), 2, "{out}");
+}
+
+#[test]
+fn app_two_copies_dry_run_says_so_and_keeps_both() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let keg = h.bundled_app(CURRENT);
+    let system = h.path("system-Applications/cc-moss.app");
+    app::fake_app(&h.user_app(), CURRENT);
+    app::fake_app(&system, CURRENT);
+    let out = ok(h.run_mac(&["install", "--dry-run"], Some(&keg)));
+    assert!(system.exists() && h.user_app().exists(), "{out}");
+    assert!(
+        out.contains("system-Applications"),
+        "names the other copy: {out}"
+    );
+}
+
+#[test]
+fn doctor_warns_about_two_copies() {
+    let h = Home::with_all();
+    app::fake_app(&h.user_app(), CURRENT);
+    app::fake_app(&h.path("system-Applications/cc-moss.app"), CURRENT);
+    let row = app_row(&text(&h.run_mac(&["doctor"], None)));
+    assert!(
+        row.contains("system-Applications") && row.contains("two"),
+        "{row}"
+    );
+    assert!(row.contains("→ cc-moss install"), "{row}");
+}
+
+#[test]
+fn uninstall_removes_the_app_in_the_system_folder() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), false);
+    let system = h.path("system-Applications/cc-moss.app");
+    app::fake_app(&system, CURRENT);
+    let out = ok(h.run_mac(&["install", "--uninstall", "--yes"], None));
+    assert!(!system.exists(), "{out}");
+}
