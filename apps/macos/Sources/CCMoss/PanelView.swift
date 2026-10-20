@@ -642,24 +642,40 @@ struct PanelView: View {
     }
 
     /// cc-moss's own menu, behind the rail's gear: what isn't about one
-    /// session. (New Session is in the footer, and ⌘N.)
+    /// session, in the order a Mac app's own menu has it: about and
+    /// updates, settings, help, quit. (New Session is in the footer and ⌘N;
+    /// Refresh is ⌘R, the list refreshes by itself.)
     private var appSections: [[PanelAction]] {
-        let version: PanelAction = if let update = model.update {
-            PanelAction(title: L.t("Update to \(update.latest)", "更新到 \(update.latest)"), icon: Icons.update, shortcut: "",
+        let about = PanelAction(title: L.t("About cc-moss", "关于 cc-moss"), icon: Icons.about, shortcut: "",
+                                detail: model.version) { showSettings(.about) }
+        let update: PanelAction = if let update = model.update {
+            PanelAction(title: L.t("Update to \(update.latest)…", "更新到 \(update.latest)…"), icon: Icons.update, shortcut: "",
                         help: L.t("Runs cc-moss update in your terminal.", "在终端里运行 cc-moss update。"), dot: true) {
                 model.runUpdate()
             }
         } else {
-            PanelAction(title: "cc-moss \(model.version)", icon: Icons.about, shortcut: "") { showSettings(.about) }
+            PanelAction(title: L.t("Check for Updates…", "检查更新…"), icon: Icons.update, shortcut: "",
+                        help: L.t("Settings › About shows whether a newer cc-moss is out.",
+                                  "在 设置 › 关于 里查看有没有新版本。")) { showSettings(.about) }
         }
         return [
-            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() },
-             PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() }],
-            [version],
+            [about, update],
+            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() }],
+            [PanelAction(title: L.t("User Guide", "使用手册"), icon: Icons.guide, shortcut: "") {
+                 open(L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
+                          "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
+             },
+             PanelAction(title: L.t("Report a Problem…", "报告问题…"), icon: Icons.feedback, shortcut: "") {
+                 open("https://github.com/larrykoo711/cc-moss/issues/new/choose")
+             }],
             [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
                 NSApplication.shared.terminate(nil)
             }],
         ]
+    }
+
+    private func open(_ link: String) {
+        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 
     private func sections(for menu: PanelMenu) -> [[PanelAction]] {
@@ -853,6 +869,8 @@ struct PanelAction: Identifiable {
     var help: String?
     /// A brand dot after the title: something new (an update).
     var dot = false
+    /// Dim words at the right end, where a shortcut would go (a version).
+    var detail: String?
     /// Shown dimmed; clicking it says why it waits instead.
     var disabled = false
     let perform: () -> Void

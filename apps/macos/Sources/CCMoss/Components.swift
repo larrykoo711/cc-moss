@@ -493,6 +493,9 @@ struct ActionsMenu: View {
                     .foregroundStyle(a.disabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                 if a.dot { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
                 Spacer(minLength: 16)
+                if let detail = a.detail {
+                    Text(detail).font(.system(size: 12)).monospacedDigit().foregroundStyle(.tertiary)
+                }
                 if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
             }
             .padding(.horizontal, 10)
