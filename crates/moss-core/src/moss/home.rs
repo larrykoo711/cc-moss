@@ -35,6 +35,10 @@ pub const USER_DIRS: &[&str] = &["journal", "memory"];
 /// The generated overview.
 pub const SESSIONS_MD: &str = "SESSIONS.md";
 
+/// What `cc-moss ls` reads as Moss: every session as `ls --json` shows it,
+/// without what the sessions said (written by the daemon with SESSIONS.md).
+pub const SESSIONS_JSON: &str = "sessions.json";
+
 /// What a layout did.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Outcome {
@@ -153,6 +157,7 @@ pub fn remove_managed(home: &Path, files: &[File]) -> io::Result<Vec<PathBuf>> {
         .map(|f| f.path)
         .collect();
     generated.push(SESSIONS_MD);
+    generated.push(SESSIONS_JSON);
     for rel in generated {
         let path = home.join(rel);
         let parents_real = path

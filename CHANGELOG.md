@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- Moss can look up archived sessions and ones closed in the last 30 days: `cc-moss ls` (and `--all`, `--archived`,
+  `--json`) works in Moss's sandbox, reading a session list the daemon writes into its home with nothing anyone
+  said. Before, Moss was told to run `ls` but its sandbox couldn't open the records, so it only saw today's list.
+
 ## [0.3.1] - 2026-10-20
 
 ### Added

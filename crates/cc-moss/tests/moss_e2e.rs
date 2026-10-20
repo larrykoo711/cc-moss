@@ -166,6 +166,12 @@ fn moss_comes_up_with_role() {
     wait_until("SESSIONS.md", 10, || {
         home.join("SESSIONS.md").exists().then_some(())
     });
+    // And what `cc-moss ls` reads as Moss: no conversation in it.
+    wait_until("sessions.json", 10, || {
+        home.join("sessions.json").exists().then_some(())
+    });
+    let snap = std::fs::read_to_string(home.join("sessions.json")).unwrap();
+    assert!(!snap.contains("last_prompt"), "{snap}");
     // And the checkup's facts, which Moss reads instead of the registry.
     wait_until("facts.json", 10, || {
         home.join("facts.json").exists().then_some(())

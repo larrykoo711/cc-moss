@@ -293,7 +293,7 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
 - **它能碰什么。** Moss 不弹权限确认（bypass），所以有两道围栏：
   - 工具：项目设置里的防护钩子检查每一次工具调用。Claude Code 的文件工具（Read、Write、Edit、Grep、Glob）对 Moss 是关掉的，它读写文件只能用命令行，也就是在下面说的沙箱里。防护钩子不认识的工具（包括 MCP 工具）一律拒绝；判断不了的时候也拒绝。
   - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它自己的家，不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
-  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude`、`~/.claude.json` 和它的备份，或者 `CLAUDE_CONFIG_DIR` 指的文件夹，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
+  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude`、`~/.claude.json` 和它的备份，或者 `CLAUDE_CONFIG_DIR` 指的文件夹，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）、会话清单（`sessions.json`：在用的、归档的、30 天内关掉的，不含任何对话内容；Moss 跑 `cc-moss ls` 读的就是它）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
   - 不联网：网页抓取和网页搜索一律拒绝，命令行也连不上网。
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。

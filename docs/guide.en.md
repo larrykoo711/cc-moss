@@ -466,8 +466,9 @@ keeps trying.
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
   - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude`, `~/.claude.json` and
     its backup copies, or the folder `CLAUDE_CONFIG_DIR` names; where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
-    the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
-    updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
+    the overview (`SESSIONS.md`), the session list (`sessions.json`: open, archived and closed in the last 30 days,
+    with nothing anyone said; it's what `cc-moss ls` reads for Moss) and the checkup facts (`facts.json`) the
+    daemon writes into its home, plus the updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
   - No network: web fetch and web search are refused, and its shell can't reach the internet.
   - `IDENTITY.md`, `SOUL.md` and `USER.md` change only through `/moss-profile`, which saves with
     `cc-moss moss profile <name> --from <draft>`: the one command allowed outside the sandbox, and only on its own
