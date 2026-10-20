@@ -237,7 +237,12 @@ pub const KEYS: &[&str] = &[
     "moss.daily_checkup",
     "moss.daily_brief",
     "sessions.archive_after_days",
+    "update.check",
 ];
+
+/// Keys `config get` reads but `config set` refuses: the user's to change
+/// by hand in `config.toml` (the app only reads `update.check`).
+pub const READ_ONLY_KEYS: &[&str] = &["update.check"];
 
 /// What `ui.language` may be set to.
 pub const LANGUAGES: &[&str] = &["auto", "zh", "en"];
@@ -274,10 +279,15 @@ pub enum SettingError {
     UnknownKey,
     /// Not one of these values.
     BadValue(&'static [&'static str]),
+    /// One of [`READ_ONLY_KEYS`]: `get` only.
+    ReadOnly,
 }
 
 /// The value as it is stored (trimmed, lowercase), if `key` may hold it.
 pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
+    if READ_ONLY_KEYS.contains(&key) {
+        return Err(SettingError::ReadOnly);
+    }
     if DAY_KEYS.contains(&key) {
         return match value.trim().parse::<u32>() {
             Ok(n) if n <= MAX_DAYS => Ok(n.to_string()),
@@ -317,6 +327,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
         "moss.daily_checkup" => Ok(config.moss.daily_checkup.to_string()),
         "moss.daily_brief" => Ok(config.moss.daily_brief.to_string()),
         "sessions.archive_after_days" => Ok(config.sessions.archive_after_days.to_string()),
+        "update.check" => Ok(config.update.check.to_string()),
         _ => Err(SettingError::UnknownKey),
     }
 }

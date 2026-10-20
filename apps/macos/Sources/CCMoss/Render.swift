@@ -9,6 +9,7 @@ import SwiftUI
 ///          [--menu full|more|app] [--click x,y [--command key]]
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
+///          [--update <version> [--changelog <file> --whats-new <version>]] [--update-bubble <version>]
 ///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
@@ -67,6 +68,13 @@ enum Render {
             }
             prepareAsks(model, args: args)
             OptionButton.renderHovered = value("--hover-option")
+            // `--update-bubble 0.3.2`: Mo's message about a newer version.
+            if let v = value("--update-bubble") {
+                let message = PetMessage(UpdateTips.alert(version: v, id: 1, at: Date()))
+                let box = PetMessageBox(message: message, text: message.text(names: [v]), animate: false)
+                drawView(box.padding(28).fixedSize(), dark: args.contains("--dark"), out: out)
+                exit(0)
+            }
             if let id = value("--bubble") {
                 // With `--ask <id>` as well, `--choose` works on the bubble's card.
                 prepareAsks(model, args: args)
@@ -191,8 +199,13 @@ enum Render {
                 model.panelHeight = CGFloat(PanelSize.height(PanelSize.tier(count: n, previous: nil), visible: visible))
             }
             if let h = value("--panel-height").flatMap(Double.init) { model.panelHeight = CGFloat(h) }
-            // `--update 0.3.0`: as if a newer cc-moss were out (the gear's dot, its menu).
+            // `--update 0.3.0`: as if a newer cc-moss were out (the gear's dot, its menu,
+            // the bar on top of the Sessions page). What was seen or closed is never saved.
             model.updateCheckedAt = Date()
+            model.tipsMemory = UpdateTipsMemory(defaults: UserDefaults(suiteName: "cc-moss-render-tips-\(UUID().uuidString)")!)
+            // `--changelog <file> --whats-new <version>`: the card after an upgrade to that version.
+            if let file = value("--changelog") { model.changelog = Changelog.load(URL(fileURLWithPath: file)) }
+            if let v = value("--whats-new") { model.whatsNew = model.changelog?.entry(for: v) }
             if let latest = value("--update") {
                 model.update = try? UpdateInfo.decode(Data(#"{"schema":1,"current":"0.2.2","latest":"\#(latest)","available":true}"#.utf8))
             }

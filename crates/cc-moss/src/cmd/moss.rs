@@ -1547,6 +1547,17 @@ impl Looker {
             ) {
                 log(&format!("moss: error: SESSIONS.md: {e}"));
             }
+            // What `cc-moss ls` reads as Moss (its sandbox can't open the
+            // registry): the same rows, closed ones of the last 30 days and
+            // archived ones too, without what the sessions said.
+            let host = super::provider::current().and_then(|s| s.host);
+            if let Err(e) = home::write_generated(
+                &home_dir,
+                home::SESSIONS_JSON,
+                &super::ls::snapshot(&rows, now_ms(), host.as_deref()),
+            ) {
+                log(&format!("moss: error: sessions.json: {e}"));
+            }
             // The checkup's facts, for Moss (its sandbox can't read the
             // registry): names, folders, states and times, no conversation.
             match super::checkup::report() {

@@ -171,3 +171,18 @@ fn json_output() {
     assert!(!good);
     assert_eq!(v["code"], "unknown_key");
 }
+
+#[test]
+fn update_check_reads_but_never_sets() {
+    let env = Env::new();
+    assert_eq!(ok(env.cc(&["config", "get", "update.check"])), "true");
+    env.write_config("[update]\ncheck = false\n");
+    let (good, v) = env.json(&["config", "get", "update.check", "--json"]);
+    assert!(good);
+    assert_eq!(v["value"], "false");
+
+    let (good, v) = env.json(&["config", "set", "update.check", "true", "--json"]);
+    assert!(!good);
+    assert_eq!(v["code"], "read_only");
+    assert_eq!(env.read_config(), "[update]\ncheck = false\n");
+}

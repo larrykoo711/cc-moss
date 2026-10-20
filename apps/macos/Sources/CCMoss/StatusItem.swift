@@ -469,6 +469,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         false
     }
 
+    /// Where an alert would go right now (A23).
+    private func alertContext() -> AlertContext {
+        AlertContext(
+            mode: AlertMode(defaults: .standard),
+            petEnabled: PetController.enabled(),
+            petVisible: pet?.isVisibleToYou ?? false,
+            panelOpen: panel?.isShown ?? false,
+            doNotDisturb: PetController.doNotDisturb()
+        )
+    }
+
+    /// A newer cc-moss turned up (F38): Mo says so once per version, by the
+    /// rules every bubble follows. When Mo can't tell now, a later check
+    /// tries again; the panel's bar says it meanwhile.
+    private func tellUpdate(_ info: UpdateInfo) {
+        guard let pet,
+              let version = UpdateTips.bubble(app: model.version, info: info, checksOn: model.updateChecksOn,
+                                              bubbled: model.tipsMemory.bubbled),
+              UpdateTips.moTells(in: alertContext()) else { return }
+        model.tipsMemory.bubbled = version
+        // Ids far below every event's, the questions' and Moss's replies'.
+        pet.take(UpdateTips.alert(version: version, id: Int.min / 2 + Int(Date().timeIntervalSince1970), at: Date()))
+    }
+
     private func startAlerts() {
         let notifier = SystemNotifier.available ? SystemNotifier() : nil
         notifier?.onAction = { [weak self] action, slot in
@@ -481,14 +505,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.panel?.show()
         }
         let alerts = AlertCenter(model: model, notifier: notifier, context: { [weak self] in
-            AlertContext(
-                mode: AlertMode(defaults: .standard),
-                petEnabled: PetController.enabled(),
-                petVisible: self?.pet?.isVisibleToYou ?? false,
-                panelOpen: self?.panel?.isShown ?? false,
-                doNotDisturb: PetController.doNotDisturb()
-            )
+            self?.alertContext() ?? AlertContext()
         }, toPet: { [weak self] alert in self?.pet?.take(alert) })
+        model.onUpdateFound = { [weak self] info in self?.tellUpdate(info) }
+        model.startUpdateChecks()
         let feed = EventFeed(model: model)
         feed.listen { [weak self] events in
             self?.model.providerBanner.take(events)

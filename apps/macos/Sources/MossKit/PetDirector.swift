@@ -90,6 +90,10 @@ public struct PetMessage: Equatable, Sendable {
             return PetMessageText(title: L.t("\(name) is back", "\(name) 找回来了"),
                                   body: L.t("Right where you left off.", "从上次停下的地方接着来。"),
                                   primary: L.t("Open", "去看看"), secondary: L.t("Got it", "知道了"))
+        case .update:
+            return PetMessageText(title: L.t("cc-moss \(name) is out", "cc-moss \(name) 来了"),
+                                  body: L.t("Install it when it suits you.", "方便的时候装上就好。"),
+                                  primary: L.t("Update", "更新"), secondary: L.t("Later", "稍后"))
         case .mossReply:
             // Several answers are still one message: they're all on the Moss page.
             return PetMessageText(title: L.t("Moss replied", "Moss 回你了"),
@@ -152,6 +156,8 @@ public enum PetClick: Equatable, Sendable {
 /// - The same session and kind within 60 s never hints again; it only joins
 ///   what Mo holds, there when you hover or click.
 /// - Do not disturb: nothing at all (the face is T3.2's).
+/// - News of a new version (F38) never takes anything's place: it waits
+///   behind whatever Mo holds and comes once Mo is free (`takeQueued`).
 public struct PetDirector: Sendable {
     public static let mergeWindow: TimeInterval = 1.5
     public static let repeatWindow: TimeInterval = 60
@@ -169,6 +175,7 @@ public struct PetDirector: Sendable {
         case .restored: 5
         case .finished: 6
         case .mossReply: 20
+        case .update: 20
         }
     }
 
@@ -180,6 +187,7 @@ public struct PetDirector: Sendable {
         case .restored: 30
         case .finished: 60
         case .mossReply: 600
+        case .update: 3600
         }
     }
 
@@ -190,6 +198,7 @@ public struct PetDirector: Sendable {
         case .mossReply: 2
         case .restored: 1
         case .finished: 0
+        case .update: -1
         }
     }
 
@@ -225,6 +234,8 @@ public struct PetDirector: Sendable {
     private var onBubble = false
     private var hinted: [Key: TimeInterval] = [:]
     private var puffs = 0
+    /// An update message waiting for Mo to be free.
+    private var queued: SessionAlert?
 
     public init(mode: PetInteraction = .everyday, phrases: Catchphrases = Catchphrases()) {
         self.mode = mode
@@ -235,6 +246,9 @@ public struct PetDirector: Sendable {
 
     /// The message Mo is holding, shown or not.
     public var message: PetMessage? { held?.message }
+
+    /// The update message waiting its turn.
+    public var waiting: SessionAlert? { queued }
 
     // MARK: - Input
 
@@ -248,6 +262,11 @@ public struct PetDirector: Sendable {
         let key = Key(slot: alert.slotId, kind: alert.kind)
         let repeated = hinted[key] != nil
 
+        // Update news waits behind anything else Mo holds.
+        if alert.kind == .update, let current = held, current.message.kind != .update {
+            queued = alert
+            return false
+        }
         if var current = held {
             if current.message.kind == alert.kind {
                 current.message.add(alert)
@@ -267,6 +286,8 @@ public struct PetDirector: Sendable {
                 return true
             }
             if Self.rank(alert.kind) < Self.rank(current.message.kind) { return false }
+            // Update news is pushed aside, not lost: it comes back after.
+            if current.message.kind == .update, let news = current.message.alerts.last { queued = news }
         }
 
         var next = Held(message: PetMessage(alert), mergeUntil: t + Self.mergeWindow,
@@ -281,6 +302,18 @@ public struct PetDirector: Sendable {
         express(&next, at: t)
         held = next
         return true
+    }
+
+    /// Mo is free (nothing held, not resting): the waiting update message
+    /// comes now. True when Mo should hint, as `take` answers.
+    @discardableResult
+    public mutating func takeQueued(at t: TimeInterval) -> Bool {
+        expire(t)
+        guard !doNotDisturb, held == nil, let news = queued else { return false }
+        queued = nil
+        // Pushed aside earlier: it hints again when it comes back.
+        hinted[Key(slot: news.slotId, kind: news.kind)] = nil
+        return take(news, at: t)
     }
 
     /// The pointer went onto or off Mo.

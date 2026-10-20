@@ -130,15 +130,70 @@ final class AppModel {
     var update: UpdateInfo?
     @ObservationIgnored var updateCheckedAt: Date?
 
-    /// Look for a newer cc-moss when the panel opens, at most every 6 hours
-    /// (it goes online, as Settings › About does). Quiet when it can't.
+    /// Look for a newer cc-moss when the panel opens, about 30 seconds after
+    /// launch and on a 6-hour timer, at most every 6 hours whatever asks (it
+    /// goes online, as Settings › About does). Quiet when it can't. Never
+    /// with `[update] check = false`: then nothing about updates shows.
     func checkForUpdate() {
         guard let client, updateCheckedAt.map({ Date().timeIntervalSince($0) > 6 * 3600 }) ?? true else { return }
         updateCheckedAt = Date()
         Task {
+            // An older cc-moss doesn't know the key: checks stay on, as before.
+            if let value = try? await client.config("update.check") { updateChecksOn = value != "false" }
+            guard updateChecksOn else {
+                update = nil
+                return
+            }
             guard let info = try? await client.updateInfo() else { return }
             update = info.available ? info : nil
+            if info.available { onUpdateFound?(info) }
         }
+    }
+
+    /// The automatic checks besides the panel's: one a little after launch,
+    /// then every 6 hours, so Mo can tell you even if the panel stays shut.
+    func startUpdateChecks() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 30) { [weak self] in self?.checkForUpdate() }
+        updateTimer?.invalidate()
+        updateTimer = Timer.scheduledTimer(withTimeInterval: 6 * 3600 + 60, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.checkForUpdate() }
+        }
+    }
+
+    // MARK: Update tips (F38)
+
+    /// `[update] check` as the CLI reads it; on until it says otherwise.
+    var updateChecksOn = true
+    /// A newer version was found by an automatic check (Mo's bubble).
+    @ObservationIgnored var onUpdateFound: ((UpdateInfo) -> Void)?
+    @ObservationIgnored private var updateTimer: Timer?
+    /// What was seen, closed and told, on this Mac.
+    @ObservationIgnored var tipsMemory = UpdateTipsMemory()
+    /// The words for this version, bundled with the app.
+    @ObservationIgnored var changelog = Changelog.load(Changelog.location())
+    /// This open's "what's new" card, until it's closed or the panel is.
+    var whatsNew: ChangelogEntry?
+    /// The version whose bar you closed (mirrors `tipsMemory`, so the panel follows it).
+    var barDismissed: String?
+
+    /// What the top of the Sessions page shows about versions.
+    var panelTip: PanelTip {
+        UpdateTips.panelTip(whatsNew: whatsNew,
+                            bar: UpdateTips.bar(app: version, info: update, checksOn: updateChecksOn,
+                                                dismissed: barDismissed ?? tipsMemory.dismissed))
+    }
+
+    /// The panel opened: the card if this version is new to you (once).
+    func showWhatsNewIfNew() {
+        let r = UpdateTips.whatsNew(app: version, lastSeen: tipsMemory.lastSeen, changelog: changelog)
+        if let remember = r.remember { tipsMemory.lastSeen = remember }
+        if let entry = r.show { whatsNew = entry }
+    }
+
+    /// The bar's ×: hidden for this version; a later one shows again.
+    func dismissUpdateBar(_ version: String) {
+        tipsMemory.dismissed = version
+        barDismissed = version
     }
 
     /// The gear menu's "Update to …": cc-moss update, in the chosen terminal.
@@ -251,6 +306,9 @@ final class AppModel {
             if !panelShown { resetMentionHover() }
             // The daemon's "first panel open of the day" checkup reads this.
             if panelShown && !oldValue { PanelOpenedMark.touchIfShown(true, stateDir: watchedDir) }
+            // The "what's new" card: on the first open after an upgrade, for that open only.
+            if panelShown && !oldValue { showWhatsNewIfNew() }
+            if !panelShown { whatsNew = nil }
         }
     }
     /// Talking to Moss (T2.3): its status and the conversation.

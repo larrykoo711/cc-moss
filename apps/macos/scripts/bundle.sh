@@ -78,5 +78,7 @@ cp "$here/Resources/AppIcon.icns" "$app/Contents/Resources/AppIcon.icns"
 mkdir -p "$app/Contents/Resources/en.lproj" "$app/Contents/Resources/zh-Hans.lproj"
 printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_en" > "$app/Contents/Resources/en.lproj/InfoPlist.strings"
 printf '"NSAppleEventsUsageDescription" = "%s";\n' "$automation_zh" > "$app/Contents/Resources/zh-Hans.lproj/InfoPlist.strings"
+# The site's changelog: the "what's new" card after an upgrade reads this version's entry.
+cp "$root/site/src/changelog.json" "$app/Contents/Resources/changelog.json"
 codesign --force --sign - --timestamp=none "$app"
 echo "$app"

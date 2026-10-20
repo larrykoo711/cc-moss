@@ -8,7 +8,18 @@ use unicode_width::UnicodeWidthStr;
 
 pub const JSON_SCHEMA: u32 = 1;
 
+/// Closed sessions stay in Moss's snapshot this long, as in the app's search.
+const SNAPSHOT_CLOSED_MS: i64 = 30 * 24 * 60 * 60 * 1000;
+
 pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
+    // Moss's sandbox can't open the registry: it reads what the daemon
+    // wrote for it, the same list without what the sessions said.
+    if moss_core::registry::opens_read_only(
+        std::env::var(moss_core::moss::ROLE_ENV).ok().as_deref(),
+        false,
+    ) {
+        return run_from_snapshot(all, archived, as_json);
+    }
     let mut rows: Vec<(Status, Slot)> = crate::reconcile::run()?
         .slots()?
         .into_iter()
@@ -53,13 +64,115 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
 /// status, for the app to sort. Closed ones that are not archived need
 /// `--all`.
 pub fn shown(st: Status, s: &Slot, all: bool, archived: bool, as_json: bool) -> bool {
+    shown_fields(st, s.is_archived(), all, archived, as_json)
+}
+
+fn shown_fields(st: Status, is_archived: bool, all: bool, archived: bool, as_json: bool) -> bool {
     if archived {
-        return s.is_archived();
+        return is_archived;
     }
-    if s.is_archived() {
+    if is_archived {
         return as_json;
     }
     all || st != Status::Closed
+}
+
+/// `<Moss's home>/sessions.json`, which the daemon writes for Moss: every
+/// session but Moss that is open, archived, or closed in the last 30 days,
+/// as `ls --json` shows it, without `last_prompt` (no conversation). Nothing
+/// in it changes with the clock, so an unchanged list writes nothing.
+pub fn snapshot(rows: &[(Status, Slot)], now: i64, host: Option<&str>) -> String {
+    let mut kept: Vec<&(Status, Slot)> = rows
+        .iter()
+        .filter(|(st, s)| {
+            !s.is_moss()
+                && (*st != Status::Closed
+                    || s.is_archived()
+                    || s.ended_at_ms.unwrap_or(s.last_active_at_ms) >= now - SNAPSHOT_CLOSED_MS)
+        })
+        .collect();
+    kept.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
+    let sessions: Vec<Value> = kept
+        .iter()
+        .map(|(st, s)| {
+            let mut v = to_json(*st, s);
+            if let Some(o) = v.as_object_mut() {
+                o.remove("last_prompt");
+            }
+            v
+        })
+        .collect();
+    let mut text = serde_json::to_string_pretty(&json!({
+        "schema": JSON_SCHEMA,
+        "provider": { "host": host },
+        "sessions": sessions,
+    }))
+    .unwrap_or_default();
+    text.push('\n');
+    text
+}
+
+/// `ls` as Moss: from its snapshot, with the same choices of what to list.
+fn run_from_snapshot(all: bool, archived: bool, as_json: bool) -> Result<()> {
+    use anyhow::Context;
+    let path = moss_core::moss::home_dir(&store_dir::state_dir())
+        .join(moss_core::moss::home::SESSIONS_JSON);
+    let text = std::fs::read_to_string(&path).with_context(|| {
+        format!(
+            "cc-moss has not written {} yet (the daemon writes it every minute)",
+            path.display()
+        )
+    })?;
+    let mut snap: Value = serde_json::from_str(&text)
+        .with_context(|| format!("{} is not valid JSON", path.display()))?;
+    let sessions: Vec<Value> = snap["sessions"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|v| {
+            let st = match v["status"].as_str() {
+                Some("running") => Status::Running,
+                Some("interrupted") => Status::Interrupted,
+                _ => Status::Closed,
+            };
+            shown_fields(st, !v["archived_at"].is_null(), all, archived, as_json)
+        })
+        .collect();
+    if as_json {
+        snap["sessions"] = Value::Array(sessions);
+        println!("{}", serde_json::to_string_pretty(&snap)?);
+    } else {
+        let now = now_ms();
+        print_lines(
+            sessions
+                .iter()
+                .map(|v| {
+                    let text = |p: &str| v.pointer(p).and_then(Value::as_str).map(String::from);
+                    let active = text("/last_active_at")
+                        .and_then(|t| moss_core::ask::parse_time(&t))
+                        .unwrap_or(now);
+                    [
+                        match v["status"].as_str() {
+                            Some("running") => status_word(Status::Running),
+                            Some("interrupted") => status_word(Status::Interrupted),
+                            _ => status_word(Status::Closed),
+                        }
+                        .to_string(),
+                        text("/name")
+                            .unwrap_or_else(|| short_id(&text("/session_id").unwrap_or_default())),
+                        ago(now - active),
+                        text("/tmux/session_name").unwrap_or_else(|| "-".into()),
+                        text("/notes/state")
+                            .or_else(|| text("/notes/note"))
+                            .unwrap_or_else(|| "-".into()),
+                        text("/cwd").unwrap_or_default(),
+                    ]
+                })
+                .collect(),
+        );
+    }
+    Ok(())
 }
 
 fn rank(st: Status) -> u8 {
@@ -104,7 +217,32 @@ fn to_json(st: Status, s: &Slot) -> Value {
 }
 
 fn print_table(rows: &[(Status, Slot)]) {
-    if rows.is_empty() {
+    let now = now_ms();
+    print_lines(
+        rows.iter()
+            .map(|(st, s)| {
+                [
+                    status_word(*st).to_string(),
+                    s.name.clone().unwrap_or_else(|| short_id(&s.session_id)),
+                    ago(now - s.last_active_at_ms),
+                    s.tmux
+                        .as_ref()
+                        .and_then(|t| t.session_name.clone())
+                        .unwrap_or_else(|| "-".into()),
+                    s.notes
+                        .state
+                        .clone()
+                        .or_else(|| s.notes.note.clone())
+                        .unwrap_or_else(|| "-".into()),
+                    s.cwd.clone(),
+                ]
+            })
+            .collect(),
+    );
+}
+
+fn print_lines(lines: Vec<[String; 6]>) {
+    if lines.is_empty() {
         println!(
             "{}",
             tr!(
@@ -114,27 +252,6 @@ fn print_table(rows: &[(Status, Slot)]) {
         );
         return;
     }
-    let now = now_ms();
-    let lines: Vec<[String; 6]> = rows
-        .iter()
-        .map(|(st, s)| {
-            [
-                status_word(*st).to_string(),
-                s.name.clone().unwrap_or_else(|| short_id(&s.session_id)),
-                ago(now - s.last_active_at_ms),
-                s.tmux
-                    .as_ref()
-                    .and_then(|t| t.session_name.clone())
-                    .unwrap_or_else(|| "-".into()),
-                s.notes
-                    .state
-                    .clone()
-                    .or_else(|| s.notes.note.clone())
-                    .unwrap_or_else(|| "-".into()),
-                s.cwd.clone(),
-            ]
-        })
-        .collect();
     let header = tr!(
         ["STATUS", "NAME", "ACTIVE", "TMUX", "NOTE", "CWD"],
         ["状态", "名字", "活动", "TMUX", "备注", "目录"]
@@ -184,5 +301,77 @@ fn status_word(st: Status) -> &'static str {
         Status::Running => tr!("running", "运行中"),
         Status::Interrupted => tr!("interrupted", "已中断"),
         Status::Closed => tr!("closed", "已关闭"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn slot(name: &str, status: Status, at: i64) -> Slot {
+        Slot {
+            slot_id: name.into(),
+            agent: "claude".into(),
+            session_id: format!("{name}-0000-id"),
+            session_ids: vec![],
+            name: Some(name.into()),
+            cwd: format!("/p/{name}"),
+            pid: None,
+            pid_start: None,
+            tmux: None,
+            status,
+            end_reason: None,
+            notes: Default::default(),
+            launch_args: vec![],
+            transcript_path: None,
+            busy: false,
+            attention: None,
+            last_prompt: Some(format!("secret words of {name}")),
+            restore_started_at_ms: None,
+            role: None,
+            created_at_ms: 0,
+            last_active_at_ms: at,
+            ended_at_ms: Some(at),
+            archived_at_ms: None,
+            archived_by: None,
+            provider_started: None,
+            provider_seen_keys: None,
+        }
+    }
+
+    #[test]
+    fn snapshot_keeps_what_moss_may_look_for_and_no_conversation() {
+        const DAY: i64 = 24 * 60 * 60 * 1000;
+        let now = 100 * DAY;
+        let mut archived = slot("archived", Status::Closed, now - 90 * DAY);
+        archived.archived_at_ms = Some(now - 60 * DAY);
+        let mut moss = slot("moss", Status::Running, now);
+        moss.role = Some("moss".into());
+        let rows = vec![
+            (Status::Running, slot("running", Status::Running, now)),
+            (
+                Status::Closed,
+                slot("recent", Status::Closed, now - 29 * DAY),
+            ),
+            (Status::Closed, slot("old", Status::Closed, now - 31 * DAY)),
+            (Status::Closed, archived),
+            (Status::Running, moss),
+        ];
+        let text = snapshot(&rows, now, Some("relay.example"));
+        let v: Value = serde_json::from_str(&text).unwrap();
+        let names: Vec<&str> = v["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap())
+            .collect();
+        assert_eq!(names, ["running", "recent", "archived"]);
+        assert_eq!(v["provider"]["host"], "relay.example");
+        assert!(
+            !text.contains("last_prompt") && !text.contains("secret words"),
+            "{text}"
+        );
+        // Same rows, same text: an unchanged list writes nothing.
+        assert_eq!(snapshot(&rows, now + 1, Some("relay.example")), text);
     }
 }

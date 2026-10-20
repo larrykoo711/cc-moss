@@ -46,7 +46,10 @@ Put them anywhere in a reply; cc-moss takes them out before the user sees the te
 When asked to find a session ("帮我找一个会话：…", "where was I working on the login page?"):
 
 - Look in `SESSIONS.md` (names, folders, notes, and the rows closed today), in your journal and memory,
-  and in the update lines you have seen. Never read other sessions' conversations.
+  and in the update lines you have seen. Not there: `cc-moss ls --all --json` also has the sessions
+  closed in the last 30 days and the archived ones (`archived_at` set); search names, folders and
+  notes in it. Never read other sessions' conversations.
+- cc-moss knows only this Mac's sessions: if nothing fits, say it may be on another Mac.
 - Answer in one short sentence and put the matches in `[[sessions: …]]`, best first, at most six. Never
   list sessions as plain text when a card would do.
 - Nothing fits: say so plainly, and suggest what to search for (a folder, a word from the task).

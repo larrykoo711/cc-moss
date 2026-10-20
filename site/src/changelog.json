@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.2",
+      "date": "2026-10-20",
+      "icon": "menubar",
+      "short": {
+        "zh": "新版本会来告诉你",
+        "en": "New versions tell you"
+      },
+      "headline": {
+        "zh": "有新版本时，cc-moss 自己会告诉你。",
+        "en": "When there's a new version, cc-moss tells you."
+      },
+      "highlights": [
+        {
+          "zh": "有新版本时，面板顶上出现一条提示，点「看看新功能」就能看到这一版改了什么，点「更新」就装上。小莫也会来说一声，每个版本只说一次。",
+          "en": "When a new version is out, a bar on top of the panel says so: See what's new shows what changed, and Update installs it. Mo mentions it too, once per version."
+        },
+        {
+          "zh": "升级后第一次打开面板，会看到这一版的几个亮点，看过就不再出现。",
+          "en": "The first time you open the panel after an upgrade, it shows what the new version brings, just once."
+        },
+        {
+          "zh": "Moss 现在能帮你找到已归档的、最近 30 天关掉的会话，不再只认得今天的。",
+          "en": "Moss can now find archived sessions and ones closed in the last 30 days, not just today's."
+        }
+      ]
+    },
+    {
       "version": "0.3.1",
       "date": "2026-10-20",
       "icon": "archive",

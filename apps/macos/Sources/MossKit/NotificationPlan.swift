@@ -14,9 +14,12 @@ public enum AlertKind: String, CaseIterable, Sendable {
     /// Moss answered something you sent from the panel (T2.3). Never in the
     /// event stream: the app makes it, and it never merges with a session's alert.
     case mossReply = "moss_reply"
+    /// A newer cc-moss is out (F38). The app makes it for Mo only, once per
+    /// version; never a notification, never in the event stream.
+    case update
 
-    /// Moss's replies have no switch of their own; the toggles never see them.
-    public var defaultOn: Bool { self != .finished && self != .mossReply }
+    /// Moss's replies and update news have no switch of their own; the toggles never see them.
+    public var defaultOn: Bool { self != .finished && self != .mossReply && self != .update }
 
     /// What the alert offers; clicking the alert itself does the same.
     public var action: AlertAction { self == .interrupted ? .restore : .open }
@@ -187,6 +190,9 @@ public struct NotificationPlan: Sendable {
         case .mossReply:
             heading = L.t("Moss replied", "Moss 回你了")
             body = L.t("The reply is on the Moss page.", "回复在面板的 Moss 页里。")
+        case .update:
+            heading = L.t("cc-moss \(title) is out", "cc-moss \(title) 来了")
+            body = L.t("Install it when it suits you.", "方便的时候装上就好。")
         }
         return AlertNote(id: "cc-moss.\(alert.id)", title: heading, body: body, action: alert.kind.action,
                          slotId: alert.slotId, thread: alert.slotId)

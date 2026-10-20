@@ -63,11 +63,14 @@ fn moss_reads_sessions_but_changes_none() {
             .output()
             .unwrap()
     };
-    // Reading works: ls (with no repairs written) and the checkup's facts.
+    // ls reads the daemon's copy in its home (its sandbox can't open the
+    // registry); none yet, and it says why.
     let out = as_moss(&["ls", "--json", "--all"]);
-    assert!(out.status.success(), "{out:?}");
-    let ls: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
-    assert_eq!(session(&ls, "work-0000-1111")["name"], "work");
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        String::from_utf8_lossy(&out.stderr).contains("the daemon writes it"),
+        "{out:?}"
+    );
     // The checkup's facts come from the daemon's copy in its home; none yet.
     let out = as_moss(&["doctor", "--sessions", "--json"]);
     assert!(!out.status.success(), "{out:?}");
@@ -100,6 +103,64 @@ fn moss_reads_sessions_but_changes_none() {
     assert_ne!(
         session(&ls_json(&state, true), "work-0000-1111")["status"],
         "closed"
+    );
+}
+
+#[test]
+fn moss_lists_sessions_from_its_snapshot() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path().join("state");
+    let home = state.join("moss");
+    std::fs::create_dir_all(&home).unwrap();
+    let row = |sid: &str, name: &str, status: &str, archived: Option<&str>| {
+        serde_json::json!({
+            "id": sid, "name": name, "status": status, "session_id": sid,
+            "cwd": "/work", "tmux": null, "notes": {"goal": null, "state": null, "note": null},
+            "last_active_at": "2026-10-20T10:00:00Z", "archived_at": archived,
+        })
+    };
+    let snapshot = serde_json::json!({
+        "schema": 1,
+        "provider": {"host": null},
+        "sessions": [
+            row("run-0000-1111", "api", "running", None),
+            row("old-0000-2222", "docs", "closed", None),
+            row("arc-0000-3333", "fizzy-1153", "closed", Some("2026-10-19T10:00:00Z")),
+        ],
+    });
+    std::fs::write(home.join("sessions.json"), snapshot.to_string()).unwrap();
+    let as_moss = |args: &[&str]| {
+        let out = bin()
+            .env("CC_MOSS_STATE_DIR", &state)
+            .env("CC_MOSS_ROLE", "moss")
+            .env("CC_MOSS_LANG", "en")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{args:?}: {out:?}");
+        String::from_utf8(out.stdout).unwrap()
+    };
+    let names = |args: &[&str]| -> Vec<String> {
+        let v: serde_json::Value = serde_json::from_str(&as_moss(args)).unwrap();
+        v["sessions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|s| s["name"].as_str().unwrap().to_string())
+            .collect()
+    };
+    // The same choices as `ls` over the registry.
+    assert_eq!(names(&["ls", "--archived", "--json"]), ["fizzy-1153"]);
+    assert_eq!(names(&["ls", "--json"]), ["api", "fizzy-1153"]);
+    assert_eq!(
+        names(&["ls", "--all", "--json"]),
+        ["api", "docs", "fizzy-1153"]
+    );
+    let table = as_moss(&["ls", "--all"]);
+    assert!(table.contains("api") && table.contains("docs"), "{table}");
+    assert!(
+        !table.contains("fizzy-1153"),
+        "archived stay out of the table: {table}"
     );
 }
 

@@ -55,6 +55,13 @@ impl Failure {
                     ),
                 )
             }
+            SettingError::ReadOnly => Failure::new(
+                "read_only",
+                tr!(
+                    format!("`{key}` can only be read here; change it in config.toml"),
+                    format!("`{key}` 在这里只能查看；要改就编辑 config.toml")
+                ),
+            ),
             SettingError::BadValue(allowed) => {
                 let allowed = allowed.join(", ");
                 Failure::new(

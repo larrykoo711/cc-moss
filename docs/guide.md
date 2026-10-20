@@ -113,7 +113,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
-| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`update.check` 只能查看（改它请编辑配置文件）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | 常驻后台的守护进程：看状态、启动、停掉（macOS，见[守护进程](#守护进程)） |
 | `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- 文字` / `moss chat [--limit N] [--json]` | Moss 的开关和状态，以及和它说话、看对话（macOS，见 [Moss](#moss)） |
 | `cc-moss doctor [--fix]` / `doctor --sessions --json` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接）；`--sessions --json` 列出每个会话的事实，给 Moss 体检用（见[体检](#体检)） |
@@ -293,7 +293,7 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
 - **它能碰什么。** Moss 不弹权限确认（bypass），所以有两道围栏：
   - 工具：项目设置里的防护钩子检查每一次工具调用。Claude Code 的文件工具（Read、Write、Edit、Grep、Glob）对 Moss 是关掉的，它读写文件只能用命令行，也就是在下面说的沙箱里。防护钩子不认识的工具（包括 MCP 工具）一律拒绝；判断不了的时候也拒绝。
   - 命令行：命令在 Claude Code 的沙箱里跑，由 macOS 对它和它启动的所有程序强制执行。只能写它自己的家，不能写 `IDENTITY.md`、`SOUL.md`、`USER.md` 和 cc-moss 的文件，也不能退到沙箱外面重试。沙箱起不来时，Claude Code 干脆不启动 Moss。
-  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude`、`~/.claude.json` 和它的备份，或者 `CLAUDE_CONFIG_DIR` 指的文件夹，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
+  - 你别的会话归你自己：它的命令行读不了 Claude Code 的文件夹（`~/.claude`、`~/.claude.json` 和它的备份，或者 `CLAUDE_CONFIG_DIR` 指的文件夹，你的对话和历史都在里面），也读不了它家以外的 cc-moss 记录。Moss 对你的会话的了解，就是守护进程写进它家里的会话一览（`SESSIONS.md`）、会话清单（`sessions.json`：在用的、归档的、30 天内关掉的，不含任何对话内容；Moss 跑 `cc-moss ls` 读的就是它）和体检事实（`facts.json`），再加上 cc-moss 发给它的消息。它要改什么，都得请守护进程代办（见「Moss 怎么动手」）。
   - 不联网：网页抓取和网页搜索一律拒绝，命令行也连不上网。
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
@@ -397,6 +397,8 @@ Homebrew 和 macOS 的 Releases 下载包里都带着 App；从源码装（`carg
 点菜单栏图标，或者在任何地方连按两下 ⌃，面板就出来了。App 已经开着时再打开它一次（Spotlight、`open -a cc-moss`，或者显示 Dock 图标时点它）也会弹出面板。链接 `cc-moss://panel` 同样能打开，后面加 `/sessions`、`/queue` 或 `/moss` 就直接到那一页，可以放进快捷指令或别的启动器里。
 
 面板左边是一条侧栏：「会话」（⌘1）、「待处理」（⌘2，角标是还剩几件）、「Moss」（⌘3）。侧栏最下面的齿轮是 App 的菜单，顺序和 Mac 应用自己的菜单一样：「关于 cc-moss」（右边是版本号）、「检查更新…」（有新版本时变成「更新到 x…」，在终端里运行 `cc-moss update`，齿轮上也会有个小圆点）；「设置…」（⌘,）；「使用手册」「报告问题」；最后是「退出 cc-moss」（⌘Q）。⌘R 随时可以刷新。面板底部左边是「新会话」，右边是选中会话的主操作（「打开」「找回」等，带一个 ↵），只在「会话」页出现。
+
+有新版本时，「会话」页顶上会有一条浅色提示：「cc-moss 0.3.2 可以更新了」，带「看看新功能」（打开网站更新记录里的这个版本）和「更新」（同样是在终端里运行 `cc-moss update`）。点 × 只对这个版本不再提示，更新的版本出来会再提示；App 换成这个版本后它自己消失。小莫也会为每个新版本说一次，气泡里是「更新」和「稍后」，规矩和它别的气泡一样：小莫开着、看得见时才说，休息时、面板开着时不说，手上有别的事就排在后面。升级后第一次打开面板，顶上会有一张卡片讲这个版本的新变化（标题和最多三条要点，来自 App 自带的更新记录），只出现一次；新装的不显示。App 启动约 30 秒后、打开面板时、以及每 6 小时检查一次新版本，6 小时内最多一次；配置里写了 `[update] check = false` 就完全不查，上面这些也都不出现（在 设置 › 关于 里手动检查照样可以）。
 
 面板的高度在打开时按你有几个会话挑一档：4 个以内矮一些，5 到 9 个中等，10 个以上占屏幕高度的 70%（在 720 到 900 点之间）。开着的时候高度不变。会话有变化时面板自己刷新，开着时最快 1.5 秒一次，关着时 5 秒一次；也可以按 ⌘R。
 
@@ -572,7 +574,7 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 
 状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。只有两处会联网：
 
-- **检查新版本**：打开选择器或运行 `doctor` 时，每天最多一次，用 `curl` 向`https://github.com/larrykoo711/cc-moss/releases/latest` 问一下它指向哪个版本。就是一个普通的 HTTPS 请求，不带任何关于你、你的会话或你这台机器的信息；在后台进行，3 秒没回应就放弃。钩子和 `ls --json` 从不联网。在配置文件里写 `[update] check = false` 或设置 `CC_MOSS_NO_UPDATE_CHECK=1` 即可关闭；关闭后你自己运行`cc-moss update` 照样能用。
+- **检查新版本**：打开选择器或运行 `doctor` 时，每天最多一次，用 `curl` 向`https://github.com/larrykoo711/cc-moss/releases/latest` 问一下它指向哪个版本。就是一个普通的 HTTPS 请求，不带任何关于你、你的会话或你这台机器的信息；在后台进行，3 秒没回应就放弃。状态栏 App 通过 `cc-moss update --check` 问同一个问题，每 6 小时最多一次（启动后不久、打开面板时、以及每 6 小时一次）。钩子和 `ls --json` 从不联网。在配置文件里写 `[update] check = false`（App 也照做）或设置 `CC_MOSS_NO_UPDATE_CHECK=1`（只管终端）即可关闭；关闭后你自己运行`cc-moss update` 照样能用。
 - **安装你同意的东西**：`cc-moss install` 里的工具，以及 `cc-moss update` 下载的新版本。
 
 [Moss](#moss) 是一个 Claude Code 会话，它用你的 Claude Code 登录跟 Anthropic 通信，和你自己开的会话一样；闲着的时候不发请求。不想要它，运行 `cc-moss moss stop`。
@@ -599,7 +601,7 @@ icons = "auto"            # Nerd Font 图标："auto"（检测到 starship 时�
 language = "auto"         # "auto"（跟随系统语言）、"en" 或 "zh"
 
 [update]
-check = true              # 每天检查一次新版本（选择器和 doctor）；false 关闭
+check = true              # 检查新版本（选择器和 doctor 每天一次，App 每 6 小时一次）；false 关闭
 
 [ask]
 enabled = true            # 会话问你问题时，别处（命令行、App）也能答；没人接手时等于没开

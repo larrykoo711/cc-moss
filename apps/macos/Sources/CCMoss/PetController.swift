@@ -358,6 +358,8 @@ final class PetController {
         }
         if let end = stage.performanceEnds, end > t { after("show", end - t) { $0.show() } }
 
+        // News of a new version waited behind something else: Mo is free now.
+        if director.takeQueued(at: t) { view.flashLamp() }
         let display = bubbleDisplay(at: t)
         let talking: Bool = if case .box = display { true } else { false }
         presence.update(pose: pose, hovering: hovering || onBubble || talking || menuOpen, at: t)
@@ -460,6 +462,10 @@ final class PetController {
         let ask = askId(for: message)
         director.dismiss()
         show()
+        if message.kind == .update {
+            model.runUpdate() // the gear menu's update, in your terminal
+            return
+        }
         if let ask {
             model.focusAsk(ask)
             showPanel()
@@ -473,7 +479,7 @@ final class PetController {
         model.stateFilter = switch message.kind {
         case .interrupted: .interrupted
         case .finished: .waiting
-        case .needsYou, .restored, .mossReply: nil
+        case .needsYou, .restored, .mossReply, .update: nil
         }
         if let first = message.slots.first, model.sessions.contains(where: { $0.id == first }) { model.selectedID = first }
         showPanel()
@@ -509,13 +515,13 @@ final class PetController {
         // answered (here or in the terminal) and the card has said how it went.
         if let askId = alert.askId { return cards.contains(askId) }
         // Moss's answer isn't a session's state: it stays until it's handled or expires.
-        if alert.kind == .mossReply { return true }
+        if alert.kind == .mossReply || alert.kind == .update { return true }
         if now.timeIntervalSince(alert.at) < 5 { return true }
         guard let session = sessions.first(where: { $0.id == alert.slotId }) else { return false }
         switch alert.kind {
         case .needsYou: return session.needsYou
         case .interrupted: return session.state == .interrupted
-        case .restored, .finished, .mossReply: return true
+        case .restored, .finished, .mossReply, .update: return true
         }
     }
 

@@ -34,6 +34,7 @@ enum BubbleStyle {
         case .restored: Color.green
         case .finished: Theme.amber
         case .mossReply: Theme.brand
+        case .update: Color.blue
         }
     }
 
@@ -44,17 +45,19 @@ enum BubbleStyle {
         case .restored: "checkmark.circle"
         case .finished: Icons.state(.waiting)
         case .mossReply: "bubble.left.and.text.bubble.right"
+        case .update: Icons.update
         }
     }
 
     static func primaryIcon(_ message: PetMessage) -> String {
+        if message.kind == .update { return Icons.update }
         if message.alerts.count > 1 { return "rectangle.on.rectangle" }
         return message.action == .restore ? Icons.state(.interrupted) : Icons.open
     }
 
     static func secondaryIcon(_ kind: AlertKind) -> String {
         switch kind {
-        case .needsYou, .finished, .mossReply: "clock"
+        case .needsYou, .finished, .mossReply, .update: "clock"
         case .interrupted: "xmark"
         case .restored: "checkmark"
         }

@@ -135,7 +135,7 @@ In the picker:
 | `cc-moss restart NAMES [--now] [--yes] [--json]` / `restart --stale` | Restart sessions in their own pane after switching API providers (see [Switching API providers](#switching-api-providers)) |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
-| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`); `update.check` can only be read (edit the config file to change it). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | The daemon that stays in the background: its status, start it, stop it (macOS; see [The daemon](#the-daemon)) |
 | `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- TEXT` / `moss chat [--limit N] [--json]` | Moss's switch and status, and talking to it (macOS; see [Moss](#moss)) |
 | `cc-moss doctor [--fix]` / `doctor --sessions --json` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases); `--sessions --json` lists the facts about each session that Moss's checkup reads (see [Checkup](#checkup)) |
@@ -466,8 +466,9 @@ keeps trying.
     the sandbox. If the sandbox can't start, Claude Code doesn't start Moss at all.
   - Your other sessions stay private: its shell can't read Claude Code's folder (`~/.claude`, `~/.claude.json` and
     its backup copies, or the folder `CLAUDE_CONFIG_DIR` names; where your conversations and history are) or cc-moss's records outside its home. What Moss knows about your sessions is
-    the overview (`SESSIONS.md`) and the checkup facts (`facts.json`) the daemon writes into its home, plus the
-    updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
+    the overview (`SESSIONS.md`), the session list (`sessions.json`: open, archived and closed in the last 30 days,
+    with nothing anyone said; it's what `cc-moss ls` reads for Moss) and the checkup facts (`facts.json`) the
+    daemon writes into its home, plus the updates cc-moss sends it. Anything it changes goes through the daemon (see [How Moss acts](#checkup)).
   - No network: web fetch and web search are refused, and its shell can't reach the internet.
   - `IDENTITY.md`, `SOUL.md` and `USER.md` change only through `/moss-profile`, which saves with
     `cc-moss moss profile <name> --from <draft>`: the one command allowed outside the sandbox, and only on its own
@@ -670,6 +671,16 @@ foot of the rail is the app's menu, in the order a Mac app's own menu has: About
 Updates… (Update to x… when there's a new version: it runs `cc-moss update` in your terminal, and the gear gets a
 small dot); Settings… (⌘,); User Guide and Report a Problem; and Quit cc-moss (⌘Q). ⌘R refreshes any time. Along the bottom are New Session on the left and, on the right, the selected
 session's main action (Open, Bring Back and so on, with a ↵), on the Sessions page only.
+
+When a newer version is out, a light bar sits on top of the Sessions page: "cc-moss 0.3.2 is ready to install", with
+See what's new (that version on the website's changelog) and Update (the same `cc-moss update` in your terminal). Its ×
+hides it for that version only; a later one shows again, and it goes once the app runs that version. Mo says it once
+per version too, in a bubble with Update and Later, by the rules all its bubbles follow (only when Mo is on and in
+view, never while it's resting or the panel is open, and after whatever it's already telling you). After an upgrade,
+the first time you open the panel shows what the new version brings (its headline and up to three highlights, from
+the changelog the app carries), once. A fresh install shows nothing. The app looks for a new version about 30 seconds
+after it starts, when you open the panel, and every 6 hours, at most once in 6 hours; with `[update] check = false`
+it never does and shows none of this (Settings › About still checks when you ask).
 
 The panel picks its height as it opens, by how many sessions you have: shorter for 4 or fewer, medium for 5 to 9,
 and for 10 or more 70% of the screen's height (between 720 and 900 points). It keeps that height while it's open.
@@ -931,8 +942,10 @@ The state folder is readable only by you. It reads Claude Code's own session fil
 - **The version check.** At most once a day, when you open the picker or run `doctor`, cc-moss asks
   `https://github.com/larrykoo711/cc-moss/releases/latest` where it points: one plain HTTPS request with `curl`, which
   carries nothing about you, your sessions or your machine. It runs in the background and gives up after 3 seconds.
-  The hooks and `ls --json` never go online. Turn it off with `[update] check = false` in the config file or
-  `CC_MOSS_NO_UPDATE_CHECK=1`; `cc-moss update` still works when you run it yourself.
+  The menubar app asks the same question through `cc-moss update --check`, at most once every 6 hours (a little
+  after it starts, when you open the panel, and on a 6-hour timer). The hooks and `ls --json` never go online. Turn it
+  off with `[update] check = false` in the config file (the app follows it too) or `CC_MOSS_NO_UPDATE_CHECK=1` (the
+  terminal only); `cc-moss update` still works when you run it yourself.
 - **Installing things you agreed to:** the tools in `cc-moss install`, and a new version in `cc-moss update`.
 
 [Moss](#moss) is a Claude Code session: it talks to Anthropic with your Claude Code sign-in, like any session you start,
@@ -960,7 +973,7 @@ icons = "auto"            # Nerd Font icons: "auto" (when starship is loaded), "
 language = "auto"         # "auto" (your system language), "en" or "zh"
 
 [update]
-check = true              # look for a new cc-moss once a day (picker and doctor); false turns it off
+check = true              # look for a new cc-moss (picker and doctor once a day, the app every 6 hours); false turns it off
 
 [ask]
 enabled = true            # questions a session asks can be answered elsewhere too; does nothing while nobody takes them
