@@ -66,6 +66,7 @@ test("twinFor accepts paths and URLs of the site's pages only", () => {
   assert.deepEqual(twinFor("/zh"), { path: "/zh/", twin: "/zh/index.md" });
   assert.deepEqual(twinFor("https://cc-moss.larrykoo.com/guide/#install"), { path: "/guide/", twin: "/guide/index.md" });
   assert.deepEqual(twinFor("/zh/guide/index.md"), { path: "/zh/guide/", twin: "/zh/guide/index.md" });
+  assert.deepEqual(twinFor("https://cc-moss.larrykoo.com/zh/changelog/#v0-3-0"), { path: "/zh/changelog/", twin: "/zh/changelog/index.md" });
   assert.equal(twinFor("/../etc/passwd"), null);
   assert.equal(twinFor("/assets/"), null);
 });

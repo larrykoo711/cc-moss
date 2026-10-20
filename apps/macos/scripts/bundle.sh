@@ -29,6 +29,9 @@ case "$arch" in
   universal) build_args+=(--arch arm64 --arch x86_64) ;;
   *) echo "bundle.sh: --arch must be arm64, x86_64 or universal" >&2; exit 2 ;;
 esac
+# CC_MOSS_BUILD_SYSTEM=native: SwiftPM's older build system, for a machine
+# where the default one stalls (its SDK stat cache waits on FSEvents).
+if [[ -n "${CC_MOSS_BUILD_SYSTEM:-}" ]]; then build_args+=(--build-system "$CC_MOSS_BUILD_SYSTEM"); fi
 "$here/scripts/swift.sh" "${build_args[@]}"
 bin_dir="$("$here/scripts/swift.sh" "${build_args[@]}" --show-bin-path)"
 

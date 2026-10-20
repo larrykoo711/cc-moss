@@ -154,6 +154,11 @@ fn handle(event: &str) -> Result<()> {
                 log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
             let fresh = matches!(source, StartSource::Startup | StartSource::Resume);
+            if fresh {
+                if let Err(e) = record_provider(&registry, session_id, &ctx) {
+                    log(kind.cli_name(), &format!("provider: {e:#}"));
+                }
+            }
             if fresh && ctx.tmux.is_none() {
                 warn_outside_tmux();
             }
@@ -171,6 +176,32 @@ fn handle(event: &str) -> Result<()> {
         _ => {}
     }
     Ok(())
+}
+
+/// The API provider this process starts with, from the settings Claude Code
+/// itself reads (`CLAUDE_CONFIG_DIR`, else `~/.claude`): key names, host and
+/// models only (T2.6).
+fn record_provider(registry: &Registry, session_id: &str, ctx: &Context) -> Result<()> {
+    let home = env("HOME").map(std::path::PathBuf::from);
+    let config_dir = env("CLAUDE_CONFIG_DIR").map(std::path::PathBuf::from);
+    let Some(path) =
+        moss_core::provider::settings_path(None, config_dir.as_deref(), home.as_deref())
+    else {
+        return Ok(());
+    };
+    let Some(mut now) = moss_core::provider::Snapshot::read(&path) else {
+        return Ok(());
+    };
+    // Which file: a switch has to reach this one to reach this session.
+    now.source = Some(path.to_string_lossy().into_owned());
+    let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
+        return Ok(());
+    };
+    registry.set_provider(
+        &slot.slot_id,
+        &now.to_json(),
+        &moss_core::provider::keys_json(&now.keys),
+    )
 }
 
 /// A SessionStart from the Moss the daemon started: the role it was given,

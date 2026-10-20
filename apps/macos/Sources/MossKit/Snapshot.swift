@@ -43,12 +43,23 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     public var attention: String?
     /// What cc-moss runs the session as: `moss` for Moss, else nil.
     public var role: String?
+    /// When it was put away in Archived; nil while it's in the list.
+    public var archivedAt: Date?
+    /// Why it must restart to use the provider you switched to, or nil
+    /// (always nil when it isn't running).
+    public var providerRestart: ProviderRestart?
+    /// It restarts by itself once its current turn ends.
+    public var restartQueued: Bool
 
     /// Moss, the session cc-moss keeps running itself.
     public var isMoss: Bool { role == "moss" }
 
+    /// Put away in Archived: out of the main list, still searchable.
+    public var isArchived: Bool { archivedAt != nil }
+
     enum CodingKeys: String, CodingKey {
         case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention, role
+        case archivedAt, providerRestart, restartQueued
     }
 
     public init(from decoder: Decoder) throws {
@@ -66,6 +77,11 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         worktree = try c.decodeIfPresent(Worktree.self, forKey: .worktree)
         attention = try c.decodeIfPresent(String.self, forKey: .attention)
         role = try c.decodeIfPresent(String.self, forKey: .role)
+        // Newer fields: an older cc-moss leaves them out, and a shape we
+        // don't expect must not cost the session.
+        archivedAt = (try? c.decodeIfPresent(Date.self, forKey: .archivedAt)) ?? nil
+        providerRestart = ((try? c.decodeIfPresent(String.self, forKey: .providerRestart)) ?? nil).map(ProviderRestart.init)
+        restartQueued = (try? c.decodeIfPresent(Bool.self, forKey: .restartQueued)) ?? false
     }
 }
 
@@ -76,10 +92,14 @@ public struct Snapshot: Equatable, Sendable {
 
     public var stateDir: String?
     public var sessions: [Session]
+    /// The provider Claude Code's settings point at now: the base URL's
+    /// host, nil for the default (or an older cc-moss that doesn't say).
+    public var providerHost: String?
 
-    public init(stateDir: String?, sessions: [Session]) {
+    public init(stateDir: String?, sessions: [Session], providerHost: String? = nil) {
         self.stateDir = stateDir
         self.sessions = sessions
+        self.providerHost = providerHost
     }
 }
 
@@ -94,7 +114,9 @@ extension Snapshot {
         var schema: Int
         var stateDir: String?
         var sessions: [Session]?
+        var provider: Provider?
     }
+    private struct Provider: Decodable { var host: String? }
 
     public static func decode(_ data: Data) throws -> Snapshot {
         let decoder = JSONDecoder()
@@ -120,7 +142,7 @@ extension Snapshot {
         }
         do {
             let wire = try decoder.decode(Wire.self, from: data)
-            return Snapshot(stateDir: wire.stateDir, sessions: wire.sessions ?? [])
+            return Snapshot(stateDir: wire.stateDir, sessions: wire.sessions ?? [], providerHost: wire.provider?.host)
         } catch {
             throw SnapshotError.invalid("\(error)")
         }

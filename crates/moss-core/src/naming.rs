@@ -53,6 +53,19 @@ pub fn sanitize(name: &str) -> String {
 /// overrides such as U+202E, zero-width spaces and joiners, soft hyphens,
 /// tags) and line or paragraph separators (Zl, Zp). A zero-width joiner
 /// between two emoji (👩‍💻) is part of the emoji and stays.
+/// `name` without control characters (Cc) or the hidden ones
+/// [`has_hidden_chars`] finds (Cf, Zl, Zp; an emoji's joiner stays), and
+/// trimmed: what a session's name is recorded as, wherever it came from.
+pub fn clean_name(name: &str) -> String {
+    let chars: Vec<char> = name.chars().collect();
+    (0..chars.len())
+        .filter(|&i| !chars[i].is_control() && !hidden_at(&chars, i))
+        .map(|i| chars[i])
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
 pub fn has_hidden_chars(name: &str) -> bool {
     let chars: Vec<char> = name.chars().collect();
     (0..chars.len()).any(|i| hidden_at(&chars, i))

@@ -48,3 +48,10 @@ fn previews_are_at_most_200_characters() {
     let long = "字".repeat(300);
     assert_eq!(prompt_preview(&long).unwrap().chars().count(), 200);
 }
+
+#[test]
+fn background_task_notices_are_not_your_words() {
+    let notice = "<task-notification>\n<task-id>bv9y8wkxk</task-id>\n<status>completed</status>\n</task-notification>";
+    assert_eq!(prompt_preview(notice), None);
+    assert_eq!(prompt_preview(&format!("  {notice}")), None);
+}

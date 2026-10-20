@@ -15,6 +15,8 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
         case moveIntoTmux
         /// It's waiting on you in To Do: go there, on that item.
         case handle(AskQueue.Item)
+        /// It's in Archived: take it back into the list.
+        case unarchive
     }
 
     /// What it waits on you for, and its place in To Do.
@@ -80,6 +82,7 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
     /// "Move into tmux" when it runs outside tmux; nothing for one that ended.
     public var main: Main? {
         guard let s = session else { return nil }
+        if s.isArchived { return s.isMoss ? nil : .unarchive }
         if let waiting { return .handle(waiting.item) }
         switch s.state {
         case .interrupted: return s.isMoss ? nil : .bringBack
@@ -105,7 +108,7 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
     /// The same pin as the Sessions list; not for one that has ended.
     public var canPin: Bool {
         guard let s = session else { return false }
-        return !s.isMoss && s.state != .closed
+        return !s.isMoss && s.state != .closed && !s.isArchived
     }
 
     /// One card per id Moss named, in its order; ids no session has any more

@@ -45,9 +45,22 @@ extension AppModel {
                 case .one:
                     if let back = report.restored.first {
                         say(L.t("\(back.name) is back. Press ↵ to open it.", "\(back.name) 找回来了，按 ↵ 打开。"))
+                    } else if report.failed.isEmpty {
+                        // cc-moss neither brought it back nor said why: never silent (F25).
+                        self.report(FailureNotice(action: .restore, subject: names.first.map(FailureNotice.Subject.init),
+                                             message: L.t("cc-moss didn't bring it back and didn't say why.",
+                                                          "cc-moss 没把它找回来，也没说原因。")))
                     }
                 }
+                for failed in report.failed {
+                    let s = names.first { $0.id == failed.id }
+                    self.report(FailureNotice(restore: failed, subject: s.map(FailureNotice.Subject.init)))
+                }
             } catch {
+                switch scope {
+                case .one: report(.restore, names.first, error: error)
+                case .all: report(FailureNotice(action: .restore, subject: nil, error: error))
+                }
                 restoreFlow.fail(scope, message: Self.describe(error),
                                  names: Dictionary(names.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a }))
                 if case .all = scope {
@@ -68,7 +81,7 @@ extension AppModel {
                 say(L.t("Tucked away. `cc-moss ls --all` still shows them.",
                         "已收起，`cc-moss ls --all` 还能看到。"))
             } catch {
-                say(Self.describe(error))
+                report(.close, list.count == 1 ? list.first : nil, error: error)
             }
             refresh()
         }

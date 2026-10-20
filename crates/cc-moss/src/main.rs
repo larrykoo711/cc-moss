@@ -36,7 +36,10 @@ enum Command {
         /// Include sessions that were closed on purpose.
         #[arg(long)]
         all: bool,
-        /// Machine-readable output (schema 1).
+        /// Only archived sessions (they are left out otherwise).
+        #[arg(long)]
+        archived: bool,
+        /// Machine-readable output (schema 1); lists archived sessions too.
         #[arg(long)]
         json: bool,
     },
@@ -182,6 +185,47 @@ enum Command {
         /// Session names (Claude name, tmux name or id prefix).
         #[arg(required = true)]
         names: Vec<String>,
+    },
+    /// Put away sessions that aren't running: off the list, but you can bring them back.
+    Archive {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// End a running session first, if it is idle (its turn is over, nothing typed).
+        #[arg(long)]
+        end: bool,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Start sessions again in place (same tmux pane) to use a new API provider.
+    ///
+    /// A busy session restarts after its turn, unless --now.
+    Restart {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required_unless_present = "stale")]
+        names: Vec<String>,
+        /// Every running session the provider switch didn't reach.
+        #[arg(long)]
+        stale: bool,
+        /// Restart a busy session right away; its current turn is lost.
+        #[arg(long)]
+        now: bool,
+        /// With --now: don't ask.
+        #[arg(long)]
+        yes: bool,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
+    /// Bring archived sessions back into the list.
+    Unarchive {
+        /// Session names (Claude name, tmux name or id prefix).
+        #[arg(required = true)]
+        names: Vec<String>,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
     },
     /// Show or set a session's notes: what it is doing, where it stopped.
     Note {
@@ -378,10 +422,11 @@ enum MossCommand {
         json: bool,
     },
     /// What Moss asks the daemon to do for it (its sandbox can't reach your
-    /// sessions); `restore`, `forget` and `end` need your go-ahead.
+    /// sessions); `restore`, `forget`, `end` and `purge` need your go-ahead.
     #[command(hide = true)]
     Act {
-        /// setup-fix | sync-names | sync-name | name | forget-gone | restore | forget | end
+        /// setup-fix | sync-names | sync-name | name | forget-gone | archive | archive-idle
+        /// | restore | forget | end | purge | purge-archived
         action: String,
         /// The session, and for `name` the new name.
         args: Vec<String>,
@@ -392,6 +437,10 @@ enum MossCommand {
         #[arg(long)]
         wait: bool,
     },
+    /// Moss's apiKeyHelper: the user's API key from their Claude Code
+    /// settings, for Claude Code only.
+    #[command(hide = true)]
+    ProviderKey,
     /// Say something to Moss; its reply shows in `moss chat` and the panel.
     Say {
         /// Print the message's id as JSON (schema 1).
@@ -553,7 +602,26 @@ fn main() -> std::process::ExitCode {
             safe,
             claude_args,
         })),
-        Command::Ls { all, json } => report(cmd::ls::run(all, json)),
+        Command::Ls {
+            all,
+            archived,
+            json,
+        } => report(cmd::ls::run(all, archived, json)),
+        Command::Archive { names, end, json } => exit(cmd::archive::archive(&names, end, json)),
+        Command::Unarchive { names, json } => exit(cmd::archive::unarchive(&names, json)),
+        Command::Restart {
+            names,
+            stale,
+            now,
+            yes,
+            json,
+        } => exit(cmd::restart::run(cmd::restart::RestartArgs {
+            names,
+            now,
+            yes,
+            stale,
+            json,
+        })),
         Command::Events { json, since, limit } => report(cmd::events::run(
             since,
             usize::try_from(limit).unwrap_or(usize::MAX),
@@ -635,6 +703,9 @@ fn main() -> std::process::ExitCode {
             DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
         },
         Command::Moss {
+            action: MossCommand::ProviderKey,
+        } => cmd::moss::provider_key(),
+        Command::Moss {
             action:
                 MossCommand::Act {
                     action,
@@ -655,7 +726,7 @@ fn main() -> std::process::ExitCode {
             MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),
             MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
             // Taken above.
-            MossCommand::Act { .. } => Ok(()),
+            MossCommand::Act { .. } | MossCommand::ProviderKey => Ok(()),
         }),
         Command::Ask { action } => report(cmd::ask::run(match action {
             AskCommand::List { json } => cmd::ask::Action::List { json },
@@ -740,6 +811,15 @@ fn explain(error: clap::Error, argv: &[std::ffi::OsString]) -> ! {
         }
     }
     error.exit()
+}
+
+/// Success when it worked, failure when it said no (exit 1).
+fn exit(result: anyhow::Result<bool>) -> std::process::ExitCode {
+    match result {
+        Ok(true) => std::process::ExitCode::SUCCESS,
+        Ok(false) => std::process::ExitCode::FAILURE,
+        Err(e) => report(Err(e)),
+    }
 }
 
 fn report(result: anyhow::Result<()>) -> std::process::ExitCode {

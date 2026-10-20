@@ -128,8 +128,16 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Sl
             [] => continue,
             [one] => return Ok(one),
             many => {
+                let mut candidates: Vec<String> = Vec::new();
+                for s in many {
+                    let id: String = s.session_id.chars().take(8).collect();
+                    if !candidates.contains(&id) {
+                        candidates.push(id);
+                    }
+                }
                 return Err(ResolveError::Ambiguous {
                     query: query.to_string(),
+                    candidates,
                     matches: many
                         .iter()
                         .map(|s| {
@@ -140,7 +148,7 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Sl
                             )
                         })
                         .collect(),
-                })
+                });
             }
         }
     }
@@ -151,10 +159,12 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Sl
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
     NotFound(String),
-    /// `matches` are "name (id prefix)".
+    /// `matches` are "name (id prefix)"; `candidates` the id prefixes
+    /// alone, each once.
     Ambiguous {
         query: String,
         matches: Vec<String>,
+        candidates: Vec<String>,
     },
 }
 
@@ -164,7 +174,7 @@ impl std::fmt::Display for ResolveError {
             ResolveError::NotFound(q) => {
                 write!(f, "no session named `{q}` (see `cc-moss ls --all`)")
             }
-            ResolveError::Ambiguous { query, matches } => write!(
+            ResolveError::Ambiguous { query, matches, .. } => write!(
                 f,
                 "`{query}` matches several sessions: {} (use an id prefix)",
                 matches.join(", ")

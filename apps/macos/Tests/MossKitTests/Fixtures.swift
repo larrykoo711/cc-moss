@@ -39,3 +39,25 @@ func snapshotData(_ sessions: [[String: Any]], schema: Int = 1, stateDir: String
 func sessions(_ list: [[String: Any]]) -> [Session] {
     try! Snapshot.decode(snapshotData(list)).sessions
 }
+
+/// `base` with more `ls --json` fields set (archived_at, provider_restart, …).
+func with(_ base: [String: Any], _ extra: [String: Any]) -> [String: Any] {
+    base.merging(extra) { _, new in new }
+}
+
+/// Records every command; answers each the same way.
+actor Recorder: CommandRunner {
+    let status: Int32
+    let stdout: String
+    private(set) var calls: [[String]] = []
+
+    init(status: Int32 = 0, stdout: String) {
+        self.status = status
+        self.stdout = stdout
+    }
+
+    func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
+        calls.append(arguments)
+        return CommandResult(status: status, stdout: Data(stdout.utf8), stderr: "")
+    }
+}

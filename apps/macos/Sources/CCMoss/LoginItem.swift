@@ -8,27 +8,88 @@ import ServiceManagement
 enum LoginItem {
     static let label = "io.github.larrykoo711.cc-moss.login"
 
+    /// The system's login item service didn't answer in time.
+    struct Stalled: Error {}
+
     static var agentURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
     }
 
-    static var isEnabled: Bool {
-        SMAppService.mainApp.status == .enabled || FileManager.default.fileExists(atPath: agentURL.path)
+    /// The system's last answer. Asking it goes through a background
+    /// service that can stall for good; asked on the main thread, the
+    /// Settings window froze opening (2026-10-20). So it is asked off it
+    /// (`refresh`), and this never waits.
+    @MainActor private static var systemSays = false
+
+    /// On, as far as is known now: never blocks.
+    @MainActor static var isEnabled: Bool {
+        systemSays || FileManager.default.fileExists(atPath: agentURL.path)
     }
 
-    static func set(_ on: Bool) throws {
-        if on {
-            do {
-                try SMAppService.mainApp.register()
-            } catch {
+    /// Ask the system again, off the main thread; no answer within 2 s
+    /// keeps the last one.
+    @MainActor @discardableResult
+    static func refresh() async -> Bool {
+        if let said = await offMain({ SMAppService.mainApp.status == .enabled }) { systemSays = said }
+        return isEnabled
+    }
+
+    /// Turn it on or off, off the main thread, then ask again.
+    @MainActor
+    static func set(_ on: Bool) async throws {
+        let outcome: Result<Void, Error>? = await offMain {
+            Result {
+                if on {
+                    do {
+                        try SMAppService.mainApp.register()
+                    } catch {
+                        try writeAgent()
+                    }
+                } else {
+                    try? SMAppService.mainApp.unregister()
+                    if FileManager.default.fileExists(atPath: agentURL.path) {
+                        try FileManager.default.removeItem(at: agentURL)
+                    }
+                }
+            }
+        }
+        // No answer: the system's service is stuck. Turning on, the launch
+        // agent still works; turning off, the system may still have it on.
+        if outcome == nil {
+            if on {
                 try writeAgent()
+            } else {
+                if FileManager.default.fileExists(atPath: agentURL.path) { try FileManager.default.removeItem(at: agentURL) }
+                await refresh()
+                throw Stalled()
             }
-        } else {
-            try? SMAppService.mainApp.unregister()
-            if FileManager.default.fileExists(atPath: agentURL.path) {
-                try FileManager.default.removeItem(at: agentURL)
-            }
+        }
+        try outcome?.get()
+        await refresh()
+    }
+
+    /// `work` on a background thread; nil when it hasn't answered in
+    /// `seconds` (the thread is left to finish on its own).
+    private static func offMain<T: Sendable>(seconds: Double = 2, _ work: @escaping @Sendable () -> T) async -> T? {
+        await withCheckedContinuation { (done: CheckedContinuation<T?, Never>) in
+            let once = Once(done)
+            DispatchQueue.global(qos: .userInitiated).async { once.resume(work()) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + seconds) { once.resume(nil) }
+        }
+    }
+
+    /// Resumes a continuation the first time only.
+    private final class Once<T: Sendable>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var continuation: CheckedContinuation<T?, Never>?
+        init(_ c: CheckedContinuation<T?, Never>) { continuation = c }
+        func resume(_ value: T?) {
+            lock.lock()
+            let c = continuation
+            continuation = nil
+            lock.unlock()
+            c?.resume(returning: value)
         }
     }
 

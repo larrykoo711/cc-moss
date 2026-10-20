@@ -37,6 +37,10 @@ pub enum Reason {
     TmuxFailed,
     /// It is running, on its way back, or comes back through another copy.
     AlreadyRunning,
+    /// The name matches several sessions (`--json` only).
+    Ambiguous,
+    /// The name matches no session (`--json` only).
+    NotFound,
 }
 
 impl Reason {
@@ -47,6 +51,8 @@ impl Reason {
             Reason::ExitedAtOnce => "exited_at_once",
             Reason::TmuxFailed => "tmux_failed",
             Reason::AlreadyRunning => "already_running",
+            Reason::Ambiguous => "ambiguous",
+            Reason::NotFound => "not_found",
         }
     }
 }
@@ -56,6 +62,8 @@ struct Outcome {
     id: String,
     name: String,
     failure: Option<(Reason, String)>,
+    /// For `ambiguous`: the id prefixes of the sessions the name matches.
+    candidates: Vec<String>,
 }
 
 impl Outcome {
@@ -68,6 +76,9 @@ impl Outcome {
         if let Some((reason, message)) = &self.failure {
             v["reason"] = reason.code().into();
             v["message"] = message.as_str().into();
+        }
+        if !self.candidates.is_empty() {
+            v["candidates"] = self.candidates.clone().into();
         }
         v
     }
@@ -98,8 +109,33 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     let registry = Registry::open(&path)?;
     let slots = registry.slots()?;
     // Names select exact slots (by id), whatever form the user typed.
+    // With --json a name that picks no one session is a result of its own.
+    let mut unresolved = Vec::new();
     let only: Option<HashSet<String>> = if args.names.is_empty() {
         None
+    } else if args.json {
+        let mut ids = HashSet::new();
+        for n in &args.names {
+            match super::resolve_item(&slots, n) {
+                Ok(s) => {
+                    ids.insert(s.slot_id.clone());
+                }
+                Err(u) => unresolved.push(Outcome {
+                    id: String::new(),
+                    name: n.clone(),
+                    failure: Some((
+                        if u.ambiguous {
+                            Reason::Ambiguous
+                        } else {
+                            Reason::NotFound
+                        },
+                        u.message,
+                    )),
+                    candidates: u.candidates,
+                }),
+            }
+        }
+        Some(ids)
     } else {
         Some(
             args.names
@@ -112,9 +148,26 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .into_iter()
         .map(|s| (s.effective_status(proc::is_alive), s))
         .collect();
-    let candidates = plan(&rows, only.as_ref(), now_ms(), |p: &Path| p.exists());
+    // Archived sessions, and ones the user ended on purpose (shown again
+    // after the archive), come back only when named.
+    let pool = only.clone().or_else(|| {
+        Some(
+            rows.iter()
+                .filter(|(_, s)| !s.is_archived() && !s.ended_on_purpose())
+                .map(|(_, s)| s.slot_id.clone())
+                .collect(),
+        )
+    });
+    let candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| p.exists());
     if args.json {
-        return run_json(&config, &registry, &rows, only.as_ref(), &candidates);
+        return run_json(
+            &config,
+            &registry,
+            &rows,
+            only.as_ref(),
+            &candidates,
+            unresolved,
+        );
     }
     if candidates.is_empty() {
         println!("{}", nothing_to_restore());
@@ -237,8 +290,9 @@ fn run_json(
     rows: &[(Status, Slot)],
     only: Option<&HashSet<String>>,
     candidates: &[moss_core::restore::Candidate<'_>],
+    unresolved: Vec<Outcome>,
 ) -> Result<()> {
-    let mut outcomes = Vec::new();
+    let mut outcomes = unresolved;
     if let Some(ids) = only {
         for (_, slot) in rows
             .iter()
@@ -251,6 +305,7 @@ fn run_json(
                     Reason::AlreadyRunning,
                     tr!("it is already running", "它已经在运行了").to_string(),
                 )),
+                candidates: Vec::new(),
             });
         }
     }
@@ -289,6 +344,7 @@ fn run_json(
             id: c.slot.slot_id.clone(),
             name: display_name(c.slot),
             failure,
+            candidates: Vec::new(),
         });
     }
     print_json(&outcomes)

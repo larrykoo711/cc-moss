@@ -21,6 +21,17 @@ final class AppModel {
     /// Moss, kept apart from `sessions`: pinned on top of the list, never
     /// counted, restored or dismissed.
     var moss: Session? { didSet { if moss != oldValue { syncIcon() } } }
+    /// Archived sessions (T2.5), kept apart from `sessions` like Moss: never
+    /// counted, offered for restore or shown in the folders.
+    var archived: [Session] = []
+    /// The "Archived" group is open.
+    var archivedExpanded = false
+    /// The line after a provider switch (T2.6), fed by the event stream.
+    var providerBanner = ProviderBanner()
+    /// Sessions being restarted from their row right now.
+    var restarting: Set<String> = []
+    /// "Restart All" is running.
+    var restartingAll = false
 
     /// The session with this id, Moss included (alerts name and open it).
     func session(_ id: String) -> Session? {
@@ -58,6 +69,8 @@ final class AppModel {
     var cliPath: String?
     @ObservationIgnored private var watcher: DirectoryWatcher?
     @ObservationIgnored private var watchedDir: String?
+    /// Stands in for the watcher while FSEvents doesn't answer.
+    @ObservationIgnored private var poller: StatePoller?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastLoad = Date.distantPast
     @ObservationIgnored private var paced: Task<Void, Never>?
@@ -106,8 +119,9 @@ final class AppModel {
     /// The Sessions page, flat: headings and rows, each row once, its pin
     /// taken from the section it's in.
     var listItems: [SessionListItem] {
-        if searching { return SessionList.searchItems(query: query, live: searchHits, closed: closedHits) }
-        return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded)
+        if searching { return SessionList.searchItems(query: query, live: searchHits, archived: archivedHits, closed: closedHits) }
+        return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded,
+                                 archived: archivedShown, archivedExpanded: archivedExpanded)
     }
     /// You typed in the line: a suggestion arriving later leaves it alone.
     /// Claude Code's suggestion in that line: quiet until you touch it.
@@ -193,6 +207,16 @@ final class AppModel {
     var newDraft = NewDraft()
     /// "Stop reminding" waits for a second, deliberate click.
     var closeGate = Confirmation<[Session]>()
+    /// Actions that didn't work, newest shown at the bottom of the panel (F25).
+    var failures = FailureNotices()
+    /// The Moss page's "Handled N just now" line, after the waiting card empties.
+    var waitingReceipt = WaitingReceipt()
+    /// Screenshots only: the receipt set up for them survives the card appearing.
+    @ObservationIgnored var demoKeepsReceipt = false
+    /// Screenshots only: waiting rows (by session id) shown opened.
+    @ObservationIgnored var demoWaitingOpen: Set<String> = []
+    /// "End and archive" waits for a second, deliberate click too.
+    var endArchiveGate = Confirmation<Session>()
 
     /// Questions sessions are waiting on (T1.4), from `cc-moss ask list`,
     /// and the cards that answer them.
@@ -307,8 +331,9 @@ final class AppModel {
     /// folders, the folded group only while it is open. Never Moss: it has
     /// its own page (user 2026-10-19).
     var visible: [Session] {
-        if searching { return searchHits.map(\.session) }
+        if searching { return (searchHits + archivedHits).map(\.session) }
         return pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
+            + (archivedExpanded ? archivedShown : [])
     }
 
     /// Ranked results for the query, the state filter applied.
@@ -333,7 +358,7 @@ final class AppModel {
         Task {
             guard let snap = try? await client.snapshotAll(), read == closedRead else { return }
             let since = Date().addingTimeInterval(-30 * 86_400)
-            closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && $0.lastActiveAt > since }
+            closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && !$0.isArchived && $0.lastActiveAt > since }
         }
     }
 
@@ -413,7 +438,10 @@ final class AppModel {
             let snap = try await client.snapshot()
             let split = Grouping.splitMoss(snap.sessions)
             moss = split.moss
-            sessions = split.others
+            // Archived ones live in their own group, out of every count.
+            let shelf = Archive.split(split.others)
+            if archived != shelf.archived { archived = shelf.archived }
+            sessions = shelf.open
             // Pins of sessions that are gone or closed go (saved with the next pin).
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
@@ -445,16 +473,45 @@ final class AppModel {
 
     private func watch(_ dir: String) {
         guard dir != watchedDir else { return }
-        watcher?.stop()
-        watcher = DirectoryWatcher(path: dir, latency: 1.0, filter: { path in
-            let announced = FileManager.default.fileExists(atPath: dir + "/registry.changed")
-            return StateChange.matters(path, in: dir, announced: announced)
-        }) { [weak self] in
-            Task { @MainActor in self?.changed() }
-        }
         watchedDir = dir
+        // Starting and stopping a stream waits on fseventsd, which can stop
+        // answering for good; on the main thread that froze the whole app.
+        let old = watcher
+        watcher = nil
+        poller = nil
+        Task.detached { old?.stop() }
+        Task.detached { [weak self] in
+            let started = DirectoryWatcher(path: dir, latency: 1.0, filter: { path in
+                let announced = FileManager.default.fileExists(atPath: dir + "/registry.changed")
+                return StateChange.matters(path, in: dir, announced: announced)
+            }) { [weak self] in
+                Task { @MainActor in self?.changed() }
+            }
+            guard let self else {
+                started?.stop()
+                return
+            }
+            await self.adopt(started, for: dir)
+        }
+        // No stream after a few seconds: look at the folder ourselves.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(StatePoller.patience))
+            guard let self, self.watchedDir == dir, self.watcher == nil, self.poller == nil else { return }
+            self.poller = StatePoller(stateDir: dir) { [weak self] in self?.changed() }
+        }
         // Opened before the folder was known (a cold launch by a link): mark it now.
         PanelOpenedMark.touchIfShown(panelShown, stateDir: dir)
+    }
+
+    /// The watcher started off the main thread: kept if the folder is still
+    /// the one watched, and then polling stops.
+    private func adopt(_ started: DirectoryWatcher?, for dir: String) {
+        guard watchedDir == dir else {
+            Task.detached { started?.stop() }
+            return
+        }
+        watcher = started
+        if started != nil { poller = nil }
     }
 
     func selectFirst() { selectedID = visible.first?.id }
@@ -523,6 +580,8 @@ final class SearchIndexes {
     private var liveIndex = SearchIndex([])
     private var closedKey: [String] = []
     private var closedIndex = SearchIndex([])
+    private var archivedKey: [String] = []
+    private var archivedIndex = SearchIndex([])
 
     private static func key(_ list: [Session]) -> [String] {
         list.map { "\($0.id)|\($0.title)|\($0.cwd)|\($0.lastActiveAt.timeIntervalSince1970)|\($0.lastPrompt ?? "")|\($0.notes.note ?? "")|\($0.state)" }
@@ -535,6 +594,15 @@ final class SearchIndexes {
             liveIndex = SearchIndex(sessions, folders: folders)
         }
         return liveIndex
+    }
+
+    func archived(_ sessions: [Session]) -> SearchIndex {
+        let k = Self.key(sessions)
+        if k != archivedKey {
+            archivedKey = k
+            archivedIndex = SearchIndex(sessions)
+        }
+        return archivedIndex
     }
 
     func closed(_ sessions: [Session]) -> SearchIndex {

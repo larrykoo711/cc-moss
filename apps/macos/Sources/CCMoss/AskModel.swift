@@ -56,6 +56,10 @@ extension AppModel {
         Task {
             let outcome = await client.answer(id, with: reply)
             askDesk.finish(id, outcome)
+            if case let .failed(message) = outcome, let ask = askDesk.card(id)?.ask {
+                report(FailureNotice(action: .answer, subject: .init(name: askTitle(ask), id: ask.sessionId, folder: ask.cwd),
+                                     message: message))
+            }
             if case .failed = outcome {} else {
                 let wait = outcome == .answered ? Self.answeredFor : Self.lateFor
                 Task {

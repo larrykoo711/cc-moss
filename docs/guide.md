@@ -99,7 +99,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 |---|---|
 | `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
 | `cc-moss new [名字] [-C 目录] [--detach] [--yes] [--safe] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用。默认 bypass，`--safe` 这一次按普通模式开，连配置里额外加的 bypass 也不用（见[新会话的权限](#新会话的权限)） |
-| `cc-moss ls [--all] [--json]` | 列出会话（`--json` 给脚本用；1.0 之前格式仍可能调整） |
+| `cc-moss ls [--all] [--archived] [--json]` | 列出会话（`--archived` 只列归档的；`--json` 给脚本用；1.0 之前格式仍可能调整） |
 | `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
 | `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
@@ -109,6 +109,8 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss suggest 名字 [--json]` | Claude Code 在这个会话输入框里给的下一句建议（那行灰字）；会话在忙或没有建议时什么都不输出（`--json` 输出 `{"schema":1,"suggestion":…}`，没有时是 `null`） |
 | `cc-moss adopt 名字 [--dry-run] [--json]` | 把一个不在 tmux 里跑的会话移进 tmux，对话接着（见[移进 tmux](#移进-tmux)） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
+| `cc-moss archive 名字… [--end] [--json]` / `unarchive 名字… [--json]` | 归档会话、从归档拿回来（见[归档](#归档)） |
+| `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
 | `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
@@ -156,6 +158,39 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 - `--json` 输出一行，`result` 是 `moved`、`would-move`、`refused` 或 `failed`，拒绝时带 `reason`（`busy`、`in-tmux`、`not-running`、`not-its-process`、`moss`）。每次搬动都记进状态目录的 `audit.jsonl`。
 
 面板里不在 tmux 里的会话，行末多一个「移进 tmux」按钮（会话还没名字时是「整理并移进 tmux」），点了先说清会发生什么，你确认后才动手。
+
+### 归档
+
+不用的会话会自己收起来，列表只留最近在用的：
+
+- 结束了、超过 30 天没动静的会话，守护进程每天整理时自动归档。天数用 `cc-moss config set sessions.archive_after_days 天数` 改，`0` 关掉自动归档。正在跑的会话再老也不会被归档
+- 手动：`cc-moss archive 名字…` 归档；还在跑但闲着的会话加 `--end`，先结束它再归档（正在干活的不动）。App 里是「⋯」菜单的「归档」，闲着的会话是「结束并归档」，先问你一句。`cc-moss unarchive 名字…` 拿回来。用 `claude --resume` 接着用一个归档的会话，它会自己回到列表
+- `cc-moss ls` 不列归档的，`ls --archived` 只列归档的；`ls --json` 都列，每条带 `archived_at`。选择器里归档的会话只在搜索时出现，单独一组「已归档」
+- 想彻底删掉：在 App 的「已归档」里点「清理」或「全部清理」，或者直接跟 Moss 说。Moss 列出要删哪些、问你一句，你点了确认才删：记录从 cc-moss 里去掉，对话记录文件移到废纸篓（不直接抹掉，删错了还能从废纸篓找回来）。只删归档里的会话，也只把 Claude Code 自己文件夹里属于这个会话的对话记录移走，别处的文件不碰。Moss 单独归档一个会话也要先问你；「全部清理」不包括 Moss 刚归档（一天之内）的会话，确认按钮上列出要删的名字
+
+### 换 API 供应商
+
+订阅额度用完、用 cc-switch 之类的工具换到别的供应商时，大多数情况不用退出会话：Claude Code 会盯着 `~/.claude/settings.json`，换了地址、token 或模型别名，下一条消息就走新的（2.1.303 实测）。cc-moss 的守护进程也盯着这个文件，换了之后面板顶部提示「已切到 <地址>，下一条消息就走它」。
+
+有两种情况，运行中的会话吃不进去，必须重开：
+
+- 切回官方订阅：工具会删掉 settings 里的那几项，可删掉的值还留在会话进程里，请求照旧发给原来的供应商
+- 新供应商在 settings 的 `env` 里用 `ANTHROPIC_MODEL` 指定了模型：这一项只在启动时读。settings 顶层的 `model`（你在会话里用 `/model` 换模型时写的就是它）不算，不会因此要你重开
+
+这时受影响的会话在面板里标成「要重开」，点「重开」或「全部重开」；命令行是：
+
+```sh
+cc-moss restart 名字      # 在原来的 tmux 窗格里重开，同一段对话接着聊
+cc-moss restart --stale   # 重开所有需要重开的会话
+```
+
+- 窗格、tmux 会话名都不变，不用重新进 tmux、也不用再敲名字；启动参数沿用当初的（新 settings 的 `env` 用 `ANTHROPIC_MODEL` 指定了模型时去掉原来的 `--model`）
+- 正在干活的会话不会被打断：排队，等这一轮做完自己重开。`--now` 立刻重开，这一轮的回复会丢（重开后发一句 continue 就行），终端里会先问你，`--yes` 跳过
+- 会话窗格里 Claude 退出后回到了 shell 的，在那个 shell 里敲 `cd '<会话的文件夹>' && claude --resume <id> --name=<名字> <沿用的参数>`。shell 里 `export` 过的环境变量照样生效；只写在当初那行命令前面的（`FOO=1 claude`）不会带上。沿用的参数只有 `--permission-mode`、`--model`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`
+- 排队的会话重开连着失败 3 次就不再试，记一条 `restart-failed` 事件，`doctor` 和面板照旧标它「要重开」，你可以手动再点
+- 不在 tmux 里的会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这里
+- `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效。每个会话按它启动时读的那份 settings 判断要不要重开；有会话读的设置目录和 cc-moss 看的不一样时，`doctor` 也会提醒你把 `[claude] config_dir` 设成你切换供应商的那个目录
+- 面板、`doctor` 和日志里只出现供应商的地址主机名和模型名，token、key 的值从不显示、不记录。Moss 跟着你换供应商：它的设置里只写地址和模型，key 不落进它能看到的文件，而是在它发请求时由 `cc-moss moss provider-key` 从你的 settings 读出交给 Claude Code（你配了自己的 `apiKeyHelper` 就照样跑它），换了 key 一分钟内跟上
 
 ### 替会话接住问题
 
@@ -263,8 +298,8 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
 - **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 会话上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板的 Moss 页点「在终端打开」。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
-- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己的项目设置（`--setting-sources project`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
-- **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
+- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己家里的设置（`--setting-sources project,local`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑；只有 API 供应商的地址和模型会抄进它家的 `.claude/settings.local.json`（见[换 API 供应商](#换-api-供应商)），它的命令行读不了这个文件。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
+- **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信；你换到别的 API 供应商时，它也跟着走那个供应商。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
 - Moss 需要你的时候（要权限、有问题要问），菜单栏图标和数字会像别的会话一样提醒你；但 Moss 本身从不算进你的会话数。
 - `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程（按它自己的 PATH）找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 先停掉守护进程，再结束 Moss、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
 - 退回到没有 Moss 的旧版 cc-moss：旧版认不出哪条记录是 Moss，旧的 Moss 可能会作为「断了的会话」出现在找回列表里。用 `cc-moss close` 关掉它就行（不管也行）。
@@ -273,6 +308,7 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
 
 面板侧栏的第三页「Moss」（⌘3）：上面一条写着它现在怎样（待命中 · 已运行多久、正在想、在等你确认、重启中、已关闭），旁边的「在终端打开」能看它的终端在做什么；下面是你们的对话，最底下是快捷栏。侧栏的 Moss 图标上，它在想时有一个一闪一闪的点，有你没看的回复时是品牌色的点。
 
+- **等你处理。** 有会话在等你（要权限、问你问题、等你回话）时，对话下面、快捷栏上面常驻一张「等你处理 · N」卡：每个会话一行，写着它要什么，回答就在这一行右边（「允许」「拒绝」「回答」「回一句」），问题的选项排在下面；↗ 打开那个会话。处理完的一行就消失，全处理完收成一句「✓ 刚处理了 N 个请求」，过一会儿自己走。这些不再由 Moss 一条条播报。
 - **快捷栏。** 一排点一下就交给 Moss 的事：「体检」「谁在等我」「谁卡住了」「今天做了什么」「整理会话」，再加上适合你账号的 Claude Code 命令（见下）。一行放不下的收进最右边的「⋯」。排序看你在这台 Mac 上用得多少，最近用的更算数；眼下的情况也会把相关的一项往前提：「待处理」里有事时是「谁在等我」，有会话断了时是「谁卡住了」，上次 `/usage` 有一项到了 80% 时是「用量」。Moss 也可以推荐几项，24 小时内排在最前，带一个小星标。顺序在打开这一页时排好，你点的时候不会跳。
 - **自己写。** 点快捷栏末尾的键盘图标换成输入框（回车发送、⇧回车换行），再点一下换回来。Moss 的终端里有 Claude Code 给的下一句建议时，快捷栏上方浮着一个淡淡的「↳ …」，点一下就填进输入框（不会直接发出去），× 先收起，等 Moss 下次回复。
 - **Claude Code 命令。** 以 `/` 开头的话按 Claude Code 命令执行：守护进程把它打进 Moss 的终端，等画面稳定后把结果截回来，作为 Moss 的一条回复；会弹出面板的命令随后自动关掉。快捷栏和输入框里打 `/` 列出的是只看不改的几个：`/usage`（用量）、`/status`（账号和版本）、`/context`（上下文用了多少）、`/cost`（这次花了多少）、`/stats`（使用统计）。列哪些看你的 Claude Code 账号：订阅（Pro、Max）给 `/usage`，API key 或第三方云（Bedrock、Vertex 等）给 `/cost`；不合适的打全了也照样发。`/help`、`/clear`、`/compact` 打全了也能用。别的命令会回一句「这个命令要在终端里用」，去「在终端打开」里用。`/usage` 和 `/status` 画成卡片，「原文」切回终端里的样子。
@@ -288,7 +324,7 @@ cc-moss moss chat --json                    # 最近 200 条对话（--limit N �
 
 - **怎么送到它那里。** 你发的话先排进队，由守护进程等 Moss 闲下来、输入框是空的时候整段粘贴进它的终端，再读一下屏幕确认真的到了；三次都没到就标「没送到」，可以点重发，后面的照常送。Moss 正在忙一轮时，新发的话排着队，按顺序送。
 - **怎么拿到回复。** Moss 说完一轮，cc-moss 从它的对话记录里取回最后那段话。Claude Code 没有公开对话记录的格式，取不到时不会卡住，只写「Moss 收到了（没能取回回复，去终端看）」。一轮超过 5 分钟还在跑，就接着等它（最多 15 分钟）；它停在确认框上时，状态写「在等你确认」，cc-moss 不替你按键。
-- **会话动态。** 哪个会话需要你、断了、做完了，守护进程会告诉 Moss：20 秒内的变化合成一条，同一个会话的同一件事 10 分钟内只说一次。发出前再对一遍：已经不再等你的「需要你」、已经回来的「断了」就不说了，什么都不剩就不发。对话里它是居中的一行灰字。只有「做完了一轮」这种日常动态时，Moss 的回答不显示、也不提醒你。不想让它知道，在配置里写 `[moss] digest = false`。
+- **会话动态。** 哪个会话断了、做完了，守护进程会告诉 Moss（在等你的会话不告诉它，它们都在 Moss 页底部的「等你处理」卡里）：20 秒内的变化合成一条，同一个会话的同一件事 10 分钟内只说一次。发出前再对一遍：已经回来的「断了」就不说了，什么都不剩就不发。对话里它是居中的一行灰字。只有「做完了一轮」这种日常动态时，Moss 的回答不显示、也不提醒你。不想让它知道，在配置里写 `[moss] digest = false`。
 - **回复提醒。** 你停在 Moss 页时不提醒；不在时，小莫在屏幕上就冒个气泡「Moss 回你了」，否则发一条系统通知，点开都回到 Moss 页。Moss 可以选择安静地记一笔不提醒你，也可以在回复下面放几个按钮，点一下就等于把那句话发给它。
 - **只有经面板或 `moss say` 发的话在对话里。** 你在 Moss 的终端里直接打的字只在终端里。
 - **隐私。** cc-moss 只把你发给它的话和会话动态（名字和状态）交给 Moss，不会把别的会话的对话内容转给它；Moss 的防护钩子和沙箱也不让它去读 `~/.claude/projects` 里那些会话的记录。
@@ -314,7 +350,7 @@ cc-moss moss chat --json                    # 最近 200 条对话（--limit N �
 
 配置里是 `[moss] daily_checkup`、`daily_brief`，也可以 `cc-moss config set moss.daily_checkup false`。
 
-**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么，连同每个会话的文件夹（比如「结束 work · ~/code/work」）。两个开着的会话同名时，Moss 不能用这个名字问你，得先改掉一个。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
+**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话、归档、清理归档这几件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么，连同每个会话的文件夹（比如「结束 work · ~/code/work」）。两个开着的会话同名时，Moss 不能用这个名字问你，得先改掉一个。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
 
 体检看的是 `cc-moss doctor --sessions --json` 给的事实：每个会话的名字是不是自动起的、文件夹在不在、断了多久、多久没动、在不在干活或等你、tmux 名对不对得上，以及建议的名字；还有钩子和别名链接好不好。判断不了的写 `"unknown"`，不当成坏了。里面没有会话的对话内容。
 
@@ -360,13 +396,15 @@ Homebrew 和 macOS 的 Releases 下载包里都带着 App；从源码装（`carg
 
 点菜单栏图标，或者在任何地方连按两下 ⌃，面板就出来了。App 已经开着时再打开它一次（Spotlight、`open -a cc-moss`，或者显示 Dock 图标时点它）也会弹出面板。链接 `cc-moss://panel` 同样能打开，后面加 `/sessions`、`/queue` 或 `/moss` 就直接到那一页，可以放进快捷指令或别的启动器里。
 
-面板左边是一条侧栏：「会话」（⌘1）、「待处理」（⌘2，角标是还剩几件）、「Moss」（⌘3）。侧栏最下面的齿轮是 App 的菜单：「设置…」（⌘,）、「刷新」（⌘R）；有新版本时是「更新到 x」（在终端里运行 `cc-moss update`，齿轮上也会有个小圆点），没有时显示当前版本，点了到 设置 ›「关于」；最后是「退出 cc-moss」（⌘Q）。面板底部左边是「新会话」，右边是选中会话的主操作（「打开」「找回」等，带一个 ↵），只在「会话」页出现。
+面板左边是一条侧栏：「会话」（⌘1）、「待处理」（⌘2，角标是还剩几件）、「Moss」（⌘3）。侧栏最下面的齿轮是 App 的菜单，顺序和 Mac 应用自己的菜单一样：「关于 cc-moss」（右边是版本号）、「检查更新…」（有新版本时变成「更新到 x…」，在终端里运行 `cc-moss update`，齿轮上也会有个小圆点）；「设置…」（⌘,）；「使用手册」「报告问题」；最后是「退出 cc-moss」（⌘Q）。⌘R 随时可以刷新。面板底部左边是「新会话」，右边是选中会话的主操作（「打开」「找回」等，带一个 ↵），只在「会话」页出现。
 
 面板的高度在打开时按你有几个会话挑一档：4 个以内矮一些，5 到 9 个中等，10 个以上占屏幕高度的 70%（在 720 到 900 点之间）。开着的时候高度不变。会话有变化时面板自己刷新，开着时最快 1.5 秒一次，关着时 5 秒一次；也可以按 ⌘R。
 
 #### 会话页
 
 会话按项目分组，git worktree 带着标记；最上面一排按状态筛选（全部、在忙、在等你、已中断），Tab / ⇧Tab 切换。打字就是搜索（见下面）。Moss 不在这个列表里，它有自己的一页（见[和 Moss 说话](#和-moss-说话)）。
+
+哪个动作没做成（找回、重开、归档、移进 tmux、回复……），面板底部都会滑出一条提示：用大白话说清怎么了、可以怎么办，带「复制详情」；Moss 在运行时还有「交给 Moss 处理」，点了把出错的动作、会话和原因发给 Moss，切到 Moss 页看它排查，要动手的地方照样先问你。
 
 断了的会话，回车把它找回来：在 tmux 里接上原来的对话，和 `cc-moss restore` 一样。一次断了好几个（比如刚重启），面板顶上会有一条「有 N 个会话断了」，点「全部找回」就行。一周以前断的收在「更早断开的」里，不想再看见的可以「不再提醒」。
 
@@ -569,10 +607,13 @@ wait_secs = 300           # 等别处的答案最多多少秒（1–590），等
 
 [moss]
 enabled = true            # Moss 一直开着（macOS）；false 关掉，cc-moss moss start|stop 改的就是它
-digest = true             # 把会话动态（需要你、断了、做完了）告诉 Moss；false 不告诉
+digest = true             # 把会话动态（断了、做完了）告诉 Moss；false 不告诉
 actions = true            # Moss 可以请守护进程代办体检里的事；false 只说不做
 daily_checkup = true      # 每天自动体检一次
 daily_brief = true        # 每天的体检简报提醒你；false 只在要你拿主意时提醒
+
+[sessions]
+archive_after_days = 30   # 结束了多少天没动静的会话自动归档；0 关掉
 ```
 
 界面语言也可以用命令改，不用打开文件：`cc-moss config set ui.language zh`（设回 `auto` 就重新跟随系统），`cc-moss config get ui.language` 查看当前值。加上 `--json` 输出 `{"schema":1,"ok":true,"key":"ui.language","value":"zh"}`，出错时是 `{"schema":1,"ok":false,"code":"unknown_key","error":"…"}`（`code` 还可能是 `bad_value`、`config`）。

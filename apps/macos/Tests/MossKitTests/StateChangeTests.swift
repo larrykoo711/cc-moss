@@ -36,4 +36,14 @@ import Testing
         #expect(StateChange.gap(panelShown: true) == 1.5)
         #expect(StateChange.gap(panelShown: false) == 5)
     }
+
+    @Test func pollingLooksAtWhatAWatcherWouldHear() {
+        let files = StateChange.polledFiles(in: dir)
+        // Every file but the questions folder is one `matters` counts.
+        for file in files where !file.hasSuffix("/asks") {
+            #expect(StateChange.matters(file, in: dir, announced: !file.hasSuffix("registry.db")))
+        }
+        #expect(files.contains("\(dir)/asks"))
+        #expect(StateChange.polledFiles(in: dir + "/") == files)
+    }
 }

@@ -260,6 +260,14 @@ struct SessionRow: View {
                                       "不在 tmux 里：它不是在 tmux 里开的，没法从这里打开。"))
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
+                    if let why = session.providerRestart, session.status == "running" {
+                        // Still on the old provider: a restart switches it.
+                        Image(systemName: Icons.providerRestart)
+                            .font(.system(size: 10.5, weight: .semibold))
+                            .foregroundStyle(session.restartQueued ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Theme.amber))
+                            .tip(why.explanation)
+                            .accessibilityLabel(L.t("needs a restart", "要重开"))
+                    }
                 }
                 if let progress {
                     HStack(spacing: 5) {
@@ -287,6 +295,15 @@ struct SessionRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .tip(problem)
+                } else if session.restartQueued && session.status == "running" {
+                    HStack(spacing: 4) {
+                        Image(systemName: Icons.restart)
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(Theme.amber)
+                        Text(L.t("Restarts after this turn", "这轮结束后重开")).lineLimit(1)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
                 } else if let sub = session.subtitle {
                     HStack(spacing: 4) {
                         Image(systemName: session.subtitleIsNote ? Icons.note : Icons.lastPrompt)
@@ -333,12 +350,18 @@ struct SessionRow: View {
     /// Raycast-style icon tile: the state's symbol on a tint of its colour.
     private var stateIcon: some View {
         // A session asking you something trumps what it is doing.
-        let color = session.needsYou ? Theme.brand : Theme.color(session.state)
-        let label = session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
+        // Archived: put away, whatever state it stopped in.
+        let color = session.isArchived ? Color.gray : session.needsYou ? Theme.brand : Theme.color(session.state)
+        let label = session.isArchived ? L.t("Archived", "已归档")
+            : session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
         return ZStack {
             RoundedRectangle(cornerRadius: 6)
                 .fill(color.opacity(scheme == .dark ? 0.22 : 0.14))
-            if session.needsYou {
+            if session.isArchived {
+                Image(systemName: Icons.archive)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(color)
+            } else if session.needsYou {
                 Image(systemName: Icons.needsYou)
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(color)
@@ -470,6 +493,9 @@ struct ActionsMenu: View {
                     .foregroundStyle(a.disabled ? AnyShapeStyle(.tertiary) : AnyShapeStyle(.primary))
                 if a.dot { Circle().fill(Theme.brand).frame(width: 6, height: 6) }
                 Spacer(minLength: 16)
+                if let detail = a.detail {
+                    Text(detail).font(.system(size: 12)).monospacedDigit().foregroundStyle(.tertiary)
+                }
                 if !a.shortcut.isEmpty { KeyCap(text: a.shortcut) }
             }
             .padding(.horizontal, 10)
@@ -586,4 +612,13 @@ struct PinButton: View {
         .tip(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
         .accessibilityLabel(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
     }
+}
+
+
+/// Whether an input method is still composing in the focused field (a Chinese
+/// word not yet picked): its Return, arrows and Escape belong to the input
+/// method, not to our shortcuts (user 2026-10-20: Return sent the message).
+@MainActor func imeComposing() -> Bool {
+    guard let view = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
+    return view.hasMarkedText()
 }

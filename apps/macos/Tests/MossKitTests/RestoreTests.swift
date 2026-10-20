@@ -63,10 +63,15 @@ private let mixedJSON = """
         #expect(await runner.calls == [["restore", "--yes", "--json", "--", "job-a"]])
     }
 
-    @Test func targetsByNameElseConversationId() {
+    @Test func targetsByConversationIdNeverName() {
         let s = sessions([sessionJSON(id: "01A", name: "job-a"), sessionJSON(id: "01B", name: nil)])
-        #expect(s[0].target == "job-a")
+        #expect(s[0].target == "01A-sid-0000")
         #expect(s[1].target == "01B-sid-0000")
+    }
+
+    @Test func twoSessionsWithOneNameStayApart() {
+        let s = sessions([sessionJSON(id: "01A", name: "job"), sessionJSON(id: "01B", name: "job")])
+        #expect(s[0].target != s[1].target)
     }
 
     @Test func decodesResults() throws {

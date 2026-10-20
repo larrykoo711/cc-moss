@@ -76,11 +76,16 @@ extension AppModel {
                 switch try await client.adopt(s.target) {
                 case .moved, .wouldMove:
                     follow(s)
-                case let .refused(_, message), let .failed(message):
+                case let .refused(reason, message):
                     adoptProblems[s.id] = message.isEmpty ? L.t("It couldn't be moved.", "没能移进去。") : message
+                    report(FailureNotice(action: .adopt, subject: .init(s), reason: reason, message: message))
+                case let .failed(message):
+                    adoptProblems[s.id] = message.isEmpty ? L.t("It couldn't be moved.", "没能移进去。") : message
+                    report(FailureNotice(action: .adopt, subject: .init(s), message: message))
                 }
             } catch {
                 adoptProblems[s.id] = Self.describe(error)
+                report(.adopt, s, error: error)
             }
             adopting.remove(s.id)
             refresh()

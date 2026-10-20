@@ -128,7 +128,24 @@
       });
     });
   }, { rootMargin: "-45% 0px -50% 0px" });
-  ["top", "tour", "mo", "terminal", "compare", "faq", "install"].forEach((id) => { const el = document.getElementById(id); if (el) navIO.observe(el); });
+  ["top", "tour", "moss", "mo", "terminal", "compare", "faq", "install"].forEach((id) => { const el = document.getElementById(id); if (el) navIO.observe(el); });
+
+  // Changelog: the version you're reading is marked in the jump list.
+  const jumps = $$(".cl-jump");
+  if (jumps.length) {
+    const jumpIO = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        const id = e.target.querySelector("h2[id]").id;
+        jumps.forEach((a) => a.setAttribute("aria-current", a.dataset.v === id ? "true" : "false"));
+        const on = jumps.find((a) => a.dataset.v === id);
+        const strip = on && on.closest(".cl-index");
+        // On phones the list is a strip of chips: keep the current one in view.
+        if (strip && strip.scrollWidth > strip.clientWidth) strip.scrollTo({ left: on.offsetLeft - 20, behavior: calm ? "auto" : "smooth" });
+      });
+    }, { rootMargin: "-35% 0px -60% 0px" });
+    $$(".release").forEach((li) => jumpIO.observe(li));
+  }
 
   // The tour: scrolling picks the step; tabs and arrows scroll to one.
   const steps = $$(".step");
@@ -233,7 +250,7 @@
   const modes = {
     quiet: { zh: ["只做个表情，你点它才说。", "…"], en: ["Just a look. Click Mo to hear more.", "…"] },
     everyday: { zh: ["先冒个泡，你凑过来再细说。", "有件事～"], en: ["A small hint first. The rest when you come closer.", "Got a sec?"] },
-    active: { zh: ["直接把消息框弹给你，按钮都备好了。", "接口评审在等你点头"], en: ["The full message, buttons included.", "api-review needs your OK."] },
+    active: { zh: ["直接把问题和选项递给你，点一下就答。", "接口评审有个问题"], en: ["The whole question, options and all. Click one to answer.", "api-review has a question."] },
   };
   let mode = "everyday";
   const pokes = {

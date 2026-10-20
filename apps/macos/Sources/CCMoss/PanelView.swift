@@ -80,6 +80,12 @@ struct PanelView: View {
                         .padding(.top, 10)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                if model.phase == .ready, case let state = model.providerState, state != .hidden {
+                    ProviderBannerView(model: model, state: state)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 if model.phase == .ready && !model.sessions.isEmpty {
                     StateFilterBar(counts: StateCounts(model.sessions), filter: $model.stateFilter)
                         .padding(.horizontal, 10)
@@ -116,7 +122,7 @@ struct PanelView: View {
         .tooltipLayer()
         .background(Theme.surface(scheme))
         .overlay {
-            if model.form != nil || model.closeGate.asking {
+            if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
                 ZStack(alignment: .bottom) {
                     FormScrim { dismissForm() }
                     Group {
@@ -127,6 +133,7 @@ struct PanelView: View {
                         case .rename(let s): RenameForm(model: model, session: s)
                         case nil:
                             if let list = model.closeGate.pending { CloseConfirmCard(model: model, sessions: list) }
+                            else if let s = model.endArchiveGate.pending { EndArchiveConfirmCard(model: model, session: s) }
                         }
                     }
                     .padding(.bottom, 54)
@@ -143,14 +150,27 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        // An action that didn't work, on any page, above its footer (F25).
+        .overlay(alignment: .bottom) {
+            if let notice = model.failures.current, model.form == nil {
+                FailureNoticeView(model: model, notice: notice)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, model.page == .sessions ? 52 : model.page == .moss ? 66 : 10)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .id(notice.id)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.failures)
         .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
+        .animation(.easeOut(duration: 0.15), value: model.endArchiveGate.asking)
         // A form takes the keyboard from the search field, and gives it back when it closes.
         .onChange(of: model.form) { _, form in searchFocused = form == nil }
         .animation(.easeOut(duration: 0.15), value: model.openProblem)
         .animation(.easeOut(duration: 0.2), value: RestoreBanner.shows(model))
         .animation(.easeOut(duration: 0.2), value: AccessLostBanner.shows())
+        .animation(.easeOut(duration: 0.2), value: model.providerState)
         .animation(.easeOut(duration: 0.2), value: model.askDesk)
         .animation(.easeOut(duration: 0.15), value: model.page)
         .animation(.easeOut(duration: 0.2), value: QueueNudge.shows(model))
@@ -220,6 +240,8 @@ struct PanelView: View {
                     // and runs the lit item when a menu is.
                     if model.closeGate.asking {
                         model.confirmClose()
+                    } else if model.endArchiveGate.asking {
+                        model.confirmEndAndArchive()
                     } else if menu != nil {
                         runMenuItem()
                     } else if model.page == .sessions, case let .noMatch(q)? = model.listItems.first {
@@ -277,7 +299,7 @@ struct PanelView: View {
                 command: "cc-moss update",
                 copy: copy
             )
-        case .ready where model.sessions.isEmpty:
+        case .ready where model.sessions.isEmpty && model.archived.isEmpty:
             GuideCard(
                 symbol: "sparkles",
                 title: L.t("No sessions yet", "还没有会话"),
@@ -286,7 +308,8 @@ struct PanelView: View {
                 command: "cc-moss new my-first-session",
                 copy: copy
             )
-        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty:
+        case .ready where !model.searching && model.projects.isEmpty && model.olderShown.isEmpty && model.pinnedShown.isEmpty
+            && model.archivedShown.isEmpty:
             VStack(spacing: 6) {
                 Text(L.t("Nothing matches", "没有对得上的会话"))
                     .font(.system(size: 13, weight: .medium))
@@ -313,6 +336,8 @@ struct PanelView: View {
                         case let .row(s, pinned): row(s, pinned: pinned)
                         case let .hit(h, closed): row(h.session, pinned: model.pins.contains(h.session.id), hit: h, closed: closed)
                         case .closedHeader: ClosedHeader()
+                        case let .archivedHeader(count): ArchivedGroupHeader(model: model, count: count)
+                        case .archivedResultsHeader: ArchivedResultsHeader()
                         case let .noMatch(q): AskMossCard(query: q) { model.askMossToFind(q) }
                         case let .askMoss(q): AskMossLine(query: q) { model.askMossToFind(q) }
                         }
@@ -332,6 +357,14 @@ struct PanelView: View {
                 guard let id = model.selectedID else { return }
                 DispatchQueue.main.async {
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) }
+                }
+            }
+            // Archived sits at the very bottom: opened, its rows would land
+            // below the fold. Bring the group up, header first.
+            .onChange(of: model.archivedExpanded) { _, open in
+                guard open else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("header:archived", anchor: .top) }
                 }
             }
         }
@@ -412,12 +445,13 @@ struct PanelView: View {
                        problem: model.restoreProblem(s) ?? (closed ? nil : model.adoptProblems[s.id]),
                        pinned: pinned,
                        lineOpen: lineOpen,
-                       pin: s.isMoss ? nil : { model.togglePin(s) },
+                       pin: s.isMoss || s.isArchived ? nil : { model.togglePin(s) },
                        restoring: (s.state == .interrupted || closed) && model.restoreFlow.isRunning(s.id),
                        highlight: hit?.nameRanges ?? [],
                        folder: hit.map { _ in Self.folderName(s) },
                        reason: hit?.reason.map(Self.reasonText),
-                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…") : nil)
+                       progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…")
+                           : model.restarting.contains(s.id) ? L.t("Restarting…", "正在重开…") : nil)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -596,28 +630,71 @@ struct PanelView: View {
                                disabled: wait != nil) {
                 model.askToAdopt(s)
             }
+        case .archive:
+            return PanelAction(title: L.t("Archive", "归档"), icon: Icons.archive, shortcut: "",
+                               help: L.t("Put it away in Archived. Bring it back any time.", "收进已归档，随时可以拿回来。")) {
+                model.archive(s)
+            }
+        case .endAndArchive:
+            return PanelAction(title: L.t("End and Archive…", "结束并归档…"), icon: Icons.archive, shortcut: "",
+                               help: L.t("End it and put it in Archived. The conversation stays.", "结束它并收进归档，对话会留着。")) {
+                model.askToEndAndArchive(s)
+            }
+        case .unarchive:
+            return PanelAction(title: L.t("Bring Back", "拿回来"), icon: Icons.unarchive, shortcut: "↵",
+                               help: L.t("Put it back in the list.", "放回列表里。")) {
+                model.unarchive(s)
+            }
+        case .cleanUp:
+            return PanelAction(title: L.t("Clean Up", "清理"), icon: Icons.cleanUp, shortcut: "",
+                               help: L.t("Ask Moss to delete it. Moss asks you first, and the chat goes to the Trash.",
+                                         "让 Moss 删掉它。Moss 会先问你，对话记录进废纸篓。")) {
+                model.cleanUp(s)
+            }
+        case .restart:
+            return PanelAction(title: L.t("Restart", "重开"), icon: Icons.restart, shortcut: "",
+                               help: L.t("Restart it right where it is to use the new provider. The conversation carries on.",
+                                         "在原地重开，用上新供应商，对话接着来。")) {
+                model.restart(s)
+            }
         }
     }
 
     /// cc-moss's own menu, behind the rail's gear: what isn't about one
-    /// session. (New Session is in the footer, and ⌘N.)
+    /// session, in the order a Mac app's own menu has it: about and
+    /// updates, settings, help, quit. (New Session is in the footer and ⌘N;
+    /// Refresh is ⌘R, the list refreshes by itself.)
     private var appSections: [[PanelAction]] {
-        let version: PanelAction = if let update = model.update {
-            PanelAction(title: L.t("Update to \(update.latest)", "更新到 \(update.latest)"), icon: Icons.update, shortcut: "",
+        let about = PanelAction(title: L.t("About cc-moss", "关于 cc-moss"), icon: Icons.about, shortcut: "",
+                                detail: model.version) { showSettings(.about) }
+        let update: PanelAction = if let update = model.update {
+            PanelAction(title: L.t("Update to \(update.latest)…", "更新到 \(update.latest)…"), icon: Icons.update, shortcut: "",
                         help: L.t("Runs cc-moss update in your terminal.", "在终端里运行 cc-moss update。"), dot: true) {
                 model.runUpdate()
             }
         } else {
-            PanelAction(title: "cc-moss \(model.version)", icon: Icons.about, shortcut: "") { showSettings(.about) }
+            PanelAction(title: L.t("Check for Updates…", "检查更新…"), icon: Icons.update, shortcut: "",
+                        help: L.t("Settings › About shows whether a newer cc-moss is out.",
+                                  "在 设置 › 关于 里查看有没有新版本。")) { showSettings(.about) }
         }
         return [
-            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() },
-             PanelAction(title: L.t("Refresh", "刷新"), icon: Icons.refresh, shortcut: "⌘R") { model.refresh() }],
-            [version],
+            [about, update],
+            [PanelAction(title: L.t("Settings…", "设置…"), icon: Icons.settings, shortcut: "⌘,") { showSettings() }],
+            [PanelAction(title: L.t("User Guide", "使用手册"), icon: Icons.guide, shortcut: "") {
+                 open(L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
+                          "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
+             },
+             PanelAction(title: L.t("Report a Problem", "报告问题"), icon: Icons.feedback, shortcut: "") {
+                 open("https://github.com/larrykoo711/cc-moss/issues/new/choose")
+             }],
             [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
                 NSApplication.shared.terminate(nil)
             }],
         ]
+    }
+
+    private func open(_ link: String) {
+        if let url = URL(string: link) { NSWorkspace.shared.open(url) }
     }
 
     private func sections(for menu: PanelMenu) -> [[PanelAction]] {
@@ -625,11 +702,12 @@ struct PanelView: View {
         case .app:
             return appSections
         case let .session(id, full):
-            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
+            guard let s = model.sessions.first(where: { $0.id == id }) ?? model.archived.first(where: { $0.id == id })
+                ?? model.moss.flatMap({ $0.id == id ? $0 : nil }) else { return [] }
             let actions = RowActions(s, hopeless: model.restoreIsHopeless(s))
             var sections = (full ? actions.all : actions.more).map { $0.map { action($0, for: s) } }
-            // Moss is pinned already, above everything.
-            if !s.isMoss { sections.append([pinAction(for: s)]) }
+            // Moss is pinned already, above everything; archived ones aren't in the list.
+            if !s.isMoss && !s.isArchived { sections.append([pinAction(for: s)]) }
             return sections
         }
     }
@@ -697,6 +775,7 @@ struct PanelView: View {
         guard !model.sendFlow.isSending else { return }
         model.form = nil
         model.closeGate.cancel()
+        model.endArchiveGate.cancel()
     }
 
     private func perform(_ action: PanelAction?) {
@@ -742,7 +821,9 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if model.form != nil || model.closeGate.asking {
+        if model.failures.current != nil && model.form == nil && !model.closeGate.asking && !model.endArchiveGate.asking {
+            model.failures.dismiss()
+        } else if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
             dismissForm()
         } else if menu != nil {
             closeMenu()
@@ -809,6 +890,8 @@ struct PanelAction: Identifiable {
     var help: String?
     /// A brand dot after the title: something new (an update).
     var dot = false
+    /// Dim words at the right end, where a shortcut would go (a version).
+    var detail: String?
     /// Shown dimmed; clicking it says why it waits instead.
     var disabled = false
     let perform: () -> Void
@@ -847,6 +930,7 @@ struct ReplyLineView: View {
                     .opacity(sending ? 0 : 1)
                     .onChange(of: model.replyDraft) { _, text in model.replyEdited(text) }
                     .onKeyPress(.return, phases: .down) { press in
+                        guard !imeComposing() else { return .ignored }
                         if press.modifiers.contains(.shift) {
                             NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
                         } else {
@@ -854,9 +938,13 @@ struct ReplyLineView: View {
                         }
                         return .handled
                     }
-                    .onKeyPress(.escape) { model.closeReply(); return .handled }
-                    .onKeyPress(.downArrow) { move(backwards: false) }
-                    .onKeyPress(.upArrow) { move(backwards: true) }
+                    .onKeyPress(.escape) {
+                        guard !imeComposing() else { return .ignored }
+                        model.closeReply()
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) { imeComposing() ? .ignored : move(backwards: false) }
+                    .onKeyPress(.upArrow) { imeComposing() ? .ignored : move(backwards: true) }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(minHeight: 30)

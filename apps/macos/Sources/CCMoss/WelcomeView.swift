@@ -593,6 +593,8 @@ private struct ShortcutChoice: View {
 private struct StartupChoice: View {
     let live: Bool
     @State private var openAtLogin = true
+    /// A change is on its way to the system: the switch waits for it.
+    @State private var loginBusy = false
     private var status: NotificationStatus { NotificationStatus.shared }
 
     var body: some View {
@@ -607,6 +609,7 @@ private struct StartupChoice: View {
                     Spacer()
                     Toggle("", isOn: $openAtLogin)
                         .toggleStyle(.switch).labelsHidden().controlSize(.small).cursor(.pointingHand)
+                        .disabled(loginBusy)
                         .onChange(of: openAtLogin) { _, on in apply(on) }
                 }
             }
@@ -633,16 +636,22 @@ private struct StartupChoice: View {
         }
         .onAppear {
             guard live else { return }
-            if !LoginItem.isEnabled { apply(true) }
-            openAtLogin = LoginItem.isEnabled
+            Task {
+                if !(await LoginItem.refresh()) { try? await LoginItem.set(true) }
+                openAtLogin = LoginItem.isEnabled
+            }
             Task { await status.refresh() }
         }
     }
 
     private func apply(_ on: Bool) {
-        guard live else { return }
-        try? LoginItem.set(on)
-        openAtLogin = LoginItem.isEnabled
+        guard live, on != LoginItem.isEnabled, !loginBusy else { return }
+        loginBusy = true
+        Task {
+            try? await LoginItem.set(on)
+            openAtLogin = LoginItem.isEnabled
+            loginBusy = false
+        }
     }
 }
 

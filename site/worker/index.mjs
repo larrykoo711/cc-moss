@@ -6,7 +6,7 @@ import { search } from "./search.mjs";
 import { releaseFromFeed } from "./release.mjs";
 import { serverCard } from "./tools.mjs";
 
-const PAGES = new Set(["/", "/zh/"]);
+const PAGES = new Set(["/", "/zh/", "/changelog/", "/zh/changelog/"]);
 // The full guide is for agents: Markdown to them, and people are sent to the FAQ instead.
 const AGENT_ONLY = new Map([["/guide/", "/#faq"], ["/zh/guide/", "/zh/#faq"]]);
 const MAX_BODY = 1 << 20;

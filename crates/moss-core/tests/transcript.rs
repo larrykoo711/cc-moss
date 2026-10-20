@@ -42,6 +42,14 @@ fn last_prompt_is_the_last_thing_typed() {
         .to_string(),
         said("<command-name>/rename</command-name>", "2026-10-19T09:03:00.000Z"),
         said("[Request interrupted by user]", "2026-10-19T09:04:00.000Z"),
+        serde_json::json!({"type": "user", "isCompactSummary": true, "timestamp": "2026-10-19T09:02:30.000Z",
+            "message": {"content": "This session is being continued from a previous conversation"}})
+        .to_string(),
+        // A background task finished: Claude Code's notice, not your words.
+        said(
+            "<task-notification>\n<task-id>bv9y8wkxk</task-id>\n</task-notification>",
+            "2026-10-19T09:04:30.000Z",
+        ),
         r#"{"type":"assistant","timestamp":"2026-10-19T09:05:00.000Z","message":{"content":"done"}}"#
             .to_string(),
     ]);

@@ -12,6 +12,8 @@ const loop = readFileSync("../docs/assets/logo.svg", "utf8").match(/<path d="([^
 const CARDS = {
   "home.en": { eyebrow: "Session manager for Claude Code", title: "Every session.<br>Carried on.", sub: "See which sessions are busy, waiting or stopped. After a restart, bring them all back in one click." },
   "home.zh": { eyebrow: "Claude Code 会话管理", title: "文明会延续，<br>对话也是。", sub: "谁在忙、谁在等你、谁断了，一眼就知道。电脑重启后，一键全部找回。" },
+  "changelog.en": { eyebrow: "Changelog", title: "What’s new,<br>version by version.", sub: "Every cc-moss release in plain words, newest first." },
+  "changelog.zh": { eyebrow: "更新记录", title: "每一版，<br>都多照看一点。", sub: "cc-moss 的每一版都在这里，用大白话写清楚多了什么。" },
 };
 
 mkdirSync("og", { recursive: true });

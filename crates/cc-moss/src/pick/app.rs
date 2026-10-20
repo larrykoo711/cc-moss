@@ -20,6 +20,8 @@ pub enum State {
     Interrupted,
     /// A tmux session without Claude Code in it.
     Plain,
+    /// In the archive.
+    Archived,
 }
 
 impl State {
@@ -31,6 +33,7 @@ impl State {
                 None => State::Plain,
             },
             Item::Interrupted(_) => State::Interrupted,
+            Item::Archived(_) => State::Archived,
             Item::New => return None,
         })
     }
@@ -41,6 +44,7 @@ impl State {
             State::Waiting => tr!("Waiting for you", "在等你"),
             State::Interrupted => tr!("Interrupted", "已中断"),
             State::Plain => tr!("tmux session", "tmux 会话"),
+            State::Archived => tr!("Archived", "已归档"),
         }
     }
 }
@@ -49,7 +53,7 @@ impl State {
 pub fn activity(item: &Item) -> i64 {
     match item {
         Item::Session(s) => s.activity_ms,
-        Item::Interrupted(r) => r.last_active_ms,
+        Item::Interrupted(r) | Item::Archived(r) => r.last_active_ms,
         Item::New => i64::MIN,
     }
 }
@@ -61,6 +65,8 @@ pub struct Project {
     pub items: Vec<Item>,
     /// Set when the folder is a git linked worktree.
     pub worktree: Option<moss_core::worktree::Worktree>,
+    /// The archive's group (last, and only while searching), not a folder.
+    pub archived: bool,
 }
 
 /// One entry of the list (a project title, or something you can select).
@@ -88,6 +94,8 @@ pub enum Choice {
     Note,
     End,
     Remove,
+    /// Take it out of the archive, back into the list.
+    BringBack,
 }
 
 impl Choice {
@@ -98,6 +106,7 @@ impl Choice {
             Choice::Note => tr!("Write a note", "写备注"),
             Choice::End => tr!("End session", "结束会话"),
             Choice::Remove => tr!("Remove from list", "从列表移除"),
+            Choice::BringBack => tr!("Bring back", "拿回来"),
         }
     }
 
@@ -111,6 +120,7 @@ impl Choice {
             Item::Session(s) if s.claude.is_some() => vec![Choice::Open, Choice::Note, Choice::End],
             Item::Session(_) => vec![Choice::Open, Choice::End],
             Item::Interrupted(_) => vec![Choice::Restore, Choice::Note, Choice::Remove],
+            Item::Archived(_) => vec![Choice::BringBack],
         }
     }
 }
@@ -119,7 +129,7 @@ impl Choice {
 fn is_moss(item: &Item) -> bool {
     match item {
         Item::Session(s) => s.claude.as_ref().is_some_and(|c| c.moss),
-        Item::Interrupted(r) => r.moss,
+        Item::Interrupted(r) | Item::Archived(r) => r.moss,
         Item::New => false,
     }
 }
@@ -156,6 +166,8 @@ pub enum Action {
     End(Item),
     /// Stop offering an interrupted session.
     Remove(SlotRow),
+    /// Take an archived session back into the list.
+    Unarchive(SlotRow),
     SetNote {
         slot_id: String,
         text: String,
@@ -246,11 +258,21 @@ impl App {
 
     fn group(&mut self, sessions: Vec<Item>, interrupted: Vec<Item>) {
         let mut projects: Vec<Project> = Vec::new();
+        let mut archive = Project {
+            path: String::new(),
+            items: Vec::new(),
+            worktree: None,
+            archived: true,
+        };
         for item in sessions
             .into_iter()
             .chain(interrupted)
             .filter(|i| *i != Item::New)
         {
+            if matches!(item, Item::Archived(_)) {
+                archive.items.push(item);
+                continue;
+            }
             let path = item.dir().unwrap_or_default().to_string();
             match projects.iter_mut().find(|p| p.path == path) {
                 Some(p) => p.items.push(item),
@@ -258,6 +280,7 @@ impl App {
                     worktree: moss_core::worktree::of(&path),
                     path,
                     items: vec![item],
+                    archived: false,
                 }),
             }
         }
@@ -266,6 +289,12 @@ impl App {
             p.items.sort_by_key(|i| std::cmp::Reverse(activity(i)));
         }
         projects.sort_by_key(|p| std::cmp::Reverse(p.items.first().map_or(i64::MIN, activity)));
+        if !archive.items.is_empty() {
+            archive
+                .items
+                .sort_by_key(|i| std::cmp::Reverse(activity(i)));
+            projects.push(archive);
+        }
         self.projects = projects;
         self.refilter();
     }
@@ -324,6 +353,10 @@ impl App {
         let (mut matched, mut total) = (0, 0);
         let mut groups: Vec<(usize, Vec<(usize, u32)>)> = Vec::new();
         for (p, project) in self.projects.iter().enumerate() {
+            // The archive shows only in search results.
+            if project.archived && query.is_empty() {
+                continue;
+            }
             total += project.items.len();
             let mut hits: Vec<(usize, u32)> = project
                 .items
@@ -348,9 +381,16 @@ impl App {
             matched += hits.len();
             groups.push((p, hits));
         }
-        // While searching, the project holding the best match comes first.
+        // While searching, the project holding the best match comes first;
+        // the archive always last.
         if !query.is_empty() {
-            groups.sort_by(|a, b| b.1[0].1.cmp(&a.1[0].1).then(a.0.cmp(&b.0)));
+            let archived = |p: usize| self.projects[p].archived;
+            groups.sort_by(|a, b| {
+                archived(a.0)
+                    .cmp(&archived(b.0))
+                    .then(b.1[0].1.cmp(&a.1[0].1))
+                    .then(a.0.cmp(&b.0))
+            });
         }
         for (p, hits) in groups {
             rows.push(Row::Header(p));
@@ -380,7 +420,7 @@ impl App {
                         .is_some_and(|c| c.name.as_deref() == Some(query))
                         || s.tmux_name == query
                 }
-                Item::Interrupted(r) => r.name.as_deref() == Some(query),
+                Item::Interrupted(r) | Item::Archived(r) => r.name.as_deref() == Some(query),
                 Item::New => false,
             })
     }
@@ -450,6 +490,7 @@ impl App {
             },
             Some(Item::Session(s)) => Action::Attach(s),
             Some(Item::Interrupted(r)) => Action::Restore(r),
+            Some(Item::Archived(r)) => Action::Unarchive(r),
         }
     }
 
@@ -529,7 +570,7 @@ impl App {
                     (Some(Choice::Note), Some(item)) => {
                         let current = match &item {
                             Item::Session(s) => s.claude.as_ref().and_then(|c| c.note.clone()),
-                            Item::Interrupted(r) => r.note.clone(),
+                            Item::Interrupted(r) | Item::Archived(r) => r.note.clone(),
                             Item::New => None,
                         };
                         self.mode = Mode::Note {
@@ -543,6 +584,7 @@ impl App {
                         Action::None
                     }
                     (Some(Choice::Remove), Some(Item::Interrupted(r))) => Action::Remove(r),
+                    (Some(Choice::BringBack), Some(Item::Archived(r))) => Action::Unarchive(r),
                     _ => Action::None,
                 }
             }
@@ -665,6 +707,40 @@ mod tests {
             ],
             vec![Item::Interrupted(slot("crashed", "/p/acme", 3))],
         )
+    }
+
+    #[test]
+    fn archived_sessions_show_only_when_searching() {
+        let mut a = App::new(
+            vec![claude("api", "/p/acme", 5, false)],
+            vec![Item::Archived(slot("api-old", "/p/acme", 9))],
+        );
+        assert_eq!(a.total, 1, "the archive is out of the list");
+        assert!(a
+            .rows()
+            .iter()
+            .all(|r| a.item(*r).is_none_or(|i| !matches!(i, Item::Archived(_)))));
+        type_str(&mut a, "api");
+        // Found, in a group of its own after the folders.
+        let headers: Vec<bool> = a
+            .rows()
+            .iter()
+            .filter_map(|r| match r {
+                Row::Header(p) => Some(a.projects()[*p].archived),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(headers, [false, true]);
+        let last = *a.rows().last().unwrap();
+        assert!(matches!(a.item(last), Some(Item::Archived(r)) if r.label() == "api-old"));
+        // Enter on it brings it back.
+        while a
+            .selected()
+            .is_some_and(|i| !matches!(i, Item::Archived(_)))
+        {
+            a.handle(key(KeyCode::Down));
+        }
+        assert!(matches!(a.open(), Action::Unarchive(r) if r.label() == "api-old"));
     }
 
     fn type_str(a: &mut App, s: &str) {

@@ -114,13 +114,33 @@ mod setting {
                 "moss.digest",
                 "moss.actions",
                 "moss.daily_checkup",
-                "moss.daily_brief"
+                "moss.daily_brief",
+                "sessions.archive_after_days"
             ]
         );
         assert_eq!(
             config::check_setting("claude.permission_mode", " Default "),
             Ok("default".into())
         );
+        assert_eq!(
+            config::check_setting("sessions.archive_after_days", " 45 "),
+            Ok("45".into())
+        );
+        assert_eq!(
+            config::check_setting("sessions.archive_after_days", "0"),
+            Ok("0".into())
+        );
+        for bad in ["-1", "thirty", "99999"] {
+            assert_eq!(
+                config::check_setting("sessions.archive_after_days", bad),
+                Err(SettingError::BadValue(config::DAYS))
+            );
+        }
+        let text = config::set_in_text("", "sessions.archive_after_days", "45").unwrap();
+        assert!(text.contains("archive_after_days = 45"), "{text}");
+        let c: config::Config = toml::from_str(&text).unwrap();
+        assert_eq!(c.sessions.archive_after_days, 45);
+        assert_eq!(config::Config::default().sessions.archive_after_days, 30);
         assert_eq!(
             config::check_setting("claude.permission_mode", "yolo"),
             Err(SettingError::BadValue(&["bypass", "default"]))

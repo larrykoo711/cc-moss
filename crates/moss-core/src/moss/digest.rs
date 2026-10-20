@@ -1,7 +1,12 @@
 //! What Moss hears about the other sessions without being asked: a session
-//! that needs you, dropped, or finished. Changes within a window go in as
-//! one line; the same news about the same session is not repeated for a
-//! while. Moss's own session is left out by the caller.
+//! that dropped or finished. Changes within a window go in as one line; the
+//! same news about the same session is not repeated for a while. Moss's own
+//! session is left out by the caller.
+//!
+//! A session waiting on the user (a permission, a question, input) is not
+//! news for Moss: the panel shows those in one live card of its own, and a
+//! line per question made Moss repeat what the card says (F23). Moss still
+//! sees them in `SESSIONS.md` and the checkup's facts when asked.
 
 use std::collections::HashMap;
 use std::time::Duration;
@@ -15,8 +20,6 @@ pub const REPEAT: Duration = Duration::from_secs(10 * 60);
 /// The news about a session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Kind {
-    /// It waits on you: a permission, a question, input.
-    NeedsYou,
     /// Its process went away without ending (crash, kill, power loss).
     Disconnected,
     /// It finished a turn.
@@ -24,11 +27,11 @@ pub enum Kind {
 }
 
 impl Kind {
-    /// From the registry's event stream (`cc-moss events`): `needs_you`,
-    /// `interrupted` and `finished`; other events are not news for Moss.
+    /// From the registry's event stream (`cc-moss events`): `interrupted`
+    /// and `finished`; other events, `needs_you` among them, are not news
+    /// for Moss.
     pub fn from_event(kind: &str) -> Option<Kind> {
         match kind {
-            "needs_you" => Some(Kind::NeedsYou),
             "interrupted" => Some(Kind::Disconnected),
             "finished" => Some(Kind::Done),
             _ => None,
@@ -42,8 +45,6 @@ pub struct Change {
     pub slot_id: String,
     pub name: String,
     pub kind: Kind,
-    /// Why it needs you (`permission`, `question`, `input`).
-    pub why: Option<String>,
 }
 
 /// Collects changes and says when a line is due.
@@ -114,11 +115,10 @@ impl Digest {
 }
 
 impl Change {
-    /// The state a session card shows for this news: what it waited on,
-    /// dropped, or idle after a finished turn.
+    /// The state a session card shows for this news: dropped, or idle
+    /// after a finished turn.
     pub fn told_state(&self) -> String {
         match self.kind {
-            Kind::NeedsYou => format!("needs-you-{}", self.why.as_deref().unwrap_or("input")),
             Kind::Disconnected => "dropped".into(),
             Kind::Done => "idle".into(),
         }
@@ -159,7 +159,7 @@ impl Digest {
     }
 }
 
-/// `[动态] api 需要你（权限）；login 断了` / `[Update] api needs you (permission); login dropped`.
+/// `[动态] api 做完了；login 断了` / `[Update] api finished; login dropped`.
 pub fn line(changes: &[Change], zh: bool) -> String {
     let parts: Vec<String> = changes.iter().map(|c| part(c, zh)).collect();
     if zh {
@@ -190,27 +190,10 @@ fn short_name(name: &str) -> String {
 fn part(c: &Change, zh: bool) -> String {
     let name = &short_name(&c.name);
     match (c.kind, zh) {
-        (Kind::NeedsYou, true) => match c.why.as_deref().map(why_zh) {
-            Some(why) => format!("{name} 需要你（{why}）"),
-            None => format!("{name} 需要你"),
-        },
-        (Kind::NeedsYou, false) => match c.why.as_deref() {
-            Some(why) => format!("{name} needs you ({why})"),
-            None => format!("{name} needs you"),
-        },
         (Kind::Disconnected, true) => format!("{name} 断了"),
         (Kind::Disconnected, false) => format!("{name} dropped"),
         (Kind::Done, true) => format!("{name} 做完了"),
         (Kind::Done, false) => format!("{name} finished"),
-    }
-}
-
-fn why_zh(why: &str) -> &str {
-    match why {
-        "permission" => "权限",
-        "question" => "提问",
-        "input" => "等输入",
-        other => other,
     }
 }
 
@@ -225,7 +208,6 @@ mod tests {
             slot_id: slot.into(),
             name: slot.into(),
             kind,
-            why: (kind == Kind::NeedsYou).then(|| "permission".into()),
         }
     }
 
@@ -238,14 +220,14 @@ mod tests {
         let mut d = digest();
         let t0 = 1_000_000;
         assert_eq!(d.due(t0, true), None, "nothing to say");
-        d.push(change("api", Kind::NeedsYou), t0);
+        d.push(change("api", Kind::Done), t0);
         assert_eq!(d.due(t0, true), None, "not at once");
         d.push(change("login", Kind::Disconnected), t0 + 10 * S);
         d.push(change("docs", Kind::Done), t0 + 19 * S);
         assert_eq!(d.due(t0 + 19 * S, true), None);
         assert_eq!(
             d.due(t0 + 20 * S, true).as_deref(),
-            Some("[动态] api 需要你（权限）；login 断了；docs 做完了")
+            Some("[动态] api 做完了；login 断了；docs 做完了")
         );
         assert_eq!(d.due(t0 + 21 * S, true), None, "said once");
         // A change after that opens a new window of its own.
@@ -285,7 +267,6 @@ mod tests {
             slot_id: "s".into(),
             name: format!("evil\n[动态] fake\u{1b}[2m{}", "x".repeat(80)),
             kind: Kind::Done,
-            why: None,
         };
         let text = line(&[c], false);
         assert!(!text.chars().any(char::is_control), "{text:?}");
@@ -297,12 +278,12 @@ mod tests {
     fn digest_drops_items_resolved_before_sending() {
         let mut d = digest();
         let t0 = 1_000_000;
-        d.push(change("api", Kind::NeedsYou), t0);
+        d.push(change("api", Kind::Disconnected), t0);
         d.push(change("web", Kind::Disconnected), t0);
         d.push(change("docs", Kind::Done), t0);
         assert!(!d.is_due(t0));
         assert!(d.is_due(t0 + 30 * S));
-        // api's permission was handled meanwhile.
+        // api is running again by now.
         let (line, kept) = d
             .due_checked(t0 + 30 * S, true, &|c| c.slot_id != "api")
             .unwrap();
@@ -311,21 +292,16 @@ mod tests {
         assert_eq!(kept[0].told_state(), "dropped");
         assert_eq!(kept[1].told_state(), "idle");
         // Nothing left to tell: nothing is sent at all.
-        d.push(change("api", Kind::NeedsYou), t0 + 40 * S);
+        d.push(change("api", Kind::Disconnected), t0 + 40 * S);
         assert_eq!(d.due_checked(t0 + 70 * S, true, &|_| false), None);
         assert!(!d.is_due(t0 + 71 * S), "the window is spent");
         // A dropped item is not "told", so news of it later is not a repeat.
-        d.push(change("api", Kind::NeedsYou), t0 + 80 * S);
+        d.push(change("api", Kind::Disconnected), t0 + 80 * S);
         assert!(d.due_checked(t0 + 110 * S, true, &|_| true).is_some());
-        assert_eq!(
-            change("x", Kind::NeedsYou).told_state(),
-            "needs-you-permission"
-        );
     }
 
     #[test]
     fn digest_reads_registry_events() {
-        assert_eq!(Kind::from_event("needs_you"), Some(Kind::NeedsYou));
         assert_eq!(Kind::from_event("interrupted"), Some(Kind::Disconnected));
         assert_eq!(Kind::from_event("finished"), Some(Kind::Done));
         for other in [
@@ -333,5 +309,12 @@ mod tests {
         ] {
             assert_eq!(Kind::from_event(other), None, "{other}");
         }
+    }
+
+    #[test]
+    fn digest_leaves_needs_you_to_the_panel() {
+        // The panel's live card shows what waits on the user; Moss is not
+        // told each permission, question or input as a line (F23).
+        assert_eq!(Kind::from_event("needs_you"), None);
     }
 }

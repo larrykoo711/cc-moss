@@ -34,7 +34,9 @@ cc-moss does the same for your Claude Code sessions: crashes and reboots happen,
 - Words people read in the app and on the site are written for everyday users: plain words, no jargon, sentence
   case in English, native English rather than a translation of the Chinese. The full rules and examples are in
   `.sdd/002-menubar/notes/design-voice.md`.
-- The website shows people one page and a plain FAQ, nothing more. Detail for AI assistants lives where people
+- The website shows people a home page with a plain FAQ, and a Changelog timeline (`/changelog/`, user 2026-10-20), nothing more.
+  The Changelog's words are written for people in `site/src/changelog.json`, not copied from `CHANGELOG.md`; every
+  release adds its entry (a test checks every `CHANGELOG.md` version has one with the same date). Detail for AI assistants lives where people
   don't see it: the full guide is served as Markdown only (`/guide/index.md`), listed in `llms.txt` and searchable
   over `/mcp`.
 - Every claim on the site matches the guide's facts (privacy, network use, requirements). Check the guide before

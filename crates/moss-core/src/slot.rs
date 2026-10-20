@@ -66,9 +66,41 @@ pub struct Slot {
     pub created_at_ms: i64,
     pub last_active_at_ms: i64,
     pub ended_at_ms: Option<i64>,
+    /// When it was put away in the archive (out of the list, still
+    /// restorable); none while it is in the list.
+    pub archived_at_ms: Option<i64>,
+    /// Who archived it: `auto` (the daily tidy-up), `you`, or `moss`.
+    pub archived_by: Option<String>,
+    /// The API provider it started with ([`crate::provider::Snapshot`] as
+    /// JSON: key names, host, models; never a key's value).
+    pub provider_started: Option<String>,
+    /// Provider key names seen in the settings while it ran (JSON array).
+    pub provider_seen_keys: Option<String>,
 }
 
 impl Slot {
+    /// Whether the user ended it on purpose (`/exit`, closed from cc-moss,
+    /// replaced by another copy): a session brought back from the archive
+    /// shows again, but restoring everything leaves it out.
+    pub fn ended_on_purpose(&self) -> bool {
+        matches!(
+            self.end_reason.as_deref(),
+            Some(
+                "closed-by-user"
+                    | "prompt_input_exit"
+                    | "logout"
+                    | "resume"
+                    | "switched"
+                    | "superseded"
+            )
+        )
+    }
+
+    /// Whether it is in the archive.
+    pub fn is_archived(&self) -> bool {
+        self.archived_at_ms.is_some()
+    }
+
     /// Whether this is Moss, the session cc-moss looks after itself.
     pub fn is_moss(&self) -> bool {
         self.role.as_deref() == Some(crate::moss::ROLE)
@@ -127,11 +159,21 @@ pub fn now_ms() -> i64 {
 /// its own markup (messages from other sessions, slash commands); those tags
 /// are taken off so the words show, and a line that is only a tag is skipped.
 pub fn prompt_preview(prompt: &str) -> Option<String> {
+    if is_notice(prompt) {
+        return None;
+    }
     prompt
         .lines()
         .map(strip_markup)
         .find(|l| !l.is_empty())
         .map(|l| l.chars().take(200).collect())
+}
+
+/// Whether `prompt` is a notice Claude Code feeds the session itself (a
+/// background task finished), not words you typed: its first line once the
+/// tags are off is only the task's id.
+pub fn is_notice(prompt: &str) -> bool {
+    prompt.trim_start().starts_with("<task-notification>")
 }
 
 /// `line` without a Claude Code tag at its start or end. Those tags have a

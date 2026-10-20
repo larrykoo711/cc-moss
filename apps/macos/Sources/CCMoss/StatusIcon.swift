@@ -121,15 +121,20 @@ extension View {
 
     /// The pointing hand while the pointer is over something you can click.
     @ViewBuilder func handCursor() -> some View {
+        // A pointer style only shows in the key window. Mo's bubble floats
+        // without taking focus, so the hand is also set on every move
+        // (hovering still reaches a window that isn't key).
         if #available(macOS 15.0, *) {
-            self.pointerStyle(.link)
+            self.pointerStyle(.link).onContinuousHover(perform: Self.followHand)
         } else {
-            self.onContinuousHover { phase in
-                switch phase {
-                case .active: NSCursor.pointingHand.set()
-                case .ended: NSCursor.arrow.set()
-                }
-            }
+            self.onContinuousHover(perform: Self.followHand)
+        }
+    }
+
+    private static func followHand(_ phase: HoverPhase) {
+        switch phase {
+        case .active: NSCursor.pointingHand.set()
+        case .ended: NSCursor.arrow.set()
         }
     }
 }

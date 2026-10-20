@@ -24,14 +24,28 @@ export const PAGES = [
     id: "home",
     path: "/",
     template: "src/index.template.html",
-    sources: ["src/index.template.html", "src/partials/nav.html", "src/app.js"],
+    sources: ["src/index.template.html", "src/partials/nav.html", "src/app.js", "src/changelog.json"],
     title: {
       en: "cc-moss: recover Claude Code sessions after a restart",
       zh: "cc-moss · Claude Code 会话管理：重启后一键找回全部会话",
     },
     description: {
-      en: "Track every Claude Code session — busy, waiting or stopped — and bring them all back after a restart, in one click. Free and open source, for macOS and Linux.",
-      zh: "cc-moss 照看你的每个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道。电脑重启或终端崩溃后，一键全部找回。免费开源，支持 macOS 与 Linux。",
+      en: "Track every Claude Code session — busy, waiting or stopped — answer the ones waiting on you, and bring them all back after a restart, in one click. Free and open source, for macOS and Linux.",
+      zh: "cc-moss 照看你的每个 Claude Code 会话：谁在忙、谁在等你、谁断了，一眼就知道；在等你的点一下就答，电脑重启后一键全部找回。免费开源，支持 macOS 与 Linux。",
+    },
+  },
+  {
+    id: "changelog",
+    path: "/changelog/",
+    template: "src/changelog.template.html",
+    sources: ["src/changelog.template.html", "src/changelog.json", "lib/changelog.mjs", "src/partials/nav.html"],
+    title: {
+      en: "What's new in cc-moss · Changelog",
+      zh: "cc-moss 更新记录：每一版新增了什么",
+    },
+    description: {
+      en: "Every cc-moss release in plain words, newest first: what each version lets you do, from the first release to today.",
+      zh: "cc-moss 的每一版都在这里，最新的在最上面：用大白话写清楚每一版让你多做到了什么。",
     },
   },
 ];

@@ -4,8 +4,10 @@
 //! to it and a line to `<state>/audit.jsonl`. `--wait` reads the result.
 //!
 //! Actions that lose nothing run at once: `setup-fix`, `sync-name`, `name`,
-//! `forget-gone`. Those that start or end work or forget a session the user
-//! may want (`restore`, `forget`, `end`) need `--because <id>`: the user's
+//! `forget-gone`, `archive`, `archive-idle` (archiving can be undone). Those
+//! that start or end work or forget a session the user may want (`restore`,
+//! `forget`, `end`, and `purge`, `purge-archived`, which delete archived
+//! sessions and put their transcripts in the Trash) need `--because <id>`: the user's
 //! tap, under ten minutes old, on the yes button cc-moss put under the Moss
 //! message that proposed exactly that (`[[confirm:]]`). Moss cannot write the
 //! conversation file, so it cannot make one up, and it never words the button.
@@ -16,6 +18,7 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
+use moss_core::config::Config;
 use moss_core::moss::act::{audit_path, dir, result_path, Outcome, Request};
 use moss_core::moss::chat::{self, Line};
 use moss_core::moss::dir::Dir;
@@ -41,6 +44,10 @@ pub enum Action {
     Restore(String),
     Forget(String),
     End(String),
+    Archive(String),
+    ArchiveIdle,
+    Purge(String),
+    PurgeArchived,
 }
 
 impl Action {
@@ -59,6 +66,15 @@ impl Action {
             "restore" => one(Action::Restore),
             "forget" => one(Action::Forget),
             "end" => one(Action::End),
+            "archive" => one(Action::Archive),
+            "purge" => one(Action::Purge),
+            "archive-idle" if args.is_empty() => Ok(Action::ArchiveIdle),
+            "archive-idle" => Err("archive-idle takes nothing: it looks at every session".into()),
+            "purge-archived" if args.is_empty() => Ok(Action::PurgeArchived),
+            "purge-archived" => Err(
+                "purge-archived takes nothing: it covers the archived sessions the user agreed to"
+                    .into(),
+            ),
             "name" => match args {
                 [s, given] => {
                     let name = given.trim();
@@ -85,13 +101,21 @@ impl Action {
     pub fn needs_consent(&self) -> bool {
         matches!(
             self,
-            Action::Restore(_) | Action::Forget(_) | Action::End(_)
+            Action::Restore(_)
+                | Action::Forget(_)
+                | Action::End(_)
+                | Action::Archive(_)
+                | Action::Purge(_)
+                | Action::PurgeArchived
         )
     }
 
     fn session(&self) -> Option<&str> {
         match self {
-            Action::SetupFix | Action::SyncNames => None,
+            Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => {
+                None
+            }
+            Action::Archive(s) | Action::Purge(s) => Some(s),
             Action::SyncName(s)
             | Action::Name(s, _)
             | Action::ForgetGone(s)
@@ -186,7 +210,9 @@ pub fn check(
     }
     let now = status(slot);
     let fits = match action {
-        Action::SetupFix | Action::SyncNames => true,
+        Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => true,
+        Action::Archive(_) => now != Status::Running && !slot.is_archived(),
+        Action::Purge(_) => now != Status::Running && slot.is_archived(),
         Action::SyncName(_) => now != Status::Closed,
         Action::Name(..) | Action::End(_) => now == Status::Running,
         Action::Restore(_) | Action::Forget(_) => now == Status::Interrupted,
@@ -195,6 +221,14 @@ pub fn check(
     if !fits {
         let why = match (action, now) {
             (Action::ForgetGone(_), Status::Interrupted) => "its folder is still there".to_string(),
+            (Action::Archive(_), Status::Running) => {
+                "it is running; it can't be archived".to_string()
+            }
+            (Action::Archive(_), _) => "it is archived already".to_string(),
+            (Action::Purge(_), Status::Running) => "it is running again".to_string(),
+            (Action::Purge(_), _) => {
+                "it is not archived; only archived sessions can be deleted".to_string()
+            }
             (_, s) => format!("it is {} now", s.as_str()),
         };
         return Check::Skip(why);
@@ -262,6 +296,8 @@ pub struct Hands {
     state: PathBuf,
     exe: String,
     next: Instant,
+    /// Where purged transcripts go; none without a home folder.
+    trash: Option<super::archive::Disposal>,
 }
 
 impl Hands {
@@ -271,6 +307,7 @@ impl Hands {
             state: state.to_path_buf(),
             exe: exe.to_string(),
             next: Instant::now(),
+            trash: super::archive::Disposal::current(),
         }
     }
 
@@ -406,6 +443,12 @@ impl Hands {
             Ok(s) => s,
             Err(e) => return ("failed", format!("{e:#}")),
         };
+        if action == Action::ArchiveIdle {
+            return archive_idle(&registry, Config::load());
+        }
+        if action == Action::PurgeArchived {
+            return self.purge_archived(&registry, &slots, r);
+        }
         let gone = |s: &Slot| {
             super::checkup::folder_fact(&std::fs::metadata(&s.cwd)) == super::checkup::Fact::No
         };
@@ -440,7 +483,21 @@ impl Hands {
                 .map(|()| "it won't be offered for restore again".to_string()),
             Action::End(_) => end(&registry, &slot),
             Action::Restore(_) => self.restore(&slot),
-            Action::SetupFix | Action::SyncNames => unreachable!(),
+            Action::Archive(_) => registry
+                .archive(
+                    std::slice::from_ref(&slot.slot_id),
+                    "moss",
+                    &|s| s.effective_status(moss_core::proc::is_alive) == Status::Running,
+                    now_ms(),
+                )
+                .and_then(|done| match done.is_empty() {
+                    false => Ok("archived; `cc-moss unarchive` brings it back".to_string()),
+                    true => Err(anyhow::anyhow!("it could not be archived")),
+                }),
+            Action::Purge(_) => self.purge_one(&registry, &slot),
+            Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => {
+                unreachable!()
+            }
         };
         settle(result, || {
             if action.needs_consent() {
@@ -451,6 +508,97 @@ impl Hands {
                 ));
             }
         })
+    }
+
+    /// Delete one archived session the user agreed to.
+    fn purge_one(&self, registry: &Registry, slot: &Slot) -> Result<String> {
+        let Some(trash) = &self.trash else {
+            bail!("there is no Trash to move its transcript to (no home folder)");
+        };
+        let done = super::archive::purge(registry, std::slice::from_ref(&slot.slot_id), trash)?;
+        if let Some((_, why)) = done.kept.first() {
+            bail!("it was kept: {why}");
+        }
+        Ok(format!(
+            "deleted; {} transcript(s) moved to the Trash",
+            done.trashed.len()
+        ))
+    }
+
+    /// Delete the archived sessions the user's yes covers: those the
+    /// `[[confirm: purge-archived]]` they tapped named when Moss asked.
+    /// One archived later is not touched, nor is anything not archived.
+    fn purge_archived(
+        &self,
+        registry: &Registry,
+        slots: &[Slot],
+        r: &Request,
+    ) -> (&'static str, String) {
+        let archived: Vec<&Slot> = slots
+            .iter()
+            .filter(|s| s.is_archived() && !s.is_moss())
+            .filter(|s| s.effective_status(moss_core::proc::is_alive) != Status::Running)
+            .collect();
+        if archived.is_empty() {
+            return ("skipped", "there are no archived sessions".into());
+        }
+        let lines = chat::lines(&self.home);
+        let used = self.used_consents();
+        let now = now_ms();
+        let mut agreed: Vec<String> = Vec::new();
+        let mut refusal = None;
+        for slot in archived {
+            match consent(
+                &lines,
+                r.because.as_deref(),
+                &r.action,
+                &slot.slot_id,
+                now,
+                &|key| used.iter().any(|u| u == key),
+            ) {
+                Ok(()) => agreed.push(slot.slot_id.clone()),
+                Err(e) => refusal = Some(e),
+            }
+        }
+        if agreed.is_empty() {
+            return (
+                "refused",
+                refusal.unwrap_or_else(|| "the user did not agree".into()),
+            );
+        }
+        let Some(trash) = &self.trash else {
+            return (
+                "failed",
+                "there is no Trash to move transcripts to (no home folder)".into(),
+            );
+        };
+        let done = match super::archive::purge(registry, &agreed, trash) {
+            Ok(d) => d,
+            Err(e) => return ("failed", format!("{e:#}")),
+        };
+        for id in &done.removed {
+            self.use_consent(&consent_key(
+                r.because.as_deref().unwrap_or_default(),
+                &r.action,
+                id,
+            ));
+        }
+        let mut said = format!(
+            "deleted {} archived session(s); {} transcript(s) moved to the Trash",
+            done.removed.len(),
+            done.trashed.len()
+        );
+        if !done.kept.is_empty() {
+            said.push_str(&format!("; kept {}", done.kept.len()));
+            if let Some((_, why)) = done.kept.first() {
+                said.push_str(&format!(" ({why})"));
+            }
+        }
+        if done.removed.is_empty() {
+            ("failed", said)
+        } else {
+            ("done", said)
+        }
     }
 
     /// `cc-moss setup --yes`, then `cc-moss doctor --fix`.
@@ -499,6 +647,34 @@ impl Hands {
             ),
             None => bail!("there was nothing to restore (it left nothing to resume)"),
         }
+    }
+}
+
+/// `archive-idle`: what the daily tidy-up does, now. Never on a guess: an
+/// unreadable config archives nothing.
+fn archive_idle(registry: &Registry, config: Result<Config>) -> (&'static str, String) {
+    let days = match config {
+        Ok(c) => c.sessions.archive_after_days,
+        Err(e) => {
+            return (
+                "refused",
+                format!("config.toml can't be read, so nothing is archived: {e:#}"),
+            )
+        }
+    };
+    match super::archive::archive_idle(registry, days, now_ms()) {
+        Ok(_) if days == 0 => (
+            "skipped",
+            "archiving is off ([sessions] archive_after_days = 0)".to_string(),
+        ),
+        Ok(done) => (
+            "done",
+            format!(
+                "archived {} session(s) not used for over {days} days",
+                done.len()
+            ),
+        ),
+        Err(e) => ("failed", format!("{e:#}")),
     }
 }
 
@@ -669,6 +845,7 @@ impl Pane for SessionPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moss_core::trash::Trash;
 
     #[test]
     fn act_spends_the_go_ahead_only_when_done() {
@@ -709,6 +886,10 @@ mod tests {
             created_at_ms: 0,
             last_active_at_ms: 0,
             ended_at_ms: None,
+            archived_at_ms: None,
+            archived_by: None,
+            provider_started: None,
+            provider_seen_keys: None,
         }
     }
 
@@ -955,6 +1136,15 @@ mod tests {
     }
 
     #[test]
+    fn archive_idle_refuses_on_an_unreadable_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let (outcome, said) = archive_idle(&r, Err(anyhow::anyhow!("bad toml")));
+        assert_eq!(outcome, "refused", "{said}");
+        assert_eq!(archive_idle(&r, Ok(Config::default())).0, "done");
+    }
+
+    #[test]
     fn act_parses_its_actions() {
         let a = |s: &[&str]| s.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         assert_eq!(Action::parse("setup-fix", &[]), Ok(Action::SetupFix));
@@ -978,5 +1168,233 @@ mod tests {
         assert!(Action::parse("restore", &[]).is_err());
         assert!(Action::Restore("x".into()).needs_consent());
         assert!(!Action::ForgetGone("x".into()).needs_consent());
+        assert_eq!(
+            Action::parse("purge-archived", &[]),
+            Ok(Action::PurgeArchived)
+        );
+        assert!(Action::parse("purge-archived", &a(&["x"])).is_err());
+        assert!(Action::parse("purge", &[]).is_err());
+        assert!(Action::Purge("x".into()).needs_consent());
+        assert!(Action::PurgeArchived.needs_consent());
+        // Archiving one session is Moss's idea: the user says yes first
+        // (purge-archived could otherwise follow right away).
+        assert!(Action::Archive("x".into()).needs_consent());
+        assert!(!Action::ArchiveIdle.needs_consent());
+    }
+
+    // ------------------------------------------------------------ purge
+
+    /// A daemon's hands on a throwaway state dir, with a trash of its own.
+    struct World {
+        dir: tempfile::TempDir,
+        hands: Hands,
+    }
+
+    impl World {
+        fn new() -> World {
+            let dir = tempfile::tempdir().unwrap();
+            let state = dir.path().join("state");
+            std::fs::create_dir_all(moss::home_dir(&state)).unwrap();
+            let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
+            hands.trash = Some(super::super::archive::Disposal {
+                trash: Trash::Folder(dir.path().join("Trash")),
+                claude_dirs: vec![dir.path().join("claude")],
+            });
+            World { dir, hands }
+        }
+
+        fn registry(&self) -> Registry {
+            Registry::open(&self.hands.state.join("registry.db")).unwrap()
+        }
+
+        /// A session that ended, with a transcript; archived when asked.
+        fn session(&self, name: &str, archived: bool) -> String {
+            use moss_core::event::{Context, Event, StartSource};
+            let transcript = self.transcript(name);
+            std::fs::write(&transcript, "{}\n").unwrap();
+            let mut r = self.registry();
+            let ctx = Context {
+                pid: None,
+                pid_start: None,
+                tmux: None,
+                launch_args: None,
+                now_ms: 1_000,
+            };
+            r.apply(
+                &moss_core::event::Event::Start {
+                    source: StartSource::Startup,
+                    session_id: format!("{name}-0000-1111"),
+                    cwd: "/work".into(),
+                    title: Some(name.into()),
+                    transcript_path: Some(transcript.to_string_lossy().into_owned()),
+                },
+                &ctx,
+            )
+            .unwrap();
+            r.apply(
+                &Event::End {
+                    session_id: format!("{name}-0000-1111"),
+                    reason: moss_core::event::EndReason::Closed("prompt_input_exit".into()),
+                },
+                &ctx,
+            )
+            .unwrap();
+            let id = self.id(name).unwrap();
+            if archived {
+                r.archive(std::slice::from_ref(&id), "you", &|_| false, 2_000)
+                    .unwrap();
+            }
+            id
+        }
+
+        /// Where Claude Code keeps it: `<claude>/projects/<folder>/<id>.jsonl`.
+        fn transcript(&self, name: &str) -> PathBuf {
+            let dir = self.dir.path().join("claude/projects/-work");
+            std::fs::create_dir_all(&dir).unwrap();
+            dir.join(format!("{name}-0000-1111.jsonl"))
+        }
+
+        fn id(&self, name: &str) -> Option<String> {
+            self.registry()
+                .slots()
+                .unwrap()
+                .into_iter()
+                .find(|s| s.name.as_deref() == Some(name))
+                .map(|s| s.slot_id)
+        }
+
+        /// Moss proposed `action` for `slots` with `yes`, and the user
+        /// answered `said`; the id of their answer.
+        fn asked(&self, action: &str, slots: &[&str], yes: &str, said: &str) -> String {
+            let home = moss::home_dir(&self.hands.state);
+            let now = now_ms();
+            let mut q = Line::message(
+                &format!("q{now}"),
+                &rfc3339(now - 2_000),
+                chat::FROM_MOSS,
+                "Delete them?",
+            );
+            q.buttons = vec![yes.to_string(), "Keep them".into()];
+            q.proposals = slots
+                .iter()
+                .map(|slot| chat::Proposal {
+                    action: action.into(),
+                    slot_id: slot.to_string(),
+                    yes: vec![yes.to_string()],
+                })
+                .collect();
+            chat::append(&home, &q).unwrap();
+            let id = format!("y{now}");
+            chat::append(
+                &home,
+                &Line::message(&id, &rfc3339(now - 1_000), chat::FROM_YOU, said),
+            )
+            .unwrap();
+            id
+        }
+
+        fn act(
+            &self,
+            action: &str,
+            args: &[&str],
+            because: Option<&str>,
+        ) -> (&'static str, String) {
+            self.hands.carry_out(&Request {
+                schema: 1,
+                id: "r".into(),
+                at: rfc3339(now_ms()),
+                action: action.into(),
+                args: args.iter().map(|a| a.to_string()).collect(),
+                because: because.map(String::from),
+            })
+        }
+
+        fn in_trash(&self, name: &str) -> bool {
+            self.dir
+                .path()
+                .join("Trash")
+                .join(format!("{name}-0000-1111.jsonl"))
+                .exists()
+        }
+    }
+
+    #[test]
+    fn purge_needs_your_yes() {
+        let w = World::new();
+        let api = w.session("api", true);
+        let yes = "Delete 1 archived session";
+        // No go-ahead, a "no", a yes to something else: nothing goes.
+        assert_eq!(w.act("purge", &["api"], None).0, "refused");
+        let no = w.asked("purge", &[&api], "Delete api", "Keep them");
+        assert_eq!(w.act("purge", &["api"], Some(&no)).0, "refused");
+        let no = w.asked("purge-archived", &[&api], yes, "Keep them");
+        assert_eq!(w.act("purge-archived", &[], Some(&no)).0, "refused");
+        let other = w.asked("forget", &[&api], "Stop offering api", "Stop offering api");
+        assert_eq!(w.act("purge", &["api"], Some(&other)).0, "refused");
+        assert_eq!(w.act("purge-archived", &[], Some(&other)).0, "refused");
+        assert!(w.id("api").is_some(), "its records stay");
+        assert!(w.transcript("api").exists(), "its transcript stays");
+        // The user's tap on cc-moss's yes: done, once.
+        let yes_id = w.asked("purge-archived", &[&api], yes, yes);
+        let (outcome, said) = w.act("purge-archived", &[], Some(&yes_id));
+        assert_eq!(outcome, "done", "{said}");
+        assert!(w.id("api").is_none());
+    }
+
+    #[test]
+    fn purge_moves_transcripts_to_trash() {
+        let w = World::new();
+        let api = w.session("api", true);
+        let yes = w.asked("purge", &[&api], "Delete api", "Delete api");
+        let (outcome, said) = w.act("purge", &["api"], Some(&yes));
+        assert_eq!(outcome, "done", "{said}");
+        assert!(w.id("api").is_none(), "its records are gone");
+        assert!(!w.transcript("api").exists());
+        assert!(w.in_trash("api"), "the transcript is in the Trash");
+        assert!(
+            w.registry()
+                .events(Some(0), 100)
+                .unwrap()
+                .iter()
+                .all(|e| e.slot_id != api),
+            "its events are gone too"
+        );
+        // Once only.
+        assert_ne!(w.act("purge", &["api"], Some(&yes)).0, "done");
+    }
+
+    #[test]
+    fn purge_touches_only_archived() {
+        let w = World::new();
+        let old = w.session("old", true);
+        let live = w.session("live", false);
+        // Even a yes that (somehow) names a session in the list deletes
+        // only what is archived.
+        let yes = "Delete 2 archived sessions";
+        let id = w.asked("purge-archived", &[&old, &live], yes, yes);
+        // Archived after Moss asked: the yes never covered it.
+        let late = w.session("late", true);
+        let (outcome, said) = w.act("purge-archived", &[], Some(&id));
+        assert_eq!(outcome, "done", "{said}");
+        assert!(w.id("old").is_none());
+        assert!(w.in_trash("old"));
+        for name in ["live", "late"] {
+            assert!(w.id(name).is_some(), "{name} stays");
+            assert!(w.transcript(name).exists(), "{name}'s transcript stays");
+        }
+        // Asked by name, a session in the list is not deleted either.
+        let id = w.asked("purge", &[&live], "Delete live", "Delete live");
+        assert_eq!(w.act("purge", &["live"], Some(&id)).0, "skipped");
+        // Each layer on its own refuses a session that is not archived.
+        let bin = super::super::archive::Disposal {
+            trash: Trash::Folder(w.dir.path().join("Trash")),
+            claude_dirs: vec![w.dir.path().join("claude")],
+        };
+        let done =
+            super::super::archive::purge(&w.registry(), std::slice::from_ref(&live), &bin).unwrap();
+        assert!(done.removed.is_empty() && done.trashed.is_empty());
+        assert!(w.registry().purge(&[live.clone(), late.clone()]).unwrap() == [late.clone()]);
+        assert!(w.id("live").is_some());
+        assert!(w.transcript("live").exists());
     }
 }
