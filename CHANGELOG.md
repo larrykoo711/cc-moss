@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Added
+
+- **Update tips in the app.** When a newer version is out, a light bar on top of the panel says so, with a link to
+  that version on the website's changelog and an Update button (the same `cc-moss update`); its × hides it for that
+  version only. Mo tells you once per version in a bubble, by its usual rules. After an upgrade, the first panel
+  open shows what the new version brings, from the changelog bundled into the app. The app now checks a little after
+  launch and every 6 hours as well as on panel open (still at most once in 6 hours), and never with
+  `[update] check = false`, which `cc-moss config get update.check` now reads.
+
 ### Fixed
 
 - Moss can look up archived sessions and ones closed in the last 30 days: `cc-moss ls` (and `--all`, `--archived`,

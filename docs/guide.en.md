@@ -672,6 +672,16 @@ Updates… (Update to x… when there's a new version: it runs `cc-moss update` 
 small dot); Settings… (⌘,); User Guide and Report a Problem; and Quit cc-moss (⌘Q). ⌘R refreshes any time. Along the bottom are New Session on the left and, on the right, the selected
 session's main action (Open, Bring Back and so on, with a ↵), on the Sessions page only.
 
+When a newer version is out, a light bar sits on top of the Sessions page: "cc-moss 0.3.2 is ready to install", with
+See what's new (that version on the website's changelog) and Update (the same `cc-moss update` in your terminal). Its ×
+hides it for that version only; a later one shows again, and it goes once the app runs that version. Mo says it once
+per version too, in a bubble with Update and Later, by the rules all its bubbles follow (only when Mo is on and in
+view, never while it's resting or the panel is open, and after whatever it's already telling you). After an upgrade,
+the first time you open the panel shows what the new version brings (its headline and up to three highlights, from
+the changelog the app carries), once. A fresh install shows nothing. The app looks for a new version about 30 seconds
+after it starts, when you open the panel, and every 6 hours, at most once in 6 hours; with `[update] check = false`
+it never does and shows none of this (Settings › About still checks when you ask).
+
 The panel picks its height as it opens, by how many sessions you have: shorter for 4 or fewer, medium for 5 to 9,
 and for 10 or more 70% of the screen's height (between 720 and 900 points). It keeps that height while it's open.
 It refreshes by itself when your sessions change, at most every 1.5 seconds while it's open and every 5 seconds
@@ -932,8 +942,10 @@ The state folder is readable only by you. It reads Claude Code's own session fil
 - **The version check.** At most once a day, when you open the picker or run `doctor`, cc-moss asks
   `https://github.com/larrykoo711/cc-moss/releases/latest` where it points: one plain HTTPS request with `curl`, which
   carries nothing about you, your sessions or your machine. It runs in the background and gives up after 3 seconds.
-  The hooks and `ls --json` never go online. Turn it off with `[update] check = false` in the config file or
-  `CC_MOSS_NO_UPDATE_CHECK=1`; `cc-moss update` still works when you run it yourself.
+  The menubar app asks the same question through `cc-moss update --check`, at most once every 6 hours (a little
+  after it starts, when you open the panel, and on a 6-hour timer). The hooks and `ls --json` never go online. Turn it
+  off with `[update] check = false` in the config file (the app follows it too) or `CC_MOSS_NO_UPDATE_CHECK=1` (the
+  terminal only); `cc-moss update` still works when you run it yourself.
 - **Installing things you agreed to:** the tools in `cc-moss install`, and a new version in `cc-moss update`.
 
 [Moss](#moss) is a Claude Code session: it talks to Anthropic with your Claude Code sign-in, like any session you start,
@@ -961,7 +973,7 @@ icons = "auto"            # Nerd Font icons: "auto" (when starship is loaded), "
 language = "auto"         # "auto" (your system language), "en" or "zh"
 
 [update]
-check = true              # look for a new cc-moss once a day (picker and doctor); false turns it off
+check = true              # look for a new cc-moss (picker and doctor once a day, the app every 6 hours); false turns it off
 
 [ask]
 enabled = true            # questions a session asks can be answered elsewhere too; does nothing while nobody takes them
