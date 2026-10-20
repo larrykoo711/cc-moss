@@ -1568,7 +1568,8 @@ private struct JumpToLatest: View {
         }
         .frame(height: 40)
         .frame(maxWidth: .infinity)
-        .accessibilityLabel(L.t("Jump to bottom", "回到底部"))
+        .accessibilityLabel(count > 0 ? L.t("Jump to bottom, \(count) new", "回到底部，\(count) 条新消息")
+                                       : L.t("Jump to bottom", "回到底部"))
     }
 }
 

@@ -489,6 +489,8 @@ struct GeneralSettings: View {
 
     @State private var openAtLogin = LoginItem.isEnabled
     @State private var loginError: String?
+    /// A change is on its way to the system: the switch waits for it.
+    @State private var loginBusy = false
     @State private var language = LanguageState.shared.choice.rawValue
     @State private var languageError: String?
     @State private var appearance = AppearanceChoice.load().rawValue
@@ -510,6 +512,7 @@ struct GeneralSettings: View {
                     .cursor(.pointingHand)
                     .labelsHidden()
                     .controlSize(.small)
+                    .disabled(loginBusy)
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
         }
@@ -606,15 +609,20 @@ struct GeneralSettings: View {
 
     private func setOpenAtLogin(_ on: Bool) {
         // The answer from `refresh` lands here too: only a change is applied.
-        guard on != LoginItem.isEnabled else { return }
+        guard on != LoginItem.isEnabled, !loginBusy else { return }
+        loginBusy = true
         Task {
             do {
                 try await LoginItem.set(on)
                 loginError = nil
+            } catch is LoginItem.Stalled {
+                loginError = L.t("The system didn't answer. Try again in a moment.", "系统没回应，稍后再试")
             } catch {
                 loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
             }
+            // The switch says what's true now, whatever was asked.
             openAtLogin = LoginItem.isEnabled
+            loginBusy = false
         }
     }
 }

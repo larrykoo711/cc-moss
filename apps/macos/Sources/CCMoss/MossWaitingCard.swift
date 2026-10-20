@@ -11,17 +11,31 @@ extension AppModel {
         WaitingCard.rows(cards: askDesk.cards, replies: waitingForInput, sessions: (moss.map { [$0] } ?? []) + sessions)
     }
 
-    /// Every ask and reply the card stands for (rows hide a session's later asks).
-    var waitingItems: [AskQueue.Item] {
-        askDesk.cards.filter { $0.phase == .choosing }.map { .ask($0.id) } + waitingForInput.map { .reply($0.id) }
+    /// Every ask and reply the card stands for (rows hide a session's later
+    /// asks), each with its session's Claude id.
+    var waitingItems: [AskQueue.Item: String] {
+        var out: [AskQueue.Item: String] = [:]
+        for c in askDesk.cards where c.phase == .choosing { out[.ask(c.id)] = c.ask.sessionId }
+        for s in waitingForInput { out[.reply(s.id)] = s.sessionId }
+        return out
+    }
+
+    /// Sessions still running: what went from one that ended wasn't handled.
+    var liveSessionIDs: Set<String> {
+        Set(((moss.map { [$0] } ?? []) + sessions).filter { $0.status == "running" }.map(\.sessionId))
     }
 }
 
 struct MossWaitingCard: View {
     @Bindable var model: AppModel
     /// Rows opened to the full question or a reply line.
-    @State private var opened: Set<String> = []
+    @State private var opened: Set<String>
     @Environment(\.colorScheme) private var scheme
+
+    init(model: AppModel) {
+        self.model = model
+        _opened = State(initialValue: model.demoWaitingOpen)
+    }
 
     var body: some View {
         let rows = model.waitingRows
@@ -38,8 +52,11 @@ struct MossWaitingCard: View {
         .padding(.bottom, rows.isEmpty && model.waitingReceipt.receipt() == nil ? 0 : 8)
         .animation(.easeOut(duration: 0.2), value: rows.map(\.id))
         .animation(.easeOut(duration: 0.2), value: model.waitingReceipt)
-        .onAppear { model.waitingReceipt.update(model.waitingItems) }
-        .onChange(of: model.waitingItems) { _, items in model.waitingReceipt.update(items) }
+        // Only what's handled while the card is on screen counts.
+        .onAppear { if !model.demoKeepsReceipt { model.waitingReceipt.rebaseline(model.waitingItems) } }
+        .onChange(of: model.waitingItems) { _, items in
+            model.waitingReceipt.update(items, live: model.liveSessionIDs)
+        }
         .task(id: model.waitingReceipt.endsAt) {
             guard let end = model.waitingReceipt.endsAt else { return }
             try? await Task.sleep(for: .seconds(max(0, end.timeIntervalSinceNow)))
@@ -86,7 +103,7 @@ struct MossWaitingCard: View {
             Text(WaitingReceipt.text(n))
         }
         .font(.system(size: 11.5, weight: .medium))
-        .foregroundStyle(Color.green.opacity(0.85))
+        .foregroundStyle(Theme.okText(scheme))
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 6)
     }
@@ -139,9 +156,23 @@ private struct WaitingRowView: View {
             Text(row.line)
                 .font(.system(size: 12, design: isPermission ? .monospaced : .default))
                 .foregroundStyle(.secondary)
-                .lineLimit(1)
+                // A command you allow is read whole: up to three lines, then "Show all".
+                .lineLimit(isPermission ? 3 : 1)
                 .truncationMode(.tail)
-                .tip(row.line)
+                .fixedSize(horizontal: false, vertical: true)
+                .textSelection(.enabled)
+                .help(row.line)
+            if row.needsShowAll && !open {
+                Button(action: toggle) {
+                    Text(L.t("Show all", "看全部"))
+                        .font(.system(size: 11.5, weight: .medium))
+                        .foregroundStyle(Theme.brand)
+                }
+                .buttonStyle(.plain)
+                .focusable(false)
+                .handCursor()
+                .accessibilityLabel(L.t("Show the whole command", "看完整的命令"))
+            }
         }
     }
 
@@ -313,6 +344,7 @@ private struct OptionChip: View {
             Text(title)
                 .font(.system(size: 12, weight: .medium))
                 .lineLimit(1)
+                .truncationMode(.tail)
                 .foregroundStyle(hovering ? Theme.brand : .primary)
                 .padding(.horizontal, 11)
                 .frame(height: 28)
@@ -323,11 +355,12 @@ private struct OptionChip: View {
         .buttonStyle(PressStyle())
         .focusable(false)
         .onHover { hovering = $0 }
-        .fixedSize()
+        .help(title)
     }
 }
 
-/// Buttons that wrap onto the next line when they don't fit.
+/// Buttons that wrap onto the next line when they don't fit; one wider than
+/// the row gets the row's width (and truncates).
 private struct FlowChips: Layout {
     var spacing: CGFloat = 6
 
@@ -337,7 +370,7 @@ private struct FlowChips: Layout {
         let width = proposal.width ?? .infinity
         var x: CGFloat = 0, y: CGFloat = 0, line: CGFloat = 0, widest: CGFloat = 0
         for v in subviews {
-            let size = v.sizeThatFits(.unspecified)
+            let size = Self.size(v, within: width)
             if x > 0 && x + size.width > width {
                 y += line + spacing
                 x = 0
@@ -353,7 +386,7 @@ private struct FlowChips: Layout {
     func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
         var x = bounds.minX, y = bounds.minY, line: CGFloat = 0
         for v in subviews {
-            let size = v.sizeThatFits(.unspecified)
+            let size = Self.size(v, within: bounds.width)
             if x > bounds.minX && x + size.width > bounds.maxX {
                 y += line + spacing
                 x = bounds.minX
@@ -363,5 +396,12 @@ private struct FlowChips: Layout {
             x += size.width + spacing
             line = max(line, size.height)
         }
+    }
+
+    /// Its own size, but never wider than the row.
+    private static func size(_ v: LayoutSubview, within width: CGFloat) -> CGSize {
+        let natural = v.sizeThatFits(.unspecified)
+        guard width.isFinite, natural.width > width else { return natural }
+        return v.sizeThatFits(ProposedViewSize(width: width, height: natural.height))
     }
 }

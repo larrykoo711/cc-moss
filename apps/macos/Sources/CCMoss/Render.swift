@@ -116,6 +116,7 @@ enum Render {
             if let n = value("--waiting-receipt").flatMap(Int.init) {
                 model.waitingReceipt.update((0..<n).map { .ask("demo-\($0)") })
                 model.waitingReceipt.update([])
+                model.demoKeepsReceipt = true
             }
             // `--notice <action>:<reason> [--notice-on <id>] [--notice-more N]`: a failed
             // action's notice at the bottom (F25), about that session (else the first
@@ -132,6 +133,8 @@ enum Render {
                                            message: reason == "ambiguous" ? nil : L.t("no such file or directory", "没有那个文件或目录"),
                                            candidates: reason == "ambiguous" ? ["fix-invoice (01c0c1d2)", "fix-invoice (7a3e90b1)"] : []))
             }
+            // `--waiting-open <id>`: that session's waiting row opened (the full question).
+            if let id = value("--waiting-open") { model.demoWaitingOpen = [id] }
             // `--expand-archived`: the "Archived" group open.
             if args.contains("--expand-archived") { model.archivedExpanded = true }
             // `--provider live|restart [--provider-host h]`: a provider switch a minute ago;

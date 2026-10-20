@@ -30,6 +30,11 @@ enum Theme {
     /// don't compete with the title above them.
     static let caption = Color.primary.opacity(0.42)
 
+    /// Green words ("Handled 2 just now"): dark enough on white for 4.5:1.
+    static func okText(_ scheme: ColorScheme) -> Color {
+        scheme == .dark ? Color.green.opacity(0.85) : Color(red: 0.10, green: 0.50, blue: 0.22)
+    }
+
     static func hairline(_ scheme: ColorScheme) -> Color {
         scheme == .dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08)
     }

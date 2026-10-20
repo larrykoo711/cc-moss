@@ -10,13 +10,13 @@ extension AppModel {
     func mossCards(_ group: MossGroup) -> [MossSessionCard] {
         let ids = group.sessions
         guard !ids.isEmpty else { return [] }
-        return MossSessionCard.cards(ids, among: sessions + (closedPool ?? []), waiting: mossWaiting(ids),
+        return MossSessionCard.cards(ids, among: sessions + archived + (closedPool ?? []), waiting: mossWaiting(ids),
                                      then: group.sessionStates)
     }
 
     /// One session's card, live: for a mention's hover card.
     func mossCard(_ id: String) -> MossSessionCard? {
-        MossSessionCard.cards([id], among: sessions + (closedPool ?? []), waiting: mossWaiting([id])).first
+        MossSessionCard.cards([id], among: sessions + archived + (closedPool ?? []), waiting: mossWaiting([id])).first
     }
 
     /// What To Do holds for these sessions: an open question or permission,
@@ -41,6 +41,7 @@ struct MossSessionCards: View {
     let cards: [MossSessionCard]
     /// Older cards of a session are receipts; only the newest is live.
     var roles: [String: MossCardHistory.Role] = [:]
+    @Environment(\.colorScheme) private var scheme
 
     private var ids: [String] { cards.map(\.id) }
     /// Live cards that show: a session waiting on you is in the "Waiting on
@@ -74,7 +75,7 @@ struct MossSessionCards: View {
                     Text(L.t("All handled", "都处理好了"))
                 }
                 .font(.system(size: 11.5, weight: .medium))
-                .foregroundStyle(Color.green.opacity(0.85))
+                .foregroundStyle(Theme.okText(scheme))
                 .padding(.leading, 4)
                 .padding(.top, 2)
             }
@@ -82,7 +83,7 @@ struct MossSessionCards: View {
         .frame(maxWidth: 420, alignment: .leading)
         .onAppear {
             // Moss may point at one that has ended: those come from `ls --all`.
-            let known = Set(model.sessions.map(\.id))
+            let known = Set((model.sessions + model.archived).map(\.id))
             if model.closedPool == nil, ids.contains(where: { !known.contains($0) }) { model.loadClosed() }
         }
     }
@@ -210,6 +211,14 @@ struct MossSessionCardView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                    } else if session.isArchived {
+                        HStack(spacing: 4) {
+                            Image(systemName: Icons.archive).font(.system(size: 9.5, weight: .semibold))
+                            Text(L.t("Archived", "已归档"))
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     } else if let waiting = card.waiting {
                         // Why it waits, in its state's colour, in place of folder · time.
                         Text(Self.waitingText(waiting.reason))
@@ -315,6 +324,9 @@ struct MossSessionCardView: View {
                     .tip(wait ?? L.t("Ends its process in its current terminal and carries on in tmux; the conversation is kept.",
                                      "结束它在原终端里的进程，然后在 tmux 里接着跑，对话不会丢。"))
                 }
+            case .unarchive?:
+                CardTextButton(title: L.t("Bring back", "拿回来"), icon: Icons.unarchive) { model.unarchive(session) }
+                    .tip(L.t("Put it back in the list.", "放回列表里。"))
             case nil:
                 EmptyView()
             }
@@ -397,12 +409,17 @@ struct MossSessionCardView: View {
     }
 
     private var stateIcon: some View {
-        let color = session.needsYou ? Theme.brand : Theme.color(session.state)
-        let label = session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
+        let color = session.isArchived ? Color.gray : session.needsYou ? Theme.brand : Theme.color(session.state)
+        let label = session.isArchived ? L.t("Archived", "已归档")
+            : session.needsYou ? L.t("Needs you", "需要你确认") : session.state.label
         return ZStack {
             RoundedRectangle(cornerRadius: 5)
                 .fill(color.opacity(scheme == .dark ? 0.22 : 0.14))
-            if session.state == .working && !session.needsYou {
+            if session.isArchived {
+                Image(systemName: Icons.archive)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(color)
+            } else if session.state == .working && !session.needsYou {
                 WorkingRing().scaleEffect(0.85)
             } else {
                 Image(systemName: session.needsYou ? Icons.needsYou : Icons.state(session.state))

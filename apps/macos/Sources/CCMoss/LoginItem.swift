@@ -8,6 +8,9 @@ import ServiceManagement
 enum LoginItem {
     static let label = "io.github.larrykoo711.cc-moss.login"
 
+    /// The system's login item service didn't answer in time.
+    struct Stalled: Error {}
+
     static var agentURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent("Library/LaunchAgents/\(label).plist")
@@ -51,8 +54,17 @@ enum LoginItem {
                 }
             }
         }
-        // No answer: the system's service is stuck; the launch agent still works.
-        if outcome == nil, on { try writeAgent() }
+        // No answer: the system's service is stuck. Turning on, the launch
+        // agent still works; turning off, the system may still have it on.
+        if outcome == nil {
+            if on {
+                try writeAgent()
+            } else {
+                if FileManager.default.fileExists(atPath: agentURL.path) { try FileManager.default.removeItem(at: agentURL) }
+                await refresh()
+                throw Stalled()
+            }
+        }
         try outcome?.get()
         await refresh()
     }

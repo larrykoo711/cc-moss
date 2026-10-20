@@ -209,6 +209,10 @@ final class AppModel {
     var failures = FailureNotices()
     /// The Moss page's "Handled N just now" line, after the waiting card empties.
     var waitingReceipt = WaitingReceipt()
+    /// Screenshots only: the receipt set up for them survives the card appearing.
+    @ObservationIgnored var demoKeepsReceipt = false
+    /// Screenshots only: waiting rows (by session id) shown opened.
+    @ObservationIgnored var demoWaitingOpen: Set<String> = []
     /// "End and archive" waits for a second, deliberate click too.
     var endArchiveGate = Confirmation<Session>()
 

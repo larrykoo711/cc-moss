@@ -356,6 +356,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // SwiftUI may set its own link handler while launching: ours again.
         takeLinks()
+        // Ask the system once now, off the main thread: Settings and Welcome
+        // then know "Open at login" before they open.
+        Task { await LoginItem.refresh() }
         // Dev only: `defaults write io.github.larrykoo711.cc-moss DevShowInDock -bool true` shows a Dock icon so screen-control tools find the app.
         if UserDefaults.standard.bool(forKey: "DevShowInDock") { NSApp.setActivationPolicy(.regular) }
         statusItem = StatusItemController(model: model)

@@ -228,6 +228,8 @@ struct ProviderBannerView: View {
     @Environment(\.colorScheme) private var scheme
 
     private var restart: Bool { if case .needsRestart = state { true } else { false } }
+    /// "Restart All" only while something can be restarted from here.
+    private var restartable: Bool { if case let .needsRestart(n, _) = state { n > 0 } else { false } }
     private var tint: Color { restart ? Theme.amber : .blue }
 
     var body: some View {
@@ -245,7 +247,7 @@ struct ProviderBannerView: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 6)
-            if restart {
+            if restartable {
                 if model.restartingAll {
                     ProgressView().controlSize(.small).scaleEffect(0.7)
                 } else {

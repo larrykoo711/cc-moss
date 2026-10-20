@@ -19,7 +19,7 @@ extension AppModel {
     /// The names a bubble's words may mention: its own sessions first, then
     /// every other session (open, or closed in the last 30 days).
     func mentionNames(_ group: MossGroup) -> [MossMentions.Name] {
-        let all = sessions + (closedPool ?? [])
+        let all = sessions + archived + (closedPool ?? [])
         let byID = Dictionary(all.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
         let own = group.sessions.compactMap { byID[$0] }
         return (own + all).filter { !$0.isMoss && $0.name?.isEmpty == false }
@@ -28,7 +28,7 @@ extension AppModel {
 
     /// The session a mention points at, open or recently closed.
     func mentioned(_ id: String) -> Session? {
-        sessions.first { $0.id == id } ?? closedPool?.first { $0.id == id }
+        sessions.first { $0.id == id } ?? archived.first { $0.id == id } ?? closedPool?.first { $0.id == id }
     }
 
     /// A click on a mention: the Sessions page, on that session, in view;
@@ -42,7 +42,7 @@ extension AppModel {
             stateFilter = nil
             follow(s)
             if ReplyLine.opens(s) { openReply(s) }
-        } else if let s = closedPool?.first(where: { $0.id == id }) {
+        } else if let s = archived.first(where: { $0.id == id }) ?? closedPool?.first(where: { $0.id == id }) {
             page = .sessions
             stateFilter = nil
             query = s.title
