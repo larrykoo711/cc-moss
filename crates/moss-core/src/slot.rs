@@ -140,11 +140,21 @@ pub fn now_ms() -> i64 {
 /// its own markup (messages from other sessions, slash commands); those tags
 /// are taken off so the words show, and a line that is only a tag is skipped.
 pub fn prompt_preview(prompt: &str) -> Option<String> {
+    if is_notice(prompt) {
+        return None;
+    }
     prompt
         .lines()
         .map(strip_markup)
         .find(|l| !l.is_empty())
         .map(|l| l.chars().take(200).collect())
+}
+
+/// Whether `prompt` is a notice Claude Code feeds the session itself (a
+/// background task finished), not words you typed: its first line once the
+/// tags are off is only the task's id.
+pub fn is_notice(prompt: &str) -> bool {
+    prompt.trim_start().starts_with("<task-notification>")
 }
 
 /// `line` without a Claude Code tag at its start or end. Those tags have a
