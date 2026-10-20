@@ -43,6 +43,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - A session stopped with Esc no longer stays "working" until restart.
 - Return picks the word while a Chinese input method is composing instead of sending.
 - Settings no longer freezes when macOS's login item service stalls.
+- The app no longer freezes when macOS's file events service (fseventsd) stops answering: the watcher starts off the
+  main thread, and the app looks at the state folder every 2 seconds until it does.
 - Moss's yes buttons wrap instead of being cut off; Mo's options show the pointing hand.
 - `cc-moss doctor` no longer calls a model setting alone "your own API key".
 - Superseded copies of a session close quietly, and `--json` names sessions that share a name.

@@ -69,6 +69,8 @@ final class AppModel {
     var cliPath: String?
     @ObservationIgnored private var watcher: DirectoryWatcher?
     @ObservationIgnored private var watchedDir: String?
+    /// Stands in for the watcher while FSEvents doesn't answer.
+    @ObservationIgnored private var poller: StatePoller?
     @ObservationIgnored private var timer: Timer?
     @ObservationIgnored private var lastLoad = Date.distantPast
     @ObservationIgnored private var paced: Task<Void, Never>?
@@ -471,16 +473,45 @@ final class AppModel {
 
     private func watch(_ dir: String) {
         guard dir != watchedDir else { return }
-        watcher?.stop()
-        watcher = DirectoryWatcher(path: dir, latency: 1.0, filter: { path in
-            let announced = FileManager.default.fileExists(atPath: dir + "/registry.changed")
-            return StateChange.matters(path, in: dir, announced: announced)
-        }) { [weak self] in
-            Task { @MainActor in self?.changed() }
-        }
         watchedDir = dir
+        // Starting and stopping a stream waits on fseventsd, which can stop
+        // answering for good; on the main thread that froze the whole app.
+        let old = watcher
+        watcher = nil
+        poller = nil
+        Task.detached { old?.stop() }
+        Task.detached { [weak self] in
+            let started = DirectoryWatcher(path: dir, latency: 1.0, filter: { path in
+                let announced = FileManager.default.fileExists(atPath: dir + "/registry.changed")
+                return StateChange.matters(path, in: dir, announced: announced)
+            }) { [weak self] in
+                Task { @MainActor in self?.changed() }
+            }
+            guard let self else {
+                started?.stop()
+                return
+            }
+            await self.adopt(started, for: dir)
+        }
+        // No stream after a few seconds: look at the folder ourselves.
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(StatePoller.patience))
+            guard let self, self.watchedDir == dir, self.watcher == nil, self.poller == nil else { return }
+            self.poller = StatePoller(stateDir: dir) { [weak self] in self?.changed() }
+        }
         // Opened before the folder was known (a cold launch by a link): mark it now.
         PanelOpenedMark.touchIfShown(panelShown, stateDir: dir)
+    }
+
+    /// The watcher started off the main thread: kept if the folder is still
+    /// the one watched, and then polling stops.
+    private func adopt(_ started: DirectoryWatcher?, for dir: String) {
+        guard watchedDir == dir else {
+            Task.detached { started?.stop() }
+            return
+        }
+        watcher = started
+        if started != nil { poller = nil }
     }
 
     func selectFirst() { selectedID = visible.first?.id }

@@ -23,4 +23,12 @@ public enum StateChange {
     /// The least time between two refreshes: quick while you're looking at
     /// the panel, gentler while only the menu bar and Mo are listening.
     public static func gap(panelShown: Bool) -> TimeInterval { panelShown ? 1.5 : 5 }
+
+    /// What to look at when FSEvents doesn't answer and the app polls: the
+    /// files `matters` counts, and the questions folder, whose time changes
+    /// when a question is written, answered or withdrawn.
+    public static func polledFiles(in stateDir: String) -> [String] {
+        let base = stateDir.hasSuffix("/") ? stateDir : stateDir + "/"
+        return ["registry.changed", "registry.db", "moss/chat.jsonl", "asks"].map { base + $0 }
+    }
 }
