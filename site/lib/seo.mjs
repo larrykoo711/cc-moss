@@ -63,10 +63,11 @@ export function structuredData({ page, locale, path, updated, faq, image }) {
   const graph = [
     { "@type": "WebSite", "@id": `${ORIGIN}/#website`, url: `${ORIGIN}/`, name: "cc-moss", inLanguage: LOCALES.map((l) => HTML_LANG[l]), publisher: { "@id": AUTHOR["@id"] } },
     AUTHOR,
+    webpage,
   ];
-  {
+  // The app itself is described where the page shows it: the home page.
+  if (page.id === "home") {
     graph.push(
-      webpage,
       {
         "@type": "SoftwareApplication",
         "@id": `${ORIGIN}/#app`,

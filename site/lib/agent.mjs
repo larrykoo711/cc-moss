@@ -7,19 +7,22 @@ import { mcpManifest, registryManifest, serverCard } from "../worker/tools.mjs";
 const COPY = {
   en: {
     summary:
-      "cc-moss is an open-source session manager for Claude Code. It tracks every session (busy, waiting for you, or stopped) and brings interrupted ones back to the same conversation after a restart or a crash, with one command or one click. Free (MIT), for macOS and Linux, with a menu bar app on macOS 14+. Every page has a Markdown version: append `index.md` to its URL or send `Accept: text/markdown`.",
+      "cc-moss is an open-source session manager for Claude Code. It tracks every session (busy, waiting for you, or stopped) and brings interrupted ones back to the same conversation after a restart or a crash, with one command or one click. Free (MIT), for macOS and Linux, with a menu bar app on macOS 14+, where it also keeps Moss running: a Claude Code session that keeps your sessions tidy and asks before anything risky. Every page has a Markdown version: append `index.md` to its URL or send `Accept: text/markdown`.",
     facts: [`Version: ${VERSION}`, "License: MIT, free", "Platforms: macOS (terminal + menu bar app, macOS 14+), Linux (terminal)", "Needs: Claude Code, tmux"],
     when: [
       "You run several Claude Code sessions at once and want to see which are busy, waiting for your approval, or stopped.",
       "Your Mac restarted, the terminal crashed or a window closed, and you want every interrupted conversation back in its own folder: `cc-moss restore` (or Bring them back in the menu bar).",
       "You want to know the moment Claude needs a yes: a notification, or Mo, a small desktop companion.",
       "You want to jump to any session fast: type `t` in a terminal, or double-tap Control for the menu bar panel.",
+      "You want to answer a session's question or approve its request without going into its terminal: from the menu bar panel or Mo (macOS).",
+      "You want old sessions archived on their own, or to switch API providers (with a tool like cc-switch) without starting your sessions over.",
     ],
     whenNot:
       "Do not use it for: Windows (not supported); restoring non-Claude terminal panes (use tmux-resurrect, which works alongside cc-moss); a one-off chat you never come back to.",
     how: "Install: `brew install larrykoo711/tap/cc-moss && cc-moss install` (x86_64 Linux too; arm64 Linux: download a binary from the releases page). Update: `cc-moss update`. Check the setup: `cc-moss doctor`.",
     pages: [
-      ["Overview and FAQ", "/", "what cc-moss does, how it compares to claude --resume and tmux-resurrect, common questions"],
+      ["Overview and FAQ", "/", "what cc-moss does, Moss, how it compares to claude --resume and tmux-resurrect, common questions"],
+      ["Changelog", "/changelog/", "every release in plain words, newest first, with links to the technical notes"],
       ["Full guide", "/guide/", "every detail for assistants: install and update, the t picker and every command, the menu bar app, Mo and notifications, configuration, privacy, troubleshooting"],
     ],
     other: ["中文版", "/zh/llms.txt"],
@@ -27,18 +30,21 @@ const COPY = {
   },
   zh: {
     summary:
-      "cc-moss 是开源的 Claude Code 会话管理工具。它照看每个会话（在忙、在等你、断了），电脑重启或终端崩溃后，一条命令或一次点击，把中断的会话接回原来的对话。免费（MIT），支持 macOS 和 Linux，macOS 14+ 上有状态栏 App。每个页面都有 Markdown 版本：在网址后加 `index.md`，或请求时带 `Accept: text/markdown`。",
+      "cc-moss 是开源的 Claude Code 会话管理工具。它照看每个会话（在忙、在等你、断了），电脑重启或终端崩溃后，一条命令或一次点击，把中断的会话接回原来的对话。免费（MIT），支持 macOS 和 Linux，macOS 14+ 上有状态栏 App，还会替你一直开着 Moss：一个帮你整理会话、动手前先问你的 Claude Code 会话。每个页面都有 Markdown 版本：在网址后加 `index.md`，或请求时带 `Accept: text/markdown`。",
     facts: [`版本：${VERSION}`, "许可：MIT，免费", "平台：macOS（终端 + 状态栏 App，需 macOS 14+）、Linux（终端）", "依赖：Claude Code、tmux"],
     when: [
       "同时开着好几个 Claude Code 会话，想一眼看清谁在忙、谁在等你点头、谁断了。",
       "电脑重启、终端崩溃或窗口关错了，想把每个中断的对话在原目录接回来：`cc-moss restore`（或状态栏里的「全部找回」）。",
       "想在 Claude 需要你确认时第一时间知道：系统通知，或者桌面上的小伙伴小莫。",
       "想快速跳到任意会话：终端里敲 `t`，或者连按两下 Control 唤出状态栏面板。",
+      "想不进终端就回答会话的问题、批准它的请求：在状态栏面板或小莫那里点一下（macOS）。",
+      "想让旧会话自己归档，或者用 cc-switch 这类工具换 API 供应商时不用把会话从头开过。",
     ],
     whenNot: "不适合：Windows（不支持）；恢复与 Claude 无关的终端面板（用 tmux-resurrect，可与 cc-moss 一起用）；只聊一次、不会再回来的对话。",
     how: "安装：`brew install larrykoo711/tap/cc-moss && cc-moss install`（x86_64 Linux 同样适用；arm64 Linux 请在发布页下载二进制）。更新：`cc-moss update`。检查环境：`cc-moss doctor`。",
     pages: [
-      ["概览与常见问题", "/", "cc-moss 能做什么、和 claude --resume / tmux-resurrect 的对比、常见问题"],
+      ["概览与常见问题", "/", "cc-moss 能做什么、Moss、和 claude --resume / tmux-resurrect 的对比、常见问题"],
+      ["更新记录", "/changelog/", "每一版新增了什么，用大白话写，最新的在前，附技术记录链接"],
       ["完整手册", "/guide/", "供 AI 助手查阅的全部细节：安装与更新、t 选择器和全部命令、状态栏 App、小莫与通知、配置、隐私、排错"],
     ],
     other: ["English", "/llms.txt"],
@@ -102,7 +108,7 @@ const stripFrontmatter = (md) => md.replace(/^---\n[\s\S]*?\n---\n/, "");
 /** Split pages into sections (by H2/H3) for search_docs. `ids` are the anchors the HTML has. */
 export function searchRecords(docs) {
   const out = [];
-  for (const { locale, path, title, markdown, ids = new Set(), agentOnly = false } of docs) {
+  for (const { locale, path, title, markdown, ids = new Set(), anchors = new Map(), agentOnly = false } of docs) {
     const body = stripFrontmatter(markdown);
     let heading = "";
     let anchor = "";
@@ -119,9 +125,10 @@ export function searchRecords(docs) {
       const m = line.match(/^(#{2,3})\s+(.*)$/);
       if (m) {
         flush();
-        heading = m[2].replace(/[`*_]/g, "").trim();
-        // Link a section only when the page really has that anchor.
-        anchor = ids.has(slugOf(m[2])) ? slugOf(m[2]) : "";
+        heading = m[2].replace(/[`*_\\]/g, "").trim();
+        // Link a section only when the page really has that anchor: the heading's own id, or one
+        // derived from its words.
+        anchor = anchors.get(heading) || (ids.has(slugOf(m[2])) ? slugOf(m[2]) : "");
       } else if (!/^#\s/.test(line)) buf.push(line);
     }
     flush();
