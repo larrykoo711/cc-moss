@@ -741,6 +741,7 @@ struct AboutSettings: View {
                 HStack(spacing: 6) {
                     VersionChip(label: "App", value: model.version)
                     VersionChip(label: L.t("CLI", "命令行"), value: cliVersion ?? "—")
+                    LicenseChip()
                     if let cli = cliVersion { alignButton(cli: cli) }
                 }
                 .padding(.top, 2)
@@ -877,6 +878,36 @@ struct VersionChip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
         .background(Capsule().fill(Color.primary.opacity(0.06)))
+    }
+}
+
+/// "MIT open source", next to the versions: opens the license.
+struct LicenseChip: View {
+    @State private var hovering = false
+
+    var body: some View {
+        Button {
+            if let url = URL(string: "https://github.com/larrykoo711/cc-moss/blob/main/LICENSE") {
+                NSWorkspace.shared.open(url)
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "checkmark.seal")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Theme.brand)
+                Text(L.t("MIT open source", "MIT 开源")).foregroundStyle(.secondary)
+            }
+            .font(.system(size: 11))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(Color.primary.opacity(hovering ? 0.10 : 0.06)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .help(L.t("cc-moss is open source under the MIT license. Not affiliated with Anthropic.",
+                  "cc-moss 以 MIT 协议开源，是个人独立项目，与 Anthropic 没有关联。"))
     }
 }
 
