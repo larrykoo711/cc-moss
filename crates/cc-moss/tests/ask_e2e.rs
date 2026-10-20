@@ -132,9 +132,9 @@ fn warm_up() {
 
 /// A hook that doesn't wait. Well under [`SHORT_WAIT`]'s 3 s, so one that
 /// waits is still caught, with room for a busy CI machine: a hook there
-/// once took 811 ms to start and exit, and 130 ms is common in a Linux
-/// container under load.
-const FAST: Duration = Duration::from_millis(1000);
+/// once took 811 ms to start and exit, another 1014 ms, and 130 ms is
+/// common in a Linux container under load.
+const FAST: Duration = Duration::from_millis(2000);
 /// Long enough that a hook which waits when it should not is caught by
 /// [`FAST`], short enough not to stall the suite if it does.
 const SHORT_WAIT: &str = "[ask]\nwait_secs = 3\n";
@@ -243,7 +243,7 @@ fn withdrawn_quietly() {
     let (out, _) = env.hook("stop", &json!({ "session_id": "S" }).to_string());
     assert!(out.status.success());
     let out = child.wait_with_output().unwrap();
-    assert_quiet(&out, t.elapsed(), Some(Duration::from_secs(1)));
+    assert_quiet(&out, t.elapsed(), Some(FAST));
     let id = ask["id"].as_str().unwrap();
     assert_eq!(env.closed(id).unwrap()["reason"], "answered-in-session");
 }
@@ -412,7 +412,8 @@ fn answer_tells_when_no_session_is_waiting() {
 
 #[test]
 fn a_late_answer_is_reported_as_too_late() {
-    let env = Env::new("[ask]\nwait_secs = 1\n");
+    // Open long enough to be seen by a busy runner's polling.
+    let env = Env::new(SHORT_WAIT);
     env.take();
     let child = env.spawn_hook("permission-request", &permission_request("S"));
     let ask = wait_for(|| env.asks().into_iter().next());
@@ -440,7 +441,7 @@ fn a_tool_finishing_withdraws_only_its_own_request() {
     let t = Instant::now();
     env.hook("post-tool-use", &bash_done("S", "ls"));
     let out = ls.wait_with_output().unwrap();
-    assert_quiet(&out, t.elapsed(), Some(Duration::from_secs(1)));
+    assert_quiet(&out, t.elapsed(), Some(FAST));
     let left = env.asks();
     assert_eq!(left.len(), 1);
     assert_eq!(left[0]["tool"]["preview"], "rm -rf build");
@@ -464,7 +465,7 @@ fn an_answer_that_does_not_fit_lets_go_at_once() {
     .unwrap();
     let t = Instant::now();
     let out = child.wait_with_output().unwrap();
-    assert_quiet(&out, t.elapsed(), Some(Duration::from_secs(1)));
+    assert_quiet(&out, t.elapsed(), Some(FAST));
     assert_eq!(env.closed(id).unwrap()["reason"], "invalid-answer");
 }
 
@@ -835,7 +836,8 @@ fn answer_json_not_waiting() {
 
 #[test]
 fn answer_json_too_late() {
-    let env = Env::new("[ask]\nwait_secs = 1\n");
+    // Open long enough to be seen by a busy runner's polling.
+    let env = Env::new(SHORT_WAIT);
     env.take();
     let child = env.spawn_hook("permission-request", &permission_request("S"));
     let ask = wait_for(|| env.asks().into_iter().next());

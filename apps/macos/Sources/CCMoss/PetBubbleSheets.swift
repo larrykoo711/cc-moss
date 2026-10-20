@@ -95,6 +95,8 @@ private struct Scenes {
         message([alert(6, "F", .restored, "api-review"), alert(7, "G", .restored, "billing"), alert(8, "H", .restored, "projects")])
     }
 
+    private var update: PetMessage { PetMessage(UpdateTips.alert(version: "0.3.2", id: 9, at: Date(timeIntervalSince1970: 0))) }
+
     private func box(_ m: PetMessage) -> PetMessageBox {
         PetMessageBox(message: m, text: m.text(names: m.alerts.compactMap(\.name)), animate: false)
     }
@@ -153,7 +155,9 @@ private struct Scenes {
                 scene(width: 460, height: 300, pose: .needsYou, moAtLeft: false) { tail in
                     PetMessageBox(message: question, text: question.text(names: ["term-kit"]), tail: tail, animate: false)
                 }
-                Color.clear.frame(width: 460, height: 1)
+                scene(width: 460, height: 300, pose: .idle, moAtLeft: false) { tail in
+                    PetMessageBox(message: update, text: update.text(names: ["0.3.2"]), tail: tail, animate: false)
+                }
             }
         }
         .padding(24)

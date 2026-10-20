@@ -115,8 +115,13 @@ mod setting {
                 "moss.actions",
                 "moss.daily_checkup",
                 "moss.daily_brief",
-                "sessions.archive_after_days"
+                "sessions.archive_after_days",
+                "update.check"
             ]
+        );
+        assert_eq!(
+            config::check_setting("update.check", "false"),
+            Err(SettingError::ReadOnly)
         );
         assert_eq!(
             config::check_setting("claude.permission_mode", " Default "),
@@ -155,6 +160,9 @@ mod setting {
         assert_eq!(config::get_setting(&c, "ui.language"), Ok("en".into()));
         c.ui.language = Some(String::new());
         assert_eq!(config::get_setting(&c, "ui.language"), Ok("auto".into()));
+        assert_eq!(config::get_setting(&c, "update.check"), Ok("true".into()));
+        c.update.check = false;
+        assert_eq!(config::get_setting(&c, "update.check"), Ok("false".into()));
         assert_eq!(
             config::get_setting(&c, "nope"),
             Err(SettingError::UnknownKey)
