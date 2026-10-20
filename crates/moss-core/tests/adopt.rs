@@ -45,6 +45,17 @@ fn headless_runs_are_told_apart() {
     assert!(!is_headless(&["claude", "--dangerously-skip-permissions"]));
     assert!(!is_headless(&["claude", "--resume", "abc"]));
     assert!(!is_headless(&["-p"]), "the program name is not a flag");
+    // Exact words: a prompt that mentions -p is not the flag.
+    assert!(!is_headless(&["claude", "explain what -p does"]));
+    assert!(
+        !is_headless(&["claude", "--", "-p"]),
+        "after -- nothing is a flag"
+    );
+    assert!(is_headless(&["claude", "-cp"]), "continue and print");
+    assert!(
+        !is_headless(&["claude", "-pirate"]),
+        "not a cluster of switches"
+    );
 }
 
 #[test]
@@ -65,4 +76,38 @@ fn finds_the_pane_a_process_runs_under() {
     assert_eq!(loc.pane_id, "%7");
     assert_eq!(loc.socket, "/tmp/sock");
     assert!(locate_in_panes(999, &parents, &panes, "/tmp/sock").is_none());
+}
+
+#[test]
+fn argv_reads_a_processs_words_exactly() {
+    // One argument with spaces in it stays one.
+    let mut child = std::process::Command::new("/bin/sh")
+        .args(["-c", "sleep 30", "summarize -p this"])
+        .spawn()
+        .unwrap();
+    let mut words = None;
+    for _ in 0..50 {
+        words = moss_core::launch_args::argv(child.id());
+        if words.as_ref().is_some_and(|w| w.len() >= 4) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+    let words = words.expect("its words");
+    assert!(words.iter().any(|w| w == "summarize -p this"), "{words:?}");
+    let refs: Vec<&str> = words.iter().map(String::as_str).collect();
+    assert!(!is_headless(&refs));
+}
+
+#[test]
+fn procargs2_is_read_word_by_word() {
+    let mut buf = 3i32.to_ne_bytes().to_vec();
+    buf.extend_from_slice(b"/usr/local/bin/claude\0\0\0claude\0--resume\0a b\0HOME=/x\0");
+    assert_eq!(
+        moss_core::launch_args::parse_procargs2(&buf),
+        Some(vec!["claude".into(), "--resume".into(), "a b".into()])
+    );
+    assert_eq!(moss_core::launch_args::parse_procargs2(&[1, 0]), None);
 }
