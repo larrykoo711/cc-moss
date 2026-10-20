@@ -917,6 +917,7 @@ struct ReplyLineView: View {
                     .opacity(sending ? 0 : 1)
                     .onChange(of: model.replyDraft) { _, text in model.replyEdited(text) }
                     .onKeyPress(.return, phases: .down) { press in
+                        guard !imeComposing() else { return .ignored }
                         if press.modifiers.contains(.shift) {
                             NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
                         } else {
@@ -924,9 +925,13 @@ struct ReplyLineView: View {
                         }
                         return .handled
                     }
-                    .onKeyPress(.escape) { model.closeReply(); return .handled }
-                    .onKeyPress(.downArrow) { move(backwards: false) }
-                    .onKeyPress(.upArrow) { move(backwards: true) }
+                    .onKeyPress(.escape) {
+                        guard !imeComposing() else { return .ignored }
+                        model.closeReply()
+                        return .handled
+                    }
+                    .onKeyPress(.downArrow) { imeComposing() ? .ignored : move(backwards: false) }
+                    .onKeyPress(.upArrow) { imeComposing() ? .ignored : move(backwards: true) }
                     .padding(.horizontal, 9)
                     .padding(.vertical, 6)
                     .frame(minHeight: 30)

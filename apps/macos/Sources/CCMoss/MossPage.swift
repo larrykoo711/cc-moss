@@ -1361,6 +1361,8 @@ private struct MossInputBar: View {
                 .lineLimit(1...5)
                 .focused($focused)
                 .onKeyPress(.return, phases: .down) { press in
+                    // Picking a word in an input method: its Return, not ours.
+                    guard !imeComposing() else { return .ignored }
                     if press.modifiers.contains(.shift) {
                         // A line break where the cursor is, the way AppKit's own fields do it.
                         NSApp.sendAction(#selector(NSResponder.insertNewlineIgnoringFieldEditor(_:)), to: nil, from: nil)
@@ -1373,14 +1375,14 @@ private struct MossInputBar: View {
                     }
                     return .handled
                 }
-                .onKeyPress(.downArrow) { move(1) }
-                .onKeyPress(.upArrow) { move(-1) }
+                .onKeyPress(.downArrow) { imeComposing() ? .ignored : move(1) }
+                .onKeyPress(.upArrow) { imeComposing() ? .ignored : move(-1) }
                 .onKeyPress(.tab) {
-                    guard let command = litCommand else { return .ignored }
+                    guard !imeComposing(), let command = litCommand else { return .ignored }
                     fill(command)
                     return .handled
                 }
-                .onKeyPress(phases: .down) { press in keys(press) }
+                .onKeyPress(phases: .down) { press in imeComposing() ? .ignored : keys(press) }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 6)
                 .frame(minHeight: 30)

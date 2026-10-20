@@ -613,3 +613,12 @@ struct PinButton: View {
         .accessibilityLabel(pinned ? L.t("Unpin", "取消置顶") : L.t("Pin to top", "置顶"))
     }
 }
+
+
+/// Whether an input method is still composing in the focused field (a Chinese
+/// word not yet picked): its Return, arrows and Escape belong to the input
+/// method, not to our shortcuts (user 2026-10-20: Return sent the message).
+@MainActor func imeComposing() -> Bool {
+    guard let view = NSApp.keyWindow?.firstResponder as? NSTextView else { return false }
+    return view.hasMarkedText()
+}
