@@ -270,6 +270,7 @@ R1 ◄── 全部
 | F37 | Moss 找不到归档 / 30 天内关掉的会话：沙箱打不开注册表，`cc-moss ls` 失效 → 守护进程写脱敏的 `sessions.json`，Moss 的 `ls` 读它 | ✅ 已修 · 0.3.2 |
 | F38 | 新版本更新提示：面板提示条（有新版时，可关、按版本记住）+ 升级后「这版有什么新」卡片（读打包进 App 的网站更新记录）+ 小莫气泡（每个新版本一次） | ✅ 已修 · 0.3.2 |
 | F39 | 出现两个 cc-moss：App 原在 /Applications，`cc-moss install` 又装进 ~/Applications 并启动 → install 应原地更新已有位置的 App，并先退出旧实例 | ⬜ 待排期 · 0.3.3 |
+| F40 | 会话目录被子代理 worktree 覆盖：compact / clear 时的 SessionStart 用当时的工作目录改写了会话目录，worktree 删除后找回、移进 tmux 都失败 → compact / clear 保留启动目录 | ✅ 已修 · 0.3.3 |
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
