@@ -230,6 +230,27 @@ fn provider_check() -> Option<Check> {
             format!("；{} 个目录自己指定了供应商，切换对它们不生效", own.len())
         ));
     }
+    // Sessions whose Claude Code reads another settings folder than the
+    // daemon (a CLAUDE_CONFIG_DIR of their own): a switch has to happen there.
+    let daemon_reads = super::provider::settings_path();
+    let elsewhere = running
+        .iter()
+        .filter(|s| {
+            super::provider::settings_of(s).is_some_and(|p| Some(&p) != daemon_reads.as_ref())
+        })
+        .count();
+    let mut mark = Mark::Note;
+    if elsewhere > 0 {
+        mark = Mark::Warn;
+        detail.push_str(&tr!(
+            format!(
+                "; {elsewhere} session(s) read another Claude Code settings folder than cc-moss does; set [claude] config_dir to the folder you switch in"
+            ),
+            format!(
+                "；{elsewhere} 个会话读的 Claude Code 设置目录和 cc-moss 看的不一样；把 [claude] config_dir 设成你切换供应商的那个目录"
+            )
+        ));
+    }
     Some(if stale > 0 {
         detail.push_str(&tr!(
             format!("; {stale} session(s) need a restart to use it"),
@@ -242,7 +263,7 @@ fn provider_check() -> Option<Check> {
             Some("cc-moss restart --stale".into()),
         )
     } else {
-        check(Mark::Note, tr!("API provider", "API 供应商"), detail, None)
+        check(mark, tr!("API provider", "API 供应商"), detail, None)
     })
 }
 

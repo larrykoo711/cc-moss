@@ -216,10 +216,74 @@ fn provider_model_change_needs_a_restart() {
     s.settings(&third_party("a.example"));
     let p = FakeProcess::spawn();
     s.start("api", p.pid());
+    // `/model` (top-level `model`) is the default for new sessions: no
+    // restart for it.
     s.settings(
         r#"{"env":{"ANTHROPIC_BASE_URL":"https://a.example","ANTHROPIC_AUTH_TOKEN":"x",
             "ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-5"},"apiKeyHelper":"x","model":"opus"}"#,
     );
     let ls = s.json(&["ls", "--json"]);
+    assert_eq!(
+        ls["sessions"][0]["provider_restart"],
+        serde_json::Value::Null
+    );
+    // The provider's fixed model is read only at start.
+    s.settings(
+        r#"{"env":{"ANTHROPIC_BASE_URL":"https://a.example","ANTHROPIC_AUTH_TOKEN":"x",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL":"glm-5","ANTHROPIC_MODEL":"kimi"},"apiKeyHelper":"x"}"#,
+    );
+    let ls = s.json(&["ls", "--json"]);
     assert_eq!(ls["sessions"][0]["provider_restart"], "model");
+}
+
+#[test]
+fn provider_follows_the_settings_each_session_reads() {
+    // The session's Claude Code reads its own folder; cc-moss looks at
+    // another one.
+    let s = Setup::new();
+    s.settings(&third_party("a.example"));
+    let theirs = s.dir.path().join("theirs");
+    std::fs::create_dir_all(&theirs).unwrap();
+    std::fs::write(theirs.join("settings.json"), third_party("t.example")).unwrap();
+    let p = FakeProcess::spawn();
+    let mut child = s
+        .cmd()
+        .env("CLAUDE_CONFIG_DIR", &theirs)
+        .env("CLAUDE_PID", p.pid().unwrap().to_string())
+        .args(["hook", "session-start"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(common::start_json("own", "startup", Some("own")).as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        serde_json::Value::Null
+    );
+    // Back to the subscription in the folder cc-moss looks at: not theirs.
+    s.settings(r#"{}"#);
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        serde_json::Value::Null
+    );
+    // In their own folder: that one counts.
+    std::fs::write(theirs.join("settings.json"), "{}").unwrap();
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "removed"
+    );
+    // And doctor says the folders differ.
+    let out = s.cmd().arg("doctor").output().unwrap();
+    let text = String::from_utf8_lossy(&out.stdout);
+    assert!(
+        text.contains("another Claude Code settings folder"),
+        "{text}"
+    );
 }

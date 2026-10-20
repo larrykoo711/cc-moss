@@ -289,6 +289,10 @@ fn restart_one(
         }
     }
     let claude = super::launch::claude_bin()?;
+    // The settings this session reads decide whether `--model` stays.
+    let picks_model = super::provider::settings_of(slot)
+        .and_then(|p| moss_core::provider::Snapshot::read(&p))
+        .map_or(picks_model, |s| s.picks_model());
     let argv = restart_argv(&claude, slot, picks_model);
     // One restart at a time: another (the daemon's after a turn, or a
     // second click) may have it already. `restore` keeps its hands off

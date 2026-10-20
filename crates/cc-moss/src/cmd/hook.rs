@@ -189,9 +189,11 @@ fn record_provider(registry: &Registry, session_id: &str, ctx: &Context) -> Resu
     else {
         return Ok(());
     };
-    let Some(now) = moss_core::provider::Snapshot::read(&path) else {
+    let Some(mut now) = moss_core::provider::Snapshot::read(&path) else {
         return Ok(());
     };
+    // Which file: a switch has to reach this one to reach this session.
+    now.source = Some(path.to_string_lossy().into_owned());
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };

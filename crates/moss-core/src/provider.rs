@@ -41,8 +41,14 @@ pub struct Snapshot {
     pub host: Option<String>,
     /// `env.ANTHROPIC_MODEL`.
     pub env_model: Option<String>,
-    /// Top-level `model`.
+    /// Top-level `model`: the default for new sessions (`/model`), not the
+    /// provider's; it never asks for a restart.
     pub model: Option<String>,
+    /// The settings file this was read from, for a session: the one Claude
+    /// Code itself reads for it (its own `CLAUDE_CONFIG_DIR`), which a
+    /// switch has to reach.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
 }
 
 /// Whether a key name is one that decides the provider.
@@ -117,6 +123,7 @@ impl Snapshot {
             host: env.base_url.as_deref().and_then(host_of),
             env_model: env.model.filter(|m| !m.is_empty()),
             model: s.model.filter(|m| !m.is_empty()),
+            source: None,
         })
     }
 
@@ -133,7 +140,7 @@ impl Snapshot {
     /// Whether the settings pick a fixed model, so a replayed `--model`
     /// would override the provider's.
     pub fn picks_model(&self) -> bool {
-        self.env_model.is_some() || self.model.is_some()
+        self.env_model.is_some()
     }
 
     pub fn to_json(&self) -> String {
@@ -237,11 +244,14 @@ pub fn verdict(started: &Snapshot, seen: &BTreeSet<String>, now: &Snapshot) -> V
     if seen
         .iter()
         .chain(&started.keys)
+        .filter(|k| k.as_str() != TOP_MODEL)
         .any(|k| !now.keys.contains(k))
     {
         return Verdict::NeedsRestart(Reason::Removed);
     }
-    if now.env_model != started.env_model || now.model != started.model {
+    // Only the provider's fixed model; top-level `model` (`/model`) is the
+    // default for new sessions and a running one keeps its own.
+    if now.env_model != started.env_model {
         return Verdict::NeedsRestart(Reason::Model);
     }
     Verdict::Live
@@ -352,6 +362,10 @@ mod tests {
         assert_eq!(host_of(""), None);
     }
 
+    fn provider_keys(s: &Snapshot) -> BTreeSet<String> {
+        s.keys.clone()
+    }
+
     #[test]
     fn provider_verdict() {
         let third =
@@ -386,13 +400,13 @@ mod tests {
             verdict(&third, &seen, &fixed),
             Verdict::NeedsRestart(Reason::Model)
         );
+        // `/model` writes top-level `model`: no restart, set or removed.
         let top = snap(
             r#"{"env":{"ANTHROPIC_BASE_URL":"https://a.io","ANTHROPIC_AUTH_TOKEN":"x"},"model":"opus"}"#,
         );
-        assert_eq!(
-            verdict(&third, &seen, &top),
-            Verdict::NeedsRestart(Reason::Model)
-        );
+        assert_eq!(verdict(&third, &seen, &top), Verdict::Live);
+        assert_eq!(verdict(&top, &provider_keys(&top), &third), Verdict::Live);
+        assert!(!top.picks_model() && fixed.picks_model());
         assert_eq!(verdict(&third, &seen, &third), Verdict::Live);
     }
 

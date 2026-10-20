@@ -26,8 +26,20 @@ pub fn current() -> Option<Snapshot> {
     Snapshot::read(&settings_path()?)
 }
 
-/// Whether a session has to be restarted to use the provider `now` (only a
-/// running one can); `None` when it uses it already or nothing is known.
+/// The settings file a session's Claude Code reads: the one its hook read
+/// at the start (its own `CLAUDE_CONFIG_DIR`), else the daemon's.
+pub fn settings_of(slot: &Slot) -> Option<PathBuf> {
+    let started = slot
+        .provider_started
+        .as_deref()
+        .and_then(Snapshot::from_json)?;
+    started.source.map(PathBuf::from).or_else(settings_path)
+}
+
+/// Whether a session has to be restarted to use the provider its settings
+/// name (only a running one can); `None` when it uses it already or
+/// nothing is known. `now` is the daemon's settings; a session reading
+/// another file is compared with that one.
 pub fn restart_reason(slot: &Slot, status: Status, now: Option<&Snapshot>) -> Option<&'static str> {
     if status != Status::Running {
         return None;
@@ -36,6 +48,14 @@ pub fn restart_reason(slot: &Slot, status: Status, now: Option<&Snapshot>) -> Op
         slot.provider_started.as_deref(),
         slot.provider_seen_keys.as_deref(),
     )?;
+    let own;
+    let now = match started.source.as_deref().map(PathBuf::from) {
+        Some(path) if Some(&path) != settings_path().as_ref() => {
+            own = Snapshot::read(&path);
+            own.as_ref()
+        }
+        _ => now,
+    };
     match provider::verdict(&started, &seen, now?) {
         Verdict::Live => None,
         Verdict::NeedsRestart(r) => Some(r.code()),
@@ -178,7 +198,9 @@ pub fn in_turn(slot: &Slot) -> bool {
 pub struct Watcher {
     state: PathBuf,
     exe: String,
-    last: Option<Snapshot>,
+    /// What each settings file said last: the daemon's and every file a
+    /// running session reads.
+    last: HashMap<PathBuf, Snapshot>,
     next: Instant,
     /// Restarts started for a queued session, so one is not started twice.
     started: HashMap<String, Instant>,
@@ -194,7 +216,7 @@ impl Watcher {
         Watcher {
             state: state.to_path_buf(),
             exe,
-            last: None,
+            last: HashMap::new(),
             next: Instant::now(),
             started: HashMap::new(),
         }
@@ -209,7 +231,7 @@ impl Watcher {
         if !db.exists() {
             return;
         }
-        let Some(snapshot) = current() else {
+        let Some(own) = settings_path() else {
             return;
         };
         let registry = match Registry::open(&db) {
@@ -219,13 +241,37 @@ impl Watcher {
                 return;
             }
         };
-        let changed = self.last.as_ref().is_some_and(|l| *l != snapshot);
-        if self.last.is_none() || changed {
-            if let Err(e) = self.settings_changed(&registry, &snapshot, changed, log) {
+        let slots = registry.slots().unwrap_or_default();
+        let mut paths: Vec<PathBuf> = vec![own.clone()];
+        for slot in &slots {
+            if let Some(path) = settings_of(slot) {
+                if !paths.contains(&path)
+                    && slot.effective_status(proc::is_alive) == Status::Running
+                {
+                    paths.push(path);
+                }
+            }
+        }
+        let mut seen_now: HashMap<PathBuf, Snapshot> = HashMap::new();
+        for path in paths {
+            if let Some(s) = Snapshot::read(&path) {
+                seen_now.insert(path, s);
+            }
+        }
+        let Some(snapshot) = seen_now.get(&own).cloned() else {
+            return;
+        };
+        let first = self.last.is_empty();
+        let changed = !first
+            && seen_now
+                .iter()
+                .any(|(p, s)| self.last.get(p).is_some_and(|l| l != s));
+        if first || changed || seen_now.keys().any(|p| !self.last.contains_key(p)) {
+            if let Err(e) = self.settings_changed(&registry, &snapshot, &seen_now, changed, log) {
                 log(&format!("provider: error: {e:#}"));
                 return;
             }
-            self.last = Some(snapshot);
+            self.last = seen_now;
         }
         self.drain(&registry, log);
     }
@@ -236,6 +282,7 @@ impl Watcher {
         &self,
         registry: &Registry,
         now: &Snapshot,
+        files: &HashMap<PathBuf, Snapshot>,
         announce: bool,
         log: &dyn Fn(&str),
     ) -> anyhow::Result<()> {
@@ -246,11 +293,15 @@ impl Watcher {
                 continue;
             }
             let mut slot = slot;
+            // What the file this session reads says now.
+            let theirs = settings_of(&slot)
+                .and_then(|p| files.get(&p))
+                .unwrap_or(now);
             if let Some((_, seen)) = provider::recorded(
                 slot.provider_started.as_deref(),
                 slot.provider_seen_keys.as_deref(),
             ) {
-                let all: BTreeSet<String> = provider::seen_with(&seen, now);
+                let all: BTreeSet<String> = provider::seen_with(&seen, theirs);
                 let json = provider::keys_json(&all);
                 if all != seen {
                     registry.set_provider_seen(&slot.slot_id, &json)?;
