@@ -174,6 +174,37 @@ pub fn settings_path(
         .map(|dir| dir.join("settings.json"))
 }
 
+/// The settings that give Moss the user's provider (F24): Moss starts
+/// without the user's settings (`--setting-sources project,local`), so its
+/// home's `.claude/settings.local.json` carries the provider's `env` keys,
+/// values included, and `apiKeyHelper`. Nothing else of the user's
+/// settings. `None` when `user` (the text of the user's `settings.json`)
+/// is not JSON; an empty object for the subscription.
+pub fn moss_settings(user: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(user).ok()?;
+    let mut env = serde_json::Map::new();
+    if let Some(all) = value.get("env").and_then(|e| e.as_object()) {
+        for (key, v) in all {
+            if (provider_key(key) || key == MAX_CONTEXT) && v.is_string() {
+                env.insert(key.clone(), v.clone());
+            }
+        }
+    }
+    let mut out = serde_json::Map::new();
+    if !env.is_empty() {
+        out.insert("env".into(), env.into());
+    }
+    if let Some(helper) = value.get(TOP_HELPER).filter(|h| h.is_string()) {
+        out.insert(TOP_HELPER.into(), helper.clone());
+    }
+    let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(out)).ok()?;
+    text.push('\n');
+    Some(text)
+}
+
+/// Passed on to Moss with the provider keys.
+const MAX_CONTEXT: &str = "CLAUDE_CODE_MAX_CONTEXT_TOKENS";
+
 /// Why a running session has to be restarted for the provider it is set to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Reason {
@@ -276,6 +307,36 @@ mod tests {
         // Nothing set: the subscription.
         assert_eq!(snap("{}"), Snapshot::default());
         assert!(Snapshot::parse("not json").is_none());
+    }
+
+    #[test]
+    fn moss_settings_carry_only_the_provider() {
+        let text = moss_settings(&format!(
+            r#"{{"env":{{"ANTHROPIC_BASE_URL":"https://a.io","ANTHROPIC_AUTH_TOKEN":"{SECRET}",
+                "ANTHROPIC_DEFAULT_OPUS_MODEL":"glm","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"200000",
+                "HTTPS_PROXY":"http://p","OTHER":"x"}},
+                "apiKeyHelper":"echo k","model":"opus","hooks":{{}},"permissions":{{}}}}"#
+        ))
+        .unwrap();
+        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert_eq!(
+            v,
+            serde_json::json!({
+                "env": {
+                    "ANTHROPIC_BASE_URL": "https://a.io",
+                    "ANTHROPIC_AUTH_TOKEN": SECRET,
+                    "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm",
+                    "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
+                },
+                "apiKeyHelper": "echo k"
+            })
+        );
+        // The subscription: nothing at all.
+        assert_eq!(
+            moss_settings(r#"{"theme":"dark"}"#).as_deref(),
+            Some("{}\n")
+        );
+        assert_eq!(moss_settings("nope"), None);
     }
 
     #[test]

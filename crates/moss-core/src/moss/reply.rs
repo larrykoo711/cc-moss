@@ -323,6 +323,23 @@ pub fn confirm_prompt(screen: &str) -> bool {
     }
 }
 
+/// Claude Code asking whether to trust the folder it starts in (a fresh
+/// machine, or a home it has not seen): the question with its yes option
+/// selected. Answering it with Enter takes that yes.
+pub fn trust_prompt(screen: &str) -> bool {
+    let text = inbox::plain(screen);
+    let asks = text.contains("trust the files in this folder")
+        || text.contains("Do you trust")
+        || text.contains("one you trust");
+    let yes_selected = text.lines().any(|l| {
+        l.split_once('❯').is_some_and(|(_, after)| {
+            let after = after.trim_start();
+            after.starts_with("1. Yes") || after.starts_with("Yes")
+        })
+    });
+    asks && yes_selected
+}
+
 /// Claude Code working on a turn.
 pub fn working(screen: &str) -> bool {
     let text = inbox::plain(screen).to_lowercase();
@@ -644,6 +661,23 @@ mod tests {
         assert!(matches!(
             c.tick(SENT + ms(t.late) + 70_000, false, &mut pane),
             Verdict::Received(_)
+        ));
+    }
+
+    #[test]
+    fn trust_prompt_is_the_folder_question_with_yes_selected() {
+        assert!(trust_prompt(
+            "Do you trust the files in this folder?\n\n/Users/me/x\n\n❯ 1. Yes, proceed\n  2. No, exit\n"
+        ));
+        assert!(trust_prompt(
+            "Is this a project you created or one you trust?\n❯ 1. Yes, I trust this folder\n  2. No, exit\n"
+        ));
+        assert!(!trust_prompt(
+            "Do you trust the files in this folder?\n  1. Yes, proceed\n❯ 2. No, exit\n"
+        ));
+        assert!(!trust_prompt("────\n❯ do you trust me?\n────\n"));
+        assert!(!trust_prompt(
+            "Do you want to proceed?\n❯ 1. Yes\n  2. No\n"
         ));
     }
 

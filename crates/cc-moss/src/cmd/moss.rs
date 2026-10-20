@@ -150,6 +150,12 @@ pub fn fence_gap(settings: &str, env: Option<&Path>) -> Option<PathBuf> {
     (!covered).then(|| env.to_path_buf())
 }
 
+/// Moss's own copy of the user's API provider (F24), in its home: the
+/// provider's `env` keys and `apiKeyHelper`, values included, mode 600.
+/// Claude Code reads it as local settings (`--setting-sources
+/// project,local`); Moss's shell may not read it.
+pub const PROVIDER_FILE: &str = ".claude/settings.local.json";
+
 /// The one command Moss runs outside the sandbox: it writes the persona
 /// files the sandbox keeps read-only, and nothing else.
 const PROFILE_COMMAND: &str = "cc-moss moss profile *";
@@ -191,6 +197,12 @@ fn settings_json(exe: &str, state: &Path, config_dir: Option<&Path>) -> String {
         .map(|p| p.to_string())
         .chain(config_dir.map(|c| c.to_string_lossy().into_owned()))
         .chain([state.to_string_lossy().into_owned()])
+        // Inside its home, which it may read otherwise: the provider's
+        // token is Claude Code's, not its shell's.
+        .chain([
+            format!("./{PROVIDER_FILE}"),
+            home.join(PROVIDER_FILE).to_string_lossy().into_owned(),
+        ])
         .collect();
     let value = serde_json::json!({
         "hooks": {
@@ -985,6 +997,11 @@ pub struct Looker {
     next_seq: Instant,
     last_seq: Option<i64>,
     config_error: bool,
+    /// When the user's provider is next compared with Moss's copy.
+    next_provider: Instant,
+    /// Until when a folder-trust question on Moss's screen is answered.
+    trust_until: Option<Instant>,
+    trust_told: bool,
 }
 
 /// How often the switch in config.toml is read.
@@ -993,6 +1010,66 @@ const CONFIG_EVERY: Duration = Duration::from_secs(1);
 const SESSIONS_EVERY: Duration = Duration::from_secs(60);
 /// How often the daemon looks whether the daily checkup is due.
 const DAILY_EVERY: Duration = Duration::from_secs(30);
+
+/// How often Moss's provider is compared with the user's.
+const PROVIDER_EVERY: Duration = Duration::from_secs(1);
+/// How long after a start a folder-trust question is answered.
+const TRUST_WINDOW: Duration = Duration::from_secs(60);
+
+/// What [`sync_provider`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Synced {
+    Same,
+    /// Changed; a running Moss takes it in by itself.
+    Live,
+    /// Changed so that a running Moss can't take it in.
+    Restart,
+}
+
+/// Write Moss's copy of the user's provider ([`PROVIDER_FILE`]) when it
+/// differs. A user settings file that can't be read or parsed changes
+/// nothing (the last good copy stays).
+fn sync_provider(state: &Path) -> Result<Synced> {
+    let user = match super::provider::settings_path() {
+        Some(path) => match std::fs::read_to_string(&path) {
+            Ok(text) => text,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
+            Err(_) => return Ok(Synced::Same),
+        },
+        None => "{}".to_string(),
+    };
+    let Some(new) = moss_core::provider::moss_settings(&user) else {
+        return Ok(Synced::Same);
+    };
+    let path = moss::home_dir(state).join(PROVIDER_FILE);
+    let old = std::fs::read_to_string(&path).ok();
+    if old.as_deref() == Some(new.as_str()) {
+        return Ok(Synced::Same);
+    }
+    if let Some(dir) = path.parent() {
+        moss_core::store_dir::ensure_private_dir(dir)?;
+    }
+    home::write_if_changed(&path, &new)?;
+    let now = moss_core::provider::Snapshot::parse(&new).unwrap_or_default();
+    // No copy before (a Moss from before 0.3.1 never read one): only a
+    // fresh start takes a provider in.
+    let Some(before) = old
+        .as_deref()
+        .and_then(moss_core::provider::Snapshot::parse)
+    else {
+        return Ok(if now.keys.is_empty() {
+            Synced::Live
+        } else {
+            Synced::Restart
+        });
+    };
+    Ok(
+        match moss_core::provider::verdict(&before, &before.keys, &now) {
+            moss_core::provider::Verdict::Live => Synced::Live,
+            moss_core::provider::Verdict::NeedsRestart(_) => Synced::Restart,
+        },
+    )
+}
 
 /// SESSIONS.md also lists the sessions closed within this.
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
@@ -1037,6 +1114,9 @@ impl Looker {
             next_seq: now,
             last_seq: None,
             config_error: false,
+            next_provider: now,
+            trust_until: None,
+            trust_told: false,
         })
     }
 
@@ -1097,6 +1177,8 @@ impl Looker {
             self.hands.tick(now, self.actions, log);
         }
         if enabled && self.keeper.is_up() {
+            self.follow_provider(now, log);
+            self.accept_trust(now, log);
             self.refresh_sessions(now, log);
             self.daily_checkup(now, log);
             self.talk.tick(&self.socket, now, self.digest, log);
@@ -1137,6 +1219,53 @@ impl Looker {
         log("moss: daily checkup asked for");
     }
 
+    /// Keep Moss's copy of the user's API provider in step (F24). Claude
+    /// Code takes a changed value or a new key in by itself; a removed key
+    /// or another fixed model needs a fresh Moss, so it is ended and the
+    /// keeper starts it again.
+    fn follow_provider(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if now < self.next_provider {
+            return;
+        }
+        self.next_provider = now + PROVIDER_EVERY;
+        match sync_provider(&self.state) {
+            Ok(Synced::Same) => {}
+            Ok(Synced::Live) => {
+                log("moss: the API provider changed; Moss uses it from its next message")
+            }
+            Ok(Synced::Restart) => {
+                log("moss: the API provider changed; starting Moss again to use it");
+                if let Err(e) = end_moss(&self.state, "provider-changed") {
+                    log(&format!(
+                        "moss: error: could not end it for the new provider: {e:#}"
+                    ));
+                }
+            }
+            Err(e) => log(&format!("moss: error: its API provider: {e:#}")),
+        }
+    }
+
+    /// A fresh machine asks whether to trust Moss's folder before it
+    /// starts: the keeper answers yes, in Moss's own pane, for a while
+    /// after each start.
+    fn accept_trust(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if self.trust_until.is_none_or(|until| now >= until) {
+            return;
+        }
+        let target = format!("={}:", moss::SESSION);
+        let Ok(out) = tmux(&self.socket, &["capture-pane", "-p", "-t", &target]) else {
+            return;
+        };
+        if !reply::trust_prompt(&String::from_utf8_lossy(&out.stdout)) {
+            return;
+        }
+        let _ = tmux(&self.socket, &["send-keys", "-t", &target, "Enter"]);
+        if !self.trust_told {
+            self.trust_told = true;
+            log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
+        }
+    }
+
     fn start(&mut self, now: Instant, log: &dyn Fn(&str)) {
         // It may be back by itself, or still there from before the daemon
         // restarted: look after that one rather than start a second.
@@ -1147,6 +1276,7 @@ impl Looker {
         match self.launch() {
             Ok(session_id) => {
                 self.keeper.started(now);
+                self.trust_until = Some(now + TRUST_WINDOW);
                 // A fresh Moss: whatever the old one had in hand is lost.
                 self.talk.moss_restarted(log);
                 let restarts = self.keeper.restarts();
@@ -1223,6 +1353,10 @@ impl Looker {
         let home = moss::home_dir(&self.state);
         home::lay_out(&home, &files(&self.exe, &self.state))
             .with_context(|| format!("cannot lay out {}", home.display()))
+            .map_err(Launch::Failed)?;
+        // The provider it starts with is the user's now.
+        sync_provider(&self.state)
+            .context("cannot give it the API provider")
             .map_err(Launch::Failed)?;
         let claude = launch::claude_bin().map_err(Launch::Failed)?;
         if !moss_core::platform::on_path(&["tmux"]) {
@@ -1443,7 +1577,9 @@ fn claude_args(session_id: &str) -> Vec<String> {
         // The user's settings (their sandbox, hooks, permissions) never
         // widen Moss's fence; what it needs is in its own.
         "--setting-sources",
-        "project",
+        // Its own settings, and the user's provider copied into its home
+        // ([`PROVIDER_FILE`]).
+        "project,local",
         "--session-id",
         session_id,
         boot_prompt(),
@@ -1543,7 +1679,9 @@ mod tests {
                 "~/.claude.json",
                 "~/.claude.json.backup",
                 "~/.claude.json*",
-                "/s"
+                "/s",
+                "./.claude/settings.local.json",
+                "/s/moss/.claude/settings.local.json"
             ])
         );
         assert_eq!(sandbox["filesystem"]["allowRead"], serde_json::json!(["."]));
@@ -1571,7 +1709,9 @@ mod tests {
                 "~/.claude.json.backup",
                 "~/.claude.json*",
                 "/c",
-                "/s"
+                "/s",
+                "./.claude/settings.local.json",
+                "/s/moss/.claude/settings.local.json"
             ])
         );
         // What doctor warns about: a CLAUDE_CONFIG_DIR the settings miss.
@@ -1583,6 +1723,29 @@ mod tests {
             fence_gap(&text, Some(Path::new("/other"))),
             Some(PathBuf::from("/other"))
         );
+    }
+
+    #[test]
+    fn moss_cannot_read_its_provider_file() {
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();
+        let deny = v["sandbox"]["filesystem"]["denyRead"].as_array().unwrap();
+        assert!(
+            deny.contains(&"/s/moss/.claude/settings.local.json".into()),
+            "{deny:?}"
+        );
+        assert!(
+            deny.contains(&"./.claude/settings.local.json".into()),
+            "{deny:?}"
+        );
+        // Nor write it: its .claude folder is cc-moss's.
+        let deny = v["sandbox"]["filesystem"]["denyWrite"].as_array().unwrap();
+        assert!(deny.contains(&"./.claude".into()));
+        // And the file tools stay off.
+        assert!(v["permissions"]["deny"]
+            .as_array()
+            .unwrap()
+            .contains(&"Read".into()));
     }
 
     #[test]
@@ -1638,8 +1801,8 @@ mod tests {
         let at = args
             .iter()
             .position(|a| a == "--setting-sources")
-            .expect("project settings only");
-        assert_eq!(args[at + 1], "project");
+            .expect("its own settings only");
+        assert_eq!(args[at + 1], "project,local");
     }
 
     #[test]
