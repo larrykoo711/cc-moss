@@ -161,12 +161,7 @@ fn running_sessions_are_adopted_automatically() {
         {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
          "sessionId": "OLD-1", "name": "job-old", "status": "busy"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -196,12 +191,7 @@ fn headless_runs_are_not_adopted() {
         {"pid": headless.id(), "cwd": "/tmp/T", "kind": "interactive",
          "sessionId": "SUM-1", "name": "t-89", "status": "busy"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -231,12 +221,7 @@ fn adopting_leaves_sessions_the_hooks_track_alone() {
         {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
          "sessionId": "A", "name": "a", "status": "idle"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -270,12 +255,7 @@ fn adopted_sessions_keep_their_real_last_activity() {
         {"pid": p.pid().unwrap(), "cwd": "/work/acme", "kind": "interactive",
          "sessionId": "OLD-2", "status": "idle"}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -309,12 +289,7 @@ fn busy_after_reconcile(status: &str, last: &str) -> serde_json::Value {
         {"pid": p.pid().unwrap(), "cwd": "/work", "kind": "interactive",
          "sessionId": "B", "name": "b", "status": status}
     ]);
-    std::fs::write(&stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
-    std::process::Command::new("chmod")
-        .arg("+x")
-        .arg(&stub)
-        .status()
-        .unwrap();
+    agents_stub(&stub, &agents);
     let out = bin()
         .env("CC_MOSS_STATE_DIR", dir.path())
         .env("CC_MOSS_CLAUDE_BIN", &stub)
@@ -602,4 +577,17 @@ fn json_results_name_ambiguous_names() {
     // A name that matches nothing keeps its own code.
     let v = run(&["restore", "--yes", "--json", "nobody"]);
     assert_eq!(v["results"][0]["reason"], "not_found", "{v}");
+}
+
+/// A `claude` that answers `agents --json` with `agents`. It runs once here:
+/// macOS checks a freshly written script on its first run, which under load
+/// can outlast the 3 s that `ls` gives `claude agents`.
+fn agents_stub(stub: &std::path::Path, agents: &serde_json::Value) {
+    std::fs::write(stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
+    std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
+    assert!(std::process::Command::new(stub)
+        .output()
+        .unwrap()
+        .status
+        .success());
 }
