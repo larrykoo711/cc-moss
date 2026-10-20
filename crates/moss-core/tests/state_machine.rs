@@ -129,6 +129,32 @@ fn compact_rotates_like_clear() {
 }
 
 #[test]
+fn clear_and_compact_keep_the_folder_it_started_in() {
+    // The process has moved into a worktree since; `claude --resume` still
+    // needs the folder it started in.
+    let moved = |source, id: &str| Event::Start {
+        source,
+        session_id: id.into(),
+        cwd: "/work/.claude/worktrees/agent-1".into(),
+        title: None,
+        transcript_path: Some(format!("/t/{id}.jsonl")),
+    };
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    reg.apply(&moved(StartSource::Compact, "U2"), &ctx(100, 2_000))
+        .unwrap();
+    assert_eq!(only_slot(&reg).cwd, "/work");
+    reg.apply(&moved(StartSource::Clear, "U3"), &ctx(100, 3_000))
+        .unwrap();
+    assert_eq!(only_slot(&reg).cwd, "/work");
+    // A resume starts where it is run: that folder is the session's now.
+    reg.apply(&moved(StartSource::Resume, "U3"), &ctx(200, 4_000))
+        .unwrap();
+    assert_eq!(only_slot(&reg).cwd, "/work/.claude/worktrees/agent-1");
+}
+
+#[test]
 fn end_reason_matrix() {
     let cases = [
         ("prompt_input_exit", Status::Closed),
