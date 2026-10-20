@@ -215,6 +215,7 @@ R1 ◄── 全部
 - 2026-10-20：T2.5、T2.6 实施完（Rust 305d615 / 91d16eb，App b6c4581 / 5cdd5d5，docs b279669）。verify 全有同名测试，spec 列出的变异全部变红；macOS Rust 864 + Swift 744 全绿；本地 Linux（rust:1.89 + tmux 3.5）除 moss_chat_e2e 4 项外全绿，这 4 项在 main 上同样失败，属本地镜像环境问题，另查。开发版已装本机，待真机验收（cc-switch 第三方↔第三方、切回官方各一次；归档与清理）
 - 行为变化（rust-031，controller 认可）：restore / restart 占位后 60 秒内进程退出只改状态、不记 `interrupted` 事件，避免重开时误报「断了」
 - 2026-10-20 真机反馈并入 0.3.1：F22 Moss 确认按钮折行不截断；F23 会话等你处理改为 Moss 页一张实时「等你处理」卡、Moss 不再播报（用户选定方案）；F24 Moss 跟随 API 供应商（0.3.0 回归：`--setting-sources project` 丢了用户 env）——供应商键写进 Moss 家 `.claude/settings.local.json`（600），沙箱 denyRead 该文件，真机 claude 实测更具体的 denyRead 压过 allowRead ["."]（cat 被拒）；另含结束并归档、拿回来的已结束会话回到列表、后台任务通知不当最后一句、齿轮菜单与关于页重排、回到底部朦胧条
+- AMEND-2 T2.6 2026-10-20（精确化，不弱化；来自 rev031-rust M6/M9/M10）：(a) 重开判据 = 删键，或 env `ANTHROPIC_MODEL` 变了；顶层 `model`（`/model`）不再要求重开，重开时只在 env 指定了 `ANTHROPIC_MODEL` 才去掉 `--model`；(b) 每个会话对照它启动时读的那份 settings（钩子记录路径），守护进程同时盯这些文件，与 `[claude] config_dir` / `CLAUDE_CONFIG_DIR` / `~/.claude` 不一致时 doctor 提醒；(c) 重开队列记尝试次数，3 次失败放弃并记 `restart-failed` 事件，`--stale` 或抢占失败入队的条目在切换已生效后丢弃。R-RUST 合入 ea6672d…877d015；H1、L11 偏差 controller 认可（L11 改为写事务内重读 slot 比对，不加 `status <> 'running'`，以免崩溃会话无法自动归档/清理）
 
 ## 反馈车道（真机反馈）
 
