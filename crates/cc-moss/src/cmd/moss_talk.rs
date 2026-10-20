@@ -207,15 +207,14 @@ pub struct Talk {
     told: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
 }
 
-/// Whether a change is still so: a session still waiting on the user, or
-/// still dropped. Finished turns stay news. A session that is gone from the
+/// Whether a change is still so: a session still dropped. Finished turns
+/// stay news. A session that is gone from the
 /// registry is not.
 fn still_so(c: &Change, slots: &[moss_core::slot::Slot]) -> bool {
     let Some(slot) = slots.iter().find(|s| s.slot_id == c.slot_id) else {
         return false;
     };
     match c.kind {
-        digest::Kind::NeedsYou => slot.status == Status::Running && slot.attention.is_some(),
         digest::Kind::Disconnected => {
             slot.effective_status(moss_core::proc::is_alive) != Status::Running
         }
@@ -917,18 +916,11 @@ impl Talk {
                 .clone()
                 .or_else(|| slot.name.clone())
                 .unwrap_or_else(|| slot.session_id.chars().take(8).collect());
-            let why = e
-                .detail
-                .get("reason")
-                .and_then(|r| r.as_str())
-                .filter(|_| kind == digest::Kind::NeedsYou)
-                .map(String::from);
             self.digest.push(
                 Change {
                     slot_id: e.slot_id.clone(),
                     name,
                     kind,
-                    why,
                 },
                 now_ms,
             );
@@ -1184,7 +1176,6 @@ mod tests {
                         slot_id: slot.to_string(),
                         name: slot.to_string(),
                         kind: *kind,
-                        why: None,
                     },
                     0,
                 );
@@ -1213,9 +1204,12 @@ mod tests {
         // Something the user has to act on: Moss may speak.
         let asks = news(
             &mut talk,
-            &[("db", digest::Kind::NeedsYou), ("ui", digest::Kind::Done)],
+            &[
+                ("db", digest::Kind::Disconnected),
+                ("ui", digest::Kind::Done),
+            ],
         );
-        let line = talk.reply_line(&sent(&asks), "db 在等你批权限。", 3);
+        let line = talk.reply_line(&sent(&asks), "db 断了，要找回吗？", 3);
         assert!(!line.silent, "{line:?}");
         // The user's own messages are never forced quiet.
         let mine = InFlight {
