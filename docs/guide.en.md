@@ -489,6 +489,10 @@ thinking, waiting for your OK, restarting, off), with Open in Terminal beside it
 conversation, and at the bottom the quick bar. On the rail, Moss's icon has a softly pulsing dot while it thinks, and
 a dot in the brand color when there's a reply you haven't seen.
 
+- **Waiting on you.** While sessions wait on you (a permission, a question, a reply), a "Waiting on you · N" card sits
+  under the conversation, above the quick bar: one row per session saying what it wants, the answer at the row's end
+  (Allow, Deny, Answer, Reply), a question's choices under it, and ↗ to open the session. A handled row goes; when all
+  are done it shrinks to "Handled N just now" and leaves by itself. Moss no longer announces these one by one.
 - **The quick bar.** One click hands something to Moss: Checkup, Who's waiting on me, What's stuck, What got done
   today and Tidy up, plus the Claude Code commands that suit your account (see below). What doesn't fit on one row
   goes under ⋯ at the end. The order follows how much you use each one on this Mac, recent uses counting more, and
@@ -534,9 +538,9 @@ cc-moss moss chat --json                                 # the last 200 messages
   Code doesn't document that log, so when the reply can't be found it doesn't hang: it says "Moss got it (couldn't fetch the reply, check the
   terminal)." A turn still running after 5 minutes is followed for up to 15; if Moss is stopped on a
   confirmation, the status says it's waiting for you, and cc-moss doesn't press anything for you.
-- **What your sessions are doing.** The daemon tells Moss when a session needs you, drops or finishes: changes within
+- **What your sessions are doing.** The daemon tells Moss when a session drops or finishes (sessions waiting on you aren't sent: they're all in the Waiting on you card at the foot of the Moss page): changes within
   20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. Each change
-  is checked again just before it goes: a session no longer waiting on you, or one that's back, is left out, and if
+  is checked again just before it goes: a session that's back is left out, and if
   nothing is left, nothing is sent. In the conversation it's a small grey line in the middle. When a note only says
   turns finished, Moss's answer to it isn't shown and doesn't alert you. To keep Moss out of it, put
   `[moss] digest = false` in the config.
@@ -646,9 +650,9 @@ Click the menu bar icon, or tap Control twice anywhere, and the panel opens. Ope
 `cc-moss://panel`; add `/sessions`, `/queue` or `/moss` to land on that page, handy in Shortcuts or a launcher.
 
 Down the left is a side rail: Sessions (⌘1), To Do (⌘2, with a count of what's left) and Moss (⌘3). The gear at the
-foot of the rail is the app's menu: Settings… (⌘,) and Refresh (⌘R); Update to x when there's a new version (it runs
-`cc-moss update` in your terminal, and the gear gets a small dot), otherwise the current version, which opens
-Settings › About; and Quit cc-moss (⌘Q). Along the bottom are New Session on the left and, on the right, the selected
+foot of the rail is the app's menu, in the order a Mac app's own menu has: About cc-moss (with the version), Check for
+Updates… (Update to x… when there's a new version: it runs `cc-moss update` in your terminal, and the gear gets a
+small dot); Settings… (⌘,); User Guide and Report a Problem; and Quit cc-moss (⌘Q). ⌘R refreshes any time. Along the bottom are New Session on the left and, on the right, the selected
 session's main action (Open, Bring Back and so on, with a ↵), on the Sessions page only.
 
 The panel picks its height as it opens, by how many sessions you have: shorter for 4 or fewer, medium for 5 to 9,
@@ -661,6 +665,11 @@ while it's closed; ⌘R refreshes now.
 Sessions are grouped by project, with git worktrees marked; the row at the top filters by state (All, Working,
 Waiting, Interrupted), and Tab / ⇧Tab cycle it. Typing searches (see below). Moss isn't in this list; it has a page
 of its own (see [Talking to Moss](#talking-to-moss)).
+
+When something doesn't work (bringing back, restarting, archiving, moving into tmux, replying…), a notice slides up at
+the bottom of the panel: what happened in plain words, what you can try, and Copy Details; while Moss is running there's
+also Ask Moss to Fix It, which sends Moss the action, the session and the reason and switches to the Moss page, where
+it looks into it and still asks before changing anything.
 
 On a stopped session, Return brings it back: the same conversation, in tmux, exactly like `cc-moss restore`. When
 several stopped at once (after a restart, say), a "2 sessions stopped" strip at the top has a Bring All Back button.
@@ -943,7 +952,7 @@ wait_secs = 300           # how long to wait for an answer from elsewhere (1–5
 
 [moss]
 enabled = true            # keep Moss running (macOS); false turns it off, which is what cc-moss moss start|stop change
-digest = true             # tell Moss when sessions need you, drop or finish; false keeps it out of that
+digest = true             # tell Moss when sessions drop or finish; false keeps it out of that
 actions = true            # Moss may ask the daemon to do what a checkup finds; false: it only says what to do
 daily_checkup = true      # a checkup once a day
 daily_brief = true        # the daily brief alerts you; false: only when you need to decide
