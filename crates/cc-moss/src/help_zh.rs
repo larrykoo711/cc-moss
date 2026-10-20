@@ -242,6 +242,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("moss say", "", "跟 Moss 说句话；它的回复在 `moss chat` 和面板里"),
     ("moss say", "json", "把这条消息的 id 输出成 JSON（schema 1）"),
     ("moss say", "text", "要说的话；多行会整条送到"),
+    (
+        "moss provider-key",
+        "",
+        "Moss 的 apiKeyHelper：从你的 Claude Code 设置里取出 API key，只给 Claude Code 用",
+    ),
     ("moss chat", "", "到目前为止和 Moss 的对话"),
     ("moss chat", "json", "机器可读的输出（schema 1）"),
     ("moss chat", "limit", "只看最近的这么多条"),
