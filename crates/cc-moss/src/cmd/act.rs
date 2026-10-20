@@ -105,6 +105,7 @@ impl Action {
             Action::Restore(_)
                 | Action::Forget(_)
                 | Action::End(_)
+                | Action::Archive(_)
                 | Action::Purge(_)
                 | Action::PurgeArchived
         )
@@ -886,6 +887,7 @@ mod tests {
             last_active_at_ms: 0,
             ended_at_ms: None,
             archived_at_ms: None,
+            archived_by: None,
             provider_started: None,
             provider_seen_keys: None,
         }
@@ -1174,7 +1176,9 @@ mod tests {
         assert!(Action::parse("purge", &[]).is_err());
         assert!(Action::Purge("x".into()).needs_consent());
         assert!(Action::PurgeArchived.needs_consent());
-        assert!(!Action::Archive("x".into()).needs_consent());
+        // Archiving one session is Moss's idea: the user says yes first
+        // (purge-archived could otherwise follow right away).
+        assert!(Action::Archive("x".into()).needs_consent());
         assert!(!Action::ArchiveIdle.needs_consent());
     }
 

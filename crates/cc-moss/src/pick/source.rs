@@ -236,6 +236,7 @@ mod tests {
             last_active_at_ms: 5_000,
             ended_at_ms: None,
             archived_at_ms: None,
+            archived_by: None,
             provider_started: None,
             provider_seen_keys: None,
         }

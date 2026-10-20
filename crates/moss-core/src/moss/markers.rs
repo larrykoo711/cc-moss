@@ -138,7 +138,14 @@ fn resolve_among(items: &[String], known: &[&crate::slot::Slot]) -> Vec<String> 
 const MAX_BUTTONS: usize = 6;
 
 /// The actions that need the user's go-ahead (`cc-moss moss act`).
-pub const CONSENT_ACTIONS: &[&str] = &["restore", "forget", "end", "purge", "purge-archived"];
+pub const CONSENT_ACTIONS: &[&str] = &[
+    "restore",
+    "forget",
+    "end",
+    "archive",
+    "purge",
+    "purge-archived",
+];
 
 /// The one consent action that names no session: it covers every archived
 /// session there is when Moss asks.
@@ -186,22 +193,30 @@ pub fn yes_label(action: &str, names: &[String], chinese: bool) -> String {
         ("forget", true) => ("不再提示", "、"),
         ("end", true) => ("结束", "、"),
         ("purge", true) => ("删除", "、"),
+        ("archive", true) => ("归档", "、"),
         ("restore", false) => ("Bring back", ", "),
         ("forget", false) => ("Stop offering", ", "),
         ("end", false) => ("End", ", "),
         ("purge", false) => ("Delete", ", "),
+        ("archive", false) => ("Archive", ", "),
         (other, _) => (other, ", "),
     };
     format!("{verb} {}", names.join(sep))
 }
 
-/// The yes button for `purge-archived`, from the real number of archived
-/// sessions it covers («删除 12 个归档会话», "Delete 12 archived sessions").
-pub fn purge_archived_label(count: usize, chinese: bool) -> String {
-    match (chinese, count) {
-        (true, n) => format!("删除 {n} 个归档会话"),
-        (false, 1) => "Delete 1 archived session".to_string(),
-        (false, n) => format!("Delete {n} archived sessions"),
+/// The yes button for `purge-archived`: the sessions it deletes by name
+/// when there are three or fewer («删除 a、b、c»), else their number and
+/// the first two («删除 12 个归档会话（a、b 等）»).
+pub fn purge_archived_label(names: &[String], chinese: bool) -> String {
+    let n = names.len();
+    match (chinese, n) {
+        (true, 0..=3) => format!("删除 {}", names.join("、")),
+        (false, 0..=3) => format!("Delete {}", names.join(", ")),
+        (true, _) => format!("删除 {n} 个归档会话（{}、{} 等）", names[0], names[1]),
+        (false, _) => format!(
+            "Delete {n} archived sessions ({}, {} and more)",
+            names[0], names[1]
+        ),
     }
 }
 
@@ -383,6 +398,7 @@ mod tests {
             last_active_at_ms: 0,
             ended_at_ms: None,
             archived_at_ms: None,
+            archived_by: None,
             provider_started: None,
             provider_seen_keys: None,
         }
@@ -517,12 +533,17 @@ mod tests {
             ],
             "purge names one session, purge-archived none"
         );
-        assert_eq!(purge_archived_label(12, true), "删除 12 个归档会话");
+        let names: Vec<String> = ["a", "b", "c", "d"].iter().map(|n| n.to_string()).collect();
+        assert_eq!(purge_archived_label(&names[..3], true), "删除 a、b、c");
+        assert_eq!(purge_archived_label(&names[..1], false), "Delete a");
         assert_eq!(
-            purge_archived_label(12, false),
-            "Delete 12 archived sessions"
+            purge_archived_label(&names, true),
+            "删除 4 个归档会话（a、b 等）"
         );
-        assert_eq!(purge_archived_label(1, false), "Delete 1 archived session");
+        assert_eq!(
+            purge_archived_label(&names, false),
+            "Delete 4 archived sessions (a, b and more)"
+        );
         assert_eq!(
             yes_label("purge", &["api".into(), "db".into()], true),
             "删除 api、db"

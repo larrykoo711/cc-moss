@@ -875,8 +875,9 @@ impl Registry {
                 continue;
             }
             let changed = tx.execute(
-                "UPDATE slots SET archived_at_ms = ?2 WHERE slot_id = ?1 AND archived_at_ms IS NULL",
-                params![slot.slot_id, now_ms],
+                "UPDATE slots SET archived_at_ms = ?2, archived_by = ?3
+                 WHERE slot_id = ?1 AND archived_at_ms IS NULL",
+                params![slot.slot_id, now_ms, by],
             )?;
             if changed == 1 {
                 done.push(slot.slot_id.clone());
@@ -1305,7 +1306,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
                     attention,
                     (SELECT transcript_path FROM slot_sessions ss
                       WHERE ss.slot_id = slots.slot_id AND ss.session_id = slots.session_id),
-                    role, archived_at_ms, provider_started, provider_seen_keys
+                    role, archived_at_ms, provider_started, provider_seen_keys, archived_by
              FROM slots ORDER BY created_at, slot_id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -1351,6 +1352,7 @@ fn read_slots(conn: &Connection) -> Result<Vec<Slot>> {
             archived_at_ms: r.get(26)?,
             provider_started: r.get(27)?,
             provider_seen_keys: r.get(28)?,
+            archived_by: r.get(29)?,
         })
     })?;
     let mut slots = rows.collect::<rusqlite::Result<Vec<_>>>()?;
@@ -1408,6 +1410,8 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         ("role", "role TEXT"),
         // After 0.3.0: when the session was archived (none: in the list).
         ("archived_at_ms", "archived_at_ms INTEGER"),
+        // Who archived it: `auto`, `you` or `moss`.
+        ("archived_by", "archived_by TEXT"),
         // After 0.3.0: the API provider the session started with (key
         // names, host and models as JSON; never a key's value), and every
         // provider key name seen in the settings while it ran.

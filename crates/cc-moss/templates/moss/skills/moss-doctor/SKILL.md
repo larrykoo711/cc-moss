@@ -65,7 +65,7 @@ they need to decide, then the buttons for the decision:
 [[confirm: restore 5f1e22c0]]
 ```
 
-Every question that leads to `restore`, `forget`, `end` or `purge` carries one `[[confirm: <action> <session>]]`
+Every question that leads to `restore`, `forget`, `end`, `archive` or `purge` carries one `[[confirm: <action> <session>]]`
 per session and action (its `session_id` prefix or name). The markers are not shown. cc-moss adds the yes
 button itself, one per action, worded with the sessions it covers and their folders («结束 work · ~/code/work»): only a
 tap on that button is a yes. Your own `[[buttons:]]` are for other answers ("not now", "keep it"); a tap
@@ -81,7 +81,7 @@ unless something needs the user's decision; then speak.
 ## 4. After the user taps
 
 The tap arrives as their message, its text the button's («找回 api、db»). `restore`, `forget`, `end`,
-`purge` and `purge-archived` need it: pass its id with `--because`, once per session the button names, for exactly that action.
+`archive`, `purge` and `purge-archived` need it: pass its id with `--because`, once per session the button names, for exactly that action.
 Find the id with `cc-moss moss chat --json --limit 5`: the latest message `from: "you"`, whose text is
 what they tapped.
 
@@ -100,7 +100,8 @@ The same flow, focused on names (`sync-names`, then every `name_fix` and `name_s
 old dropped sessions and sessions idle for days. Skip the install checks unless they are broken.
 First of all, `cc-moss moss act archive-idle --wait`: it archives every session that isn't running and
 wasn't used for `archive_after_days` days (no asking: it can be undone). Say how many in the brief.
-To archive one session the user names (it must not be running): `cc-moss moss act archive <session> --wait`.
+To archive one session (it must not be running), ask first with `[[confirm: archive <session>]]`
+(the button reads «归档 <name>»), then `cc-moss moss act archive <session> --because <their message id> --wait`.
 
 ## 清理归档会话 (delete archived sessions)
 
@@ -123,8 +124,9 @@ The app sends "清理归档会话：<name>" ("Clean up archived session: <name>"
 [[confirm: purge-archived]]
 ```
 
-`[[confirm: purge-archived]]` names no session: it covers the sessions that are archived when you ask, and
-cc-moss words its yes button with their number («删除 12 个归档会话»). After the tap:
+`[[confirm: purge-archived]]` names no session: it covers the sessions the user or the daily tidy-up
+archived, and ones archived over a day ago, never one you archived just now. cc-moss words its yes button
+with their names («删除 a、b、c»), or their number and the first two («删除 12 个归档会话（a、b 等）»). After the tap:
 
 ```sh
 cc-moss moss act purge <session> --because <their message id> --wait

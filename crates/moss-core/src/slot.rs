@@ -69,6 +69,8 @@ pub struct Slot {
     /// When it was put away in the archive (out of the list, still
     /// restorable); none while it is in the list.
     pub archived_at_ms: Option<i64>,
+    /// Who archived it: `auto` (the daily tidy-up), `you`, or `moss`.
+    pub archived_by: Option<String>,
     /// The API provider it started with ([`crate::provider::Snapshot`] as
     /// JSON: key names, host, models; never a key's value).
     pub provider_started: Option<String>,
