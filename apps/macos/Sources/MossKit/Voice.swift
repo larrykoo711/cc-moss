@@ -43,7 +43,7 @@ public struct VoicePolicy: Sendable {
         switch mode {
         case .quiet: kind == .needsYou
         case .everyday: kind == .needsYou || kind == .interrupted
-        case .active: true
+        case .active: kind != .update // news, not a call: never out loud
         }
     }
 

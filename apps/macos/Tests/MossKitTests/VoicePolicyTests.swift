@@ -39,9 +39,10 @@ import Testing
     }
 
     @Test func activeAddsRestoredAndFinished() {
-        for kind in AlertKind.allCases {
+        for kind in AlertKind.allCases where kind != .update {
             #expect(fresh(kind, mode: .active) != .nothing)
         }
+        #expect(fresh(.update, mode: .active) == .nothing, "news of a version is never out loud")
     }
 
     @Test func doNotDisturbMutes() {
