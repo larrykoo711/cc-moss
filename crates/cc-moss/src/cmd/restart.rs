@@ -40,6 +40,8 @@ struct Outcome {
     result: &'static str,
     reason: Option<&'static str>,
     message: String,
+    /// For `ambiguous`: the id prefixes of the sessions the name matches.
+    candidates: Vec<String>,
 }
 
 impl Outcome {
@@ -53,6 +55,9 @@ impl Outcome {
             v["reason"] = reason.into();
         }
         v["message"] = self.message.clone().into();
+        if !self.candidates.is_empty() {
+            v["candidates"] = self.candidates.clone().into();
+        }
         v
     }
 }
@@ -115,11 +120,11 @@ pub fn run(args: RestartArgs) -> Result<bool> {
     let registry = Registry::open(&store_dir::registry_path())?;
     let slots = registry.slots()?;
     let settings = super::provider::current();
-    let mut targets: Vec<(String, Option<Slot>, String)> = Vec::new();
+    let mut targets: Vec<(String, Option<Slot>, Option<super::Unresolved>)> = Vec::new();
     for name in &args.names {
-        match super::resolve(&slots, name) {
-            Ok(s) => targets.push((name.clone(), Some(s.clone()), String::new())),
-            Err(e) => targets.push((name.clone(), None, e.to_string())),
+        match super::resolve_item(&slots, name) {
+            Ok(s) => targets.push((name.clone(), Some(s.clone()), None)),
+            Err(u) => targets.push((name.clone(), None, Some(u))),
         }
     }
     if args.stale {
@@ -131,11 +136,7 @@ pub fn run(args: RestartArgs) -> Result<bool> {
                 .iter()
                 .any(|(_, s, _)| s.as_ref().is_some_and(|s| s.slot_id == slot.slot_id));
             if stale && !listed {
-                targets.push((
-                    super::restore::display_name(slot),
-                    Some(slot.clone()),
-                    String::new(),
-                ));
+                targets.push((super::restore::display_name(slot), Some(slot.clone()), None));
             }
         }
     }
@@ -143,7 +144,12 @@ pub fn run(args: RestartArgs) -> Result<bool> {
     let mut outcomes = Vec::new();
     for (name, slot, why) in targets {
         let Some(slot) = slot else {
-            outcomes.push(refused(&name, None, "not-found", why));
+            let u = why.expect("an unresolved name says why");
+            outcomes.push(Outcome {
+                reason: Some(u.code(false)),
+                candidates: u.candidates,
+                ..refused(&name, None, "not-found", u.message)
+            });
             continue;
         };
         outcomes.push(restart_one(&registry, &name, &slot, &args, picks_model)?);
@@ -174,6 +180,7 @@ fn refused(name: &str, slot: Option<&Slot>, reason: &'static str, message: Strin
         result: "refused",
         reason: Some(reason),
         message,
+        candidates: Vec::new(),
     }
 }
 
@@ -225,6 +232,7 @@ fn restart_one(
                 session_id: Some(slot.session_id.clone()),
                 result: "queued",
                 reason: None,
+                candidates: Vec::new(),
                 message: tr!(
                     format!("{name} is working; it restarts when this turn is done."),
                     format!("{name} 正在干活，这一轮结束后重开。")
@@ -260,6 +268,7 @@ fn restart_one(
             session_id: Some(slot.session_id.clone()),
             result: "queued",
             reason: None,
+            candidates: Vec::new(),
             message: tr!(
                 format!("{name} is being restarted already."),
                 format!("{name} 已经在重开了。")
@@ -280,6 +289,7 @@ fn restart_one(
                 session_id: Some(slot.session_id.clone()),
                 result: "restarted",
                 reason: None,
+                candidates: Vec::new(),
                 message: tr!(
                     format!("Restarted {name} in its own pane; it uses the new settings."),
                     format!("已在原来的窗格里重开 {name}，它现在用的是新设置。")

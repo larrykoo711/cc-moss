@@ -63,6 +63,7 @@ pub fn run() -> Result<Registry> {
         }
     }
     label_tmux(&registry);
+    registry.close_superseded_duplicates(&|s| s.effective_status(proc::is_alive), now_ms())?;
     record_lost(&registry)?;
     registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)

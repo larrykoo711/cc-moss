@@ -23,6 +23,8 @@ struct Outcome {
     result: &'static str,
     reason: Option<&'static str>,
     message: String,
+    /// For `ambiguous`: the id prefixes of the sessions the name matches.
+    candidates: Vec<String>,
 }
 
 impl Outcome {
@@ -35,6 +37,9 @@ impl Outcome {
         if let Some(reason) = self.reason {
             v["reason"] = reason.into();
             v["message"] = self.message.clone().into();
+        }
+        if !self.candidates.is_empty() {
+            v["candidates"] = self.candidates.clone().into();
         }
         v
     }
@@ -62,6 +67,16 @@ fn refused(name: &str, slot: Option<&Slot>, reason: &'static str, message: Strin
         result: "refused",
         reason: Some(reason),
         message,
+        candidates: Vec::new(),
+    }
+}
+
+/// The refusal for a name that picks no one session.
+fn unresolved(name: &str, u: super::Unresolved) -> Outcome {
+    Outcome {
+        reason: Some(u.code(false)),
+        candidates: u.candidates,
+        ..refused(name, None, "not-found", u.message)
     }
 }
 
@@ -73,10 +88,10 @@ pub fn archive(names: &[String], end: bool, as_json: bool) -> Result<bool> {
     let slots = registry.slots()?;
     let mut outcomes = Vec::new();
     for name in names {
-        let slot = match super::resolve(&slots, name) {
+        let slot = match super::resolve_item(&slots, name) {
             Ok(s) => s,
-            Err(e) => {
-                outcomes.push(refused(name, None, "not-found", e.to_string()));
+            Err(u) => {
+                outcomes.push(unresolved(name, u));
                 continue;
             }
         };
@@ -119,6 +134,7 @@ pub fn archive(names: &[String], end: bool, as_json: bool) -> Result<bool> {
             session_id: Some(slot.session_id.clone()),
             result: "archived",
             reason: None,
+            candidates: Vec::new(),
             message: tr!(
                 format!("Archived {name}. `cc-moss unarchive {name}` brings it back."),
                 format!("已归档 {name}。`cc-moss unarchive {name}` 可以拿回来。")
@@ -217,10 +233,13 @@ pub fn unarchive(names: &[String], as_json: bool) -> Result<bool> {
     for name in names {
         // An archived session is the one meant when a name is shared.
         let archived: Vec<Slot> = slots.iter().filter(|s| s.is_archived()).cloned().collect();
-        let slot = match super::resolve(&archived, name).or_else(|_| super::resolve(&slots, name)) {
+        let slot = match super::resolve(&archived, name)
+            .map_err(|_| ())
+            .or_else(|_| super::resolve_item(&slots, name))
+        {
             Ok(s) => s,
-            Err(e) => {
-                outcomes.push(refused(name, None, "not-found", e.to_string()));
+            Err(u) => {
+                outcomes.push(unresolved(name, u));
                 continue;
             }
         };
@@ -230,6 +249,7 @@ pub fn unarchive(names: &[String], as_json: bool) -> Result<bool> {
             session_id: Some(slot.session_id.clone()),
             result: "unarchived",
             reason: None,
+            candidates: Vec::new(),
             message: tr!(
                 format!("{name} is back in the list."),
                 format!("{name} 回到列表里了。")

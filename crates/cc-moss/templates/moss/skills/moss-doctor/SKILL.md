@@ -133,3 +133,26 @@ cc-moss moss act purge-archived --because <their message id> --wait
 
 A session archived after you asked is not covered: it stays. Say in one line how many were deleted and that
 the conversation files are in the Trash. No archived sessions: say so, and ask nothing.
+
+## When the user hands you a failure
+
+The panel sends what didn't work, for example 「找回」会话 api（0837a145，~/code/api）失败了：missing_dir：its
+folder is gone. Look the session up first: `SESSIONS.md` and `cc-moss doctor --sessions --json` (by its id
+prefix or name). Then say in one or two lines what happened and what can be done, in the user's words:
+
+| Reason | What it means | What to offer |
+|---|---|---|
+| `empty` | it never got a first message: nothing to resume | `[[confirm: forget <session>]]` |
+| `missing_dir` | its folder is gone (moved or deleted) | if `folder_exists` is false, `cc-moss moss act forget-gone <session> --wait`; if the folder was moved, ask them to move it back, then restore again |
+| `exited_at_once` | Claude Code quit right after starting | ask them to run `claude` in that folder to see why (login, update, settings); then restore again |
+| `tmux_failed` | tmux couldn't start it | ask them to try again; if it keeps failing, `cc-moss doctor` in a terminal |
+| `already_running` | it is running, or coming back through another copy | nothing to do: point at it with `[[sessions: <session>]]` |
+| `ambiguous` | the name fits several sessions (`candidates` are their ids) | name each by id with `[[sessions: <id> \| <id>]]` and ask which; then `[[confirm: restore <id>]]` for that one |
+| `busy` (restart, archive) | it is in the middle of a turn | wait until it's done; restart queues it by itself |
+| `running` (archive) | it still runs | `[[confirm: end <session>]]`, then archive it |
+| `not-in-tmux` (restart) | it runs outside tmux | `cc-moss adopt` in a terminal moves it into tmux |
+| `moss` | it is you | say cc-moss looks after you |
+| `not-found`, `not_found` | no session by that name any more | say so; nothing to do |
+
+Use only the actions and commands in this skill; never make one up. When none fits, say plainly that you
+can't fix it from here and what the user can do (often: run the command in a terminal to see the message).

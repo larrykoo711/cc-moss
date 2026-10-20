@@ -1875,6 +1875,27 @@ mod tests {
     }
 
     #[test]
+    fn doctor_skill_maps_every_failure_reason() {
+        assert!(DOCTOR_SKILL.contains("## When the user hands you a failure"));
+        for reason in [
+            "empty",
+            "missing_dir",
+            "exited_at_once",
+            "tmux_failed",
+            "already_running",
+            "ambiguous",
+            "busy",
+            "running",
+            "not-in-tmux",
+            "moss",
+            "not-found",
+        ] {
+            assert!(DOCTOR_SKILL.contains(&format!("`{reason}`")), "{reason}");
+        }
+        assert!(DOCTOR_SKILL.contains("never make one up"));
+    }
+
+    #[test]
     fn home_files_split_managed_from_users() {
         let all = files("/bin/cc-moss", Path::new("/s"));
         let kind = |p: &str| all.iter().find(|f| f.path == p).map(|f| f.kind);

@@ -782,6 +782,44 @@ impl Registry {
         Ok(())
     }
 
+    /// Close, quietly, every copy of a conversation that is not running
+    /// while another copy of it runs (a second Claude Code on the same
+    /// session that was closed): it can't be restored and only gets in the
+    /// way. `end_reason` is `superseded`; no event, no news. `status` is
+    /// each slot's status as shown. The slot ids closed.
+    pub fn close_superseded_duplicates(
+        &self,
+        status: &dyn Fn(&Slot) -> Status,
+        now_ms: i64,
+    ) -> Result<Vec<String>> {
+        let slots = self.slots()?;
+        let shown: Vec<(Status, &Slot)> = slots.iter().map(|s| (status(s), s)).collect();
+        let live: std::collections::HashSet<&str> = shown
+            .iter()
+            .filter(|(st, _)| *st == Status::Running)
+            .map(|(_, s)| s.session_id.as_str())
+            .collect();
+        let mut closed = Vec::new();
+        for (st, slot) in &shown {
+            if *st == Status::Interrupted
+                && slot.status != Status::Closed
+                && !slot.is_moss()
+                && live.contains(slot.session_id.as_str())
+            {
+                let changed = self.write()?.execute(
+                    "UPDATE slots SET status = 'closed', end_reason = 'superseded', ended_at = ?2,
+                       attention = NULL, busy = 0, lost_reported_at = COALESCE(lost_reported_at, ?2)
+                     WHERE slot_id = ?1 AND status <> 'closed'",
+                    params![slot.slot_id, now_ms],
+                )?;
+                if changed == 1 {
+                    closed.push(slot.slot_id.clone());
+                }
+            }
+        }
+        Ok(closed)
+    }
+
     /// Undo [`Registry::mark_restore_started`] when the launch failed.
     pub fn clear_restore_started(&self, slot_id: &str) -> Result<()> {
         self.write()?.execute(

@@ -888,7 +888,12 @@ impl Talk {
                 self.transcript = Some(PathBuf::from(path));
             }
         }
-        for s in &slots {
+        // A second copy of a conversation that runs elsewhere is no news.
+        let superseded = registry.close_superseded_duplicates(
+            &|s| s.effective_status(moss_core::proc::is_alive),
+            now_ms,
+        )?;
+        for s in slots.iter().filter(|s| !superseded.contains(&s.slot_id)) {
             // `kill(pid, 0)` first: only a process that seems gone costs a
             // closer look (a `ps` on macOS).
             let gone = s.status == Status::Running

@@ -495,3 +495,111 @@ fn ls_asks_claude_at_most_every_30_s() {
     }
     assert_eq!(std::fs::read_to_string(&count).unwrap().lines().count(), 1);
 }
+
+#[test]
+fn superseded_duplicates_are_closed() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "startup", Some("api")),
+        a.pid(),
+    );
+    // A second Claude Code on the same conversation, closed by killing it.
+    let b = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "resume", None),
+        b.pid(),
+    );
+    assert_eq!(
+        ls_json(dir.path(), true)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    drop(b);
+    let all = ls_json(dir.path(), true);
+    let sessions = all["sessions"].as_array().unwrap();
+    let running: Vec<_> = sessions
+        .iter()
+        .filter(|s| s["status"] == "running")
+        .collect();
+    let closed: Vec<_> = sessions
+        .iter()
+        .filter(|s| s["status"] == "closed")
+        .collect();
+    assert_eq!(running.len(), 1, "{all}");
+    assert_eq!(closed.len(), 1, "{all}");
+    assert_eq!(closed[0]["end_reason"], "superseded");
+    // Quietly: no interrupted news, and nothing left to restore.
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .args(["events", "--json", "--since", "0"])
+        .output()
+        .unwrap();
+    let events: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert!(
+        events["events"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|e| e["kind"] != "interrupted"),
+        "{events}"
+    );
+    assert_eq!(
+        ls_json(dir.path(), false)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn json_results_name_ambiguous_names() {
+    let dir = tempfile::tempdir().unwrap();
+    for sid in ["aaaaaaaa-0001", "bbbbbbbb-0002"] {
+        hook(
+            dir.path(),
+            "session-start",
+            &start_json(sid, "startup", Some("api")),
+            Some(dead_pid()),
+        );
+    }
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = bin()
+            .env("CC_MOSS_STATE_DIR", dir.path())
+            .env("CC_MOSS_CLAUDE_BIN", "/bin/true")
+            .args(args)
+            .output()
+            .unwrap();
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}: {out:?}"))
+    };
+    let check = |v: &serde_json::Value, what: &str| {
+        let r = &v["results"][0];
+        assert_eq!(r["reason"], "ambiguous", "{what}: {v}");
+        let mut c: Vec<&str> = r["candidates"]
+            .as_array()
+            .unwrap_or_else(|| panic!("{what}: {v}"))
+            .iter()
+            .map(|x| x.as_str().unwrap())
+            .collect();
+        c.sort();
+        assert_eq!(c, ["aaaaaaaa", "bbbbbbbb"], "{what}: {v}");
+        assert!(r["message"].as_str().unwrap().contains("api"), "{what}");
+    };
+    check(&run(&["restore", "--yes", "--json", "api"]), "restore");
+    check(&run(&["archive", "--json", "api"]), "archive");
+    check(&run(&["unarchive", "--json", "api"]), "unarchive");
+    check(&run(&["restart", "--json", "api"]), "restart");
+    let v = run(&["adopt", "--json", "api"]);
+    assert_eq!(v["reason"], "ambiguous", "{v}");
+    assert_eq!(v["candidates"].as_array().unwrap().len(), 2);
+    // A name that matches nothing keeps its own code.
+    let v = run(&["restore", "--yes", "--json", "nobody"]);
+    assert_eq!(v["results"][0]["reason"], "not_found", "{v}");
+}

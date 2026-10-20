@@ -156,7 +156,18 @@ pub fn new_name(slot: &Slot, others: &[Slot]) -> Option<String> {
 pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
     let registry = Registry::open(&store_dir::registry_path())?;
     let slots = registry.slots()?;
-    let slot = super::resolve(&slots, name)?.clone();
+    let slot = match super::resolve_item(&slots, name) {
+        Ok(s) => s.clone(),
+        Err(u) if json_out => {
+            println!(
+                "{}",
+                json!({"schema": 1, "result": "refused", "reason": u.code(false),
+                    "message": u.message, "candidates": u.candidates})
+            );
+            return Ok(false);
+        }
+        Err(u) => anyhow::bail!(u.message),
+    };
     let say = |v: serde_json::Value, plain: String| {
         if json_out {
             println!("{v}");
