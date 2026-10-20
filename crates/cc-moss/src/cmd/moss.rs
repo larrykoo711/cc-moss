@@ -1001,6 +1001,7 @@ pub struct Looker {
     next_provider: Instant,
     /// Until when a folder-trust question on Moss's screen is answered.
     trust_until: Option<Instant>,
+    next_trust: Instant,
     trust_told: bool,
 }
 
@@ -1116,6 +1117,7 @@ impl Looker {
             config_error: false,
             next_provider: now,
             trust_until: None,
+            next_trust: now,
             trust_told: false,
         })
     }
@@ -1235,10 +1237,13 @@ impl Looker {
             }
             Ok(Synced::Restart) => {
                 log("moss: the API provider changed; starting Moss again to use it");
-                if let Err(e) = end_moss(&self.state, "provider-changed") {
-                    log(&format!(
+                // On purpose, not a crash: a fresh Moss right away, past
+                // the crash ladder's waits, and not counted as a restart.
+                match end_moss(&self.state, "provider-changed") {
+                    Ok(_) => self.start(now, log),
+                    Err(e) => log(&format!(
                         "moss: error: could not end it for the new provider: {e:#}"
-                    ));
+                    )),
                 }
             }
             Err(e) => log(&format!("moss: error: its API provider: {e:#}")),
@@ -1249,9 +1254,11 @@ impl Looker {
     /// starts: the keeper answers yes, in Moss's own pane, for a while
     /// after each start.
     fn accept_trust(&mut self, now: Instant, log: &dyn Fn(&str)) {
-        if self.trust_until.is_none_or(|until| now >= until) {
+        if self.trust_until.is_none_or(|until| now >= until) || now < self.next_trust {
             return;
         }
+        // One look a second is plenty.
+        self.next_trust = now + Duration::from_secs(1);
         let target = format!("={}:", moss::SESSION);
         let Ok(out) = tmux(&self.socket, &["capture-pane", "-p", "-t", &target]) else {
             return;

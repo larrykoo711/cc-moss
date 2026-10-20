@@ -28,7 +28,8 @@ fn daemon(w: &World, claude: Option<&Path>, trust: bool) -> Daemon {
     let mut cmd = w.cc_moss();
     cmd.env("CC_MOSS_MOSS_SOCKET", &w.socket)
         .env("CC_MOSS_MOSS_CHECK_MS", "200")
-        .env("CC_MOSS_MOSS_STEPS_MS", "300,600")
+        // The real crash ladder (30 s first): a provider restart must not
+        // wait on it.
         .env("CC_MOSS_DAEMON_HEARTBEAT_MS", "500");
     if let Some(claude) = claude {
         cmd.env("CC_MOSS_CLAUDE_BIN", claude);
@@ -180,9 +181,23 @@ fn moss_follows_the_provider() {
     wait_until("the keys to go", || {
         (moss_env(&w)? == serde_json::json!({})).then_some(())
     });
+    let switched = Instant::now();
     let second = wait_until("a fresh Moss", || running_moss(&w, Some(&first)));
     assert_ne!(second, first);
+    assert!(
+        switched.elapsed() < Duration::from_secs(15),
+        "started right away, not after the crash ladder's wait"
+    );
     assert!(log(&w).contains("starting Moss again"), "{}", log(&w));
+    // Not a crash: the restart count stays.
+    let out = w
+        .cc_moss()
+        .env("CC_MOSS_MOSS_SOCKET", &w.socket)
+        .args(["moss", "status", "--json"])
+        .output()
+        .unwrap();
+    let status: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(status["restarts"], 0, "{status}");
 }
 
 #[test]
