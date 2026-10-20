@@ -80,15 +80,19 @@ fn finds_the_pane_a_process_runs_under() {
 
 #[test]
 fn argv_reads_a_processs_words_exactly() {
-    // One argument with spaces in it stays one.
+    // One argument with spaces in it stays one. `; :` keeps the shell from
+    // replacing itself with `sleep` (dash does), which would drop the words.
     let mut child = std::process::Command::new("/bin/sh")
-        .args(["-c", "sleep 30", "summarize -p this"])
+        .args(["-c", "sleep 30; :", "summarize -p this"])
         .spawn()
         .unwrap();
     let mut words = None;
     for _ in 0..50 {
         words = moss_core::launch_args::argv(child.id());
-        if words.as_ref().is_some_and(|w| w.len() >= 4) {
+        if words
+            .as_ref()
+            .is_some_and(|w| w.iter().any(|w| w == "summarize -p this"))
+        {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(20));
