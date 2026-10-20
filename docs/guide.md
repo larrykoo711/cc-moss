@@ -113,7 +113,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
-| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`update.check` 只能查看（改它请编辑配置文件）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | 常驻后台的守护进程：看状态、启动、停掉（macOS，见[守护进程](#守护进程)） |
 | `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- 文字` / `moss chat [--limit N] [--json]` | Moss 的开关和状态，以及和它说话、看对话（macOS，见 [Moss](#moss)） |
 | `cc-moss doctor [--fix]` / `doctor --sessions --json` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接）；`--sessions --json` 列出每个会话的事实，给 Moss 体检用（见[体检](#体检)） |
