@@ -117,6 +117,21 @@ enum Render {
                 model.waitingReceipt.update((0..<n).map { .ask("demo-\($0)") })
                 model.waitingReceipt.update([])
             }
+            // `--notice <action>:<reason> [--notice-on <id>] [--notice-more N]`: a failed
+            // action's notice at the bottom (F25), about that session (else the first
+            // interrupted one), with N older ones behind it.
+            if let spec = value("--notice"), let cut = spec.firstIndex(of: ":") {
+                let action = FailureNotice.Action(rawValue: String(spec[..<cut])) ?? .restore
+                let reason = String(spec[spec.index(after: cut)...])
+                let s = value("--notice-on").flatMap { id in model.sessions.first { $0.id == id } }
+                    ?? model.sessions.first { $0.state == .interrupted }
+                for i in 0..<(value("--notice-more").flatMap(Int.init) ?? 0) {
+                    model.report(FailureNotice(id: "older-\(i)", action: .archive, subject: s.map(FailureNotice.Subject.init)))
+                }
+                model.report(FailureNotice(action: action, subject: s.map(FailureNotice.Subject.init), reason: reason,
+                                           message: reason == "ambiguous" ? nil : L.t("no such file or directory", "没有那个文件或目录"),
+                                           candidates: reason == "ambiguous" ? ["fix-invoice (01c0c1d2)", "fix-invoice (7a3e90b1)"] : []))
+            }
             // `--expand-archived`: the "Archived" group open.
             if args.contains("--expand-archived") { model.archivedExpanded = true }
             // `--provider live|restart [--provider-host h]`: a provider switch a minute ago;

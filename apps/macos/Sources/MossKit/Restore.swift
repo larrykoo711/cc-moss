@@ -46,6 +46,8 @@ public enum RestoreReason: String, Decodable, Equatable, Sendable {
     case exitedAtOnce = "exited_at_once"
     case tmuxFailed = "tmux_failed"
     case alreadyRunning = "already_running"
+    /// The name matches more than one session (`candidates` lists them).
+    case ambiguous
     /// A code from a newer cc-moss.
     case other
 
@@ -65,6 +67,7 @@ public enum RestoreReason: String, Decodable, Equatable, Sendable {
                                 "Claude Code 刚启动就退出了，试试 `cc-moss doctor`。")
         case .tmuxFailed: L.t("tmux couldn't start it.", "tmux 没能把它启动起来。")
         case .alreadyRunning: L.t("It's already running.", "它已经在运行了。")
+        case .ambiguous: L.t("More than one session has this name.", "有好几个会话叫这个名字。")
         case .other: L.t("It couldn't be brought back.", "没能把它找回来。")
         }
     }
@@ -83,13 +86,51 @@ public struct RestoreResult: Decodable, Equatable, Sendable {
     public var reason: RestoreReason?
     /// cc-moss's own words for a failure.
     public var message: String?
+    /// The reason exactly as cc-moss wrote it (a newer code included).
+    public var reasonCode: String?
+    /// For `ambiguous`: the sessions the name could mean.
+    public var candidates: [String]
 
-    public init(id: String, name: String, ok: Bool, reason: RestoreReason? = nil, message: String? = nil) {
+    public init(id: String, name: String, ok: Bool, reason: RestoreReason? = nil, message: String? = nil,
+                reasonCode: String? = nil, candidates: [String] = []) {
         self.id = id
         self.name = name
         self.ok = ok
         self.reason = reason
         self.message = message
+        self.reasonCode = reasonCode ?? reason.map { $0 == .other ? "other" : $0.rawValue }
+        self.candidates = candidates
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, ok, reason, message, candidates }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        ok = try c.decode(Bool.self, forKey: .ok)
+        reasonCode = (try? c.decodeIfPresent(String.self, forKey: .reason)) ?? nil
+        reason = reasonCode.map { RestoreReason(rawValue: $0) ?? .other }
+        message = (try? c.decodeIfPresent(String.self, forKey: .message)) ?? nil
+        // Names, or objects with a name (and an id): either reads.
+        struct Named: Decodable {
+            var name: String?
+            var id: String?
+        }
+        if let names = try? c.decodeIfPresent([String].self, forKey: .candidates) {
+            candidates = names
+        } else if let objects = try? c.decodeIfPresent([Named].self, forKey: .candidates) {
+            candidates = objects.compactMap { o in
+                switch (o.name, o.id) {
+                case let (n?, i?): "\(n) (\(i.prefix(8)))"
+                case let (n?, nil): n
+                case let (nil, i?): String(i.prefix(8))
+                default: nil
+                }
+            }
+        } else {
+            candidates = []
+        }
     }
 }
 

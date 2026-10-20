@@ -25,9 +25,11 @@ extension AppModel {
         guard let client else { return }
         Task {
             do {
-                say(Archive.summary(try await client.archive([s.target])))
+                let results = try await client.archive([s.target])
+                say(Archive.summary(results))
+                report(.archive, refusals: results, among: [s])
             } catch {
-                say(Self.describe(error))
+                report(.archive, s, error: error)
             }
             refresh()
         }
@@ -46,9 +48,11 @@ extension AppModel {
         guard let s = endArchiveGate.confirm(), let client else { return }
         Task {
             do {
-                say(Archive.summary(try await client.archiveEnding([s.target])))
+                let results = try await client.archiveEnding([s.target])
+                say(Archive.summary(results))
+                report(.endAndArchive, refusals: results, among: [s])
             } catch {
-                say(Self.describe(error))
+                report(.endAndArchive, s, error: error)
             }
             refresh()
         }
@@ -59,9 +63,11 @@ extension AppModel {
         guard let client else { return }
         Task {
             do {
-                say(Archive.summary(try await client.unarchive([s.target])))
+                let results = try await client.unarchive([s.target])
+                say(Archive.summary(results))
+                report(.unarchive, refusals: results, among: [s])
             } catch {
-                say(Self.describe(error))
+                report(.unarchive, s, error: error)
             }
             refresh()
         }
@@ -84,9 +90,11 @@ extension AppModel {
         guard let client, restarting.insert(s.id).inserted else { return }
         Task {
             do {
-                say(Restart.summary(try await client.restart([s.target])))
+                let results = try await client.restart([s.target])
+                say(Restart.summary(results))
+                report(.restart, refusals: results, among: [s])
             } catch {
-                say(Self.describe(error))
+                report(.restart, s, error: error)
             }
             restarting.remove(s.id)
             refresh()
@@ -99,9 +107,11 @@ extension AppModel {
         restartingAll = true
         Task {
             do {
-                say(Restart.summary(try await client.restartStale()))
+                let results = try await client.restartStale()
+                say(Restart.summary(results))
+                report(.restart, refusals: results, among: sessions)
             } catch {
-                say(Self.describe(error))
+                report(FailureNotice(action: .restart, subject: nil, error: error))
             }
             restartingAll = false
             refresh()

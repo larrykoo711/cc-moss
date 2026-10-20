@@ -150,6 +150,17 @@ struct PanelView: View {
                     .transition(.opacity.combined(with: .move(edge: .bottom)))
             }
         }
+        // An action that didn't work, on any page, above its footer (F25).
+        .overlay(alignment: .bottom) {
+            if let notice = model.failures.current, model.form == nil {
+                FailureNoticeView(model: model, notice: notice)
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, model.page == .sessions ? 52 : model.page == .moss ? 66 : 10)
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
+                    .id(notice.id)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: model.failures)
         .animation(.easeOut(duration: 0.12), value: menu)
         .animation(.easeOut(duration: 0.15), value: model.form)
         .animation(.easeOut(duration: 0.15), value: model.closeGate.asking)
@@ -810,7 +821,9 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
+        if model.failures.current != nil && model.form == nil && !model.closeGate.asking && !model.endArchiveGate.asking {
+            model.failures.dismiss()
+        } else if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
             dismissForm()
         } else if menu != nil {
             closeMenu()

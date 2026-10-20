@@ -205,6 +205,8 @@ final class AppModel {
     var newDraft = NewDraft()
     /// "Stop reminding" waits for a second, deliberate click.
     var closeGate = Confirmation<[Session]>()
+    /// Actions that didn't work, newest shown at the bottom of the panel (F25).
+    var failures = FailureNotices()
     /// The Moss page's "Handled N just now" line, after the waiting card empties.
     var waitingReceipt = WaitingReceipt()
     /// "End and archive" waits for a second, deliberate click too.

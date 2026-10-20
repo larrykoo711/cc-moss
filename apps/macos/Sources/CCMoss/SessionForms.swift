@@ -80,6 +80,8 @@ extension AppModel {
             try await client.newSession(args)
         } catch {
             newDraft.error = Self.describe(error)
+            report(FailureNotice(action: .newSession, subject: name.isEmpty ? nil : .init(name: name, folder: newDraft.directory),
+                                 error: error))
             return nil
         }
         form = nil
@@ -127,7 +129,7 @@ extension AppModel {
                 follow(s)
             } catch {
                 sendFlow.finish(error: Self.describe(error))
-                say(Self.describe(error))
+                report(.send, s, error: error)
             }
             refresh()
         }
@@ -224,6 +226,7 @@ extension AppModel {
                 }
             } catch {
                 replyFlow.finish(error: Self.describe(error))
+                report(.send, s, error: error)
             }
             refresh()
         }
@@ -256,7 +259,7 @@ extension AppModel {
                     : L.t("Noted.", "记下了。"))
                 follow(s)
             } catch {
-                say(Self.describe(error))
+                report(.note, s, error: error)
             }
             refresh()
         }
