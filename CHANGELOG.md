@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-10-20
+
 ### Added
 
 - **Update tips in the app.** When a newer version is out, a light bar on top of the panel says so, with a link to
@@ -363,7 +365,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...HEAD
+[0.3.2]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...v0.3.0
 [0.2.2]: https://github.com/larrykoo711/cc-moss/compare/v0.2.1...v0.2.2
