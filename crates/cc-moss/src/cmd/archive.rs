@@ -367,7 +367,54 @@ pub struct Purged {
 /// records. A session whose transcript could not be moved keeps its
 /// records, so nothing is lost without a trace. Sessions that are not
 /// archived, or run again, are left alone.
-pub fn purge(registry: &Registry, slot_ids: &[String], trash: &Trash) -> Result<Purged> {
+/// Where purged transcripts go, and where they may come from.
+pub struct Disposal {
+    pub trash: Trash,
+    /// Claude Code's folders: only a transcript in one of their `projects/`
+    /// goes to the Trash.
+    pub claude_dirs: Vec<PathBuf>,
+}
+
+impl Disposal {
+    /// This user's Trash, and Claude Code's folders: `[claude] config_dir`
+    /// or `CLAUDE_CONFIG_DIR`, and `~/.claude`.
+    pub fn current() -> Option<Disposal> {
+        let trash = Trash::current()?;
+        let home = std::env::var_os("HOME").map(PathBuf::from);
+        let claude_dirs = super::moss::config_dir()
+            .into_iter()
+            .chain(home.map(|h| h.join(".claude")))
+            .collect();
+        Some(Disposal { trash, claude_dirs })
+    }
+
+    /// Whether `path` is a transcript Claude Code wrote for one of
+    /// `session_ids`: `<claude folder>/projects/…/<session id>.jsonl`. Why
+    /// not, otherwise.
+    fn may_take(&self, path: &Path, session_ids: &[String]) -> Result<(), String> {
+        let named = path.extension().is_some_and(|e| e == "jsonl")
+            && path
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .is_some_and(|stem| session_ids.iter().any(|id| id == stem));
+        if !named {
+            return Err("its transcript isn't named after the session".into());
+        }
+        let Some(parent) = path.parent().and_then(|p| std::fs::canonicalize(p).ok()) else {
+            return Err("its transcript's folder can't be found".into());
+        };
+        let inside = self.claude_dirs.iter().any(|d| {
+            std::fs::canonicalize(d.join("projects"))
+                .is_ok_and(|projects| parent.starts_with(projects))
+        });
+        if !inside {
+            return Err("its transcript isn't where Claude Code keeps transcripts".into());
+        }
+        Ok(())
+    }
+}
+
+pub fn purge(registry: &Registry, slot_ids: &[String], bin: &Disposal) -> Result<Purged> {
     let slots = registry.slots()?;
     let mut out = Purged::default();
     // First the sessions that really go; only those may take a transcript
@@ -392,9 +439,38 @@ pub fn purge(registry: &Registry, slot_ids: &[String], trash: &Trash) -> Result<
     let mut ready: Vec<String> = Vec::new();
     for id in &going {
         let mut moved_all = true;
+        let session_ids: Vec<String> = slots
+            .iter()
+            .find(|s| &s.slot_id == id)
+            .map(|s| {
+                std::iter::once(s.session_id.clone())
+                    .chain(s.session_ids.iter().cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
         for path in registry.own_transcripts(id, &going)? {
             let path = Path::new(&path);
-            match trash.put(path) {
+            if let Err(why) = bin.may_take(path, &session_ids) {
+                // A file that isn't there is nothing to keep.
+                if path.exists() {
+                    moved_all = false;
+                    out.kept.push((id.clone(), why));
+                    break;
+                }
+                continue;
+            }
+            // Looked at again right before: one that runs again keeps all.
+            let again = registry
+                .slots()?
+                .into_iter()
+                .find(|s| &s.slot_id == id)
+                .is_some_and(|s| s.effective_status(proc::is_alive) == Status::Running);
+            if again {
+                moved_all = false;
+                out.kept.push((id.clone(), "it is running again".into()));
+                break;
+            }
+            match bin.trash.put(path) {
                 Ok(to) => out.trashed.push(to),
                 // Already gone: nothing to keep.
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -448,11 +524,62 @@ mod tests {
             .slot_id
     }
 
+    fn bin(dir: &Path) -> Disposal {
+        Disposal {
+            trash: Trash::Folder(dir.join("Trash")),
+            claude_dirs: vec![dir.join("claude")],
+        }
+    }
+
+    #[test]
+    fn purge_takes_only_claude_codes_own_transcripts() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = Registry::open(&dir.path().join("state/registry.db")).unwrap();
+        // Recorded as the transcript: a file of the user's elsewhere, one in
+        // the right place under another name, and one that is right.
+        let elsewhere = dir.path().join("notes/sa.jsonl");
+        let misnamed = dir.path().join("claude/projects/-work/notes.jsonl");
+        let right = dir.path().join("claude/projects/-work/sc.jsonl");
+        for (sid, path) in [("sa", &elsewhere), ("sb", &misnamed), ("sc", &right)] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, "{}\n").unwrap();
+            let id = start(&mut r, sid, path, 1_000);
+            let ctx = Context {
+                pid: None,
+                pid_start: None,
+                tmux: None,
+                launch_args: None,
+                now_ms: 1_500,
+            };
+            r.apply(
+                &Event::End {
+                    session_id: sid.into(),
+                    reason: moss_core::event::EndReason::Closed("prompt_input_exit".into()),
+                },
+                &ctx,
+            )
+            .unwrap();
+            r.archive(std::slice::from_ref(&id), "you", &|_| false, 2_000)
+                .unwrap();
+        }
+        let ids: Vec<String> = r.slots().unwrap().into_iter().map(|s| s.slot_id).collect();
+        let done = purge(&r, &ids, &bin(dir.path())).unwrap();
+        assert_eq!(done.removed.len(), 1, "{:?}", done.kept);
+        assert_eq!(done.kept.len(), 2);
+        assert!(
+            elsewhere.exists() && misnamed.exists(),
+            "kept where they are"
+        );
+        assert!(!right.exists());
+    }
+
     #[test]
     fn purge_keeps_a_transcript_a_kept_session_shares() {
         let dir = tempfile::tempdir().unwrap();
         let mut r = Registry::open(&dir.path().join("state/registry.db")).unwrap();
-        let transcript = dir.path().join("shared.jsonl");
+        let projects = dir.path().join("claude/projects/-work");
+        std::fs::create_dir_all(&projects).unwrap();
+        let transcript = projects.join("shared.jsonl");
         std::fs::write(&transcript, "{}\n").unwrap();
         // Two processes on one conversation: two slots, one session id.
         for (pid, source) in [(100, StartSource::Startup), (200, StartSource::Resume)] {
@@ -480,8 +607,7 @@ mod tests {
         assert_eq!(ids.len(), 2);
         // Only the first is archived; asked to purge both.
         r.archive(&ids[..1], "you", &|_| false, 2_000).unwrap();
-        let trash = Trash::Folder(dir.path().join("Trash"));
-        let done = purge(&r, &ids, &trash).unwrap();
+        let done = purge(&r, &ids, &bin(dir.path())).unwrap();
         assert_eq!(done.removed, ids[..1].to_vec());
         assert!(transcript.exists(), "the kept session still uses it");
         assert!(done.trashed.is_empty());
@@ -492,13 +618,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut r = Registry::open(&dir.path().join("state/registry.db")).unwrap();
         // A folder where the transcript should be: not a file, not moved.
-        let odd = dir.path().join("odd.jsonl");
+        let odd = dir.path().join("claude/projects/-work/odd.jsonl");
         std::fs::create_dir_all(&odd).unwrap();
         let id = start(&mut r, "odd", &odd, 1_000);
         r.archive(std::slice::from_ref(&id), "you", &|_| false, 2_000)
             .unwrap();
-        let trash = Trash::Folder(dir.path().join("Trash"));
-        let done = purge(&r, std::slice::from_ref(&id), &trash).unwrap();
+        let done = purge(&r, std::slice::from_ref(&id), &bin(dir.path())).unwrap();
         assert!(done.removed.is_empty());
         assert_eq!(done.kept.len(), 1);
         assert!(odd.exists());

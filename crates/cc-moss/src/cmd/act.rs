@@ -26,7 +26,6 @@ use moss_core::moss::inbox::{self, Pane, Typed};
 use moss_core::registry::Registry;
 use moss_core::slot::{now_ms, rfc3339, Slot, Status};
 use moss_core::tmux::{Socket, Tmux};
-use moss_core::trash::Trash;
 use moss_core::{moss, store_dir};
 
 /// How old the user's go-ahead may be.
@@ -298,7 +297,7 @@ pub struct Hands {
     exe: String,
     next: Instant,
     /// Where purged transcripts go; none without a home folder.
-    trash: Option<Trash>,
+    trash: Option<super::archive::Disposal>,
 }
 
 impl Hands {
@@ -308,7 +307,7 @@ impl Hands {
             state: state.to_path_buf(),
             exe: exe.to_string(),
             next: Instant::now(),
-            trash: Trash::current(),
+            trash: super::archive::Disposal::current(),
         }
     }
 
@@ -846,6 +845,7 @@ impl Pane for SessionPane {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use moss_core::trash::Trash;
 
     #[test]
     fn act_spends_the_go_ahead_only_when_done() {
@@ -1196,7 +1196,10 @@ mod tests {
             let state = dir.path().join("state");
             std::fs::create_dir_all(moss::home_dir(&state)).unwrap();
             let mut hands = Hands::new(&state, "/nonexistent/cc-moss");
-            hands.trash = Some(Trash::Folder(dir.path().join("Trash")));
+            hands.trash = Some(super::super::archive::Disposal {
+                trash: Trash::Folder(dir.path().join("Trash")),
+                claude_dirs: vec![dir.path().join("claude")],
+            });
             World { dir, hands }
         }
 
@@ -1244,8 +1247,11 @@ mod tests {
             id
         }
 
+        /// Where Claude Code keeps it: `<claude>/projects/<folder>/<id>.jsonl`.
         fn transcript(&self, name: &str) -> PathBuf {
-            self.dir.path().join(format!("{name}.jsonl"))
+            let dir = self.dir.path().join("claude/projects/-work");
+            std::fs::create_dir_all(&dir).unwrap();
+            dir.join(format!("{name}-0000-1111.jsonl"))
         }
 
         fn id(&self, name: &str) -> Option<String> {
@@ -1307,7 +1313,7 @@ mod tests {
             self.dir
                 .path()
                 .join("Trash")
-                .join(format!("{name}.jsonl"))
+                .join(format!("{name}-0000-1111.jsonl"))
                 .exists()
         }
     }
@@ -1380,9 +1386,12 @@ mod tests {
         let id = w.asked("purge", &[&live], "Delete live", "Delete live");
         assert_eq!(w.act("purge", &["live"], Some(&id)).0, "skipped");
         // Each layer on its own refuses a session that is not archived.
-        let trash = Trash::Folder(w.dir.path().join("Trash"));
-        let done = super::super::archive::purge(&w.registry(), std::slice::from_ref(&live), &trash)
-            .unwrap();
+        let bin = super::super::archive::Disposal {
+            trash: Trash::Folder(w.dir.path().join("Trash")),
+            claude_dirs: vec![w.dir.path().join("claude")],
+        };
+        let done =
+            super::super::archive::purge(&w.registry(), std::slice::from_ref(&live), &bin).unwrap();
         assert!(done.removed.is_empty() && done.trashed.is_empty());
         assert!(w.registry().purge(&[live.clone(), late.clone()]).unwrap() == [late.clone()]);
         assert!(w.id("live").is_some());
