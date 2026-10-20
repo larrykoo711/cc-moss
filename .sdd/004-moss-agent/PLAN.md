@@ -219,6 +219,7 @@ R1 ◄── 全部
 - 2026-10-20：R-SEC 合入（04c5750…c388837：SM1 Moss 的 key 走 `cc-moss moss provider-key`、SM2 Moss 归档要同意 + `archived_by`、SL1–SL6、信任提示、headless 精确读 argv）；ls_cli 偶发红定位为 macOS 首次执行新写脚本的检查超过 `claude agents` 3 秒，测试先预热桩（4a246a6，修前 3/16 红、修后 0/12）。合并树：macOS Rust 902 + Swift 803 全绿；Linux 本地 898/902，moss_chat_e2e 4 项为本地镜像环境问题（GitHub CI ubuntu 上通过）。开发版已装本机，doctor / Moss / 列表抽查正常
 - STAGE-CLEAN: 2026-10-20 commits=[cc-moss:分支内保留，发版 PR squash 合入 main] review=[fixed:R-RUST 4 高 6 中 5 低 + R-APP 2 中 6 低 + R-SEC 2 中 7 低 held:0] artifacts=3 个已合入的 agent worktree kanban=ok
 - 2026-10-20：PR #37 squash 合入 main（b394184，树与 feature/0.3.1 逐字节一致），打 v0.3.1，Release 与 Site 部署成功（4 平台包 + Homebrew；首页与 /changelog/ 上线）。发版前补修 F35（fseventsd 卡死拖死 App）、F36（同名会话：App 一律按会话 id 下命令）、CI 偶发（ls_cli 桩预热、argv 测试 dash exec）。本机、koo-mm4、koo-macstudio、koo-mm41 升 0.3.1（CLI + App + 钩子），doctor 全绿；升级前遗留的无头会话已归档（macstudio 6、mm4 1），升级后无新增。本机 App 的开发期 `cliPath` 覆盖已清除
+- 2026-10-20：0.3.2 发布（PR #38 squash → main a0d9b5b，树与 feature/0.3.2 一致，tag v0.3.2）：F37 Moss 在沙箱里用 `cc-moss ls`（守护进程写脱敏 `sessions.json`）、F38 新版本提示三件套（面板提示条、升级后新变化卡片、小莫气泡；启动约 30 秒后 + 每 6 小时 + 打开面板时检查，`update.check` 只读配置键）；ask_e2e 计时余量放宽（CI 1014 ms / 轮询错过 1 秒窗口）
 
 ## Round 0.3.1（里程碑，卡不归档）
 
@@ -266,8 +267,8 @@ R1 ◄── 全部
 | F34 | 中文输入法回车选词时把消息发出去了 | ✅ 已修 · 0.3.1 |
 | F35 | 本机 App 整个卡死：系统 fseventsd 不回话时主线程卡在 FSEventStreamStart | ✅ 已修 · 0.3.1 |
 | F36 | 同名会话在 App 里归档失败（App 按名字下命令，命令行分不清）：一律按会话 id | ✅ 已修 · 0.3.1 |
-| F37 | Moss 找不到归档 / 30 天内关掉的会话：沙箱打不开注册表，`cc-moss ls` 失效 → 守护进程写脱敏的 `sessions.json`，Moss 的 `ls` 读它 | ✅ 已修 · 0.3.2（待发） |
-| F38 | 新版本更新提示：面板提示条（有新版时，可关、按版本记住）+ 升级后「这版有什么新」卡片（读打包进 App 的网站更新记录）+ 小莫气泡（每个新版本一次） | ✅ 已修 · 0.3.2（待发） |
+| F37 | Moss 找不到归档 / 30 天内关掉的会话：沙箱打不开注册表，`cc-moss ls` 失效 → 守护进程写脱敏的 `sessions.json`，Moss 的 `ls` 读它 | ✅ 已修 · 0.3.2 |
+| F38 | 新版本更新提示：面板提示条（有新版时，可关、按版本记住）+ 升级后「这版有什么新」卡片（读打包进 App 的网站更新记录）+ 小莫气泡（每个新版本一次） | ✅ 已修 · 0.3.2 |
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
