@@ -718,8 +718,7 @@ struct AboutSettings: View {
                 LinkRow(icon: Icons.github, title: L.t("Source Code", "源代码"),
                         url: "https://github.com/larrykoo711/cc-moss", divider: false)
             }
-            Text(L.t("Open source under MIT. Not affiliated with Anthropic.",
-                     "MIT 开源。cc-moss 是个人独立项目，与 Anthropic 没有关联。"))
+            Text(L.t("Civilizations carry on. So do conversations.", "文明会延续，对话也是。"))
                 .font(.system(size: 11))
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity)
@@ -735,7 +734,8 @@ struct AboutSettings: View {
             VStack(alignment: .leading, spacing: 6) {
                 Text("cc-moss")
                     .font(.system(size: 26, weight: .semibold))
-                Text(L.t("Civilizations carry on. So do conversations.", "文明会延续，对话也是。"))
+                Text(L.t("Recoverable Claude Code sessions in tmux.",
+                         "崩溃也不怕：可恢复的 Claude Code 会话，住在 tmux 里"))
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
                 HStack(spacing: 6) {

@@ -665,7 +665,7 @@ struct PanelView: View {
                  open(L.t("https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md",
                           "https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md"))
              },
-             PanelAction(title: L.t("Report a Problem…", "报告问题…"), icon: Icons.feedback, shortcut: "") {
+             PanelAction(title: L.t("Report a Problem", "报告问题"), icon: Icons.feedback, shortcut: "") {
                  open("https://github.com/larrykoo711/cc-moss/issues/new/choose")
              }],
             [PanelAction(title: L.t("Quit cc-moss", "退出 cc-moss"), icon: Icons.quit, shortcut: "⌘Q") {
