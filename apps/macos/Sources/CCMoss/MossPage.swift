@@ -27,6 +27,8 @@ struct MossPage: View {
                 MossConversation(model: model)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            // Everything waiting on you, live, just above the field (F23).
+            MossWaitingCard(model: model)
             MossInputBar(model: model, keys: keys)
         }
         .overlay(alignment: .bottomTrailing) {
@@ -44,6 +46,8 @@ struct MossPage: View {
         .overlay { MentionHoverLayer(model: model) }
         .animation(.easeOut(duration: 0.12), value: model.mossQuickOpen)
         .animation(.easeOut(duration: 0.18), value: desk.messages.isEmpty)
+        // The next message ends the "Handled N just now" line.
+        .onChange(of: desk.messages.last?.id) { _, _ in model.waitingReceipt.messageArrived() }
         .task(id: model.panelShown) {
             // Moss thinking doesn't touch the state folder: look again every
             // few seconds while the page is on screen.
@@ -486,8 +490,9 @@ private struct MossMessageView: View {
                         .overlay(ChatBubble(mine: false).stroke(Theme.hairline(scheme), lineWidth: 1))
                         .shadow(color: .black.opacity(scheme == .dark ? 0.0 : 0.04), radius: 2, y: 1)
                 }
-                // One stack for the whole bubble: every session its messages name.
-                if !cards.isEmpty {
+                // One stack for the whole bubble: every session its messages name
+                // that has something to do from here (F23).
+                if MossSessionCards.anyShown(cards, roles: cardRoles) {
                     MossSessionCards(model: model, messageID: group.id, cards: cards, roles: cardRoles)
                 }
                 if message.refused, model.canOpenMoss {

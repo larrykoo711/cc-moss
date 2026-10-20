@@ -43,11 +43,22 @@ struct MossSessionCards: View {
     var roles: [String: MossCardHistory.Role] = [:]
 
     private var ids: [String] { cards.map(\.id) }
-    private var live: [MossSessionCard] { cards.filter { (roles[$0.id] ?? .live) == .live } }
+    /// Live cards that show: a session waiting on you is in the "Waiting on
+    /// you" card, one just running needs no card (F23). Receipts stay.
+    private var live: [MossSessionCard] { cards.filter { (roles[$0.id] ?? .live) == .live && $0.shown } }
+    private var visible: [MossSessionCard] { Self.visible(cards, roles: roles) }
+
+    static func visible(_ cards: [MossSessionCard], roles: [String: MossCardHistory.Role]) -> [MossSessionCard] {
+        cards.filter { (roles[$0.id] ?? .live) != .live || $0.shown }
+    }
+
+    static func anyShown(_ cards: [MossSessionCard], roles: [String: MossCardHistory.Role]) -> Bool {
+        !visible(cards, roles: roles).isEmpty
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            ForEach(cards) { card in
+            ForEach(visible) { card in
                 if case let .receipt(receipt)? = roles[card.id] {
                     CardReceipt(name: card.session?.title, receipt: receipt)
                 } else if let s = card.session {

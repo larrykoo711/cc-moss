@@ -111,6 +111,12 @@ enum Render {
             default: break
             }
             if args.contains("--expand-older") { model.olderExpanded = true }
+            // `--waiting-receipt N`: the Moss page just after its waiting card's
+            // last N requests were handled ("Handled N just now").
+            if let n = value("--waiting-receipt").flatMap(Int.init) {
+                model.waitingReceipt.update((0..<n).map { .ask("demo-\($0)") })
+                model.waitingReceipt.update([])
+            }
             // `--expand-archived`: the "Archived" group open.
             if args.contains("--expand-archived") { model.archivedExpanded = true }
             // `--provider live|restart [--provider-host h]`: a provider switch a minute ago;
