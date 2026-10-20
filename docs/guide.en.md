@@ -35,7 +35,7 @@ cc-moss doctor                           # checks that everything is in place
 | `tmux` | A tuned config in `~/.config/cc-moss/tmux.conf`, loaded from one line at the top of your `~/.tmux.conf`; anything you set below that line wins |
 | `starship` | A starship prompt, only if you have no starship config yet (`--replace-starship` to swap yours) |
 | `shell` | Resets the terminal after a dropped ssh, and gives non-interactive shells (`ssh host cmd`, cron) the Homebrew PATH |
-| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same or a newer version, or a development build, is left alone, and so is everything under sudo (see [The menubar app](#the-menubar-app)) |
+| `app` | macOS only: the menubar app comes with cc-moss (in the Homebrew install and the macOS release download); after asking, it is copied to `~/Applications/cc-moss.app` and started, or updated where it is if you put it in `/Applications` yourself. With a copy in both, the one in `~/Applications` stays and the other is quit and moved to the Trash (never deleted), so the menu bar doesn't show two cc-moss icons; `doctor` points it out too. It has to live in an Applications folder for macOS to deliver its notifications; a copy of the same or a newer version, or a development build, is left alone, and so is everything under sudo (see [The menubar app](#the-menubar-app)) |
 | `aliases` | Optional (`--with aliases`): `ll`, `lla`, `psg`, `gl`, plus `lg`/`lt` (eza), `catp`/`catn` (bat), `ff` (fd) and `psp` (procs) when those are installed. `ls`, `cat`, `grep` and `cd` keep their usual behaviour |
 
 Leave a part out with `--skip <part>`. Shell additions live in clearly marked `# >>> cc-moss: … >>>` blocks, and each
@@ -79,7 +79,7 @@ brew uninstall cc-moss           # or delete the binary; do this second, so the 
 rm -rf ~/.local/state/cc-moss    # optional: the registry and its log
 ```
 
-On macOS, `cc-moss install --uninstall` also quits and deletes `~/Applications/cc-moss.app` (only cc-moss's own app)
+On macOS, `cc-moss install --uninstall` also quits and deletes the app (in `~/Applications` or `/Applications`; only cc-moss's own app)
 and the `~/Library/LaunchAgents/io.github.larrykoo711.cc-moss.login.plist` it writes for "Open at Login". It asks
 about this separately; answer no to keep the app.
 
