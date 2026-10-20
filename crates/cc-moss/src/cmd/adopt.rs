@@ -98,19 +98,27 @@ pub fn refusal(
 /// Whether a process's command line (`ps -o args=`) is Claude Code running
 /// `session_id`: a `claude` program, not resuming or starting another
 /// session by id.
-pub fn process_is_session(args: &str, session_id: &str) -> bool {
+///
+/// `ids` are every id the session has had: after `/clear` the process still
+/// says the id it was started with. With `--fork-session` the id after
+/// `--resume` is the conversation it branched from, not its own.
+pub fn process_is_session(args: &str, ids: &[&str]) -> bool {
     let words: Vec<&str> = args.split_whitespace().collect();
     let claude = words
         .iter()
         .any(|w| w.rsplit('/').next().is_some_and(|b| b.contains("claude")));
+    let forked = words.contains(&"--fork-session");
     let mut other_id = false;
     for (i, w) in words.iter().enumerate() {
-        let id = match w.split_once('=') {
-            Some(("--resume" | "--session-id", v)) => Some(v),
-            _ if matches!(*w, "--resume" | "--session-id" | "-r") => words.get(i + 1).copied(),
-            _ => None,
+        let (flag, id) = match w.split_once('=') {
+            Some((f @ ("--resume" | "--session-id"), v)) => (f, Some(v)),
+            _ if matches!(*w, "--resume" | "--session-id" | "-r") => {
+                (*w, words.get(i + 1).copied())
+            }
+            _ => (*w, None),
         };
-        if id.is_some_and(|id| id != session_id) {
+        let branched_from = forked && flag != "--session-id";
+        if !branched_from && id.is_some_and(|id| !ids.contains(&id)) {
             other_id = true;
         }
     }
@@ -134,7 +142,12 @@ pub(super) fn still_it(slot: &Slot) -> bool {
         return false;
     };
     proc::liveness(pid, slot.pid_start.as_deref()) == Liveness::Alive
-        && command_line(pid).is_some_and(|a| process_is_session(&a, &slot.session_id))
+        && command_line(pid).is_some_and(|a| {
+            let ids: Vec<&str> = std::iter::once(slot.session_id.as_str())
+                .chain(slot.session_ids.iter().map(String::as_str))
+                .collect();
+            process_is_session(&a, &ids)
+        })
 }
 
 /// The name an auto-named session gets: its folder's, unique among the
@@ -414,7 +427,7 @@ mod tests {
 
     #[test]
     fn adopt_checks_the_process_is_that_session() {
-        let id = "0837a145-0000";
+        let id = &["0837a145-0000"][..];
         assert!(
             process_is_session("claude", id),
             "plain claude, as in a terminal"
@@ -423,9 +436,9 @@ mod tests {
             "/Users/me/.local/bin/claude --dangerously-skip-permissions",
             id
         ));
-        assert!(process_is_session(&format!("claude --resume {id}"), id));
+        assert!(process_is_session("claude --resume 0837a145-0000", id));
         assert!(process_is_session(
-            &format!("/bin/bash /t/fake-claude --session-id {id}"),
+            "/bin/bash /t/fake-claude --session-id 0837a145-0000",
             id
         ));
         assert!(
@@ -438,6 +451,20 @@ mod tests {
             "pid reused by something else"
         );
         assert!(!process_is_session("", id));
+        // After /clear the process still says the id it started with.
+        assert!(process_is_session(
+            "claude --resume aaaa1111-0000",
+            &["bbbb2222-0000", "aaaa1111-0000"]
+        ));
+        // A fork resumes the conversation it branches from under a new id.
+        assert!(process_is_session(
+            "claude --dangerously-skip-permissions --resume 3b264e24-0000 --fork-session -n term-kit",
+            id
+        ));
+        assert!(
+            !process_is_session("claude --fork-session --session-id ffff0000-9999", id),
+            "a fork told its own id is still that id"
+        );
         // Without the recorded start time, no telling: refused.
         let mut s = slot();
         s.pid_start = None;

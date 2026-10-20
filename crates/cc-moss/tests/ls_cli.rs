@@ -585,9 +585,19 @@ fn json_results_name_ambiguous_names() {
 fn agents_stub(stub: &std::path::Path, agents: &serde_json::Value) {
     std::fs::write(stub, format!("#!/bin/sh\necho '{agents}'\n")).unwrap();
     std::fs::set_permissions(stub, std::os::unix::fs::PermissionsExt::from_mode(0o755)).unwrap();
-    assert!(std::process::Command::new(stub)
-        .output()
-        .unwrap()
-        .status
-        .success());
+    // Linux refuses to run a file another test's freshly forked child still
+    // holds open for writing (ETXTBSY) until that child execs: try again.
+    for _ in 0..100 {
+        match std::process::Command::new(stub).output() {
+            Ok(out) => {
+                assert!(out.status.success());
+                return;
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy => {
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            Err(e) => panic!("{e}"),
+        }
+    }
+    panic!("{} stayed busy", stub.display());
 }

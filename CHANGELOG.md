@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-10-20
+
+### Fixed
+
+- One menubar app: `cc-moss install` and `update` update the app where it is (also in `/Applications`), and
+  with a copy in both Applications folders they keep `~/Applications`' and move the other to the Trash; `doctor`
+  warns about two copies. Before, an app in `/Applications` got a second copy in `~/Applications`, and both ran.
+- Moving a session into tmux works for a session started with `--fork-session` or one that went through `/clear`:
+  its process still names the conversation it started from, which cc-moss took for another session's.
+- `/clear` and compaction no longer move a session's folder to wherever Claude Code happened to be working (a
+  worktree it had stepped into, say): the folder stays the one it started in, where `claude --resume` finds the
+  conversation, so bringing it back or moving it into tmux keeps working after the worktree is gone.
+
 ## [0.3.2] - 2026-10-20
 
 ### Added
@@ -365,7 +378,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...HEAD
+[0.3.3]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/larrykoo711/cc-moss/compare/v0.2.2...v0.3.0

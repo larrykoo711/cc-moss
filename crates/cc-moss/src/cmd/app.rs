@@ -69,12 +69,108 @@ fn system_applications() -> PathBuf {
 
 /// The copy in an Applications folder, the user's own first.
 pub fn installed() -> Option<PathBuf> {
+    copies().into_iter().next()
+}
+
+/// Every copy in an Applications folder, the user's own first.
+fn copies() -> Vec<PathBuf> {
     let mut places = Vec::new();
     if let Ok(p) = user_app() {
         places.push(p);
     }
     places.push(system_applications().join(APP_NAME));
-    places.into_iter().find(|p| p.join("Contents").is_dir())
+    places
+        .into_iter()
+        .filter(|p| p.join("Contents").is_dir())
+        .collect()
+}
+
+/// Where `install` and `update` put the app: where it already is, so one
+/// dragged into /Applications is updated there instead of a second copy
+/// starting from ~/Applications. ~/Applications when it is in neither, or
+/// only in a /Applications this user can't write to.
+pub fn target() -> Result<PathBuf> {
+    let user = user_app()?;
+    if user.join("Contents").is_dir() {
+        return Ok(user);
+    }
+    let system = system_applications().join(APP_NAME);
+    if system.join("Contents").is_dir() && is_ours(&system) && writable(&system) {
+        return Ok(system);
+    }
+    Ok(user)
+}
+
+/// cc-moss's apps in an Applications folder other than `keep`: a second
+/// copy runs a second menu bar icon and says everything twice.
+pub fn extra_copies(keep: &Path) -> Vec<PathBuf> {
+    copies()
+        .into_iter()
+        .filter(|p| p != keep && is_ours(p))
+        .collect()
+}
+
+/// Whether this user may replace `app` (and its folder's entry for it).
+fn writable(app: &Path) -> bool {
+    use std::os::unix::ffi::OsStrExt;
+    let ok = |p: &Path| {
+        std::ffi::CString::new(p.as_os_str().as_bytes())
+            // SAFETY: a NUL-terminated path; access() only reads it.
+            .is_ok_and(|c| unsafe { libc::access(c.as_ptr(), libc::W_OK) } == 0)
+    };
+    ok(app) && app.parent().is_some_and(ok)
+}
+
+/// Quit `app` if it runs and move it into the user's Trash under a name
+/// nothing there has: never deleted, so Finder can put it back.
+fn to_trash(app: &Path) -> Result<PathBuf> {
+    let trash = home().context("HOME is not set")?.join(".Trash");
+    std::fs::create_dir_all(&trash).with_context(|| format!("create {}", trash.display()))?;
+    if is_running(app) {
+        quit(app)?;
+    }
+    let stem = APP_NAME.trim_end_matches(".app");
+    let name = (1..1000)
+        .map(|n| {
+            if n == 1 {
+                APP_NAME.to_string()
+            } else {
+                format!("{stem} {n}.app")
+            }
+        })
+        .find(|n| std::fs::symlink_metadata(trash.join(n)).is_err())
+        .context("the Trash has too many cc-moss apps")?;
+    let dest = trash.join(name);
+    std::fs::rename(app, &dest).with_context(|| format!("move {} to the Trash", display(app)))?;
+    Ok(dest)
+}
+
+/// Put every other copy of the app in the Trash; one line each.
+fn trash_extras(extras: &[PathBuf]) {
+    for extra in extras {
+        match to_trash(extra) {
+            Ok(_) => println!(
+                "{}",
+                tr!(
+                    format!("Moved the other copy, {}, to the Trash.", display(extra)),
+                    format!("另一份 {} 已移到废纸篓。", display(extra))
+                )
+            ),
+            Err(e) => println!(
+                "{}",
+                tr!(
+                    format!(
+                        "Could not move {} to the Trash ({e:#}); quit it and delete it by hand.",
+                        display(extra)
+                    ),
+                    format!(
+                        "没能把 {} 移到废纸篓（{e:#}）；请退出它再手动删掉。",
+                        display(extra)
+                    )
+                )
+            ),
+        }
+    }
 }
 
 /// The app that came with this cc-moss: next to the binary (the release
@@ -455,7 +551,25 @@ pub fn offer(dry_run: bool, yes: bool) -> Result<()> {
         println!("\n{}", where_to_get_it());
         return Ok(());
     };
-    let dest = user_app()?;
+    let dest = target()?;
+    let extras = extra_copies(&dest);
+    if !extras.is_empty() {
+        println!(
+            "\n{}",
+            tr!(
+                format!(
+                    "There is more than one menubar app: {} stays, and {} will be quit and moved to the Trash.",
+                    display(&dest),
+                    extras.iter().map(|p| display(p)).collect::<Vec<_>>().join(", ")
+                ),
+                format!(
+                    "有不止一个状态栏 App：留下 {}，{} 会先退出再移到废纸篓。",
+                    display(&dest),
+                    extras.iter().map(|p| display(p)).collect::<Vec<_>>().join("、")
+                )
+            )
+        );
+    }
     let Some(want) = version(&source) else {
         println!(
             "\n{}",
@@ -474,10 +588,12 @@ pub fn offer(dry_run: bool, yes: bool) -> Result<()> {
     };
     let present = std::fs::symlink_metadata(&dest).is_ok();
     let have = version(&dest);
+    let mut needs_place = true;
     if present {
         match have.as_deref().and_then(|h| compare_versions(h, &want)) {
             Some(Ordering::Less) => {}
             Some(Ordering::Equal) => {
+                needs_place = false;
                 println!(
                     "\n{}",
                     tr!(
@@ -485,63 +601,73 @@ pub fn offer(dry_run: bool, yes: bool) -> Result<()> {
                         format!("{} 里的状态栏 App 已经是最新的。", display(&dest))
                     )
                 );
-                return Ok(());
             }
             Some(Ordering::Greater) => {
+                needs_place = false;
                 println!(
                     "\n{}",
                     newer_note(&dest, have.as_deref().unwrap_or("?"), &want)
                 );
-                return Ok(());
             }
             None => {
+                needs_place = false;
                 println!("\n{}", unknown_note(&dest, have.as_deref(), &want));
-                return Ok(());
             }
         }
     }
-    let why = tr!(
-        "macOS shows its notifications only for an app in an Applications folder",
-        "macOS 只给放在「应用程序」目录里的 App 发通知"
-    );
-    println!(
-        "\n{}",
-        match &have {
-            Some(old) if present => tr!(
-                format!(
-                    "The menubar app in {} is {old}; it will be replaced with {want}.",
-                    display(&dest)
+    if !needs_place && extras.is_empty() {
+        return Ok(());
+    }
+    if needs_place {
+        let why = tr!(
+            "macOS shows its notifications only for an app in an Applications folder",
+            "macOS 只给放在「应用程序」目录里的 App 发通知"
+        );
+        println!(
+            "\n{}",
+            match &have {
+                Some(old) if present => tr!(
+                    format!(
+                        "The menubar app in {} is {old}; it will be replaced with {want}.",
+                        display(&dest)
+                    ),
+                    format!(
+                        "{} 里的状态栏 App 是 {old}，会换成 {want}。",
+                        display(&dest)
+                    )
                 ),
-                format!(
-                    "{} 里的状态栏 App 是 {old}，会换成 {want}。",
-                    display(&dest)
-                )
-            ),
-            _ => tr!(
-                format!(
-                    "The menubar app {want} will be copied to {} ({why}).",
-                    display(&dest)
+                _ => tr!(
+                    format!(
+                        "The menubar app {want} will be copied to {} ({why}).",
+                        display(&dest)
+                    ),
+                    format!("状态栏 App {want} 会复制到 {}（{why}）。", display(&dest))
                 ),
-                format!("状态栏 App {want} 会复制到 {}（{why}）。", display(&dest))
-            ),
-        }
-    );
+            }
+        );
+    }
     if dry_run {
         return Ok(());
     }
-    let question = if present {
-        tr!("Replace the menubar app?", "替换状态栏 App 吗？")
+    let question = if !needs_place {
+        tr!(
+            "Move the other copy to the Trash?",
+            "把另一份移到废纸篓吗？"
+        )
+        .to_string()
+    } else if present {
+        tr!("Replace the menubar app?", "替换状态栏 App 吗？").to_string()
     } else {
         tr!(
-            "Put the menubar app in ~/Applications and start it?",
-            "把状态栏 App 放进 ~/Applications 并启动吗？"
+            format!("Put the menubar app in {} and start it?", display(&dest)),
+            format!("把状态栏 App 放进 {} 并启动吗？", display(&dest))
         )
     };
     let refused = tr!(
         "re-run with --yes, or leave the app out with --skip app",
         "加上 --yes 重新运行，或者用 --skip app 跳过 App"
     );
-    if !confirm::ask(yes, question, refused)? {
+    if !confirm::ask(yes, &question, refused)? {
         println!(
             "{}",
             tr!(
@@ -551,9 +677,13 @@ pub fn offer(dry_run: bool, yes: bool) -> Result<()> {
         );
         return Ok(());
     }
-    match place(&source, &dest) {
-        Ok(done) => println!("{}", placed_note(&done, &dest, &want)),
-        Err(e) => println!("{}", failed_note(&e, &dest, present)),
+    // The other copies go first: two apps never run side by side.
+    trash_extras(&extras);
+    if needs_place {
+        match place(&source, &dest) {
+            Ok(done) => println!("{}", placed_note(&done, &dest, &want)),
+            Err(e) => println!("{}", failed_note(&e, &dest, present)),
+        }
     }
     Ok(())
 }
@@ -610,7 +740,7 @@ pub fn follow_update(source: Option<&Path>) {
     if !applies() {
         return;
     }
-    let Ok(dest) = user_app() else { return };
+    let Ok(dest) = target() else { return };
     if std::fs::symlink_metadata(&dest).is_err() {
         return;
     }
@@ -665,7 +795,7 @@ pub fn remove(dry_run: bool, yes: bool) -> Result<()> {
         return Ok(());
     }
     let home = home().context("HOME is not set")?;
-    let dest = user_app()?;
+    let dest = installed().map_or_else(user_app, Ok)?;
     let agent = home.join("Library").join("LaunchAgents").join(LOGIN_ITEM);
     let app_there = std::fs::symlink_metadata(&dest).is_ok();
     let agent_there = std::fs::symlink_metadata(&agent).is_ok();

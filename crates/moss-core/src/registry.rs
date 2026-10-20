@@ -338,16 +338,28 @@ impl Registry {
                         .unwrap_or(false),
                     None => false,
                 };
+                // `/clear` and compaction go on in the same process: its
+                // folder is still where it started (where `claude --resume`
+                // finds the conversation), whatever folder it has moved to.
+                let keeps_folder = matches!(source, StartSource::Clear | StartSource::Compact);
                 let slot_id = match existing {
                     Some(id) => {
                         tx.execute(
-                            "UPDATE slots SET session_id=?2, cwd=?3,
+                            "UPDATE slots SET session_id=?2, cwd=CASE WHEN ?7 THEN cwd ELSE ?3 END,
                                pid=COALESCE(?4, pid), pid_start=COALESCE(?5, pid_start),
                                status='running', end_reason=NULL, ended_at=NULL, last_active_at=?6,
                                restore_started_at=NULL, busy=0, attention=NULL,
                                lost_reported_at=NULL, archived_at_ms=NULL
                              WHERE slot_id=?1",
-                            params![id, session_id, cwd, ctx.pid, ctx.pid_start, ctx.now_ms],
+                            params![
+                                id,
+                                session_id,
+                                cwd,
+                                ctx.pid,
+                                ctx.pid_start,
+                                ctx.now_ms,
+                                keeps_folder
+                            ],
                         )?;
                         id
                     }

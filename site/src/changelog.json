@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.3",
+      "date": "2026-10-20",
+      "icon": "restore",
+      "short": {
+        "zh": "会话挪得动，App 只有一个",
+        "en": "Sessions move, one app"
+      },
+      "headline": {
+        "zh": "移进 tmux 更稳，菜单栏只有一个 cc-moss。",
+        "en": "Moving into tmux just works, and there's one cc-moss in the menu bar."
+      },
+      "highlights": [
+        {
+          "zh": "从别的会话分叉出来的、或者用过 /clear 的会话，现在也能一键移进 tmux。",
+          "en": "Sessions forked from another one, or that went through /clear, now move into tmux with one click too."
+        },
+        {
+          "zh": "压缩上下文时，会话记下的文件夹不会再被临时目录替换，找回和移进 tmux 不会因为文件夹没了而失败。",
+          "en": "Compaction no longer swaps a session's folder for a temporary one, so bringing it back or moving it into tmux doesn't fail when that folder is gone."
+        },
+        {
+          "zh": "App 放在「应用程序」里也会原地更新；装出了两份时，多的那份会移到废纸篓，菜单栏只剩一个 cc-moss。",
+          "en": "An app you put in Applications is updated where it is; if there were two copies, the extra one goes to the Trash and the menu bar shows one cc-moss."
+        }
+      ]
+    },
+    {
       "version": "0.3.2",
       "date": "2026-10-20",
       "icon": "menubar",
