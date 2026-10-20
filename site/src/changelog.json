@@ -5,31 +5,34 @@
       "version": "0.3.1",
       "date": "2026-10-20",
       "icon": "archive",
-      "short": { "zh": "旧会话自动收好", "en": "Old sessions tidy themselves away" },
+      "short": {
+        "zh": "旧会话自动收好",
+        "en": "Old sessions tidy themselves away"
+      },
       "headline": {
         "zh": "旧会话自己收好，换供应商不用从头来。",
         "en": "Old sessions put themselves away. New providers, same conversation."
       },
       "highlights": [
         {
-          "zh": "结束了、30 天没动的会话会自动归档，列表只留正在用的；想要时，一点就拿回来。",
-          "en": "Sessions that ended and sat untouched for 30 days are archived on their own, so the list shows what you're using. Bring one back with a click."
+          "zh": "结束了、30 天没动的会话自动归档，列表只留正在用的。想要时一点就拿回来；不要了让 Moss 清理，它先问你，对话文件进废纸篓。",
+          "en": "Sessions that ended and sat untouched for 30 days are archived on their own. Bring one back with a click, or have Moss clean up: it asks first, and the conversations go to the Trash."
         },
         {
-          "zh": "想彻底删掉，跟 Moss 说一声。它先问你，对话文件放进废纸篓，删错了还能找回来。",
-          "en": "Want them gone for good? Ask Moss. It checks with you first, and the conversations go to the Trash, so a mistake can be undone."
-        },
-        {
-          "zh": "用 cc-switch 这类工具换了 API 供应商，多数会话下一条消息就用上；需要重开的会标出来，在原地重开，对话接着聊。",
-          "en": "Switch API providers with a tool like cc-switch and most sessions use the new one from your next message. The few that need a restart are marked, and restart in place, same conversation."
+          "zh": "用 cc-switch 这类工具换了 API 供应商，多数会话下一条消息就用上，Moss 也跟着换；需要重开的会标出来，在原地重开，对话接着聊。",
+          "en": "Switch API providers with a tool like cc-switch and most sessions, Moss included, use the new one from your next message. The few that need a restart are marked, and restart in place, same conversation."
         },
         {
           "zh": "Moss 页上多了一张「等你处理」卡片，在等你的会话在这一张卡里就能答完。",
           "en": "A live Waiting on you card on the Moss page: answer every session that's waiting, all in one place."
         },
         {
-          "zh": "插件和脚本在后台跑的 Claude，不会再堆成一串「断了」的会话。",
-          "en": "Claude runs that plugins and scripts start in the background no longer pile up as stopped sessions."
+          "zh": "找回、重开、归档这类事没做成时，面板会用大白话说清原因，还能一键「交给 Moss 处理」。",
+          "en": "When bringing back, restarting or archiving doesn't work, the panel says why in plain words, and Ask Moss to Fix It is one click away."
+        },
+        {
+          "zh": "用中文输入法打字时，回车是选词，不会把半句话发出去。",
+          "en": "Typing with a Chinese input method, Return picks the word instead of sending half a sentence."
         }
       ]
     },
@@ -37,7 +40,10 @@
       "version": "0.3.0",
       "date": "2026-10-19",
       "icon": "moss",
-      "short": { "zh": "Moss 住进来了", "en": "Moss moves in" },
+      "short": {
+        "zh": "Moss 住进来了",
+        "en": "Moss moves in"
+      },
       "headline": {
         "zh": "会话放手干活，Moss 住了进来。",
         "en": "Sessions get on with it, and Moss moves in."
