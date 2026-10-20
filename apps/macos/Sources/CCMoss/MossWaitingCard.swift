@@ -106,68 +106,102 @@ private struct WaitingRowView: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Circle().fill(Theme.brand).frame(width: 7, height: 7)
-                    .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Text(row.title)
-                            .font(.system(size: 12.5, weight: .semibold))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                        if row.more > 0 {
-                            Text("+\(row.more)")
-                                .font(.system(size: 10.5, weight: .semibold))
-                                .monospacedDigit()
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 5)
-                                .frame(height: 15)
-                                .background(Capsule().fill(Color.primary.opacity(0.07)))
-                                .tip(L.t("\(row.more) more after this one", "这之后还有 \(row.more) 个"))
-                        }
-                    }
-                    Text(row.line)
-                        .font(.system(size: 12, design: isPermission ? .monospaced : .default))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        .tip(row.line)
-                }
-                Spacer(minLength: 6)
-                QuietButton(title: L.t("Open", "打开"), icon: Icons.open) { openSession() }
-            }
-            actions
-                .padding(.leading, 15)
+        VStack(alignment: .leading, spacing: 7) {
+            header
+            choices
             if open { detail.padding(.leading, 15) }
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.vertical, 9)
+    }
+
+    /// Who and what on the left, the answer on the right, centred on the
+    /// two lines (a notification's layout): nothing sits alone on a line.
+    private var header: some View {
+        HStack(alignment: .center, spacing: 8) {
+            Circle().fill(Theme.brand).frame(width: 7, height: 7)
+            words.layoutPriority(1)
+            Spacer(minLength: 8)
+            RowIconButton(icon: Icons.open, help: L.t("Open the session", "打开会话"), action: openSession)
+            trailing
+        }
+    }
+
+    private var words: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 5) {
+                Text(row.title)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if row.more > 0 { moreBadge }
+            }
+            Text(row.line)
+                .font(.system(size: 12, design: isPermission ? .monospaced : .default))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+                .tip(row.line)
+        }
+    }
+
+    private var moreBadge: some View {
+        Text("+\(row.more)")
+            .font(.system(size: 10.5, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .frame(height: 15)
+            .background(Capsule().fill(Color.primary.opacity(0.07)))
+            .tip(L.t("\(row.more) more after this one", "这之后还有 \(row.more) 个"))
+    }
+
+    /// A question's answers are what it says, so they read under it.
+    @ViewBuilder private var choices: some View {
+        if case let .question(_, options) = row.want, !options.isEmpty, !open {
+            FlowChips(spacing: 6) {
+                ForEach(options, id: \.self) { label in
+                    OptionChip(title: OptionLabel.split(label).title) { choose(label) }
+                }
+                WriteLink(action: writeOwn)
+            }
+            .padding(.leading, 15)
+        }
+    }
+
+    private func choose(_ label: String) {
+        act { $0.choose(label) }
+    }
+
+    private func writeOwn() {
+        act { card -> AskReply? in
+            card.startWriting()
+            return nil
+        }
+        toggle()
     }
 
     private var isPermission: Bool { if case .permission = row.want { true } else { false } }
 
-    @ViewBuilder private var actions: some View {
+    /// The answer, at the row's end: the main one last and filled.
+    @ViewBuilder private var trailing: some View {
         switch row.want {
         case .permission:
             HStack(spacing: 6) {
-                SoftButton(title: L.t("Deny", "拒绝"), icon: "xmark") { act { $0.deny() } }
-                SoftButton(title: L.t("Allow", "允许"), icon: "checkmark", prominent: true) { act { $0.allow() } }
+                RowButton(title: L.t("Deny", "拒绝")) { act { $0.deny() } }
+                RowButton(title: L.t("Allow", "允许"), prominent: true) { act { $0.allow() } }
             }
         case let .question(_, options):
-            FlowChips(spacing: 6) {
-                ForEach(options, id: \.self) { label in
-                    OptionChip(title: OptionLabel.split(label).title) { act { $0.choose(label) } }
-                }
-                SoftButton(title: options.isEmpty ? L.t("Answer…", "回答…") : L.t("Write My Own…", "自己写…"),
-                           icon: options.isEmpty ? "list.bullet" : "pencil") {
-                    if !options.isEmpty && !open { act { $0.startWriting(); return nil } }
-                    toggle()
-                }
+            if options.isEmpty || open {
+                RowButton(title: openTitle(L.t("Answer", "回答")), prominent: !open, action: toggle)
             }
         case .input:
-            SoftButton(title: L.t("Reply", "回一句"), icon: Icons.message) { toggle() }
+            RowButton(title: openTitle(L.t("Reply", "回一句")), prominent: !open, action: toggle)
         }
+    }
+
+    private func openTitle(_ closed: String) -> String {
+        open ? L.t("Close", "收起") : closed
     }
 
     @ViewBuilder private var detail: some View {
@@ -187,6 +221,83 @@ private struct WaitingRowView: View {
     private func openSession() {
         guard let s = row.session else { return }
         if s.inTmux { model.open(s) } else { model.goToSession(s.id) }
+    }
+}
+
+/// A compact button at a row's end; the main one is filled.
+private struct RowButton: View {
+    let title: String
+    var prominent = false
+    let action: () -> Void
+    @State private var hovering = false
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        Button(action: action) {
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+                .foregroundStyle(prominent ? Color.white : Color.primary)
+                .padding(.horizontal, 11)
+                .frame(height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(fill))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .fixedSize()
+    }
+
+    private var fill: Color {
+        if prominent { return Theme.brand.opacity(hovering ? 0.88 : 1) }
+        return Color.primary.opacity(hovering ? 0.11 : (scheme == .dark ? 0.09 : 0.06))
+    }
+}
+
+/// A quiet icon at a row's end (open the session), named on hover.
+private struct RowIconButton: View {
+    let icon: String
+    let help: String
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? .primary : .secondary)
+                .frame(width: 26, height: 26)
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(hovering ? 0.08 : 0)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(PressStyle())
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
+        .tip(help)
+    }
+}
+
+/// "Write my own…" after a question's answers: a light link, not a fourth pill.
+private struct WriteLink: View {
+    let action: () -> Void
+    @State private var hovering = false
+
+    var body: some View {
+        Button(action: action) {
+            Text(L.t("Write my own…", "自己写…"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(hovering ? Theme.brand : Color.secondary)
+                .frame(height: 28)
+                .padding(.horizontal, 4)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .handCursor()
+        .onHover { hovering = $0 }
     }
 }
 
