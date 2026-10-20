@@ -80,6 +80,12 @@ struct PanelView: View {
                         .padding(.top, 10)
                         .transition(.opacity.combined(with: .move(edge: .top)))
                 }
+                if model.phase == .ready, case let tip = model.panelTip, tip != .none {
+                    UpdateTipView(model: model, tip: tip)
+                        .padding(.horizontal, 10)
+                        .padding(.top, 10)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
                 if model.phase == .ready, case let state = model.providerState, state != .hidden {
                     ProviderBannerView(model: model, state: state)
                         .padding(.horizontal, 10)

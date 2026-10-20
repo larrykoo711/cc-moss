@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Check a built cc-moss.app before it ships: its version is the Cargo
 # workspace's (the CLI and the app always match), it stays out of the Dock,
-# it carries its icon, and its ad-hoc signature holds.
+# it carries its icon and the changelog, and its ad-hoc signature holds.
 #
 #   scripts/check-bundle.sh [path/to/cc-moss.app]   (default: build/cc-moss.app)
 set -euo pipefail
@@ -30,6 +30,9 @@ icon="$(read_key CFBundleIconFile)"
 [[ -n "$icon" ]] || fail "no CFBundleIconFile"
 [[ -s "$app/Contents/Resources/$icon.icns" || -s "$app/Contents/Resources/$icon" ]] || fail "icon $icon is not in Contents/Resources"
 [[ -x "$app/Contents/MacOS/cc-moss" ]] || fail "no executable at Contents/MacOS/cc-moss"
+changelog="$app/Contents/Resources/changelog.json"
+[[ -s "$changelog" ]] || fail "no changelog.json in Contents/Resources (the \"what's new\" card reads it)"
+grep -q '"versions"' "$changelog" || fail "changelog.json has no versions"
 codesign --verify --strict "$app" || fail "the signature does not verify"
 # Captured first: `grep -q` quitting early would fail the pipe under pipefail.
 signature="$(codesign -dv "$app" 2>&1)"
