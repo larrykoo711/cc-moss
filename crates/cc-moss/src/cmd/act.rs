@@ -444,26 +444,7 @@ impl Hands {
             Err(e) => return ("failed", format!("{e:#}")),
         };
         if action == Action::ArchiveIdle {
-            let days = Config::load()
-                .map(|c| c.sessions.archive_after_days)
-                .unwrap_or(moss_core::archive::DEFAULT_AFTER_DAYS);
-            return match super::archive::archive_idle(&registry, days, now_ms()) {
-                Ok(done) if days == 0 => (
-                    "skipped",
-                    format!(
-                        "archiving is off ([sessions] archive_after_days = 0); archived {}",
-                        done.len()
-                    ),
-                ),
-                Ok(done) => (
-                    "done",
-                    format!(
-                        "archived {} session(s) not used for over {days} days",
-                        done.len()
-                    ),
-                ),
-                Err(e) => ("failed", format!("{e:#}")),
-            };
+            return archive_idle(&registry, Config::load());
         }
         if action == Action::PurgeArchived {
             return self.purge_archived(&registry, &slots, r);
@@ -666,6 +647,34 @@ impl Hands {
             ),
             None => bail!("there was nothing to restore (it left nothing to resume)"),
         }
+    }
+}
+
+/// `archive-idle`: what the daily tidy-up does, now. Never on a guess: an
+/// unreadable config archives nothing.
+fn archive_idle(registry: &Registry, config: Result<Config>) -> (&'static str, String) {
+    let days = match config {
+        Ok(c) => c.sessions.archive_after_days,
+        Err(e) => {
+            return (
+                "refused",
+                format!("config.toml can't be read, so nothing is archived: {e:#}"),
+            )
+        }
+    };
+    match super::archive::archive_idle(registry, days, now_ms()) {
+        Ok(_) if days == 0 => (
+            "skipped",
+            "archiving is off ([sessions] archive_after_days = 0)".to_string(),
+        ),
+        Ok(done) => (
+            "done",
+            format!(
+                "archived {} session(s) not used for over {days} days",
+                done.len()
+            ),
+        ),
+        Err(e) => ("failed", format!("{e:#}")),
     }
 }
 
@@ -1122,6 +1131,15 @@ mod tests {
             consent(&lines, Some("y1"), "restore", "SLOT-B", now, &used),
             Ok(())
         );
+    }
+
+    #[test]
+    fn archive_idle_refuses_on_an_unreadable_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let r = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let (outcome, said) = archive_idle(&r, Err(anyhow::anyhow!("bad toml")));
+        assert_eq!(outcome, "refused", "{said}");
+        assert_eq!(archive_idle(&r, Ok(Config::default())).0, "done");
     }
 
     #[test]

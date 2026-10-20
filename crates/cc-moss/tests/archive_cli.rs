@@ -38,6 +38,37 @@ fn alive(pid: u64) -> bool {
 }
 
 #[test]
+fn restore_all_skips_a_session_ended_on_purpose() {
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    let p = FakeProcess::spawn();
+    hook(
+        state,
+        "session-start",
+        &start_json("done1", "startup", Some("done1")),
+        p.pid(),
+    );
+    hook(
+        state,
+        "session-end",
+        &end_json("done1", "prompt_input_exit"),
+        p.pid(),
+    );
+    drop(p);
+    assert!(cc_moss(state, &["archive", "done1"]).status.success());
+    assert!(cc_moss(state, &["unarchive", "done1"]).status.success());
+    // Back in the list, ready to pick up...
+    assert!(ls_text(state, &[]).contains("done1"));
+    // ...but restoring everything leaves out what the user ended.
+    let all = cc_moss(state, &["restore", "--dry-run"]);
+    let all = String::from_utf8_lossy(&all.stdout);
+    assert!(!all.contains("done1"), "{all}");
+    let named = cc_moss(state, &["restore", "--dry-run", "done1"]);
+    let named = String::from_utf8_lossy(&named.stdout);
+    assert!(named.contains("done1"), "{named}");
+}
+
+#[test]
 fn archive_end_ends_an_idle_session() {
     let w = common::World::new("aee");
     w.new_session("api");

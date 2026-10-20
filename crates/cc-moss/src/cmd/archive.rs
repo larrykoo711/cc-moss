@@ -370,7 +370,9 @@ pub struct Purged {
 pub fn purge(registry: &Registry, slot_ids: &[String], trash: &Trash) -> Result<Purged> {
     let slots = registry.slots()?;
     let mut out = Purged::default();
-    let mut ready: Vec<String> = Vec::new();
+    // First the sessions that really go; only those may take a transcript
+    // with them (one a kept session shares stays).
+    let mut going: Vec<String> = Vec::new();
     for id in slot_ids {
         let Some(slot) = slots.iter().find(|s| &s.slot_id == id) else {
             out.kept
@@ -385,8 +387,12 @@ pub fn purge(registry: &Registry, slot_ids: &[String], trash: &Trash) -> Result<
             out.kept.push((id.clone(), "it is running again".into()));
             continue;
         }
+        going.push(id.clone());
+    }
+    let mut ready: Vec<String> = Vec::new();
+    for id in &going {
         let mut moved_all = true;
-        for path in registry.own_transcripts(id, slot_ids)? {
+        for path in registry.own_transcripts(id, &going)? {
             let path = Path::new(&path);
             match trash.put(path) {
                 Ok(to) => out.trashed.push(to),
@@ -440,6 +446,45 @@ mod tests {
             .find(|s| s.session_id == sid)
             .unwrap()
             .slot_id
+    }
+
+    #[test]
+    fn purge_keeps_a_transcript_a_kept_session_shares() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut r = Registry::open(&dir.path().join("state/registry.db")).unwrap();
+        let transcript = dir.path().join("shared.jsonl");
+        std::fs::write(&transcript, "{}\n").unwrap();
+        // Two processes on one conversation: two slots, one session id.
+        for (pid, source) in [(100, StartSource::Startup), (200, StartSource::Resume)] {
+            let ctx = Context {
+                pid: Some(pid),
+                pid_start: Some(format!("t{pid}")),
+                tmux: None,
+                launch_args: None,
+                now_ms: 1_000,
+            };
+            r.apply_with(
+                &Event::Start {
+                    source,
+                    session_id: "shared".into(),
+                    cwd: "/work".into(),
+                    title: None,
+                    transcript_path: Some(transcript.to_string_lossy().into_owned()),
+                },
+                &ctx,
+                &|_, _| true,
+            )
+            .unwrap();
+        }
+        let ids: Vec<String> = r.slots().unwrap().into_iter().map(|s| s.slot_id).collect();
+        assert_eq!(ids.len(), 2);
+        // Only the first is archived; asked to purge both.
+        r.archive(&ids[..1], "you", &|_| false, 2_000).unwrap();
+        let trash = Trash::Folder(dir.path().join("Trash"));
+        let done = purge(&r, &ids, &trash).unwrap();
+        assert_eq!(done.removed, ids[..1].to_vec());
+        assert!(transcript.exists(), "the kept session still uses it");
+        assert!(done.trashed.is_empty());
     }
 
     #[test]

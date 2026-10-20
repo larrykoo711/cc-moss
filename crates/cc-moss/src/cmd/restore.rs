@@ -148,11 +148,12 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         .into_iter()
         .map(|s| (s.effective_status(proc::is_alive), s))
         .collect();
-    // Archived sessions come back only when named.
+    // Archived sessions, and ones the user ended on purpose (shown again
+    // after the archive), come back only when named.
     let pool = only.clone().or_else(|| {
         Some(
             rows.iter()
-                .filter(|(_, s)| !s.is_archived())
+                .filter(|(_, s)| !s.is_archived() && !s.ended_on_purpose())
                 .map(|(_, s)| s.slot_id.clone())
                 .collect(),
         )

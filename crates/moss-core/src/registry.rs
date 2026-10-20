@@ -850,11 +850,28 @@ impl Registry {
         now_ms: i64,
     ) -> Result<Vec<String>> {
         self.write()?;
-        let slots = self.slots()?;
+        // Whether each runs is asked outside the lock (it spawns `ps`)...
+        let before = self.slots()?;
+        let idle: Vec<&Slot> = before
+            .iter()
+            .filter(|s| slot_ids.contains(&s.slot_id))
+            .filter(|s| !s.is_moss() && !s.is_archived() && !is_running(s))
+            .collect();
         let tx = self.write_tx()?;
+        // ...and holds only for a slot nothing touched since: one that a
+        // hook brought back meanwhile (a resume) is left alone.
+        let now = read_slots(&tx)?;
         let mut done = Vec::new();
-        for slot in slots.iter().filter(|s| slot_ids.contains(&s.slot_id)) {
-            if slot.is_moss() || slot.is_archived() || is_running(slot) {
+        for slot in idle {
+            let same = now.iter().any(|n| {
+                n.slot_id == slot.slot_id
+                    && n.pid == slot.pid
+                    && n.pid_start == slot.pid_start
+                    && n.status == slot.status
+                    && n.last_active_at_ms == slot.last_active_at_ms
+                    && !n.is_archived()
+            });
+            if !same {
                 continue;
             }
             let changed = tx.execute(
@@ -907,14 +924,16 @@ impl Registry {
 
     /// Forget archived sessions for good: their rows, their session ids
     /// and their events go. Only archived ones are touched, whatever the
-    /// caller passes. Returns the slot ids removed.
+    /// caller passes; the caller checks that none runs (a process gone
+    /// without a SessionEnd is still recorded as running). Returns the slot
+    /// ids removed.
     pub fn purge(&self, slot_ids: &[String]) -> Result<Vec<String>> {
         let tx = self.write_tx()?;
         let mut done = Vec::new();
         for id in slot_ids {
             let archived = tx
                 .query_row(
-                    "SELECT archived_at_ms IS NOT NULL AND status <> 'running' FROM slots WHERE slot_id = ?1",
+                    "SELECT archived_at_ms IS NOT NULL FROM slots WHERE slot_id = ?1",
                     [id],
                     |r| r.get::<_, bool>(0),
                 )

@@ -77,6 +77,23 @@ pub struct Slot {
 }
 
 impl Slot {
+    /// Whether the user ended it on purpose (`/exit`, closed from cc-moss,
+    /// replaced by another copy): a session brought back from the archive
+    /// shows again, but restoring everything leaves it out.
+    pub fn ended_on_purpose(&self) -> bool {
+        matches!(
+            self.end_reason.as_deref(),
+            Some(
+                "closed-by-user"
+                    | "prompt_input_exit"
+                    | "logout"
+                    | "resume"
+                    | "switched"
+                    | "superseded"
+            )
+        )
+    }
+
     /// Whether it is in the archive.
     pub fn is_archived(&self) -> bool {
         self.archived_at_ms.is_some()
