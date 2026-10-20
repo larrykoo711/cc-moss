@@ -404,7 +404,9 @@ fn in_place(slot: &Slot, socket: &str, pane: &str, argv: &[String]) -> Result<()
     let under_shell = if pane_pid == pid {
         false
     } else if proc::parents().get(&pid) == Some(&pane_pid) {
-        true
+        // Typed into it only when it is an interactive shell; anything
+        // else (a wrapper) is respawned like a pane of its own.
+        program_of(pane_pid).is_some_and(|p| is_shell(&p))
     } else {
         anyhow::bail!("it doesn't run in the pane cc-moss recorded");
     };
@@ -428,6 +430,28 @@ fn in_place(slot: &Slot, socket: &str, pane: &str, argv: &[String]) -> Result<()
     // pane stays until it is respawned or closed).
     let _ = tmux.set_pane_option(pane, "remain-on-exit", before.as_deref());
     done
+}
+
+/// The program a process runs (`ps -o comm=`).
+fn program_of(pid: u32) -> Option<String> {
+    let out = moss_core::command::output_with_timeout(
+        std::process::Command::new("ps").args(["-o", "comm=", "-p", &pid.to_string()]),
+        Duration::from_secs(2),
+    )?;
+    out.status
+        .success()
+        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
+}
+
+/// Whether `comm` (a path or a name, `-zsh` for a login shell) is an
+/// interactive shell a line can be typed into.
+fn is_shell(comm: &str) -> bool {
+    let name = comm.rsplit('/').next().unwrap_or(comm);
+    let name = name.strip_prefix('-').unwrap_or(name);
+    matches!(
+        name,
+        "zsh" | "bash" | "fish" | "sh" | "dash" | "ksh" | "tcsh" | "nu"
+    )
 }
 
 /// SIGTERM, then wait for it to go (Claude Code exits from idle in about
@@ -518,6 +542,23 @@ mod tests {
                 "high"
             ]
         );
+    }
+
+    #[test]
+    fn restart_types_only_into_a_shell() {
+        for shell in [
+            "zsh",
+            "-zsh",
+            "/bin/bash",
+            "fish",
+            "/usr/local/bin/nu",
+            "sh",
+        ] {
+            assert!(is_shell(shell), "{shell}");
+        }
+        for other in ["node", "python3", "claude", "tmux", "vim", ""] {
+            assert!(!is_shell(other), "{other}");
+        }
     }
 
     #[test]
