@@ -348,7 +348,7 @@
   </section>
 
   <section id="progress">
-    <h2>进展 <span class="badge ok">0.3.2 已发布</span></h2>
+    <h2>进展 <span class="badge ok">0.3.3 已发布</span></h2>
     <p class="lede">0.3.0 已发布。0.3.1 加了会话归档（T2.5）和换 API 供应商后原地重开（T2.6），并修完 0.3.0 之后的真机反馈 F19–F34；三路评审修复全部合入，T2.5、T2.6 完成，v0.3.1 已发布，网站与更新记录页上线，四台设备已升级。下一轮：P3 派发、P4 Slack 与在场路由（Backlog）。</p>
     <table><thead><tr><th>日期</th><th>做了什么</th></tr></thead><tbody>
       <tr><td>10-18</td><td>S0–S2 立项与设计（G1、G2）；T1.1 探针、T1.2 默认 bypass（PR #36 进 main）、T1.3 代答中枢、T2.1 守护进程、T2.2 Moss 常驻完成；T1.4 桌面答题合入待真机</td></tr>
@@ -363,6 +363,7 @@
       <tr><td>10-20</td><td>三路评审：Rust 4 高 6 中 5 低、App 2 中 6 低、安全 2 中 7 低；App 与 Rust 修复已合入（AMEND-2：<code>/model</code> 不再要求重开、每个会话对照自己的 settings、重开 3 次失败放弃）；网站首页改版并新增更新记录时间线页</td></tr>
       <tr><td>10-20 晚</td><td>补修 F35（系统 fseventsd 卡死时 App 不再跟着卡）、F36（同名会话按 id 操作）；PR #37 合入，发 0.3.1，网站与更新记录页上线；四台设备升级、遗留无头会话归档</td></tr>
       <tr><td>10-20 夜</td><td>发 0.3.2：Moss 能在沙箱里查归档和 30 天内关掉的会话（F37）；新版本提示：面板提示条、升级后新变化卡片、小莫气泡（F38）</td></tr>
+      <tr><td>10-20 深夜</td><td>发 0.3.3：只保留一个菜单栏 App（F39）、压缩上下文不再改写会话目录（F40）、分叉或 /clear 过的会话能移进 tmux（F41）；用户本机测试通过</td></tr>
     </tbody></table>
     <p class="lede">两条教训：替换运行中的二进制要先复制到临时名再 <code>mv</code>（<code>cp</code> 覆盖会让签名缓存失效、钩子被系统杀掉）；真机探针起的 claude 会被收编进真实会话记录，结束后必须立刻清理。</p>
   </section>
