@@ -218,6 +218,13 @@ R1 ◄── 全部
 - AMEND-2 T2.6 2026-10-20（精确化，不弱化；来自 rev031-rust M6/M9/M10）：(a) 重开判据 = 删键，或 env `ANTHROPIC_MODEL` 变了；顶层 `model`（`/model`）不再要求重开，重开时只在 env 指定了 `ANTHROPIC_MODEL` 才去掉 `--model`；(b) 每个会话对照它启动时读的那份 settings（钩子记录路径），守护进程同时盯这些文件，与 `[claude] config_dir` / `CLAUDE_CONFIG_DIR` / `~/.claude` 不一致时 doctor 提醒；(c) 重开队列记尝试次数，3 次失败放弃并记 `restart-failed` 事件，`--stale` 或抢占失败入队的条目在切换已生效后丢弃。R-RUST 合入 ea6672d…877d015；H1、L11 偏差 controller 认可（L11 改为写事务内重读 slot 比对，不加 `status <> 'running'`，以免崩溃会话无法自动归档/清理）
 - 2026-10-20：R-SEC 合入（04c5750…c388837：SM1 Moss 的 key 走 `cc-moss moss provider-key`、SM2 Moss 归档要同意 + `archived_by`、SL1–SL6、信任提示、headless 精确读 argv）；ls_cli 偶发红定位为 macOS 首次执行新写脚本的检查超过 `claude agents` 3 秒，测试先预热桩（4a246a6，修前 3/16 红、修后 0/12）。合并树：macOS Rust 902 + Swift 803 全绿；Linux 本地 898/902，moss_chat_e2e 4 项为本地镜像环境问题（GitHub CI ubuntu 上通过）。开发版已装本机，doctor / Moss / 列表抽查正常
 - STAGE-CLEAN: 2026-10-20 commits=[cc-moss:分支内保留，发版 PR squash 合入 main] review=[fixed:R-RUST 4 高 6 中 5 低 + R-APP 2 中 6 低 + R-SEC 2 中 7 低 held:0] artifacts=3 个已合入的 agent worktree kanban=ok
+- 2026-10-20：PR #37 squash 合入 main（b394184，树与 feature/0.3.1 逐字节一致），打 v0.3.1，Release 与 Site 部署成功（4 平台包 + Homebrew；首页与 /changelog/ 上线）。发版前补修 F35（fseventsd 卡死拖死 App）、F36（同名会话：App 一律按会话 id 下命令）、CI 偶发（ls_cli 桩预热、argv 测试 dash exec）。本机、koo-mm4、koo-macstudio、koo-mm41 升 0.3.1（CLI + App + 钩子），doctor 全绿；升级前遗留的无头会话已归档（macstudio 6、mm4 1），升级后无新增。本机 App 的开发期 `cliPath` 覆盖已清除
+
+## Round 0.3.1（里程碑，卡不归档）
+
+- E2E: 2026-10-20 macOS Rust 902 + Swift 805、Linux 本地 898/902（moss_chat_e2e 4 项本地镜像环境，CI ubuntu 绿）、CI 全绿；真机：四台 doctor 全绿，本机 fseventsd 卡死下 App 仍刷新（轮询兜底）、同名会话按 id 归档
+- DISTILL: (1) 系统服务调用（FSEvents、SMAppService）一律离开主线程并有兜底，主线程等系统守护进程 = 整个 App 卡死；(2) App 对单个会话下命令一律用会话 id，名字可重复；(3) 测试里新写的可执行桩先运行一次再计时（macOS 首次执行检查）；shell 桩用 `cmd; :` 防 dash exec 替换；(4) 远端 zsh 不做变量分词，批量参数走 xargs
+- REPORT: 完成 = T2.5 归档与清理、T2.6 换供应商原地重开、真机反馈 F19–F36（F1–F3 除外）、三路评审全部修复、站点首页改版 + 更新记录时间线；新独立 = 「App 使用的命令行比 App 旧时提示并可一键改用最新」（用户 2026-10-20 反馈引出，待排期）；子任务 = 无；延后 = F1–F3（Moss 设置文案与引导）、P3 T3.1 派发、P4 T4.1 Slack / T4.2 在场与路由
 
 ## 反馈车道（真机反馈）
 
