@@ -841,9 +841,16 @@ impl Registry {
         let tx = self.write_tx()?;
         let mut done = Vec::new();
         for id in slot_ids {
+            // One that had ended comes back as something to bring back:
+            // the list leaves ended sessions out, so it would vanish. Quietly:
+            // it is marked as told, so nobody hears it dropped.
             let changed = tx.execute(
-                "UPDATE slots SET archived_at_ms = NULL WHERE slot_id = ?1 AND archived_at_ms IS NOT NULL",
-                [id],
+                "UPDATE slots SET archived_at_ms = NULL,
+                   status = CASE status WHEN 'closed' THEN 'interrupted' ELSE status END,
+                   lost_reported_at = CASE status WHEN 'closed' THEN COALESCE(lost_reported_at, ?2)
+                                      ELSE lost_reported_at END
+                 WHERE slot_id = ?1 AND archived_at_ms IS NOT NULL",
+                params![id, now_ms],
             )?;
             if changed == 1 {
                 record_event(

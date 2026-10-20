@@ -307,6 +307,36 @@ fn ls_json_lists_archived_closed_sessions() {
 }
 
 #[test]
+fn an_ended_session_brought_back_shows_in_the_list() {
+    // End and archive, then bring back: it must be in the list again,
+    // ready to pick up, not hidden as ended (user 2026-10-20).
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    let gone = Some(dead_pid());
+    hook(
+        state,
+        "session-start",
+        &start_json("api", "startup", Some("api")),
+        gone,
+    );
+    hook(
+        state,
+        "session-end",
+        &end_json("api", "prompt_input_exit"),
+        gone,
+    );
+    assert!(cc_moss(state, &["archive", "api"]).status.success());
+    assert!(cc_moss(state, &["unarchive", "api"]).status.success());
+    let v = ls(state, &["--json"]);
+    assert_eq!(names(&v), ["api"], "{v}");
+    assert_eq!(v["sessions"][0]["status"], "interrupted");
+    // No "dropped" news for it.
+    let events = cc_moss(state, &["events", "--json"]);
+    let events: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
+    assert!(!events.to_string().contains("\"interrupted\""), "{events}");
+}
+
+#[test]
 fn resumed_session_leaves_archive() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path();
