@@ -3,6 +3,7 @@
 //! the freedesktop.org layout under `~/.local/share/Trash`).
 
 use std::io;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// Where things are put.
@@ -15,25 +16,33 @@ pub enum Trash {
 }
 
 impl Trash {
-    /// This system's trash under `home`.
-    pub fn for_home(home: &Path) -> Trash {
+    /// This system's trash under `home`; on Linux `$XDG_DATA_HOME/Trash`
+    /// when `xdg_data` (that variable) is an absolute path.
+    pub fn for_home(home: &Path, xdg_data: Option<&Path>) -> Trash {
         if cfg!(target_os = "macos") {
             Trash::Folder(home.join(".Trash"))
         } else {
-            Trash::Xdg(home.join(".local/share/Trash"))
+            let data = xdg_data
+                .filter(|d| d.is_absolute())
+                .map_or_else(|| home.join(".local/share"), Path::to_path_buf);
+            Trash::Xdg(data.join("Trash"))
         }
     }
 
-    /// The trash of the user running this (`$HOME`).
+    /// The trash of the user running this (`$HOME`, `$XDG_DATA_HOME`).
     pub fn current() -> Option<Trash> {
         let home = std::env::var_os("HOME").filter(|h| !h.is_empty())?;
         let home = PathBuf::from(home);
-        home.is_absolute().then(|| Trash::for_home(&home))
+        let xdg = std::env::var_os("XDG_DATA_HOME").map(PathBuf::from);
+        home.is_absolute()
+            .then(|| Trash::for_home(&home, xdg.as_deref()))
     }
 
     /// Move `path` (a regular file) into the trash under a name no file
-    /// there has yet; where it went. The file is renamed, never copied or
-    /// deleted: a trash on another disk is an error and the file stays.
+    /// there has yet; where it went. The file is linked in under its new
+    /// name (which fails rather than replace one that appeared meanwhile)
+    /// and then its old name goes: never copied, never deleted. A trash on
+    /// another disk is an error and the file stays.
     pub fn put(&self, path: &Path) -> io::Result<PathBuf> {
         let meta = std::fs::symlink_metadata(path)?;
         if !meta.file_type().is_file() {
@@ -68,6 +77,7 @@ impl Trash {
                 match std::fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
+                    .mode(0o600)
                     .open(&info)
                 {
                     Ok(mut f) => {
@@ -77,19 +87,34 @@ impl Trash {
                     Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
                     Err(e) => return Err(e),
                 }
-                if let Err(e) = std::fs::rename(path, &target) {
-                    let _ = std::fs::remove_file(&info);
-                    return Err(e);
+                match move_new(path, &target) {
+                    Ok(()) => return Ok(target),
+                    Err(e) => {
+                        let _ = std::fs::remove_file(&info);
+                        if e.kind() == io::ErrorKind::AlreadyExists {
+                            continue;
+                        }
+                        return Err(e);
+                    }
                 }
-                return Ok(target);
             }
-            std::fs::rename(path, &target)?;
-            return Ok(target);
+            match move_new(path, &target) {
+                Ok(()) => return Ok(target),
+                Err(e) if e.kind() == io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e),
+            }
         }
         Err(io::Error::other(
             "the trash has too many files of that name",
         ))
     }
+}
+
+/// `path` to `target`, which must not exist: a hard link (refused when
+/// `target` is there), then the old name removed.
+fn move_new(path: &Path, target: &Path) -> io::Result<()> {
+    std::fs::hard_link(path, target)?;
+    std::fs::remove_file(path)
 }
 
 fn create_private(dir: &Path) -> io::Result<()> {
@@ -175,6 +200,29 @@ mod tests {
                 assert!(root.join("info/s 2.jsonl.trashinfo").exists());
             }
         }
+    }
+
+    #[test]
+    fn trash_follows_xdg_and_keeps_its_records_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        if !cfg!(target_os = "macos") {
+            assert_eq!(
+                Trash::for_home(dir.path(), Some(&dir.path().join("data"))),
+                Trash::Xdg(dir.path().join("data/Trash"))
+            );
+            assert_eq!(
+                Trash::for_home(dir.path(), Some(Path::new("relative"))),
+                Trash::Xdg(dir.path().join(".local/share/Trash"))
+            );
+        }
+        let trash = Trash::Xdg(dir.path().join("xdg"));
+        let src = dir.path().join("s.jsonl");
+        std::fs::write(&src, "x").unwrap();
+        trash.put(&src).unwrap();
+        let info = dir.path().join("xdg/info/s.jsonl.trashinfo");
+        let mode = std::fs::metadata(info).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
     }
 
     #[test]
