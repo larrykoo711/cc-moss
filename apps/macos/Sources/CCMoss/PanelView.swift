@@ -348,6 +348,14 @@ struct PanelView: View {
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(id) }
                 }
             }
+            // Archived sits at the very bottom: opened, its rows would land
+            // below the fold. Bring the group up, header first.
+            .onChange(of: model.archivedExpanded) { _, open in
+                guard open else { return }
+                DispatchQueue.main.async {
+                    withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("header:archived", anchor: .top) }
+                }
+            }
         }
     }
 
