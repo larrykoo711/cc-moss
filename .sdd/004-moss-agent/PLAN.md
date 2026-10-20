@@ -220,6 +220,7 @@ R1 ◄── 全部
 - STAGE-CLEAN: 2026-10-20 commits=[cc-moss:分支内保留，发版 PR squash 合入 main] review=[fixed:R-RUST 4 高 6 中 5 低 + R-APP 2 中 6 低 + R-SEC 2 中 7 低 held:0] artifacts=3 个已合入的 agent worktree kanban=ok
 - 2026-10-20：PR #37 squash 合入 main（b394184，树与 feature/0.3.1 逐字节一致），打 v0.3.1，Release 与 Site 部署成功（4 平台包 + Homebrew；首页与 /changelog/ 上线）。发版前补修 F35（fseventsd 卡死拖死 App）、F36（同名会话：App 一律按会话 id 下命令）、CI 偶发（ls_cli 桩预热、argv 测试 dash exec）。本机、koo-mm4、koo-macstudio、koo-mm41 升 0.3.1（CLI + App + 钩子），doctor 全绿；升级前遗留的无头会话已归档（macstudio 6、mm4 1），升级后无新增。本机 App 的开发期 `cliPath` 覆盖已清除
 - 2026-10-20：0.3.2 发布（PR #38 squash → main a0d9b5b，树与 feature/0.3.2 一致，tag v0.3.2）：F37 Moss 在沙箱里用 `cc-moss ls`（守护进程写脱敏 `sessions.json`）、F38 新版本提示三件套（面板提示条、升级后新变化卡片、小莫气泡；启动约 30 秒后 + 每 6 小时 + 打开面板时检查，`update.check` 只读配置键）；ask_e2e 计时余量放宽（CI 1014 ms / 轮询错过 1 秒窗口）
+- 2026-10-20：0.3.3 发布（PR #39 squash → main 44a57eb，树与 feature/0.3.3 一致，tag v0.3.3）：F39 App 原地更新、多余副本移入废纸篓；F40 compact / clear 保留会话目录；F41 分叉或 /clear 过的会话能移进 tmux（用户真机验证：两个 App → 一个，本会话已移进 tmux）；测试修复：桩首次运行遇 ETXTBSY 重试。四台升 0.3.3，本机从开发版切回 brew（钩子 /opt/homebrew/bin、cliPath 已删、dev bin 指向 brew、开发版 App 移入废纸篓）
 
 ## Round 0.3.1（里程碑，卡不归档）
 
