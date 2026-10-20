@@ -122,7 +122,10 @@ fn all_files(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        let meta = std::fs::symlink_metadata(&path).unwrap();
+        // Gone meanwhile (a file being replaced): nothing to look at.
+        let Ok(meta) = std::fs::symlink_metadata(&path) else {
+            continue;
+        };
         if meta.is_dir() {
             all_files(&path, out);
         } else if meta.is_file() {
@@ -142,12 +145,15 @@ fn moss_follows_the_provider() {
     let _d = daemon(&w, None, false);
     let first = wait_until("Moss to come up", || running_moss(&w, None));
     // It started with the provider: the same keys and values, nothing else.
-    let env = moss_env(&w).expect("Moss has its provider file");
+    // No token: Claude Code asks cc-moss for it (`moss provider-key`).
+    let mut env = moss_env(&w).expect("Moss has its provider file");
+    let helper = env["apiKeyHelper"].as_str().unwrap_or_default().to_string();
+    assert!(helper.ends_with(" moss provider-key"), "{env}");
+    env.as_object_mut().unwrap().remove("apiKeyHelper");
     assert_eq!(
         env,
         serde_json::json!({"env": {
             "ANTHROPIC_BASE_URL": "https://a.example/api",
-            "ANTHROPIC_AUTH_TOKEN": SECRET,
             "ANTHROPIC_DEFAULT_SONNET_MODEL": "glm-5"
         }})
     );
@@ -210,18 +216,27 @@ fn provider_secrets_never_recorded_by_moss() {
     wait_until("Moss's copy to follow", || {
         (moss_env(&w)?["env"]["ANTHROPIC_BASE_URL"] == "https://b.example/api").then_some(())
     });
+    // While a third party is on, and again after the switch back.
+    no_token_anywhere(&w);
     set_provider(&w, r#"{}"#);
     wait_until("a fresh Moss", || running_moss(&w, Some(&first)));
-    // Only Moss's provider file holds the token: not its other files, the
-    // registry, the logs, the facts, nor what the commands print.
+    no_token_anywhere(&w);
+}
+
+/// No file holds the token, Moss's own included (Claude Code would hand
+/// its settings env to Moss's shell commands): not the registry, the logs,
+/// the facts, nor what the commands print or Moss was started with.
+fn no_token_anywhere(w: &World) {
     let mut files = Vec::new();
     all_files(&w.state(), &mut files);
     all_files(&w.path("fifos"), &mut files);
     assert!(files.iter().any(|(p, _)| p.ends_with("registry.db")));
+    // Moss's provider file included: Claude Code would hand its env to
+    // Moss's shell commands.
+    assert!(files
+        .iter()
+        .any(|(p, _)| p.ends_with(".claude/settings.local.json")));
     for (path, bytes) in &files {
-        if path.ends_with(".claude/settings.local.json") {
-            continue;
-        }
         assert!(
             !contains(bytes, SECRET),
             "{} holds the token",
@@ -246,6 +261,50 @@ fn provider_secrets_never_recorded_by_moss() {
         "#{pane_start_command}",
     ]);
     assert!(!started.contains(SECRET), "never in its command line");
+}
+
+#[test]
+fn moss_provider_key_hands_over_the_token_and_nothing_else() {
+    let w = World::new("moss-key");
+    set_provider(&w, &third_party("a.example"));
+    let key = |w: &World| {
+        w.cc_moss()
+            .env("HOME", w.path("home"))
+            .args(["moss", "provider-key"])
+            .output()
+            .unwrap()
+    };
+    std::fs::create_dir_all(w.path("home")).unwrap();
+    let out = key(&w);
+    assert!(out.status.success(), "{out:?}");
+    assert_eq!(String::from_utf8_lossy(&out.stdout), format!("{SECRET}\n"));
+    // The user's own helper runs in their home folder.
+    set_provider(&w, r#"{"apiKeyHelper":"pwd > where; echo from-helper"}"#);
+    let out = key(&w);
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "from-helper\n");
+    let ran_in = std::fs::read_to_string(w.path("home/where")).unwrap();
+    assert_eq!(
+        std::fs::canonicalize(ran_in.trim()).unwrap(),
+        std::fs::canonicalize(w.path("home")).unwrap()
+    );
+    // No key: it fails, saying nothing on stdout.
+    set_provider(&w, r#"{"theme":"dark"}"#);
+    let out = key(&w);
+    assert!(!out.status.success());
+    assert!(out.stdout.is_empty());
+    // Settings it can't read (Moss's shell, in its sandbox): it fails.
+    set_provider(&w, &third_party("a.example"));
+    use std::os::unix::fs::PermissionsExt;
+    let settings = user_settings(&w);
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let out = key(&w);
+    std::fs::set_permissions(&settings, std::fs::Permissions::from_mode(0o600)).unwrap();
+    // (root reads it anyway.)
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } != 0 {
+        assert!(!out.status.success(), "{out:?}");
+        assert!(out.stdout.is_empty());
+    }
 }
 
 #[test]

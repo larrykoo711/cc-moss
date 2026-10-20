@@ -1003,6 +1003,8 @@ pub struct Looker {
     trust_until: Option<Instant>,
     next_trust: Instant,
     trust_told: bool,
+    /// Said once: the base URL held a password and was left out.
+    url_told: bool,
 }
 
 /// How often the switch in config.toml is read.
@@ -1030,7 +1032,12 @@ enum Synced {
 /// Write Moss's copy of the user's provider ([`PROVIDER_FILE`]) when it
 /// differs. A user settings file that can't be read or parsed changes
 /// nothing (the last good copy stays).
-fn sync_provider(state: &Path) -> Result<Synced> {
+fn sync_provider(
+    state: &Path,
+    exe: &str,
+    url_told: &mut bool,
+    log: &dyn Fn(&str),
+) -> Result<Synced> {
     let user = match super::provider::settings_path() {
         Some(path) => match std::fs::read_to_string(&path) {
             Ok(text) => text,
@@ -1039,9 +1046,16 @@ fn sync_provider(state: &Path) -> Result<Synced> {
         },
         None => "{}".to_string(),
     };
-    let Some(new) = moss_core::provider::moss_settings(&user) else {
+    // The token is handed over by cc-moss itself, never written here.
+    let helper = format!("{} moss provider-key", shell_quote(exe));
+    let Some(made) = moss_core::provider::moss_settings(&user, &helper) else {
         return Ok(Synced::Same);
     };
+    if made.dropped_url && !*url_told {
+        *url_told = true;
+        log("moss: the API base URL holds a user or password, so Moss doesn't get it; set the password as the token instead");
+    }
+    let new = made.text;
     let path = moss::home_dir(state).join(PROVIDER_FILE);
     let old = std::fs::read_to_string(&path).ok();
     if old.as_deref() == Some(new.as_str()) {
@@ -1119,6 +1133,7 @@ impl Looker {
             trust_until: None,
             next_trust: now,
             trust_told: false,
+            url_told: false,
         })
     }
 
@@ -1230,7 +1245,7 @@ impl Looker {
             return;
         }
         self.next_provider = now + PROVIDER_EVERY;
-        match sync_provider(&self.state) {
+        match sync_provider(&self.state, &self.exe, &mut self.url_told, log) {
             Ok(Synced::Same) => {}
             Ok(Synced::Live) => {
                 log("moss: the API provider changed; Moss uses it from its next message")
@@ -1280,7 +1295,7 @@ impl Looker {
             self.adopt(now, log);
             return;
         }
-        match self.launch() {
+        match self.launch(log) {
             Ok(session_id) => {
                 self.keeper.started(now);
                 self.trust_until = Some(now + TRUST_WINDOW);
@@ -1356,13 +1371,13 @@ impl Looker {
 
     /// Lay out the home and start a fresh Moss. The old records are left to
     /// the caller, once this one runs.
-    fn launch(&self) -> std::result::Result<String, Launch> {
+    fn launch(&mut self, log: &dyn Fn(&str)) -> std::result::Result<String, Launch> {
         let home = moss::home_dir(&self.state);
         home::lay_out(&home, &files(&self.exe, &self.state))
             .with_context(|| format!("cannot lay out {}", home.display()))
             .map_err(Launch::Failed)?;
         // The provider it starts with is the user's now.
-        sync_provider(&self.state)
+        sync_provider(&self.state, &self.exe.clone(), &mut self.url_told, log)
             .context("cannot give it the API provider")
             .map_err(Launch::Failed)?;
         let claude = launch::claude_bin().map_err(Launch::Failed)?;
@@ -1570,7 +1585,69 @@ fn session_env(session_id: &str) -> Vec<String> {
         format!("{}={}", moss::ROLE_ENV, moss::ROLE),
         format!("{}={session_id}", moss::SESSION_ENV),
         format!("{AUTO_COMPACT_ENV}={AUTO_COMPACT_WINDOW}"),
+        // `cc-moss moss provider-key` is asked again a minute after the last
+        // time: a switch of token reaches Moss without a restart.
+        format!("{KEY_TTL_ENV}={KEY_TTL_MS}"),
     ]
+}
+
+/// How long Claude Code keeps what its `apiKeyHelper` said.
+const KEY_TTL_ENV: &str = "CLAUDE_CODE_API_KEY_HELPER_TTL_MS";
+const KEY_TTL_MS: u32 = 60_000;
+
+/// `cc-moss moss provider-key`: Moss's `apiKeyHelper`. Prints the user's
+/// token (`ANTHROPIC_AUTH_TOKEN`, else `ANTHROPIC_API_KEY`) from their
+/// Claude Code settings, or what their own `apiKeyHelper` prints (run in
+/// their home folder), and nothing else; fails when there is none or the
+/// settings can't be read. Claude Code runs it outside Moss's sandbox;
+/// Moss's own shell can't read those settings, so there it fails.
+pub fn provider_key() -> ExitCode {
+    let Some(path) = super::provider::settings_path() else {
+        eprintln!("cc-moss: no Claude Code settings to read");
+        return ExitCode::FAILURE;
+    };
+    let text = match std::fs::read_to_string(&path) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("cc-moss: cannot read {}: {e}", path.display());
+            return ExitCode::FAILURE;
+        }
+    };
+    if let Some(key) = moss_core::provider::settings_key(&text) {
+        println!("{key}");
+        return ExitCode::SUCCESS;
+    }
+    let Some(helper) = moss_core::provider::settings_helper(&text) else {
+        eprintln!("cc-moss: the Claude Code settings hold no API key");
+        return ExitCode::FAILURE;
+    };
+    let Some(home) = std::env::var_os("HOME").filter(|h| !h.is_empty()) else {
+        eprintln!("cc-moss: HOME is not set");
+        return ExitCode::FAILURE;
+    };
+    let out = run_with_timeout(
+        Command::new("/bin/sh")
+            .args(["-c", &helper])
+            .current_dir(&home)
+            .stdin(std::process::Stdio::null()),
+        Duration::from_secs(30),
+    );
+    match out {
+        Ok(o) if o.status.success() => {
+            let said = String::from_utf8_lossy(&o.stdout);
+            let key = said.trim();
+            if key.is_empty() {
+                eprintln!("cc-moss: your apiKeyHelper printed nothing");
+                return ExitCode::FAILURE;
+            }
+            println!("{key}");
+            ExitCode::SUCCESS
+        }
+        _ => {
+            eprintln!("cc-moss: your apiKeyHelper did not work");
+            ExitCode::FAILURE
+        }
+    }
 }
 
 /// Claude Code's context window before it compacts on its own.
@@ -1824,6 +1901,11 @@ mod tests {
         // smaller model's window by itself.
         assert!(
             env.contains(&"CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000".to_string()),
+            "{env:?}"
+        );
+        // A switched token reaches it within a minute.
+        assert!(
+            env.contains(&"CLAUDE_CODE_API_KEY_HELPER_TTL_MS=60000".to_string()),
             "{env:?}"
         );
     }

@@ -181,19 +181,32 @@ pub fn settings_path(
         .map(|dir| dir.join("settings.json"))
 }
 
-/// The settings that give Moss the user's provider (F24): Moss starts
-/// without the user's settings (`--setting-sources project,local`), so its
-/// home's `.claude/settings.local.json` carries the provider's `env` keys,
-/// values included, and `apiKeyHelper`. Nothing else of the user's
-/// settings. `None` when `user` (the text of the user's `settings.json`)
-/// is not JSON; an empty object for the subscription.
-pub fn moss_settings(user: &str) -> Option<String> {
+/// Moss's copy of the user's provider (F24, SM1). Moss starts without the
+/// user's settings (`--setting-sources project,local`); its home's
+/// `.claude/settings.local.json` carries what picks the provider and is no
+/// secret: the base URL, the models, the context size. Claude Code puts a
+/// settings `env` into its shell commands' environment too, so a token or
+/// key never goes there: when the user's settings have one (or a key
+/// helper of their own), Moss's `apiKeyHelper` is `helper` (`cc-moss moss
+/// provider-key`), which Claude Code runs outside Moss's sandbox. `None`
+/// when `user` (the text of the user's `settings.json`) is not JSON.
+pub fn moss_settings(user: &str, helper: &str) -> Option<MossSettings> {
     let value: serde_json::Value = serde_json::from_str(user).ok()?;
     let mut env = serde_json::Map::new();
+    let mut dropped_url = false;
+    let mut secret = value.get(TOP_HELPER).is_some_and(|h| h.is_string());
     if let Some(all) = value.get("env").and_then(|e| e.as_object()) {
         for (key, v) in all {
-            if (provider_key(key) || key == MAX_CONTEXT) && v.is_string() {
-                env.insert(key.clone(), v.clone());
+            let Some(text) = v.as_str() else {
+                continue;
+            };
+            match key.as_str() {
+                "ANTHROPIC_AUTH_TOKEN" | "ANTHROPIC_API_KEY" => secret = true,
+                BASE_URL if has_userinfo(text) => dropped_url = true,
+                k if provider_key(k) || k == MAX_CONTEXT => {
+                    env.insert(key.clone(), v.clone());
+                }
+                _ => {}
             }
         }
     }
@@ -201,12 +214,49 @@ pub fn moss_settings(user: &str) -> Option<String> {
     if !env.is_empty() {
         out.insert("env".into(), env.into());
     }
-    if let Some(helper) = value.get(TOP_HELPER).filter(|h| h.is_string()) {
-        out.insert(TOP_HELPER.into(), helper.clone());
+    if secret {
+        out.insert(TOP_HELPER.into(), helper.into());
     }
     let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(out)).ok()?;
     text.push('\n');
-    Some(text)
+    Some(MossSettings { text, dropped_url })
+}
+
+/// What [`moss_settings`] made.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MossSettings {
+    pub text: String,
+    /// The base URL had a user or password in it, so it was left out.
+    pub dropped_url: bool,
+}
+
+/// Whether a URL carries `user:password@`.
+fn has_userinfo(url: &str) -> bool {
+    let rest = url.trim().split_once("://").map_or(url.trim(), |(_, r)| r);
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    authority.contains('@')
+}
+
+/// The key `cc-moss moss provider-key` hands Claude Code from the user's
+/// settings text: the auth token, else the API key. `None` when there is
+/// none (the user's own `apiKeyHelper` is then run by the caller).
+pub fn settings_key(user: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(user).ok()?;
+    let env = value.get("env")?;
+    ["ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_API_KEY"]
+        .iter()
+        .find_map(|k| env.get(*k)?.as_str().filter(|v| !v.is_empty()))
+        .map(String::from)
+}
+
+/// The user's own `apiKeyHelper` command, if any.
+pub fn settings_helper(user: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(user).ok()?;
+    value
+        .get(TOP_HELPER)?
+        .as_str()
+        .filter(|h| !h.trim().is_empty())
+        .map(String::from)
 }
 
 /// Passed on to Moss with the provider keys.
@@ -320,33 +370,62 @@ mod tests {
     }
 
     #[test]
-    fn moss_settings_carry_only_the_provider() {
-        let text = moss_settings(&format!(
-            r#"{{"env":{{"ANTHROPIC_BASE_URL":"https://a.io","ANTHROPIC_AUTH_TOKEN":"{SECRET}",
+    fn moss_settings_carry_no_secret() {
+        let helper = "/bin/cc-moss moss provider-key";
+        let made = moss_settings(
+            &format!(
+                r#"{{"env":{{"ANTHROPIC_BASE_URL":"https://a.io","ANTHROPIC_AUTH_TOKEN":"{SECRET}",
                 "ANTHROPIC_DEFAULT_OPUS_MODEL":"glm","CLAUDE_CODE_MAX_CONTEXT_TOKENS":"200000",
                 "HTTPS_PROXY":"http://p","OTHER":"x"}},
-                "apiKeyHelper":"echo k","model":"opus","hooks":{{}},"permissions":{{}}}}"#
-        ))
+                "apiKeyHelper":"echo {SECRET}","model":"opus","hooks":{{}},"permissions":{{}}}}"#
+            ),
+            helper,
+        )
         .unwrap();
-        let v: serde_json::Value = serde_json::from_str(&text).unwrap();
+        assert!(!made.text.contains(SECRET), "{}", made.text);
+        let v: serde_json::Value = serde_json::from_str(&made.text).unwrap();
         assert_eq!(
             v,
             serde_json::json!({
                 "env": {
                     "ANTHROPIC_BASE_URL": "https://a.io",
-                    "ANTHROPIC_AUTH_TOKEN": SECRET,
                     "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm",
                     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
                 },
-                "apiKeyHelper": "echo k"
+                "apiKeyHelper": helper
             })
         );
+        // A password in the URL: the URL stays out.
+        let made = moss_settings(
+            r#"{"env":{"ANTHROPIC_BASE_URL":"https://u:pw@a.io","ANTHROPIC_API_KEY":"k"}}"#,
+            helper,
+        )
+        .unwrap();
+        assert!(made.dropped_url);
+        assert!(!made.text.contains("pw"), "{}", made.text);
         // The subscription: nothing at all.
         assert_eq!(
-            moss_settings(r#"{"theme":"dark"}"#).as_deref(),
-            Some("{}\n")
+            moss_settings(r#"{"theme":"dark","model":"opus"}"#, helper)
+                .unwrap()
+                .text,
+            "{}\n"
         );
-        assert_eq!(moss_settings("nope"), None);
+        assert_eq!(moss_settings("nope", helper), None);
+        // What the helper hands over: the token, else the key.
+        assert_eq!(
+            settings_key(r#"{"env":{"ANTHROPIC_API_KEY":"k","ANTHROPIC_AUTH_TOKEN":"t"}}"#)
+                .as_deref(),
+            Some("t")
+        );
+        assert_eq!(
+            settings_key(r#"{"env":{"ANTHROPIC_API_KEY":"k"}}"#).as_deref(),
+            Some("k")
+        );
+        assert_eq!(settings_key(r#"{"apiKeyHelper":"x"}"#), None);
+        assert_eq!(
+            settings_helper(r#"{"apiKeyHelper":"x"}"#).as_deref(),
+            Some("x")
+        );
     }
 
     #[test]

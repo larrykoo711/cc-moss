@@ -437,6 +437,10 @@ enum MossCommand {
         #[arg(long)]
         wait: bool,
     },
+    /// Moss's apiKeyHelper: the user's API key from their Claude Code
+    /// settings, for Claude Code only.
+    #[command(hide = true)]
+    ProviderKey,
     /// Say something to Moss; its reply shows in `moss chat` and the panel.
     Say {
         /// Print the message's id as JSON (schema 1).
@@ -699,6 +703,9 @@ fn main() -> std::process::ExitCode {
             DaemonCommand::Status { json } => report(cmd::daemon::print_status(json)),
         },
         Command::Moss {
+            action: MossCommand::ProviderKey,
+        } => cmd::moss::provider_key(),
+        Command::Moss {
             action:
                 MossCommand::Act {
                     action,
@@ -719,7 +726,7 @@ fn main() -> std::process::ExitCode {
             MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),
             MossCommand::Profile { name, from } => cmd::moss::profile(&name, from.as_deref()),
             // Taken above.
-            MossCommand::Act { .. } => Ok(()),
+            MossCommand::Act { .. } | MossCommand::ProviderKey => Ok(()),
         }),
         Command::Ask { action } => report(cmd::ask::run(match action {
             AskCommand::List { json } => cmd::ask::Action::List { json },
