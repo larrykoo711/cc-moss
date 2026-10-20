@@ -237,8 +237,9 @@ Two kinds of switch don't reach a running session; those need a restart:
 
 - Going back to your Claude subscription: the tool removes those settings, but a running session keeps the removed
   values and goes on talking to the old provider.
-- A provider that sets the model with `ANTHROPIC_MODEL` (or `model` at the top of settings): that one is read only at
-  startup.
+- A provider that sets the model with `ANTHROPIC_MODEL` in the settings' `env`: that one is read only at startup.
+  `model` at the top of settings (what `/model` writes when you change models in a session) doesn't count and never
+  asks for a restart.
 
 The panel marks the sessions affected; click Restart, or Restart All. On the command line:
 
@@ -248,13 +249,21 @@ cc-moss restart --stale   # restart every session that needs it
 ```
 
 - Same pane, same tmux session name: no getting back into tmux, no typing the name again. It starts with the
-  arguments it had before, minus `--model` when the new settings pick a model.
+  arguments it had before, minus `--model` when the new settings pick a model with `ANTHROPIC_MODEL` in `env`.
 - A session that's busy isn't interrupted: it's queued and restarts when the turn is done. `--now` restarts it right
   away and loses the reply in progress (send "continue" afterwards); it asks first in a terminal, `--yes` skips that.
+- If Claude has quit and the pane is back at a shell, restart types `cd '<the session's folder>' && claude --resume <id>
+  --name=<name> <kept arguments>` into that shell. Variables you exported in the shell still apply; ones set only in
+  front of the original command (`FOO=1 claude`) don't. The kept arguments are only `--permission-mode`, `--model`,
+  `--effort`, `--add-dir`, `--agent` and `--dangerously-skip-permissions`.
+- A queued restart that fails 3 times in a row isn't tried again: a `restart-failed` event is recorded, and `doctor`
+  and the panel still mark the session as needing a restart, so you can click it yourself.
 - A session outside tmux needs `adopt` first; Moss is looked after by cc-moss and isn't restarted here.
 - `--json` reports `restarted`, `queued` or `refused` (with a `reason`) for each. `cc-moss doctor` has an "API
   provider" line with the current host and how many sessions need a restart, and points out folders whose own
-  `.claude/settings*.json` pick a provider, where a switch won't apply.
+  `.claude/settings*.json` pick a provider, where a switch won't apply. Each session is judged against the settings
+  file it read when it started; when some read a different settings folder than cc-moss watches, `doctor` tells you
+  to set `[claude] config_dir` to the folder you switch in.
 - cc-moss reads only the provider's host name and model names; token and key values are never read or recorded.
 
 ### Answering a session's questions from elsewhere

@@ -175,7 +175,7 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 有两种情况，运行中的会话吃不进去，必须重开：
 
 - 切回官方订阅：工具会删掉 settings 里的那几项，可删掉的值还留在会话进程里，请求照旧发给原来的供应商
-- 新供应商用 `ANTHROPIC_MODEL`（或 settings 顶层的 `model`）指定了模型：这一项只在启动时读
+- 新供应商在 settings 的 `env` 里用 `ANTHROPIC_MODEL` 指定了模型：这一项只在启动时读。settings 顶层的 `model`（你在会话里用 `/model` 换模型时写的就是它）不算，不会因此要你重开
 
 这时受影响的会话在面板里标成「要重开」，点「重开」或「全部重开」；命令行是：
 
@@ -184,10 +184,12 @@ cc-moss restart 名字      # 在原来的 tmux 窗格里重开，同一段对�
 cc-moss restart --stale   # 重开所有需要重开的会话
 ```
 
-- 窗格、tmux 会话名都不变，不用重新进 tmux、也不用再敲名字；启动参数沿用当初的（新 settings 指定了模型时去掉原来的 `--model`）
+- 窗格、tmux 会话名都不变，不用重新进 tmux、也不用再敲名字；启动参数沿用当初的（新 settings 的 `env` 用 `ANTHROPIC_MODEL` 指定了模型时去掉原来的 `--model`）
 - 正在干活的会话不会被打断：排队，等这一轮做完自己重开。`--now` 立刻重开，这一轮的回复会丢（重开后发一句 continue 就行），终端里会先问你，`--yes` 跳过
+- 会话窗格里 Claude 退出后回到了 shell 的，在那个 shell 里敲 `cd '<会话的文件夹>' && claude --resume <id> --name=<名字> <沿用的参数>`。shell 里 `export` 过的环境变量照样生效；只写在当初那行命令前面的（`FOO=1 claude`）不会带上。沿用的参数只有 `--permission-mode`、`--model`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`
+- 排队的会话重开连着失败 3 次就不再试，记一条 `restart-failed` 事件，`doctor` 和面板照旧标它「要重开」，你可以手动再点
 - 不在 tmux 里的会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这里
-- `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效
+- `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效。每个会话按它启动时读的那份 settings 判断要不要重开；有会话读的设置目录和 cc-moss 看的不一样时，`doctor` 也会提醒你把 `[claude] config_dir` 设成你切换供应商的那个目录
 - cc-moss 只读供应商的地址主机名和模型名，token、key 的值从不读出、不记录
 
 ### 替会话接住问题
