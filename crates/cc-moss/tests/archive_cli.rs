@@ -420,3 +420,39 @@ fn archive_after_days_is_a_setting() {
             .success()
     );
 }
+
+#[test]
+fn archive_by_conversation_id_when_two_share_a_name() {
+    // What the app sends: the row's conversation id, not its name.
+    let dir = tempfile::tempdir().unwrap();
+    let state = dir.path();
+    for sid in ["aaaa1111-twin", "bbbb2222-twin"] {
+        let p = FakeProcess::spawn();
+        hook(
+            state,
+            "session-start",
+            &start_json(sid, "startup", Some("twin")),
+            p.pid(),
+        );
+        drop(p);
+    }
+    let by_name = cc_moss(state, &["archive", "--json", "--", "twin"]);
+    assert!(
+        String::from_utf8_lossy(&by_name.stdout).contains("ambiguous"),
+        "{by_name:?}"
+    );
+    assert!(
+        cc_moss(state, &["archive", "--json", "--", "aaaa1111-twin"])
+            .status
+            .success()
+    );
+    let v = common::ls_json(state, true);
+    let archived: Vec<&str> = v["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| !s["archived_at"].is_null())
+        .map(|s| s["session_id"].as_str().unwrap())
+        .collect();
+    assert_eq!(archived, ["aaaa1111-twin"]);
+}

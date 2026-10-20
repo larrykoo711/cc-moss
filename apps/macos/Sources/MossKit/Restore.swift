@@ -1,13 +1,12 @@
 import Foundation
 
 extension Session {
-    /// How cc-moss commands that change a session find it: its name, else its
-    /// full conversation id (which `cc-moss` resolves by prefix). The slot id
-    /// in `id` is not something the CLI looks names up by.
-    public var target: String {
-        if let name, !name.isEmpty { return name }
-        return sessionId
-    }
+    /// How cc-moss commands that change a session find it: its full
+    /// conversation id, which `cc-moss` resolves by prefix. Never the name:
+    /// two open sessions can share one, and the command then can't tell
+    /// which row was clicked. The slot id in `id` is not something the CLI
+    /// looks sessions up by.
+    public var target: String { sessionId }
 }
 
 /// Interrupted sessions split by how long ago they stopped: the recent ones

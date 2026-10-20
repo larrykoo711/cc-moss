@@ -48,6 +48,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - Moss's yes buttons wrap instead of being cut off; Mo's options show the pointing hand.
 - `cc-moss doctor` no longer calls a model setting alone "your own API key".
 - Superseded copies of a session close quietly, and `--json` names sessions that share a name.
+- The app acts on the session you clicked by its conversation id, not its name: archiving, bringing back,
+  restarting, replying or opening one of two sessions that share a name no longer fails as ambiguous.
 
 ### Security
 

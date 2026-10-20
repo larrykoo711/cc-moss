@@ -10,8 +10,7 @@ public enum Shell {
 }
 
 extension Session {
-    /// What to hand cc-moss commands: the name (open sessions have unique
-    /// names), or the conversation id when there is none. (The slot id is
-    /// internal; cc-moss does not resolve it.)
+    /// What to hand cc-moss commands (`attach` in a terminal too): the
+    /// conversation id, as `target`; a name can be shared.
     public var handle: String { target }
 }
