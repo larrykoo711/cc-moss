@@ -224,7 +224,9 @@ Sessions you no longer use get put away, so the list keeps only what you're work
 - To delete them for good, click Clean Up or Clean Up All under Archived in the app, or just ask Moss. Moss lists
   what it would delete and asks first; nothing goes until you click yes. The records leave cc-moss and the
   conversation files go to the Trash, not straight to oblivion, so a mistake can be undone. Only archived sessions
-  are ever deleted.
+  are ever deleted, and only their own conversation files inside Claude Code's folder are moved; files elsewhere stay.
+  Moss asks before archiving a single session too, and Clean Up All leaves out what Moss archived in the last day;
+  the yes button names what goes.
 
 ### Switching API providers
 
@@ -264,7 +266,11 @@ cc-moss restart --stale   # restart every session that needs it
   `.claude/settings*.json` pick a provider, where a switch won't apply. Each session is judged against the settings
   file it read when it started; when some read a different settings folder than cc-moss watches, `doctor` tells you
   to set `[claude] config_dir` to the folder you switch in.
-- cc-moss reads only the provider's host name and model names; token and key values are never read or recorded.
+- The panel, `doctor` and the logs show only the provider's host name and model names; token and key values are
+  never shown or recorded. Moss follows your switch: its settings hold only the address and models, and the key
+  stays out of any file it can see. When it sends a request, `cc-moss moss provider-key` reads the key from your
+  settings and hands it to Claude Code (or runs your own `apiKeyHelper` if you set one), so a new key reaches it
+  within a minute.
 
 ### Answering a session's questions from elsewhere
 
@@ -476,12 +482,13 @@ keeps trying.
   Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click Open in Terminal on
   the panel's Moss page. Only the session the daemon started is Moss: a window you open next to it, or
   `claude --resume` of its id elsewhere, is an ordinary session.
-- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only its own project
-  settings (`--setting-sources project`), so the MCP servers, hooks and settings you set up for Claude Code don't
-  come along. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
+- **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only the settings in its own
+  home (`--setting-sources project,local`), so the MCP servers, hooks and settings you set up for Claude Code don't
+  come along. Only the API provider's address and models are copied into its `.claude/settings.local.json` (see
+  [Switching API providers](#switching-api-providers)), a file its command line can't read. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
   model's window when that's smaller); at the cap Claude Code compacts it, so the conversation doesn't keep growing.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
-  Anthropic like any session you start. While it waits it sends nothing and uses none of your plan; each start begins
+  Anthropic like any session you start, or to the API provider you switched to. While it waits it sends nothing and uses none of your plan; each start begins
   with one short turn to read its notes.
 - When Moss needs you (a permission or a question), the menu bar icon and its count show it like any session's.
   Moss itself is never counted among your sessions.
@@ -591,7 +598,7 @@ works too.
 **How Moss acts.** Moss's sandbox can't reach your sessions, so it asks the daemon to act for it
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
 fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
-it does without asking. Bringing back, no longer offering back and ending a session need your go-ahead: Moss asks
+it does without asking. Bringing back, no longer offering back, ending, archiving and deleting archived sessions need your go-ahead: Moss asks
 first, and cc-moss itself puts the yes button under the question, saying what it agrees to, with each session's
 folder ("End work · ~/code/work"). When two open sessions share a name, Moss can't ask about either by that name
 until one is renamed. Only your tap on that button counts, for exactly what it says, within 10 minutes, and only

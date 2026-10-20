@@ -166,7 +166,7 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 - 结束了、超过 30 天没动静的会话，守护进程每天整理时自动归档。天数用 `cc-moss config set sessions.archive_after_days 天数` 改，`0` 关掉自动归档。正在跑的会话再老也不会被归档
 - 手动：`cc-moss archive 名字…` 归档；还在跑但闲着的会话加 `--end`，先结束它再归档（正在干活的不动）。App 里是「⋯」菜单的「归档」，闲着的会话是「结束并归档」，先问你一句。`cc-moss unarchive 名字…` 拿回来。用 `claude --resume` 接着用一个归档的会话，它会自己回到列表
 - `cc-moss ls` 不列归档的，`ls --archived` 只列归档的；`ls --json` 都列，每条带 `archived_at`。选择器里归档的会话只在搜索时出现，单独一组「已归档」
-- 想彻底删掉：在 App 的「已归档」里点「清理」或「全部清理」，或者直接跟 Moss 说。Moss 列出要删哪些、问你一句，你点了确认才删：记录从 cc-moss 里去掉，对话记录文件移到废纸篓（不直接抹掉，删错了还能从废纸篓找回来）。只删归档里的会话
+- 想彻底删掉：在 App 的「已归档」里点「清理」或「全部清理」，或者直接跟 Moss 说。Moss 列出要删哪些、问你一句，你点了确认才删：记录从 cc-moss 里去掉，对话记录文件移到废纸篓（不直接抹掉，删错了还能从废纸篓找回来）。只删归档里的会话，也只把 Claude Code 自己文件夹里属于这个会话的对话记录移走，别处的文件不碰。Moss 单独归档一个会话也要先问你；「全部清理」不包括 Moss 刚归档（一天之内）的会话，确认按钮上列出要删的名字
 
 ### 换 API 供应商
 
@@ -190,7 +190,7 @@ cc-moss restart --stale   # 重开所有需要重开的会话
 - 排队的会话重开连着失败 3 次就不再试，记一条 `restart-failed` 事件，`doctor` 和面板照旧标它「要重开」，你可以手动再点
 - 不在 tmux 里的会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这里
 - `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效。每个会话按它启动时读的那份 settings 判断要不要重开；有会话读的设置目录和 cc-moss 看的不一样时，`doctor` 也会提醒你把 `[claude] config_dir` 设成你切换供应商的那个目录
-- cc-moss 只读供应商的地址主机名和模型名，token、key 的值从不读出、不记录
+- 面板、`doctor` 和日志里只出现供应商的地址主机名和模型名，token、key 的值从不显示、不记录。Moss 跟着你换供应商：它的设置里只写地址和模型，key 不落进它能看到的文件，而是在它发请求时由 `cc-moss moss provider-key` 从你的 settings 读出交给 Claude Code（你配了自己的 `apiKeyHelper` 就照样跑它），换了 key 一分钟内跟上
 
 ### 替会话接住问题
 
@@ -298,8 +298,8 @@ Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
 - **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 会话上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板的 Moss 页点「在终端打开」。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
-- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己的项目设置（`--setting-sources project`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
-- **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
+- **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己家里的设置（`--setting-sources project,local`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑；只有 API 供应商的地址和模型会抄进它家的 `.claude/settings.local.json`（见[换 API 供应商](#换-api-供应商)），它的命令行读不了这个文件。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
+- **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信；你换到别的 API 供应商时，它也跟着走那个供应商。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
 - Moss 需要你的时候（要权限、有问题要问），菜单栏图标和数字会像别的会话一样提醒你；但 Moss 本身从不算进你的会话数。
 - `cc-moss doctor` 会检查它：开没开、在不在运行；守护进程（按它自己的 PATH）找不到 `claude` 或 `tmux` 时会告诉你怎么补。`cc-moss install --uninstall` 先停掉守护进程，再结束 Moss、删掉 cc-moss 的那些文件，你的人设、日志和记忆留着。
 - 退回到没有 Moss 的旧版 cc-moss：旧版认不出哪条记录是 Moss，旧的 Moss 可能会作为「断了的会话」出现在找回列表里。用 `cc-moss close` 关掉它就行（不管也行）。
@@ -350,7 +350,7 @@ cc-moss moss chat --json                    # 最近 200 条对话（--limit N �
 
 配置里是 `[moss] daily_checkup`、`daily_brief`，也可以 `cc-moss config set moss.daily_checkup false`。
 
-**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话这三件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么，连同每个会话的文件夹（比如「结束 work · ~/code/work」）。两个开着的会话同名时，Moss 不能用这个名字问你，得先改掉一个。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
+**Moss 怎么动手。** Moss 在沙箱里够不着你的会话，所以它请守护进程代办（`cc-moss moss act`，给 Moss 用的，不在帮助里列出）。能代办的只有这几件：对齐 tmux 名、修安装、给会话改名、不再提示文件夹已经没了的断会话，这些不问你；找回、不再提示、结束会话、归档、清理归档这几件必须你点过头：Moss 先问你，「同意」按钮由 cc-moss 自己放在问题下面，写明同意的是什么，连同每个会话的文件夹（比如「结束 work · ~/code/work」）。两个开着的会话同名时，Moss 不能用这个名字问你，得先改掉一个。只有你点了这个按钮才算数，而且只管按钮上写的那几件事，10 分钟内有效，只能用一次；Moss 自己放的按钮不算，你打字说的也不算。守护进程会核对，对不上就拒绝。对话记录 Moss 写不了，所以它伪造不了你的点击。它不能对自己动手；会话的状态已经变了（比如你已经找回了），就跳过并说明。每一件都记在状态目录的 `audit.jsonl` 里（时间、动作、对象、凭的是哪条消息、结果）。只想让 Moss 说该怎么做、不让它动手，写 `[moss] actions = false`（或 `cc-moss config set moss.actions false`）。
 
 体检看的是 `cc-moss doctor --sessions --json` 给的事实：每个会话的名字是不是自动起的、文件夹在不在、断了多久、多久没动、在不在干活或等你、tmux 名对不对得上，以及建议的名字；还有钩子和别名链接好不好。判断不了的写 `"unknown"`，不当成坏了。里面没有会话的对话内容。
 
