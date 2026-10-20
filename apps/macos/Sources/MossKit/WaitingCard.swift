@@ -27,6 +27,21 @@ public struct WaitingRow: Equatable, Identifiable, Sendable {
     /// Since when it waits.
     public var since: Date
 
+    /// A permission's command is too long for the row's three lines: offer
+    /// "Show all" (the whole question card) before anyone allows it.
+    public var needsShowAll: Bool {
+        guard case let .permission(tool, detail) = want else { return false }
+        return Self.overflows("\(tool) · \(detail)")
+    }
+
+    /// More than `lines` lines of about `perLine` characters (a monospaced
+    /// line in the card is about 46).
+    public static func overflows(_ text: String, perLine: Int = 46, lines: Int = 3) -> Bool {
+        let rows = text.split(separator: "\n", omittingEmptySubsequences: false)
+            .reduce(0) { $0 + max(1, Int(ceil(Double($1.count) / Double(perLine)))) }
+        return rows > lines
+    }
+
     /// The row's second line, in plain words.
     public var line: String {
         switch want {
@@ -87,25 +102,43 @@ public enum WaitingCard {
 public struct WaitingReceipt: Equatable, Sendable {
     public static let shownFor: TimeInterval = 10
 
-    /// The To Do items the card showed last time.
-    private var standing: Set<AskQueue.Item> = []
+    /// The To Do items the card showed last time, with their session (its
+    /// Claude session id).
+    private var standing: [AskQueue.Item: String] = [:]
     /// Items that went away since the card last emptied.
     private var handled = 0
     private var shownAt: Date?
 
     public init() {}
 
-    /// The card's items now. Items that went away count as handled; when
-    /// none is left, the receipt line starts. A new item ends it.
+    /// The card's items now, without a session each: every one that goes
+    /// counts as handled.
     public mutating func update(_ items: [AskQueue.Item], now: Date = L.clock()) {
-        let now_ = Set(items)
-        handled += standing.subtracting(now_).count
-        if !now_.subtracting(standing).isEmpty, shownAt != nil {
+        update(Dictionary(items.map { ($0, "") }, uniquingKeysWith: { a, _ in a }), live: nil, now: now)
+    }
+
+    /// The card came on screen: take what's there as it is, counting
+    /// nothing (what went while you were elsewhere isn't news here).
+    public mutating func rebaseline(_ items: [AskQueue.Item: String]) {
+        standing = items
+        shownAt = nil
+        handled = 0
+    }
+
+    /// The card's items now, by session. Items that went away count as
+    /// handled, unless their session isn't running any more (`live`: the
+    /// running sessions; nil counts every one); when none is left, the
+    /// receipt line starts. A new item ends it.
+    public mutating func update(_ items: [AskQueue.Item: String], live: Set<String>?, now: Date = L.clock()) {
+        let now_ = Set(items.keys)
+        let gone = standing.filter { !now_.contains($0.key) }
+        handled += gone.filter { live?.contains($0.value) ?? true }.count
+        if !now_.subtracting(standing.keys).isEmpty, shownAt != nil {
             // Something new after the receipt: a fresh count.
             shownAt = nil
             handled = 0
         }
-        standing = now_
+        standing = items
         if now_.isEmpty {
             if handled > 0 && shownAt == nil { shownAt = now }
         } else {
@@ -148,9 +181,10 @@ extension MossSessionCard {
     /// the "Waiting on you" card instead; one just running needs nothing.
     public var shown: Bool {
         guard let s = session else { return true }
+        if s.isArchived { return !s.isMoss }
         if waiting != nil || s.needsYou { return false }
         switch main {
-        case .bringBack, .moveIntoTmux: return true
+        case .bringBack, .moveIntoTmux, .unarchive: return true
         case .handle, .open: return false
         case nil: return s.state == .closed
         }

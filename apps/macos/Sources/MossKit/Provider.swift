@@ -61,8 +61,9 @@ public struct ProviderBanner: Equatable, Sendable {
         case hidden
         /// "Switched to <host>. Your next message uses it."
         case live(host: String?)
-        /// "N sessions need a restart…" and "Restart All".
-        case needsRestart(count: Int)
+        /// "N sessions need a restart…" and "Restart All"; `outside`: more
+        /// that must move into tmux first (no button for them).
+        case needsRestart(count: Int, outside: Int = 0)
     }
 
     private struct Seen: Equatable, Sendable {
@@ -98,8 +99,9 @@ public struct ProviderBanner: Equatable, Sendable {
         let age = now.timeIntervalSince(latest.at)
         guard age < Self.window, age > -Self.window else { return .hidden }
         if latest.change.needsRestart {
-            let stale = Restart.stale(sessions).count
-            if stale > 0 { return .needsRestart(count: stale) }
+            let ready = Restart.restartable(sessions).count
+            let outside = Restart.outsideTmux(sessions).count
+            if ready + outside > 0 { return .needsRestart(count: ready, outside: outside) }
         }
         return .live(host: latest.change.host)
     }
@@ -109,9 +111,13 @@ public struct ProviderBanner: Equatable, Sendable {
         case .hidden: nil
         case let .live(host?): L.t("Switched to \(host). Your next message uses it.", "已切到 \(host)，下一条消息就走它")
         case .live(nil): L.t("Switched provider. Your next message uses it.", "已换了供应商，下一条消息就走它")
-        case let .needsRestart(n):
-            n == 1 ? L.t("1 session needs a restart to use the new provider", "1 个会话要重开才能用上新供应商")
-                   : L.t("\(n) sessions need a restart to use the new provider", "\(n) 个会话要重开才能用上新供应商")
+        case let .needsRestart(n, outside):
+            [n == 0 ? nil
+                : n == 1 ? L.t("1 session needs a restart to use the new provider", "1 个会话要重开才能用上新供应商")
+                : L.t("\(n) sessions need a restart to use the new provider", "\(n) 个会话要重开才能用上新供应商"),
+             outside == 0 ? nil
+                : L.t("\(outside) not in tmux: move \(outside == 1 ? "it" : "them") in first", "\(outside) 个不在 tmux 里，先移进去")]
+                .compactMap { $0 }.joined(separator: L.t(". ", "；"))
         }
     }
 }
@@ -128,6 +134,16 @@ public enum Restart {
     /// Everything "Restart All" covers: flagged running sessions, Moss aside.
     public static func stale(_ sessions: [Session]) -> [Session] {
         sessions.filter { $0.providerRestart != nil && $0.status == "running" && !$0.isMoss }
+    }
+
+    /// What "Restart All" can restart now: in tmux and not queued already.
+    public static func restartable(_ sessions: [Session]) -> [Session] {
+        stale(sessions).filter { $0.inTmux && !$0.restartQueued && !$0.isArchived }
+    }
+
+    /// Flagged ones outside tmux: they must move in before a restart.
+    public static func outsideTmux(_ sessions: [Session]) -> [Session] {
+        stale(sessions).filter { !$0.inTmux && !$0.isArchived }
     }
 
     /// `restart --json -- <name>…`; `--` keeps a name starting with "-" a name.

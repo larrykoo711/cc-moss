@@ -51,7 +51,7 @@ import Testing
     @Test func providerBannerCountsSessionsThatNeedARestart() {
         var b = ProviderBanner()
         b.take([change(seq: 1, minutesAgo: 1, live: false, restart: ["A", "B"])], now: now)
-        #expect(b.state(now: now, sessions: flagged) == .needsRestart(count: 2))
+        #expect(b.state(now: now, sessions: flagged) == .needsRestart(count: 1))
     }
 
     @Test func providerBannerTurnsLiveOnceEveryoneRestarted() {
@@ -81,7 +81,7 @@ import Testing
         b.dismiss()
         #expect(b.state(now: now, sessions: calm) == .hidden)
         b.take([change(seq: 2, minutesAgo: 0, live: false, restart: ["A"])], now: now)
-        #expect(b.state(now: now, sessions: flagged) == .needsRestart(count: 2))
+        #expect(b.state(now: now, sessions: flagged) == .needsRestart(count: 1))
     }
 
     @Test func providerBannerFollowsTheNewestSwitch() {
