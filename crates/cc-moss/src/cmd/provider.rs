@@ -44,52 +44,131 @@ pub fn restart_reason(slot: &Slot, status: Status, now: Option<&Snapshot>) -> Op
 
 // ---------------------------------------------------------------- the queue
 
-/// `<state>/daemon/restart-queue.json`: slot ids of busy sessions to
-/// restart once their turn is over.
+/// `<state>/daemon/restart-queue.json`: busy sessions to restart once
+/// their turn is over.
 pub fn queue_path(state: &Path) -> PathBuf {
     moss_core::daemon::Paths::new(state)
         .dir
         .join("restart-queue.json")
 }
 
-pub fn queued(state: &Path) -> Vec<String> {
-    std::fs::read_to_string(queue_path(state))
-        .ok()
-        .and_then(|t| serde_json::from_str(&t).ok())
-        .unwrap_or_default()
+/// One session in the queue.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Queued {
+    pub slot_id: String,
+    /// Restart only if the provider switch still hasn't reached it (it was
+    /// queued by `--stale`, or because another restart had it).
+    pub recheck: bool,
+    /// Restarts that didn't work so far.
+    pub attempts: u32,
 }
 
-fn write_queue(state: &Path, ids: &[String]) -> std::io::Result<()> {
+impl Queued {
+    fn from_json(v: &serde_json::Value) -> Option<Queued> {
+        Some(Queued {
+            slot_id: v["slot_id"].as_str()?.to_string(),
+            recheck: v["recheck"].as_bool().unwrap_or(false),
+            attempts: v["attempts"].as_u64().unwrap_or(0) as u32,
+        })
+    }
+
+    fn to_json(&self) -> serde_json::Value {
+        json!({ "slot_id": self.slot_id, "recheck": self.recheck, "attempts": self.attempts })
+    }
+}
+
+/// The daemon gives up on a queued session after this many failures.
+pub const MAX_ATTEMPTS: u32 = 3;
+
+fn read_queue(state: &Path) -> Vec<Queued> {
+    std::fs::read_to_string(queue_path(state))
+        .ok()
+        .and_then(|t| serde_json::from_str::<Vec<serde_json::Value>>(&t).ok())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(Queued::from_json)
+        .collect()
+}
+
+/// The slot ids in the queue.
+pub fn queued(state: &Path) -> Vec<String> {
+    read_queue(state).into_iter().map(|q| q.slot_id).collect()
+}
+
+/// Change the queue under its lock (`flock` on a file beside it), so the
+/// daemon and a `restart` never lose each other's change.
+fn with_queue<T>(state: &Path, change: impl FnOnce(&mut Vec<Queued>) -> T) -> std::io::Result<T> {
+    use std::os::unix::fs::OpenOptionsExt;
+    use std::os::unix::io::AsRawFd;
     let path = queue_path(state);
     if let Some(dir) = path.parent() {
         moss_core::store_dir::ensure_private_dir(dir)?;
     }
-    moss_core::moss::home::write_if_changed(&path, &serde_json::to_string(ids)?).map(drop)
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .mode(0o600)
+        .custom_flags(libc::O_NOFOLLOW)
+        .open(path.with_extension("lock"))?;
+    // SAFETY: flock on a descriptor this function owns; released on close.
+    if unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) } != 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let mut all = read_queue(state);
+    let out = change(&mut all);
+    let text = serde_json::to_string(&all.iter().map(Queued::to_json).collect::<Vec<_>>())?;
+    moss_core::moss::home::write_if_changed(&path, &text)?;
+    drop(lock);
+    Ok(out)
 }
 
-/// Put a session in the queue; once only.
-pub fn enqueue(state: &Path, slot_id: &str) -> std::io::Result<()> {
-    let mut ids = queued(state);
-    if !ids.iter().any(|i| i == slot_id) {
-        ids.push(slot_id.to_string());
-    }
-    write_queue(state, &ids)
+/// Put a session in the queue; once only (a recheck it had stays).
+pub fn enqueue(state: &Path, slot_id: &str, recheck: bool) -> std::io::Result<()> {
+    with_queue(state, |all| {
+        match all.iter_mut().find(|q| q.slot_id == slot_id) {
+            Some(q) => q.recheck &= recheck,
+            None => all.push(Queued {
+                slot_id: slot_id.to_string(),
+                recheck,
+                attempts: 0,
+            }),
+        }
+    })
 }
 
 pub fn dequeue(state: &Path, slot_id: &str) -> std::io::Result<()> {
-    let ids: Vec<String> = queued(state).into_iter().filter(|i| i != slot_id).collect();
-    write_queue(state, &ids)
+    with_queue(state, |all| all.retain(|q| q.slot_id != slot_id))
+}
+
+/// A queued restart didn't work; true when that was the last try (it left
+/// the queue).
+pub fn failed_attempt(state: &Path, slot_id: &str) -> std::io::Result<bool> {
+    with_queue(state, |all| {
+        let Some(q) = all.iter_mut().find(|q| q.slot_id == slot_id) else {
+            return false;
+        };
+        q.attempts += 1;
+        let last = q.attempts >= MAX_ATTEMPTS;
+        if last {
+            all.retain(|q| q.slot_id != slot_id);
+        }
+        last
+    })
 }
 
 /// Whether the session is in a turn: Claude is working, or its
-/// transcript says a reply is still open.
+/// transcript says a reply is still open. A transcript that says the turn
+/// is over wins over the busy mark (Esc ends a turn without a Stop hook).
 pub fn in_turn(slot: &Slot) -> bool {
-    slot.busy
-        || slot
-            .transcript_path
-            .as_deref()
-            .and_then(|p| moss_core::transcript::turn_open(Path::new(p)))
-            == Some(true)
+    let open = slot
+        .transcript_path
+        .as_deref()
+        .and_then(|p| moss_core::transcript::turn_open(Path::new(p)));
+    match open {
+        Some(open) => open,
+        None => slot.busy,
+    }
 }
 
 // ---------------------------------------------------------------- the daemon
@@ -200,16 +279,18 @@ impl Watcher {
     /// Restart the queued sessions whose turn is over; drop the ones that
     /// stopped running.
     fn drain(&mut self, registry: &Registry, log: &dyn Fn(&str)) {
-        let queue = queued(&self.state);
+        let queue = read_queue(&self.state);
         if queue.is_empty() {
             return;
         }
         let Ok(slots) = registry.slots() else {
             return;
         };
+        let settings = current();
         self.started
             .retain(|_, at| at.elapsed() < Duration::from_secs(60));
-        for id in queue {
+        for q in queue {
+            let id = q.slot_id;
             let slot = slots.iter().find(|s| s.slot_id == id);
             let running =
                 slot.is_some_and(|s| s.effective_status(proc::is_alive) == Status::Running);
@@ -217,20 +298,171 @@ impl Watcher {
                 let _ = dequeue(&self.state, &id);
                 continue;
             };
+            // The switch reached it meanwhile (another restart, a switch
+            // back): nothing left to do.
+            if q.recheck && restart_reason(slot, Status::Running, settings.as_ref()).is_none() {
+                let _ = dequeue(&self.state, &id);
+                continue;
+            }
             if in_turn(slot) || self.started.contains_key(&id) {
                 continue;
             }
             self.started.insert(id.clone(), Instant::now());
             let exe = self.exe.clone();
             let session = slot.session_id.clone();
+            let state = self.state.clone();
             log(&format!("provider: restarting {id} after its turn"));
-            // `restart` takes it off the queue once it is back.
+            // `restart` takes it off the queue once it is back; a refusal
+            // counts, and after the last one the user is told.
             std::thread::spawn(move || {
-                let _ = moss_core::command::run_with_timeout(
+                let out = moss_core::command::run_with_timeout(
                     Command::new(exe).args(["restart", "--json", "--", &session]),
                     Duration::from_secs(60),
                 );
+                let result = out
+                    .ok()
+                    .and_then(|o| serde_json::from_slice::<serde_json::Value>(&o.stdout).ok())
+                    .and_then(|v| v["results"][0]["result"].as_str().map(String::from));
+                if matches!(result.as_deref(), Some("restarted" | "queued")) {
+                    return;
+                }
+                if failed_attempt(&state, &id).unwrap_or(false) {
+                    if let Ok(r) = Registry::open(&state.join("registry.db")) {
+                        let _ = r.record(
+                            &id,
+                            "restart-failed",
+                            &json!({ "attempts": MAX_ATTEMPTS }),
+                            now_ms(),
+                        );
+                    }
+                }
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use moss_core::event::{Context, Event, StartSource};
+
+    #[test]
+    fn restart_queue_gives_up_after_three_failures() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path();
+        enqueue(state, "a", false).unwrap();
+        enqueue(state, "a", false).unwrap();
+        enqueue(state, "b", true).unwrap();
+        assert_eq!(queued(state), ["a", "b"], "once each");
+        assert!(!failed_attempt(state, "a").unwrap());
+        assert!(!failed_attempt(state, "a").unwrap());
+        assert!(failed_attempt(state, "a").unwrap(), "the third is the last");
+        assert_eq!(queued(state), ["b"]);
+        // A name asked for keeps it from being dropped on a recheck.
+        enqueue(state, "b", false).unwrap();
+        assert!(!read_queue(state)[0].recheck);
+    }
+
+    #[test]
+    fn restart_queue_drops_what_no_longer_needs_a_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().to_path_buf();
+        let mut r = Registry::open(&state.join("registry.db")).unwrap();
+        // Two Claude Codes: two live processes.
+        let mut kids: Vec<std::process::Child> = (0..2)
+            .map(|_| {
+                std::process::Command::new("sleep")
+                    .arg("30")
+                    .spawn()
+                    .unwrap()
+            })
+            .collect();
+        for (sid, kid) in ["stale", "asked"].iter().zip(&kids) {
+            let pid = kid.id();
+            let ctx = Context {
+                pid: Some(pid),
+                pid_start: proc::start_time(pid),
+                tmux: None,
+                launch_args: None,
+                now_ms: now_ms(),
+            };
+            r.apply(
+                &Event::Start {
+                    source: StartSource::Startup,
+                    session_id: sid.to_string(),
+                    cwd: "/w".into(),
+                    title: Some(sid.to_string()),
+                    transcript_path: None,
+                },
+                &ctx,
+            )
+            .unwrap();
+            // Busy: nothing is started from a unit test.
+            r.apply(
+                &Event::Prompt {
+                    session_id: sid.to_string(),
+                    title: None,
+                    prompt: Some("go".into()),
+                },
+                &ctx,
+            )
+            .unwrap();
+        }
+        let id = |sid: &str| {
+            r.slots()
+                .unwrap()
+                .into_iter()
+                .find(|s| s.session_id == sid)
+                .unwrap()
+                .slot_id
+        };
+        enqueue(&state, &id("stale"), true).unwrap();
+        enqueue(&state, &id("asked"), false).unwrap();
+        let mut w = Watcher::new(&state);
+        w.drain(&r, &|_| {});
+        // No provider recorded: no switch to wait for, so the rechecked one
+        // goes; the one asked for by name waits for its turn to end.
+        assert_eq!(queued(&state), [id("asked")]);
+        for kid in &mut kids {
+            let _ = kid.kill();
+            let _ = kid.wait();
+        }
+    }
+
+    #[test]
+    fn a_closed_turn_beats_a_stale_busy_mark() {
+        let dir = tempfile::tempdir().unwrap();
+        let transcript = dir.path().join("t.jsonl");
+        std::fs::write(
+            &transcript,
+            "{\"type\":\"system\",\"subtype\":\"turn_duration\"}\n",
+        )
+        .unwrap();
+        let mut r = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let ctx = Context {
+            pid: None,
+            pid_start: None,
+            tmux: None,
+            launch_args: None,
+            now_ms: 1,
+        };
+        r.apply(
+            &Event::Start {
+                source: StartSource::Startup,
+                session_id: "s".into(),
+                cwd: "/w".into(),
+                title: None,
+                transcript_path: Some(transcript.to_string_lossy().into_owned()),
+            },
+            &ctx,
+        )
+        .unwrap();
+        let mut slot = r.slots().unwrap().remove(0);
+        // Esc ended the turn: no Stop hook, so the mark stayed.
+        slot.busy = true;
+        assert!(!in_turn(&slot));
+        // No transcript to tell: the mark decides.
+        slot.transcript_path = None;
+        assert!(in_turn(&slot));
     }
 }

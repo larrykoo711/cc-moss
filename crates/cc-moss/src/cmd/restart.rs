@@ -22,8 +22,27 @@ use serde_json::{json, Value};
 
 use super::ls::JSON_SCHEMA;
 
-/// How long Claude Code has to quit.
-const QUIT: Duration = Duration::from_secs(10);
+/// How long Claude Code has to quit (debug builds may say otherwise).
+fn quit_wait() -> Duration {
+    super::app::test_override("CC_MOSS_RESTART_QUIT_MS")
+        .and_then(|v| v.to_str()?.parse().ok())
+        .map(Duration::from_millis)
+        .unwrap_or(Duration::from_secs(10))
+}
+
+/// Claude Code didn't quit in time: its pane is kept as it is
+/// (`remain-on-exit` stays on, so it stays when it does quit) and the
+/// restart's claim stands, so its exit is no news.
+#[derive(Debug)]
+struct StillThere;
+
+impl std::fmt::Display for StillThere {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("it didn't quit within 10 seconds; its pane stays as it is")
+    }
+}
+
+impl std::error::Error for StillThere {}
 
 pub struct RestartArgs {
     pub names: Vec<String>,
@@ -120,7 +139,9 @@ pub fn run(args: RestartArgs) -> Result<bool> {
     let registry = Registry::open(&store_dir::registry_path())?;
     let slots = registry.slots()?;
     let settings = super::provider::current();
+    // Each target, and whether `--stale` picked it (rather than its name).
     let mut targets: Vec<(String, Option<Slot>, Option<super::Unresolved>)> = Vec::new();
+    let mut stale_ids: Vec<String> = Vec::new();
     for name in &args.names {
         match super::resolve_item(&slots, name) {
             Ok(s) => targets.push((name.clone(), Some(s.clone()), None)),
@@ -136,6 +157,7 @@ pub fn run(args: RestartArgs) -> Result<bool> {
                 .iter()
                 .any(|(_, s, _)| s.as_ref().is_some_and(|s| s.slot_id == slot.slot_id));
             if stale && !listed {
+                stale_ids.push(slot.slot_id.clone());
                 targets.push((super::restore::display_name(slot), Some(slot.clone()), None));
             }
         }
@@ -152,7 +174,15 @@ pub fn run(args: RestartArgs) -> Result<bool> {
             });
             continue;
         };
-        outcomes.push(restart_one(&registry, &name, &slot, &args, picks_model)?);
+        let stale = stale_ids.contains(&slot.slot_id);
+        outcomes.push(restart_one(
+            &registry,
+            &name,
+            &slot,
+            &args,
+            picks_model,
+            stale,
+        )?);
     }
     if args.json {
         let results: Vec<Value> = outcomes.iter().map(Outcome::to_json).collect();
@@ -190,6 +220,7 @@ fn restart_one(
     slot: &Slot,
     args: &RestartArgs,
     picks_model: bool,
+    stale: bool,
 ) -> Result<Outcome> {
     let state = store_dir::state_dir();
     if slot.is_moss() {
@@ -226,7 +257,7 @@ fn restart_one(
     };
     if super::provider::in_turn(slot) {
         if !args.now {
-            super::provider::enqueue(&state, &slot.slot_id)?;
+            super::provider::enqueue(&state, &slot.slot_id, stale)?;
             return Ok(Outcome {
                 name: name.to_string(),
                 session_id: Some(slot.session_id.clone()),
@@ -262,7 +293,16 @@ fn restart_one(
     // One restart at a time: another (the daemon's after a turn, or a
     // second click) may have it already. `restore` keeps its hands off
     // too, and the exit is no news.
-    if !registry.claim_restore(slot, now_ms())? {
+    // Claimed against the slot as it is now, not as listed at the start.
+    let fresh = registry
+        .slots()?
+        .into_iter()
+        .find(|s| s.slot_id == slot.slot_id)
+        .unwrap_or_else(|| slot.clone());
+    if !registry.claim_restore(&fresh, now_ms())? {
+        // Someone else has it right now: it goes in the queue, and the
+        // daemon looks again (and drops it if it needs nothing by then).
+        super::provider::enqueue(&state, &slot.slot_id, true)?;
         return Ok(Outcome {
             name: name.to_string(),
             session_id: Some(slot.session_id.clone()),
@@ -270,8 +310,8 @@ fn restart_one(
             reason: None,
             candidates: Vec::new(),
             message: tr!(
-                format!("{name} is being restarted already."),
-                format!("{name} 已经在重开了。")
+                format!("{name} is being restarted already; it is in the queue."),
+                format!("{name} 已经在重开了，先排进队列。")
             ),
         });
     }
@@ -297,7 +337,9 @@ fn restart_one(
             })
         }
         Err(e) => {
-            let _ = registry.clear_restore_started(&slot.slot_id);
+            if e.downcast_ref::<StillThere>().is_none() {
+                let _ = registry.clear_restore_started(&slot.slot_id);
+            }
             Ok(refused(
                 name,
                 Some(slot),
@@ -346,17 +388,22 @@ fn in_place(slot: &Slot, socket: &str, pane: &str, argv: &[String]) -> Result<()
     };
     if under_shell {
         quit(slot, pid)?;
+        // In its own folder, wherever the shell is now.
         let words: Vec<String> = argv.iter().map(|w| shell_word(w)).collect();
-        return tmux.type_line(pane, &words.join(" "));
+        let line = format!("cd {} && {}", shell_word(&slot.cwd), words.join(" "));
+        return tmux.type_line(pane, &line);
     }
     let before = tmux.pane_option(pane, "remain-on-exit");
     tmux.set_pane_option(pane, "remain-on-exit", Some("on"))?;
-    let done = quit(slot, pid).and_then(|()| {
-        let words: Vec<&str> = argv.iter().map(String::as_str).collect();
-        tmux.respawn_pane(pane, &slot.cwd, &words)
-    });
-    // Put back, also after a failure: a dead pane stays until it is
-    // respawned or closed.
+    // On a timeout `remain-on-exit` is left on: the pane stays when it
+    // quits later, for a manual resume.
+    quit(slot, pid)?;
+    // The process is gone: `-k` respawns even while tmux has not seen the
+    // pane die yet.
+    let words: Vec<&str> = argv.iter().map(String::as_str).collect();
+    let done = tmux.respawn_pane(pane, &slot.cwd, &words, true);
+    // Put back once the pane runs again, or after a failed respawn (a dead
+    // pane stays until it is respawned or closed).
     let _ = tmux.set_pane_option(pane, "remain-on-exit", before.as_deref());
     done
 }
@@ -368,10 +415,10 @@ fn quit(slot: &Slot, pid: u32) -> Result<()> {
     unsafe {
         libc::kill(pid as libc::pid_t, libc::SIGTERM);
     }
-    let until = Instant::now() + QUIT;
+    let until = Instant::now() + quit_wait();
     while proc::liveness(pid, slot.pid_start.as_deref()) == Liveness::Alive {
         if Instant::now() >= until {
-            anyhow::bail!("it didn't quit within 10 seconds");
+            return Err(StillThere.into());
         }
         std::thread::sleep(Duration::from_millis(100));
     }

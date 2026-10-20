@@ -377,10 +377,14 @@ impl<R: Runner> Tmux<R> {
 
     /// Run `argv` in pane `%N` again, in `cwd`: same pane, window and
     /// session. The pane's program must have exited (`remain-on-exit`).
-    pub fn respawn_pane(&self, pane_id: &str, cwd: &str, argv: &[&str]) -> Result<()> {
+    /// With `kill`, whatever is left in the pane is ended first (`-k`).
+    pub fn respawn_pane(&self, pane_id: &str, cwd: &str, argv: &[&str], kill: bool) -> Result<()> {
         let cwd = escape_cwd(cwd);
         let argv: Vec<String> = argv.iter().map(|a| escape_semicolon(a)).collect();
         let mut args = vec!["respawn-pane", "-t", pane_id, "-c", &cwd];
+        if kill {
+            args.push("-k");
+        }
         args.extend(argv.iter().map(String::as_str));
         self.run(&args).map(drop)
     }

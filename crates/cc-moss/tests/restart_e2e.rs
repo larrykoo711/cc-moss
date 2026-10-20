@@ -152,7 +152,7 @@ fn restart_waits_for_a_busy_session() {
         assert_eq!(v["results"][0]["result"], "queued", "{v}");
     }
     let queue = std::fs::read_to_string(w.state().join("daemon/restart-queue.json")).unwrap();
-    let queue: Vec<String> = serde_json::from_str(&queue).unwrap();
+    let queue: Vec<serde_json::Value> = serde_json::from_str(&queue).unwrap();
     assert_eq!(queue.len(), 1, "{queue:?}");
     assert_eq!(session(&w, "api")["restart_queued"], true);
     // --now without a yes, and nobody to ask: refused.
@@ -277,4 +277,178 @@ fn restart_refuses_what_it_cannot_restart() {
     let (v, ok) = restart(&w, &["--stale"]);
     assert!(ok, "{v}");
     assert_eq!(v["results"], serde_json::json!([]));
+}
+
+/// `cc-moss new <name>` with the fake claude doing `on_term` on SIGTERM
+/// (the tmux server, started here, passes it on to the pane).
+fn new_with(w: &World, name: &str, on_term: &str) {
+    let out = w
+        .cc_moss()
+        .env("CC_MOSS_FAKE_ON_TERM", on_term)
+        .args(["new", name, "--detach", "-C"])
+        .arg(w.path("work"))
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+}
+
+#[test]
+fn restart_waits_for_tmux_to_see_the_pane_dead() {
+    // The process is gone at once, but something it left holds the
+    // terminal a while: tmux doesn't count the pane dead yet.
+    let w = World::new("rlinger");
+    new_with(&w, "api", "linger");
+    let sid = w.session_id("api");
+    let before = session(&w, "api");
+    let pane = before["tmux"]["pane_id"].as_str().unwrap().to_string();
+    let old_pid = before["pid"].as_u64().unwrap();
+    let (v, ok) = restart(&w, &["api"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["results"][0]["result"], "restarted", "{v}");
+    let after = restarted(&w, "api", old_pid);
+    assert_eq!(after["tmux"]["pane_id"], pane.as_str());
+    assert!(args_of(after["pid"].as_u64().unwrap()).contains(&format!("--resume {sid}")));
+}
+
+#[test]
+fn restart_keeps_the_pane_when_it_wont_quit() {
+    let w = World::new("rignore");
+    new_with(&w, "api", "ignore");
+    w.session_id("api");
+    let before = session(&w, "api");
+    let pane = before["tmux"]["pane_id"].as_str().unwrap().to_string();
+    let pid = before["pid"].as_u64().unwrap();
+    let out = w
+        .cc_moss()
+        .env("CC_MOSS_RESTART_QUIT_MS", "1000")
+        .args(["restart", "api", "--json"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"][0]["result"], "refused", "{v}");
+    assert_eq!(v["results"][0]["reason"], "failed", "{v}");
+    assert!(alive(pid), "it is still there");
+    // The pane stays put for whenever it does quit, and nobody hears it
+    // dropped.
+    assert_eq!(
+        w.tmux(&[
+            "show-options",
+            "-p",
+            "-q",
+            "-v",
+            "-t",
+            &pane,
+            "remain-on-exit"
+        ])
+        .trim(),
+        "on"
+    );
+    let s = session(&w, "api");
+    assert_eq!(s["status"], "running");
+    let events = w.cc_moss().args(["events", "--json"]).output().unwrap();
+    let events: serde_json::Value = serde_json::from_slice(&events.stdout).unwrap();
+    assert!(events["events"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|e| e["kind"] != "interrupted"));
+}
+
+#[test]
+fn restart_queues_when_another_restart_holds_it() {
+    let w = World::new("rclaim");
+    w.new_session("api");
+    w.session_id("api");
+    let id = session(&w, "api")["id"].as_str().unwrap().to_string();
+    // Another restart claimed it a moment ago.
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    db.execute(
+        "UPDATE slots SET restore_started_at = ?2 WHERE slot_id = ?1",
+        rusqlite::params![
+            id,
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as i64
+        ],
+    )
+    .unwrap();
+    let (v, ok) = restart(&w, &["api"]);
+    assert!(ok, "{v}");
+    assert_eq!(v["results"][0]["result"], "queued", "{v}");
+    // And it really is in the queue.
+    assert_eq!(session(&w, "api")["restart_queued"], true);
+}
+
+#[test]
+fn restart_in_a_shell_goes_to_the_sessions_folder() {
+    let w = World::new("rcd");
+    let work = w.path("work");
+    let elsewhere = w.path("elsewhere");
+    std::fs::create_dir_all(&elsewhere).unwrap();
+    // The shell is elsewhere; the session works in `work`.
+    w.tmux(&[
+        "new-session",
+        "-d",
+        "-s",
+        "shellpane",
+        "-c",
+        elsewhere.to_str().unwrap(),
+        "bash",
+        "--norc",
+        "--noprofile",
+    ]);
+    let pane = w
+        .tmux(&["display-message", "-p", "-t", "shellpane", "#{pane_id}"])
+        .trim()
+        .to_string();
+    let exports = format!(
+        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
+        w.state().display(),
+        env!("CARGO_BIN_EXE_cc-moss"),
+        w.path("fifos").display()
+    );
+    let sid = "22222222-2222-3333-4444-555555555555";
+    for line in [
+        exports,
+        format!(
+            "CC_MOSS_FAKE_CWD='{}' {} --session-id {sid} --name=cdme",
+            work.display(),
+            w.claude.display()
+        ),
+    ] {
+        w.tmux(&["send-keys", "-t", &pane, "-l", &line]);
+        w.tmux(&["send-keys", "-t", &pane, "Enter"]);
+    }
+    let before = wait_until("the session under the shell", || {
+        ls_json(&w.state(), true)["sessions"]
+            .as_array()?
+            .iter()
+            .find(|s| s["name"] == "cdme" && s["status"] == "running")
+            .cloned()
+    });
+    let old_pid = before["pid"].as_u64().unwrap();
+    let (v, ok) = restart(&w, &["cdme"]);
+    assert!(ok, "{v}");
+    let after = restarted(&w, "cdme", old_pid);
+    let pid = after["pid"].as_u64().unwrap().to_string();
+    // Linux has it under /proc; macOS says through lsof.
+    let cwd = match std::fs::read_link(format!("/proc/{pid}/cwd")) {
+        Ok(p) => format!("n{}", p.display()),
+        Err(_) => {
+            let out = Command::new("lsof")
+                .args(["-a", "-d", "cwd", "-Fn", "-p", &pid])
+                .output()
+                .unwrap();
+            String::from_utf8_lossy(&out.stdout).into_owned()
+        }
+    };
+    let want = std::fs::canonicalize(&work).unwrap();
+    assert!(
+        cwd.lines().any(|l| l
+            .strip_prefix('n')
+            .is_some_and(|p| { std::fs::canonicalize(p).ok().as_deref() == Some(want.as_path()) })),
+        "{cwd}"
+    );
 }

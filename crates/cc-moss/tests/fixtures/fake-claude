@@ -21,6 +21,14 @@ while [ $# -gt 0 ]; do
   esac
 done
 export CLAUDE_PID=$$ CLAUDE_CODE_SESSION_ATTENDED=1 CLAUDE_CODE_ENTRYPOINT=cli
+# CC_MOSS_FAKE_ON_TERM: "linger" exits on SIGTERM but leaves a child on the
+# terminal for a moment (tmux sees the pane dead late); "ignore" doesn't quit.
+# CC_MOSS_FAKE_CWD: work there, whatever folder it was started in.
+[ -n "$CC_MOSS_FAKE_CWD" ] && cd "$CC_MOSS_FAKE_CWD"
+case "$CC_MOSS_FAKE_ON_TERM" in
+  linger) trap '(sleep 3 < /dev/null) & exit 0' TERM ;;
+  ignore) trap '' TERM ;;
+esac
 hook() { printf '%s' "$2" | "$CC_MOSS_BIN" hook "$1" >/dev/null; }
 transcript() { echo "$CC_MOSS_FAKE_DIR/$1.jsonl"; }
 question='{"questions":[{"question":"Pick one?","header":"Pick","options":[{"label":"A","description":"first"},{"label":"B","description":"second"}],"multiSelect":false}]}'
