@@ -513,6 +513,7 @@ struct GeneralSettings: View {
                     .onChange(of: openAtLogin) { _, on in setOpenAtLogin(on) }
             }
         }
+        .task { openAtLogin = await LoginItem.refresh() }
         SettingsCard(title: L.t("Language", "语言")) {
             CardRow(
                 title: L.t("Language", "语言"),
@@ -604,13 +605,17 @@ struct GeneralSettings: View {
     }
 
     private func setOpenAtLogin(_ on: Bool) {
-        do {
-            try LoginItem.set(on)
-            loginError = nil
-        } catch {
-            loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
+        // The answer from `refresh` lands here too: only a change is applied.
+        guard on != LoginItem.isEnabled else { return }
+        Task {
+            do {
+                try await LoginItem.set(on)
+                loginError = nil
+            } catch {
+                loginError = L.t("Couldn't change it: \(error.localizedDescription)", "没改成：\(error.localizedDescription)")
+            }
+            openAtLogin = LoginItem.isEnabled
         }
-        openAtLogin = LoginItem.isEnabled
     }
 }
 

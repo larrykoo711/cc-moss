@@ -633,16 +633,20 @@ private struct StartupChoice: View {
         }
         .onAppear {
             guard live else { return }
-            if !LoginItem.isEnabled { apply(true) }
-            openAtLogin = LoginItem.isEnabled
+            Task {
+                if !(await LoginItem.refresh()) { try? await LoginItem.set(true) }
+                openAtLogin = LoginItem.isEnabled
+            }
             Task { await status.refresh() }
         }
     }
 
     private func apply(_ on: Bool) {
-        guard live else { return }
-        try? LoginItem.set(on)
-        openAtLogin = LoginItem.isEnabled
+        guard live, on != LoginItem.isEnabled else { return }
+        Task {
+            try? await LoginItem.set(on)
+            openAtLogin = LoginItem.isEnabled
+        }
     }
 }
 
