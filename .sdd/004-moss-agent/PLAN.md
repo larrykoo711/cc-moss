@@ -162,8 +162,8 @@ R1 ◄── 全部
 | **T2.2** Moss 常驻 | cc-moss | T2.1 | ✅ Done | done/T2.2-moss-resident.spec.md | 杀掉后阶梯恢复、列表里结束不了 |
 | **T2.3** 和 Moss 对话 | cc-moss | T2.2 | ✅ Done | done/T2.3-talk-to-moss.spec.md | 面板发一句、看到回复（AMEND-1～4，真机验收通过） |
 | **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
-| **T2.5** 会话归档与清理 | cc-moss | T2.4 | 🟩 Review | in-progress/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
-| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | 🟩 Review | in-progress/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
+| **T2.5** 会话归档与清理 | cc-moss | T2.4 | ✅ Done | done/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
+| **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | ✅ Done | done/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -216,6 +216,8 @@ R1 ◄── 全部
 - 行为变化（rust-031，controller 认可）：restore / restart 占位后 60 秒内进程退出只改状态、不记 `interrupted` 事件，避免重开时误报「断了」
 - 2026-10-20 真机反馈并入 0.3.1：F22 Moss 确认按钮折行不截断；F23 会话等你处理改为 Moss 页一张实时「等你处理」卡、Moss 不再播报（用户选定方案）；F24 Moss 跟随 API 供应商（0.3.0 回归：`--setting-sources project` 丢了用户 env）——供应商键写进 Moss 家 `.claude/settings.local.json`（600），沙箱 denyRead 该文件，真机 claude 实测更具体的 denyRead 压过 allowRead ["."]（cat 被拒）；另含结束并归档、拿回来的已结束会话回到列表、后台任务通知不当最后一句、齿轮菜单与关于页重排、回到底部朦胧条
 - AMEND-2 T2.6 2026-10-20（精确化，不弱化；来自 rev031-rust M6/M9/M10）：(a) 重开判据 = 删键，或 env `ANTHROPIC_MODEL` 变了；顶层 `model`（`/model`）不再要求重开，重开时只在 env 指定了 `ANTHROPIC_MODEL` 才去掉 `--model`；(b) 每个会话对照它启动时读的那份 settings（钩子记录路径），守护进程同时盯这些文件，与 `[claude] config_dir` / `CLAUDE_CONFIG_DIR` / `~/.claude` 不一致时 doctor 提醒；(c) 重开队列记尝试次数，3 次失败放弃并记 `restart-failed` 事件，`--stale` 或抢占失败入队的条目在切换已生效后丢弃。R-RUST 合入 ea6672d…877d015；H1、L11 偏差 controller 认可（L11 改为写事务内重读 slot 比对，不加 `status <> 'running'`，以免崩溃会话无法自动归档/清理）
+- 2026-10-20：R-SEC 合入（04c5750…c388837：SM1 Moss 的 key 走 `cc-moss moss provider-key`、SM2 Moss 归档要同意 + `archived_by`、SL1–SL6、信任提示、headless 精确读 argv）；ls_cli 偶发红定位为 macOS 首次执行新写脚本的检查超过 `claude agents` 3 秒，测试先预热桩（4a246a6，修前 3/16 红、修后 0/12）。合并树：macOS Rust 902 + Swift 803 全绿；Linux 本地 898/902，moss_chat_e2e 4 项为本地镜像环境问题（GitHub CI ubuntu 上通过）。开发版已装本机，doctor / Moss / 列表抽查正常
+- STAGE-CLEAN: 2026-10-20 commits=[cc-moss:分支内保留，发版 PR squash 合入 main] review=[fixed:R-RUST 4 高 6 中 5 低 + R-APP 2 中 6 低 + R-SEC 2 中 7 低 held:0] artifacts=3 个已合入的 agent worktree kanban=ok
 
 ## 反馈车道（真机反馈）
 
