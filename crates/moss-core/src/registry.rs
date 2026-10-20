@@ -599,7 +599,10 @@ impl Registry {
             };
             let (title, to) = crate::transcript::custom_title_since(Path::new(path), from);
             scanned.insert(slot.slot_id.clone(), to);
-            if let Some(name) = title.filter(|t| slot.name.as_deref() != Some(t.as_str())) {
+            let title = title.map(|t| crate::naming::clean_name(&t));
+            if let Some(name) =
+                title.filter(|t| !t.is_empty() && slot.name.as_deref() != Some(t.as_str()))
+            {
                 self.set_name(&slot.slot_id, &name)?;
                 renamed.push(slot.slot_id);
             }
@@ -1267,6 +1270,12 @@ fn record_interrupted(
 
 /// Set a slot's name; a change is recorded as `renamed` when `announce`.
 fn rename(conn: &Connection, slot_id: &str, name: &str, announce: bool, at_ms: i64) -> Result<()> {
+    // Names come from hook payloads and transcripts: no control or hidden
+    // characters get in (they could fake a line or a name in the panel).
+    let name = &crate::naming::clean_name(name);
+    if name.is_empty() {
+        return Ok(());
+    }
     let from: Option<String> = conn
         .query_row(
             "SELECT name FROM slots WHERE slot_id = ?1",

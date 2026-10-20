@@ -294,6 +294,19 @@ fn restart_one(
         .and_then(|p| moss_core::provider::Snapshot::read(&p))
         .map_or(picks_model, |s| s.picks_model());
     let argv = restart_argv(&claude, slot, picks_model);
+    // Typed or run as it is: a control character in any word (a name from
+    // before names were cleaned) is refused, never sent.
+    if has_control(&argv) {
+        return Ok(refused(
+            name,
+            Some(slot),
+            "failed",
+            tr!(
+                format!("{name} has a control character in its name or arguments; rename it, then restart it."),
+                format!("{name} 的名字或参数里有控制字符；先改个名，再重开。")
+            ),
+        ));
+    }
     // One restart at a time: another (the daemon's after a turn, or a
     // second click) may have it already. `restore` keeps its hands off
     // too, and the exit is no news.
@@ -361,6 +374,11 @@ fn restart_one(
             ))
         }
     }
+}
+
+/// Whether any word holds a control character.
+fn has_control(argv: &[String]) -> bool {
+    argv.iter().any(|w| w.chars().any(char::is_control))
 }
 
 fn shell_line(argv: &[String]) -> String {
@@ -500,6 +518,14 @@ mod tests {
                 "high"
             ]
         );
+    }
+
+    #[test]
+    fn restart_refuses_a_control_character() {
+        let mut s = slot(&[]);
+        assert!(!has_control(&restart_argv("claude", &s, false)));
+        s.name = Some("api\u{1b}[2J".into());
+        assert!(has_control(&restart_argv("claude", &s, false)));
     }
 
     #[test]
