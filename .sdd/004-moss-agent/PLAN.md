@@ -214,6 +214,7 @@ R1 ◄── 全部
 - AMEND-1 T2.5 2026-10-20（加宽，不弱化）：App 会话行为「没在运行」的会话加「归档」行内操作（spec 只写了 CLI `archive`）；`ls --json` 列出全部会话并带 `archived_at`，由 App 过滤。接口契约统一写在派发纪律里，两路 agent 并行实施
 - 2026-10-20：T2.5、T2.6 实施完（Rust 305d615 / 91d16eb，App b6c4581 / 5cdd5d5，docs b279669）。verify 全有同名测试，spec 列出的变异全部变红；macOS Rust 864 + Swift 744 全绿；本地 Linux（rust:1.89 + tmux 3.5）除 moss_chat_e2e 4 项外全绿，这 4 项在 main 上同样失败，属本地镜像环境问题，另查。开发版已装本机，待真机验收（cc-switch 第三方↔第三方、切回官方各一次；归档与清理）
 - 行为变化（rust-031，controller 认可）：restore / restart 占位后 60 秒内进程退出只改状态、不记 `interrupted` 事件，避免重开时误报「断了」
+- 2026-10-20 真机反馈并入 0.3.1：F22 Moss 确认按钮折行不截断；F23 会话等你处理改为 Moss 页一张实时「等你处理」卡、Moss 不再播报（用户选定方案）；F24 Moss 跟随 API 供应商（0.3.0 回归：`--setting-sources project` 丢了用户 env）——供应商键写进 Moss 家 `.claude/settings.local.json`（600），沙箱 denyRead 该文件，真机 claude 实测更具体的 denyRead 压过 allowRead ["."]（cat 被拒）；另含结束并归档、拿回来的已结束会话回到列表、后台任务通知不当最后一句、齿轮菜单与关于页重排、回到底部朦胧条
 
 ## 反馈车道（真机反馈）
 
