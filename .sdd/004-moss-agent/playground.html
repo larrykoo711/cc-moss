@@ -349,6 +349,7 @@
 
   <section id="progress">
     <h2>进展 <span class="badge ok">0.3.3 已发布</span></h2>
+    <p class="lede">10-21：第二轮 F46–F48 候选已装到本机：紧凑短按钮、确认式重建、成功模型证据更新。Rust 978 与 Swift 865 测试通过，等待真机验收；没有发布新版本。</p>
     <p class="lede">0.3.0 已发布。0.3.1 加了会话归档（T2.5）和换 API 供应商后原地重开（T2.6），并修完 0.3.0 之后的真机反馈 F19–F34；三路评审修复全部合入，T2.5、T2.6 完成，v0.3.1 已发布，网站与更新记录页上线，四台设备已升级。下一轮：P3 派发、P4 Slack 与在场路由（Backlog）。</p>
     <table><thead><tr><th>日期</th><th>做了什么</th></tr></thead><tbody>
       <tr><td>10-18</td><td>S0–S2 立项与设计（G1、G2）；T1.1 探针、T1.2 默认 bypass（PR #36 进 main）、T1.3 代答中枢、T2.1 守护进程、T2.2 Moss 常驻完成；T1.4 桌面答题合入待真机</td></tr>
@@ -369,7 +370,7 @@
   </section>
 
   <section id="lane">
-    <h2>反馈车道 <span class="badge info">41 条 · 38 已修</span></h2>
+    <h2>反馈车道 <span class="badge info">51 条 · 38 已修</span></h2>
     <table><thead><tr><th>#</th><th>反馈</th><th>状态</th></tr></thead><tbody>
       <tr><td>F1</td><td>设置 › Moss「在 Finder 中打开」Moss 的家</td><td><span class="badge mut">待排期</span></td></tr>
       <tr><td>F2</td><td>设置 › Moss 文案太技术，按 C 端重做</td><td><span class="badge mut">待排期</span></td></tr>
@@ -412,6 +413,16 @@
       <tr><td>F39</td><td>出现两个 cc-moss：App 在 /Applications 时 install 又装进 ~/Applications；应原地更新并先退出旧实例</td><td><span class="badge ok">已修 · 0.3.3</span></td></tr>
       <tr><td>F40</td><td>会话目录被子代理 worktree 覆盖（压缩上下文 / clear 时改写），worktree 删除后找回、移进 tmux 都失败：改为保留启动目录</td><td><span class="badge ok">已修 · 0.3.3</span></td></tr>
       <tr><td>F41</td><td>分叉（--fork-session）或 /clear 过的会话移不进 tmux（not-its-process）：认会话用过的全部编号</td><td><span class="badge ok">已修 · 0.3.3</span></td></tr>
+      <tr><td>F42</td><td>切换渠道后恢复旧会话仍使用旧模型而报错：研究按当前生效配置应用渠道默认模型，并提供通用重开入口</td><td><span class="badge info">自动验证通过 · 待验收</span></td></tr>
+      <tr><td>F43</td><td>小黄刷新图标不明显，手选后仍有标记：重设状态文案、目标模型说明与「应用并重开」操作</td><td><span class="badge info">自动验证通过 · 待验收</span></td></tr>
+      <tr><td>F44</td><td>按内容找回历史会话：受控本地检索、最小命中片段、可继续的会话卡；不放开沙箱、不默认上传历史</td><td><span class="badge info">方案建议 · 未实施</span></td></tr>
+      <tr><td>F45</td><td>历史已有API模型错误却仍显示轮次结束：补充实际请求失败识别、retry去重、成功响应清除</td><td><span class="badge info">自动验证通过 · 待验收</span></td></tr>
+      <tr><td>F46</td><td>PTY代理重开被拒绝：安全同TTY多层shell与单独确认重建窗格</td><td><span class="badge info">规格准备</span></td></tr>
+      <tr><td>F47</td><td>操作栏紧凑化、主次分层与短按钮文案</td><td><span class="badge info">实施中</span></td></tr>
+      <tr><td>F48</td><td>目标模型正常响应后的过期提示与忙闲刷新核查</td><td><span class="badge info">规格准备</span></td></tr>
+      <tr><td>F49</td><td>重开超时与双loading：统一退出确认、终态和单一反馈</td><td><span class="badge info">根因复核</span></td></tr>
+      <tr><td>F50</td><td>重建后旧进程与pane不一致：原进程退出证明及状态/动作一致性</td><td><span class="badge warn">阻断下一候选</span></td></tr>
+      <tr><td>F51</td><td>空闲会话被排队文案误称在忙，同一状态重复四处：统一排队与启动终态</td><td><span class="badge info">实施中</span></td></tr>
     </tbody></table>
   </section>
 
@@ -457,27 +468,33 @@
    st ∈ backlog | ready | doing | review | done
    手填，或跑 skill 的 scripts/gen_kanban.py 从 PLAN 生成 TASKS 粘进来。 */
 const TASKS = [
-  {id:'T1.1', t:'代答探针', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T1.1-ask-probe.spec.md', ac:'三问各有证据，选定回填方式', steps:[]},
-  {id:'T1.2', t:'新会话默认 bypass', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T1.2-bypass-default.spec.md', ac:'新会话带 bypass、不卡警告框', steps:[]},
-  {id:'T1.3', t:'代答中枢（CLI）', repo:'cc-moss', dep:'T1.1', st:'done', sdd:'done/T1.3-ask-broker.spec.md', ac:'假 claude 问答闭环、超时走原生', steps:[]},
-  {id:'T1.4', t:'桌面答题', repo:'cc-moss', dep:'T1.3', st:'done', sdd:'done/T1.4-desktop-answer.spec.md', ac:'面板答完会话继续（侧栏 + 待处理页 + 小莫气泡，真机验收通过）', steps:[]},
-  {id:'T2.1', t:'守护进程', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T2.1-daemon.spec.md', ac:'kill -9 后自动回来', steps:[]},
-  {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'done/T2.2-moss-resident.spec.md', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
-  {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'done', sdd:'done/T2.3-talk-to-moss.spec.md', ac:'面板发一句、看到回复（AMEND-1～4，真机验收通过）', steps:[]},
-  {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'done', sdd:'done/T2.4-moss-fixes.spec.md', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
-  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'done/T2.5-archive.spec.md', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
-  {id:'T2.6', t:'换供应商后原地重开', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'done/T2.6-provider-switch.spec.md', ac:'能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束', steps:[]},
+  {id:'T1.1', t:'代答探针', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'三问各有证据，选定回填方式', steps:[]},
+  {id:'T1.2', t:'新会话默认 bypass', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'新会话带 bypass、不卡警告框', steps:[]},
+  {id:'T1.3', t:'代答中枢（CLI）', repo:'cc-moss', dep:'T1.1', st:'done', sdd:'—', ac:'假 claude 问答闭环、超时走原生', steps:[]},
+  {id:'T1.4', t:'桌面答题', repo:'cc-moss', dep:'T1.3', st:'done', sdd:'—', ac:'面板答完会话继续（侧栏 + 待处理页 + 小莫气泡，真机验收通过）', steps:[]},
+  {id:'T2.1', t:'守护进程', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'kill -9 后自动回来', steps:[]},
+  {id:'T2.2', t:'Moss 常驻', repo:'cc-moss', dep:'T2.1', st:'done', sdd:'—', ac:'杀掉后阶梯恢复、列表里结束不了', steps:[]},
+  {id:'T2.3', t:'和 Moss 对话', repo:'cc-moss', dep:'T2.2', st:'done', sdd:'—', ac:'面板发一句、看到回复（AMEND-1～4，真机验收通过）', steps:[]},
+  {id:'T2.4', t:'体检', repo:'cc-moss', dep:'T2.3,T1.3', st:'done', sdd:'—', ac:'能修的直接修、要定的弹选项、体检简报', steps:[]},
+  {id:'T2.5', t:'会话归档与清理', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'—', ac:'30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓', steps:[]},
+  {id:'T2.6', t:'换供应商后原地重开', repo:'cc-moss', dep:'T2.4', st:'done', sdd:'—', ac:'能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束', steps:[]},
+  {id:'T2.7', t:'恢复模型请求探针', repo:'cc-moss', dep:'T2.6', st:'done', sdd:'—', ac:'首个主请求模型、同 ID 与历史保留', steps:[]},
+  {id:'T2.8', t:'渠道模型策略与队列', repo:'cc-moss', dep:'T2.7', st:'done', sdd:'—', ac:'显式目标模型、排队保持与取消', steps:[]},
+  {id:'T2.9', t:'重开交互与视觉', repo:'cc-moss', dep:'T2.8', st:'done', sdd:'—', ac:'文字状态、目标模型、一键应用与普通重开', steps:[]},
+  {id:'T2.10', t:'API失败与恢复信号', repo:'cc-moss', dep:'T2.7', st:'done', sdd:'—', ac:'实际错误去重、成功恢复、旧会话不漏检', steps:[]},
+  {id:'T2.11', t:'嵌套终端安全重开', repo:'cc-moss', dep:'T2.8', st:'done', sdd:'—', ac:'同TTY安全重开、PTY独立确认重建', steps:[]},
+  {id:'T2.12', t:'目标模型响应证据', repo:'cc-moss', dep:'T2.8,T2.10', st:'done', sdd:'—', ac:'新epoch成功消除模型误报、removed与故障保留', steps:[]},
+  {id:'T2.13', t:'退出确认与单一终态', repo:'cc-moss', dep:'T2.11,T2.12', st:'done', sdd:'—', ac:'旧进程退出前零新启动、超时不重试、单loading与单错误呈现', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
   {id:'R1', t:'收口评审', repo:'cc-moss', dep:'T1.1–T4.2', st:'backlog', sdd:'—', ac:'评审报告与交付四桶', steps:[]},
 ];
 const PHASES = [
-  {k:'P1', name:'放手干 + 替你接住问题（MVP · 0.3.0）', ids:['T1.1','T1.2','T1.3','T1.4']},
-  {k:'P2', name:'Moss 住进来（0.3.0 / 0.3.1）', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6']},
-  {k:'P3', name:'Moss 派活（0.4.0）', ids:['T3.1']},
-  {k:'P4', name:'Slack 与路由（0.5.0）', ids:['T4.1','T4.2']},
-  {k:'R', name:'收口', ids:['R1']},
+  {k:'P1', name:'<填 Phase 名>', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
+  {k:'P2', name:'<填 Phase 名>', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13']},
+  {k:'P3', name:'<填 Phase 名>', ids:['T3.1']},
+  {k:'P4', name:'<填 Phase 名>', ids:['T4.1','T4.2']},
 ];
 
 /* ═══ 以下为通用渲染 + 空态/主题/导航逻辑，无需改 ═══ */

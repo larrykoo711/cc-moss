@@ -216,6 +216,10 @@ struct SessionRow: View {
     /// Something under way (moving into tmux): a spinner and these words in
     /// place of the second line.
     var progress: String?
+    var providerStatus: ProviderRecovery.State?
+    var showProviderPlan: (() -> Void)?
+    var recoveryOperation: RecoveryOperation?
+    var recoveryExpanded = false
     @Environment(\.colorScheme) private var scheme
 
     /// The name, with the matched characters in bold brand.
@@ -260,13 +264,21 @@ struct SessionRow: View {
                                       "不在 tmux 里：它不是在 tmux 里开的，没法从这里打开。"))
                             .accessibilityLabel(L.t("not in tmux", "不在 tmux 里"))
                     }
-                    if let why = session.providerRestart, session.status == "running" {
-                        // Still on the old provider: a restart switches it.
-                        Image(systemName: Icons.providerRestart)
-                            .font(.system(size: 10.5, weight: .semibold))
-                            .foregroundStyle(session.restartQueued ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Theme.amber))
-                            .tip(why.explanation)
-                            .accessibilityLabel(L.t("needs a restart", "要重开"))
+                    if let title = recoveryOperation.flatMap({ recoveryExpanded ? nil : ($0.progressLabel ?? $0.title) }) ?? providerStatus?.title,
+                       let showProviderPlan {
+                        let warning = recoveryOperation.map(\.isFailure) ?? (providerStatus != .uncertain)
+                        let tint: Color = warning ? Theme.amber : .secondary
+                        Button(action: showProviderPlan) {
+                            Label(title, systemImage: "chevron.down")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(tint)
+                                .padding(.horizontal, 6)
+                                .padding(.vertical, 4)
+                                .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 5))
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(title + L.t(". Show details", "，展开说明"))
+                        .fixedSize()
                     }
                 }
                 if let progress {
@@ -295,15 +307,6 @@ struct SessionRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .tip(problem)
-                } else if session.restartQueued && session.status == "running" {
-                    HStack(spacing: 4) {
-                        Image(systemName: Icons.restart)
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(Theme.amber)
-                        Text(L.t("Restarts after this turn", "这轮结束后重开")).lineLimit(1)
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
                 } else if let sub = session.subtitle {
                     HStack(spacing: 4) {
                         Image(systemName: session.subtitleIsNote ? Icons.note : Icons.lastPrompt)

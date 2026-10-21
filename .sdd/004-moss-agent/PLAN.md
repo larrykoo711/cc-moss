@@ -150,6 +150,18 @@ R1 ◄── 全部
 - 目标：整迭代重型评审（安全维度必有：bypass、代答 hook、Moss 权限、Slack token 与频道）+ 交付报告四桶
 - 依赖：T1.1–T4.2
 
+### T2.7 恢复模型请求探针
+- 目标：本机假 API 验证恢复优先级、同一会话与历史保留；F42 实现前置。
+- 依赖：T2.6；先验证再实施，用户 2026-10-21 批准。
+
+### T2.8 显式渠道模型与重开队列
+- 目标：依据 T2.7 实测，实现模型策略、队列保持/取消与诚实恢复反馈；F42。
+- 依赖：T2.7；spec 随探针结论冻结。
+
+### T2.9 重开交互与视觉
+- 目标：文字状态、行内目标模型说明、一键应用、通用重开菜单；F43。
+- 依赖：T2.8 契约冻结；先 TDD，再离屏明暗验收。
+
 ## Kanban
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
@@ -164,6 +176,13 @@ R1 ◄── 全部
 | **T2.4** 体检 | cc-moss | T2.3,T1.3 | ✅ Done | done/T2.4-moss-fixes.spec.md | 能修的直接修、要定的弹选项、体检简报 |
 | **T2.5** 会话归档与清理 | cc-moss | T2.4 | ✅ Done | done/T2.5-archive.spec.md | 30 天不用自动归档；清理经 Moss 确认、对话记录进废纸篓 |
 | **T2.6** 换供应商后原地重开 | cc-moss | T2.4 | ✅ Done | done/T2.6-provider-switch.spec.md | 能热生效的只提示；要重开的一键原地重开，pane 不变、忙的等这轮结束 |
+| **T2.7** 恢复模型请求探针 | cc-moss | T2.6 | ✅ Done | done/T2.7-model-probe.spec.md | 首个主请求模型、同 ID 与历史保留 |
+| **T2.8** 渠道模型策略与队列 | cc-moss | T2.7 | ✅ Done | done/T2.8-provider-model.spec.md | 显式目标模型、排队保持与取消 |
+| **T2.9** 重开交互与视觉 | cc-moss | T2.8 | ✅ Done | done/T2.9-restart-ux.spec.md | 文字状态、目标模型、一键应用与普通重开 |
+| **T2.10** API失败与恢复信号 | cc-moss | T2.7 | ✅ Done | done/T2.10-api-failure.spec.md | 实际错误去重、成功恢复、旧会话不漏检 |
+| **T2.11** 嵌套终端安全重开 | cc-moss | T2.8 | ✅ Done | done/T2.11-nested-restart.spec.md | 同TTY安全重开、PTY独立确认重建 |
+| **T2.12** 目标模型响应证据 | cc-moss | T2.8,T2.10 | ✅ Done | done/T2.12-model-evidence.spec.md | 新epoch成功消除模型误报、removed与故障保留 |
+| **T2.13** 退出确认与单一终态 | cc-moss | T2.11,T2.12 | ✅ Done | done/T2.13-restart-lifecycle.spec.md | 旧进程退出前零新启动、超时不重试、单loading与单错误呈现 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -274,6 +293,23 @@ R1 ◄── 全部
 | F40 | 会话目录被子代理 worktree 覆盖：compact / clear 时的 SessionStart 用当时的工作目录改写了会话目录，worktree 删除后找回、移进 tmux 都失败 → compact / clear 保留启动目录 | ✅ 已修 · 0.3.3 |
 | F41 | 移进 tmux 报 not-its-process：进程以 `--resume <母会话> --fork-session` 启动（或 `/clear` 后换了编号），命令行里的编号不是当前会话的 → 认会话用过的全部编号，`--fork-session` 时不比对 `--resume` 的编号 | ✅ 已修 · 0.3.3 |
 
+| F42 | 切换供应商后恢复旧会话仍请求旧模型，渠道返回 unknown provider；研究读取当前生效的渠道默认模型，显式覆盖恢复模型，并提供通用重开入口（2026-10-21 用户真机反馈；方案见 `notes/provider-model-recovery.md`） | 🟩 自动验证通过 · 待真机验收 |
+
+| F43 | 重开入口仅为标题旁小黄刷新图标，缺少动作文字与目标模型说明；手动切好后仍有标记。重设状态、行内说明与一键操作 UX，见 `notes/provider-model-recovery.md` | 🟩 自动验证通过 · 待真机验收 |
+
+| F44 | 按做过的事情找历史会话：名称/备注不足，Moss不能检索历史正文而把工作交回用户。方案：保留沙箱，由受信任进程限定工作区、本地按需检索，返回最小命中片段与找回卡；片段进入模型请求需告知 | ⬜ 方案建议 · 未授权实施 |
+
+| F45 | API 400模型不可用未进入故障状态：历史有isApiErrorMessage/apiErrorStatus，事件仍只有working/finished。F42补强：识别实际请求失败，重试去重，成功响应后清除，不靠finished判恢复 | 🟩 自动验证通过 · 待真机验收 |
+
+| F46 | 重开误拒绝多层shell；实测为不同TTY的终端集成PTY代理。用户批准单独确认的重建窗格方案，不授权立即操作真实会话 | 🟨 规格准备 |
+| F47 | 操作按钮纵排且文案太长：主按钮右对齐、次要操作降级、故障隐藏保持选择、去重复收起、短标签 | 🟨 实施中 |
+| F48 | 目标模型已正常响应仍提示待应用；busy后台为true但截图等待，需分别处理过期模型提示与核对UI刷新 | 🟨 规格准备 |
+
+| F49 | 旧Claude未在10秒内退出，重开失败后仍留占用/重试；行与展开区重复loading。需明确超时终态、停止无意义重试、单一操作状态展示 | ✅ 第三轮修复已验收 |
+| F50 | 真机重建后旧记录PID为orphan，记录pane已有新进程，继续重开报not descendant；确认卡与状态tips矛盾。先验证旧进程真正退出再启动，不自动改绑或强杀 | ✅ 修复已验收；旧现场未自动清理 |
+
+| F51 | 空闲会话重开却四处显示本轮结束后；busy=0、工作轮次已结束。排队与忙碌混淆、旧操作状态不收敛 → 纳入T2.13统一终态 | ✅ 第三轮修复已验收 |
+
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
 - 汇合点 1：T1.1 结论 → T1.3 开工；T1.3 合入 → T1.4；P1 四个都合入 → 发 0.3.0
@@ -289,3 +325,55 @@ R1 ◄── 全部
 - D2 bypass 直接默认开启，升级不询问
 - D3 Moss 一直在线，空闲不耗额度
 - D4 先 bypass 与代答（P1 = MVP）
+
+- G1/F42–F43：2026-10-21 用户批准「没问题，按这个方案开工，先验证再实现」；分支 feature/004-provider-model-recovery；无真实渠道探测、无用户会话重开。
+
+- T2.7 ✅ 2026-10-21：bare/safe 各五组10/10请求级断言通过，原ID/历史/同transcript保留；首轮采样器失败如实保留，详见reports/provider-model-probe.md。
+- AMEND: T2.7 verify补齐实际必填--claude和两种--mode，reason=复跑命令对齐，标准未弱化，approved-by=controller date=2026-10-21。T2.8准入依据为真实请求实测，不是文档猜测。
+
+- AMEND: F42补强F45实际API失败识别，reason=用户截图与只读历史存在明确错误元数据、原配置监听漏检，标准加强、不自动重开或重试，approved-by=controller date=2026-10-21。
+
+- G3：2026-10-21 T2.9、T2.10 gate PASS；T2.8契约冻结，三个实现按文件所有权并行。
+- RULING: 项目/local相关provider覆盖拒绝而非忽略；无基线允许显式按当前默认应用；安全revision包含host/键名集；队列最后明确操作覆盖、执行中不能声称取消成功。已直接回给provider-backend。
+- T2.9 补强：queued-only不能退为live；保留当前选择不清API故障、不隐藏removed连接变化；默认模型==故障模型不循环建议同一应用。
+
+- RULING: T2.10缓存可用独立SQLite或JSON+flock，不得扫描持主registry写锁/把每次追加游标写主库（避免hook阻塞及App自刷新）；已直接回api-failure。
+
+- REVIEW-AMEND: T2.8独立评审确认普通重开误将响应模型当选择、直接执行完成误删后续队列两个P2；撤回controller观测模型优先建议，补策略保真与统一执行所有权回归。源码未冻结，远端全量尚未启动。
+
+- REVIEW-AMEND: T2.9补齐restore新增result=starting兼容；现有ok过滤会误报已恢复，已解冻对应Swift模块做定向回归。远端CI镜像与Swift目录均已准备，等待这项与T2.8两个P2冻结后传同树快照。
+
+- REPORT: 2026-10-21 F42/F43/F45实现与自动验证完成，T2.8/T2.9/T2.10进入Review待用户真机验收。最终产品tree47853695；Linux Rust956通过/6既有ignored，Swift857通过/113 suites；fmt/clippy/build/离屏图通过。聊天镜像缺Time::HiRes已完成基线与补依赖因果对照，无产品绕过。详见reports/provider-delivery.md；未安装/提交/推送/发版。
+
+- LOCAL-ACCEPTANCE: 2026-10-21 用户授权「安装到本机，我测试一下」。已原位安装候选App、原子替换开发CLI、更新8个受管钩子及t入口、重启后台服务；App单实例，10个普通会话PID未变化。旧版App/registry与入口回滚信息已私有备份，Homebrew正式版保留。真机已识别原漏检会话的model_unavailable/400，未代用户重开或调用生产探测。版本号仍0.3.3（未发版候选），等待用户测试。
+
+- G1/F46：用户明确选择「加入确认式重建（推荐）」；仅功能方案批准，未授权现在重建真实窗格。F47短按钮文案按用户追加反馈；F48不以配置快照代替实际模型证据。
+
+- F47反馈车道：短标签与紧凑布局实施中，不改变后端动作权限；F48 T2.12 gate PASS，成功证据只用于模型提醒，保留渠道/认证未证实边界。
+
+- T2.11 G3 PASS：独立rebuild-pane+yes+identity确认，busy拒绝不排队；先后核验会话/进程/pane身份。UI/后端按同spec纵切实施，不操作真实pane。
+- F47短操作栏已15项定向测试绿、正常宽和320pt明暗截图通过；controller目检主按钮右对齐、仅弱次操作，无四按钮纵堆。等待与T2.11/T2.12集成后更新候选。
+- F48忙闲刷新核查：普通列表路径未见busy漏更新；另有搜索索引保存旧Session而cache key漏provider/API/queue字段的独立缺陷，记录为后续修复，不假称是本次截图busy问题根因。
+
+- RULING: T2.11 identity PID为正整数u32、start为非空字符串，正式reason confirmation-stale；T2.12 effective_reason由LS/Watcher/--stale共享，显式names不自动过滤。裁决已直接通知两端作者。
+
+- REVIEW: T2.11独立复核发现P1退出后shell exec换程序仍被输入、P2重建竞态可能掉入普通队列；已直接派发作者修复与回归，未安装此轮新代码。
+
+- REVIEW F46–F48：独立限定复核原问题全部fixed（shell exec/前台与pane映射、重建全部入队守卫、明确names的claim冲突队列保留）；第二轮最终tree62ac400e远端Rust验证中，UI865测试/签名包已通过，尚未覆盖本机候选。
+
+- LOCAL-ACCEPTANCE ROUND2: 2026-10-21 F46–F48候选tree62ac400e完成远端Rust978通过/0失败/6既有ignored、fmt/clippy绿；Swift865通过/114 suites、签名包绿。原位更新本机App/CLI/daemon，单App，10普通会话PID全部未变；当前控制会话busy=true、provider_restart=null、api_failure=null，过期model提醒已由新响应证据消除。未执行任何真实窗格重建。目标旧会话现场已busy且无API故障，由用户决定是否还需操作，不为测试强重建。候选仍0.3.3，未提交/推送/发版。
+
+- 真机反馈F49/F50：已告知用户暂停两个失败会话的重开测试；只读确认原进程仍存活/记录与pane不一致。尝试CLI取消返回in-progress（未成功）；随后只读复查两会话queue已空，未强改数据/未发终止信号。后端与UI先做统一状态/生命周期方案，不再局部叠tips交付。
+
+- G3 T2.13 PASS：F49/F50纵切修复先验证旧PID退出门禁，不自动强杀/修真实错配记录；统一每slot操作阶段，移除重复loading/say+report。backend获restart/provider/registry最小CAS写权，UI作者负责Swift，API证据作者保持冻结。
+
+- T2.13红绿进展：隔离PTY旧Claude忽略HUP/TERM，旧实现仍launch第二份的断言真实红；修复后quit-timeout、原pane/PID保留、零第二次启动绿。正常退出后dead pane无PID的真实语义已裁决用原拓扑+server身份与双Dead证明，未降低退出标准。
+
+- T2.13第三轮候选：后端991/0/6ignored、fmt/clippy绿；Swift892/115 suites、Release签名绿；83项联合定向及限定独立复核通过。原位备份更新本机候选，单App/daemon/统一入口核验通过，10/10普通会话注册身份未变。T2.13进入Review待用户真机验收，F49/F50/F51历史阻断已修复并通过隔离验证；旧错配现场未清理，不宣称自动修复。未提交/推送/发版。详见reports/provider-delivery.md第三轮记录。
+
+- E2E: 2026-10-21 用户对第三轮本机候选确认「测试了没问题」，T2.13验收通过。未获提交/推送/正式发版授权；不将此反馈解释为历史错配现场已清理。
+
+- DISTILL: 2026-10-21 重开前后均核对进程/窗格身份；旧进程未确证退出时零第二启动。UI请求需绑定slot+session+token，排队不等于忙碌，待确认不等于成功；已固化为实现与回归测试，指南同步。
+- REPORT: 2026-10-21 已完成T2.7–T2.13与用户验收；F44历史正文搜索为独立建议，搜索缓存字段补齐延后，旧错配进程手工清理不在本次授权；详见reports/provider-delivery.md。
+- STAGE-CLEAN: 2026-10-21 开始提交及0.3.4准备。复用最终产品子树已绿验证，检查公开提交脱敏；正式发布需要另行授权。
+- SELF-UPGRADE: 本轮复盘：旧版本冻结通知迟到不能充当最新结论，最终以磁盘子树与最新证据为准。现有spec冻结/独立复核/证据匹配纪律已覆盖，问题为执行未遵守而非缺少新流程；本次不扩写全局skill。重复借机包装可后续沉入宿主验证工具，不混入本次产品发版。

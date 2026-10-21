@@ -230,47 +230,42 @@ Sessions you no longer use get put away, so the list keeps only what you're work
 
 ### Switching API providers
 
-When your subscription runs out and you switch to another provider with a tool like cc-switch, you usually don't
-have to leave the session: Claude Code watches `~/.claude/settings.json`, and a new address, token or model alias
-applies from your next message (tested on 2.1.303). The cc-moss daemon watches the file too, and the panel says
-"Switched to <host>. Your next message uses it."
-
-Two kinds of switch don't reach a running session; those need a restart:
-
-- Going back to your Claude subscription: the tool removes those settings, but a running session keeps the removed
-  values and goes on talking to the old provider.
-- A provider that sets the model with `ANTHROPIC_MODEL` in the settings' `env`: that one is read only at startup.
-  `model` at the top of settings (what `/model` writes when you change models in a session) doesn't count and never
-  asks for a restart.
-
-The panel marks the sessions affected; click Restart, or Restart All. On the command line:
+After switching channels with a tool such as cc-switch, Claude Code may pick up a changed address or key while it runs. That does not mean the model selected in an older conversation works on the new channel. Retrying a “model not found” error does not select another model. Choose one with `/model`, or explicitly apply the current channel's model:
 
 ```sh
-cc-moss restart NAME      # restart it in the same tmux pane, same conversation
-cc-moss restart --stale   # restart every session that needs it
+cc-moss restart NAME                          # ordinary restart: resume without forcing a model
+cc-moss restart --provider-default NAME       # apply the channel model and restart in the same pane
+cc-moss restart --provider-default --stale     # apply to sessions already marked for restart
+cc-moss restart --cancel NAME                 # cancel a restart that has not started
+cc-moss restore --provider-default --yes NAME # interrupted session: restore with the channel model
 ```
 
-- Same pane, same tmux session name: no getting back into tmux, no typing the name again. It starts with the
-  arguments it had before, minus `--model` when the new settings pick a model with `ANTHROPIC_MODEL` in `env`.
-- A session that's busy isn't interrupted: it's queued and restarts when the turn is done. `--now` restarts it right
-  away and loses the reply in progress (send "continue" afterwards); it asks first in a terminal, `--yes` skips that.
-- If Claude has quit and the pane is back at a shell, restart types `cd '<the session's folder>' && claude --resume <id>
-  --name=<name> <kept arguments>` into that shell. Variables you exported in the shell still apply; ones set only in
-  front of the original command (`FOO=1 claude`) don't. The kept arguments are only `--permission-mode`, `--model`,
-  `--effort`, `--add-dir`, `--agent` and `--dangerously-skip-permissions`.
-- A queued restart that fails 3 times in a row isn't tried again: a `restart-failed` event is recorded, and `doctor`
-  and the panel still mark the session as needing a restart, so you can click it yourself.
-- A session outside tmux needs `adopt` first; Moss is looked after by cc-moss and isn't restarted here.
-- `--json` reports `restarted`, `queued` or `refused` (with a `reason`) for each. `cc-moss doctor` has an "API
-  provider" line with the current host and how many sessions need a restart, and points out folders whose own
-  `.claude/settings*.json` pick a provider, where a switch won't apply. Each session is judged against the settings
-  file it read when it started; when some read a different settings folder than cc-moss watches, `doctor` tells you
-  to set `[claude] config_dir` to the folder you switch in.
-- The panel, `doctor` and the logs show only the provider's host name and model names; token and key values are
-  never shown or recorded. Moss follows your switch: its settings hold only the address and models, and the key
-  stays out of any file it can see. When it sends a request, `cc-moss moss provider-key` reads the key from your
-  settings and hands it to Claude Code (or runs your own `apiKeyHelper` if you set one), so a new key reaches it
-  within a minute.
+- An ordinary restart and applying a channel are separate actions. An ordinary restart removes the old launch `--model` and lets Claude Code resume the conversation selection. The latest response model is not treated as the current selection; a manual choice that has not produced a response cannot be confirmed. `--provider-default` instead replaces all old model arguments with one explicit `--model`; merely removing the old argument is not enough.
+- The target comes from settings' `env.ANTHROPIC_MODEL`, then top-level `model`, then `env.ANTHROPIC_DEFAULT_MODEL`. A selected `opus`, `sonnet`, `haiku` or `fable` is resolved through the channel's matching family mapping. With no explicit choice, Claude Code's `default` is used. Resume paths for an explicit model, fixed model, top-level model, `default` and the `opus` mapping were tested on Claude Code 2.1.306 with temporary settings and a local fake API. Parsing of other family mappings and `ANTHROPIC_DEFAULT_MODEL` is covered by unit tests. Neither is a production-channel availability guarantee.
+- The conversation ID, pane and tmux session name stay the same. Your previous task is never sent again. Restart and restore replay the settings directory recorded for that session, rather than combining a model from one source with a process reading another. Older sessions without a recorded source can explicitly apply cc-moss's current default settings, but are not presented as already switched.
+- If project or local settings override the provider or model, or known custom `--settings` arguments cannot be replayed faithfully, applying the channel is refused before the old process is stopped. Unrelated project settings do not block it. Invalid or unreadable settings and unsafe model or path characters are also rejected before stopping anything.
+- Busy sessions are queued, not interrupted. Settings are read again when the turn ends, so another channel switch while waiting uses the latest target. The last explicit queued action wins. `--cancel` only removes work that has not started; it does not stop a process, and an in-progress restart cannot be cancelled. Only `--now` interrupts a turn and loses its current reply; a terminal asks first, and `--yes` skips that question.
+- Queuing does not necessarily mean the session is busy. A `queued` result with `reason=busy` waits for the turn to finish; `reason=in-progress` means another recovery operation owns the session. Older results without a reason are simply “Queued.” `restart_queued` includes only pending work, not an operation already executing. Cancelling with nothing pending returns the idempotent `cancelled` result with `reason=not-queued`, explicitly saying there is no queued operation rather than claiming one was removed.
+- `--json` reports `queued`, `starting`, `restarted`, `cancelled` or `refused` (with a `reason`). `starting` means the launch command was submitted but no new session-start event has been confirmed. `restarted` confirms that event, not a successful model API request. No hidden production probe or automatic fallback-model request is sent.
+- Each session in `ls --json` may include `provider_model: {model, source, revision, uncertain}`. Sources are `env`, `settings`, `alias`, `default` and `unknown`. `uncertain` means the session's applied state is unknown, not that the displayed target is unusable. `revision` uses only the safe model plan, provider host and configuration key names, never credential values. Existing `provider_restart` and `restart_queued` fields remain compatible.
+- An exit timeout (`quit-timeout`), failed exit signal (`signal-failed`) or unverified process state (`process-unknown`) ends that queued operation immediately, without automatic retries. Other queued failures stop after three attempts, with a `restart-failed` event. Without a new start confirmation it remains “starting”; submitting a command alone is not a successful recovery. Running sessions outside tmux need `adopt` first. Moss keeps its separate, managed lifecycle.
+- A configuration-difference notice is a clue, not proof of the actual request model or API compatibility. The panel, `doctor` and logs never show or record token or key values. Moss still obtains its key through the existing `cc-moss moss provider-key` path, not a settings file it can read.
+
+### Nested terminals and rebuilding a pane
+
+Ordinary restart supports nested interactive shells on the same terminal. It checks pane ancestry and that Claude is the foreground job, then waits for the original shell to regain the foreground before entering the resume command. Unverifiable terminals, background jobs and unknown wrappers are refused rather than sent blind input.
+
+Some terminal integrations forward input through another PTY. An ordinary restart returns `refused/pty-proxy` and **does not rebuild automatically**, even with ordinary `--yes`. The panel asks for separate confirmation: rebuilding ends the pane's terminal integration and other tasks, while keeping the conversation history. Rebuilding is allowed only when idle. If busy, wait for the turn to finish and confirm again; this authorization is never queued.
+
+From the CLI, first run `restart --json NAME` to get the complete `rebuild_identity` in the refusal. After reviewing the impact, pass that object back unchanged:
+
+```sh
+cc-moss restart --rebuild-pane --yes --rebuild-identity '<complete returned JSON object>' --json -- NAME
+```
+
+Rebuilding also waits until the original Claude process is confirmed stopped. Ending its outer terminal integration alone is not enough to launch another copy. If exit times out, signalling fails or process state is unknown, the pane is kept and the automatic operation ends. Open the original session to handle its exit; cc-moss neither force-kills it nor suggests typing another resume command into a still-running session. After exit it checks the original pane, session, window and tmux-server identities again. Any mismatch stops the operation rather than rewriting the record to fit.
+
+Only one session is accepted. Add `--provider-default` explicitly to apply the channel model as well; otherwise no model override is imposed. The credential-free identity binds the conversation, Claude PID and start time, tmux socket, pane and pane-root process identity. A change before execution returns `confirmation-stale` and requires fresh confirmation. Rebuilding resumes the same conversation in the original pane without resending your task. `starting` and `restarted` retain their ordinary-restart meanings.
 
 ### Answering a session's questions from elsewhere
 

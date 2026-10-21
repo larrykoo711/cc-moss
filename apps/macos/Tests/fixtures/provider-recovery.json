@@ -1,0 +1,145 @@
+{
+  "schema": 1,
+  "sessions": [
+    {
+      "id": "PLAN",
+      "name": "模型恢复演示 · 长名称不会挡住操作",
+      "status": "running",
+      "session_id": "demo-PLAN",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": false,
+      "provider_restart": "model",
+      "provider_model": {
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "source": "settings",
+        "revision": "demo-revision-1",
+        "uncertain": true
+      }
+    },
+    {
+      "id": "BUSY",
+      "name": "本轮结束后应用",
+      "status": "running",
+      "session_id": "demo-BUSY",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": true,
+      "provider_restart": "model",
+      "provider_model": {
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "source": "settings",
+        "revision": "demo-revision-1",
+        "uncertain": true
+      }
+    },
+    {
+      "id": "QUEUED",
+      "name": "排队重开可取消",
+      "status": "running",
+      "session_id": "demo-QUEUED",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": true,
+      "provider_restart": "model",
+      "provider_model": {
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "source": "settings",
+        "revision": "demo-revision-1",
+        "uncertain": true
+      },
+      "restart_queued": true
+    },
+    {
+      "id": "UNKNOWN",
+      "name": "模型尚待确认",
+      "status": "running",
+      "session_id": "demo-UNKNOWN",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": false,
+      "provider_restart": null,
+      "provider_model": {
+        "model": null,
+        "source": "unknown",
+        "revision": "unknown-1",
+        "uncertain": true
+      }
+    },
+    {
+      "id": "FAILURE",
+      "name": "模型被渠道拒绝",
+      "status": "running",
+      "session_id": "demo-FAILURE",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": false,
+      "provider_restart": "model",
+      "provider_model": {
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "source": "settings",
+        "revision": "demo-revision-1",
+        "uncertain": true
+      },
+      "api_failure": {
+        "kind": "model_unavailable",
+        "status": 400,
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "at_ms": 1792584000000
+      }
+    },
+    {
+      "id": "ORDINARY",
+      "name": "普通会话也能重开",
+      "status": "running",
+      "session_id": "demo-ORDINARY",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": false,
+      "provider_restart": null,
+      "provider_model": null
+    }
+  ]
+}

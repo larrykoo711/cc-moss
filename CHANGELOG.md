@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-10-21
+
+### Fixed
+
+- **Apply the provider's model deliberately.** Ordinary restart and applying the current provider's default
+  model are separate actions. `restart --provider-default` and `restore --provider-default` resume the same
+  conversation with the model selected in its settings, without resending the last task. Busy sessions queue
+  the restart, read the latest settings when their turn ends, and let you cancel before it starts. Unsafe or
+  unsupported settings are rejected before stopping the old process; this does not guarantee the provider
+  accepts the model.
+- **API failures have their own notice.** Explicit API error records, including an unavailable model, are shown
+  separately from a settings-change reminder. Repeated errors are deduplicated and a confirmed successful
+  response clears the failure. When the failed model already matches the target, the panel no longer keeps
+  recommending the same model switch. No production test requests or automatic model retries are sent.
+- **Restart waits for the old process to exit.** A failed signal, an unknown process state or an exit timeout
+  stops the operation rather than starting a second copy. Nested interactive shells are checked before typing
+  a resume command; terminal integrations using a separate PTY require explicit, identity-bound confirmation
+  to rebuild the original pane, only while idle. Rebuilding ends that pane's terminal integration and other
+  tasks, and preserves the conversation. Existing orphan processes or mismatched session records are not
+  cleaned up automatically.
+- **One recovery status at a time.** The panel shows one progress indicator and one failure notice, with
+  technical details folded away. Queued operations say what they are waiting for, and a late result from an
+  earlier session or recovery request does not overwrite the current session's notice. Without confirmation,
+  the panel stays waiting and offers Open/Collapse; it does not infer success from a running process.
+  A session-start confirmation is not an API availability test.
+
 ## [0.3.3] - 2026-10-20
 
 ### Fixed
@@ -378,7 +404,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...HEAD
+[0.3.4]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...v0.3.2
 [0.3.1]: https://github.com/larrykoo711/cc-moss/compare/v0.3.0...v0.3.1

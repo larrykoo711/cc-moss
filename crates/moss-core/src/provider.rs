@@ -10,7 +10,7 @@
 //! A token's or key's value is skipped by the parser without ever becoming
 //! a string here, and nothing of it is kept, logged or printed.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 use std::path::{Path, PathBuf};
 
@@ -44,6 +44,12 @@ pub struct Snapshot {
     /// Top-level `model`: the default for new sessions (`/model`), not the
     /// provider's; it never asks for a restart.
     pub model: Option<String>,
+    /// Explicit fallback when neither fixed nor top-level model is selected.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_model: Option<String>,
+    /// Only documented family mappings, never arbitrary env values.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub model_aliases: BTreeMap<String, String>,
     /// The settings file this was read from, for a session: the one Claude
     /// Code itself reads for it (its own `CLAUDE_CONFIG_DIR`), which a
     /// switch has to reach.
@@ -63,6 +69,8 @@ struct Env {
     keys: BTreeSet<String>,
     base_url: Option<String>,
     model: Option<String>,
+    default_model: Option<String>,
+    model_aliases: BTreeMap<String, String>,
 }
 
 impl<'de> Deserialize<'de> for Env {
@@ -79,6 +87,21 @@ impl<'de> Deserialize<'de> for Env {
                     match key.as_str() {
                         BASE_URL => env.base_url = map.next_value::<Option<String>>()?,
                         MODEL => env.model = map.next_value::<Option<String>>()?,
+                        "ANTHROPIC_DEFAULT_MODEL" => {
+                            env.default_model = map.next_value::<Option<String>>()?
+                        }
+                        "ANTHROPIC_DEFAULT_OPUS_MODEL"
+                        | "ANTHROPIC_DEFAULT_SONNET_MODEL"
+                        | "ANTHROPIC_DEFAULT_HAIKU_MODEL"
+                        | "ANTHROPIC_DEFAULT_FABLE_MODEL" => {
+                            if let Some(value) = map.next_value::<Option<String>>()? {
+                                let family = key
+                                    .trim_start_matches("ANTHROPIC_DEFAULT_")
+                                    .trim_end_matches("_MODEL")
+                                    .to_ascii_lowercase();
+                                env.model_aliases.insert(family, value);
+                            }
+                        }
                         _ => {
                             map.next_value::<IgnoredAny>()?;
                         }
@@ -109,8 +132,27 @@ impl Snapshot {
     /// From the text of a `settings.json`; `None` when it is not JSON with
     /// these keys in their usual shape.
     pub fn parse(text: &str) -> Option<Snapshot> {
-        let s: Settings = serde_json::from_str(text).ok()?;
-        let env = s.env.unwrap_or_default();
+        let mut s: Settings = serde_json::from_str(text).ok()?;
+        let mut env = s.env.take().unwrap_or_default();
+        env.model = env.model.filter(|m| !m.is_empty());
+        s.model = s.model.filter(|m| !m.is_empty());
+        env.model_aliases.retain(|_, model| !model.is_empty());
+        env.default_model = env.default_model.filter(|m| !m.is_empty());
+        // An unused fallback must neither invalidate a fixed choice nor leak
+        // arbitrary values into the snapshot. Only retain a selected fallback.
+        if env.model.is_some() || s.model.is_some() {
+            env.default_model = None;
+        }
+        if env
+            .model
+            .iter()
+            .chain(s.model.iter())
+            .chain(env.model_aliases.values())
+            .chain(env.default_model.iter())
+            .any(|model| !safe_model(model))
+        {
+            return None;
+        }
         let mut keys = env.keys;
         if s.model.is_some() {
             keys.insert(TOP_MODEL.into());
@@ -123,6 +165,8 @@ impl Snapshot {
             host: env.base_url.as_deref().and_then(host_of),
             env_model: env.model.filter(|m| !m.is_empty()),
             model: s.model.filter(|m| !m.is_empty()),
+            model_aliases: env.model_aliases,
+            default_model: env.default_model,
             source: None,
         })
     }
@@ -149,6 +193,83 @@ impl Snapshot {
 
     pub fn from_json(text: &str) -> Option<Snapshot> {
         serde_json::from_str(text).ok()
+    }
+}
+
+/// Model identifiers are safe command arguments, not arbitrary configuration text.
+/// Reject credential-like values rather than serializing them into a plan.
+pub fn safe_model(model: &str) -> bool {
+    let lower = model.to_ascii_lowercase();
+    !model.is_empty()
+        && !model.starts_with('-')
+        && model.len() <= 256
+        && model
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || b"._-/:[]+".contains(&c))
+        && !model.contains("://")
+        && !["sk-", "token", "secret", "password", "api_key"]
+            .iter()
+            .any(|part| lower.contains(part))
+}
+
+/// The safe target of an explicit channel application. No credentials or paths.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct ModelPlan {
+    pub model: Option<String>,
+    pub source: &'static str,
+    pub revision: String,
+    pub uncertain: bool,
+}
+
+impl Snapshot {
+    /// Fixed model first, then the explicit user choice and its family mapping.
+    pub fn model_plan(&self, uncertain: bool) -> ModelPlan {
+        let (selection, source) = if let Some(model) = &self.env_model {
+            (model.as_str(), "env")
+        } else if let Some(model) = &self.model {
+            (model.as_str(), "settings")
+        } else if let Some(model) = &self.default_model {
+            (model.as_str(), "env")
+        } else {
+            ("default", "default")
+        };
+        let (model, source) = match self.model_aliases.get(selection) {
+            Some(mapped) => (mapped.as_str(), "alias"),
+            None => (selection, source),
+        };
+        let mut plan = ModelPlan::new(Some(model), source, uncertain);
+        let safe_revision = format!(
+            "{}|{}|{}",
+            plan.revision,
+            self.host.as_deref().unwrap_or(""),
+            self.keys.iter().cloned().collect::<Vec<_>>().join(",")
+        );
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in safe_revision.bytes() {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+        }
+        plan.revision = format!("{hash:016x}");
+        plan
+    }
+}
+
+impl ModelPlan {
+    pub fn unknown() -> Self {
+        Self::new(None, "unknown", true)
+    }
+
+    fn new(model: Option<&str>, source: &'static str, uncertain: bool) -> Self {
+        // Stable FNV-1a over only the public model plan, never the source settings.
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in source.bytes().chain([0]).chain(model.unwrap_or("").bytes()) {
+            hash = (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3);
+        }
+        Self {
+            model: model.map(str::to_string),
+            source,
+            revision: format!("{hash:016x}"),
+            uncertain,
+        }
     }
 }
 
@@ -487,6 +608,93 @@ mod tests {
         assert_eq!(verdict(&top, &provider_keys(&top), &third), Verdict::Live);
         assert!(!top.picks_model() && fixed.picks_model());
         assert_eq!(verdict(&third, &seen, &third), Verdict::Live);
+    }
+
+    #[test]
+    fn provider_model_aliases_are_safe_and_recorded() {
+        let s = snap(
+            r#"{"model":"opus","env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"route-b","ANTHROPIC_AUTH_TOKEN":"private-auth-value"}}"#,
+        );
+        let v: serde_json::Value = serde_json::from_str(&s.to_json()).unwrap();
+        assert_eq!(v["model_aliases"]["opus"], "route-b");
+        assert!(!s.to_json().contains("private-auth-value"));
+    }
+
+    #[test]
+    fn provider_model_rejects_unsafe_model_values() {
+        for model in [
+            "bad\nmodel",
+            "sk-private-auth",
+            "model with spaces",
+            "https://user:password@host/model",
+        ] {
+            let text = serde_json::json!({"env":{"ANTHROPIC_MODEL":model}}).to_string();
+            assert!(
+                Snapshot::parse(&text).is_none(),
+                "unsafe model was accepted"
+            );
+        }
+    }
+
+    #[test]
+    fn provider_model_fable_and_fallback_boundaries() {
+        for (text, expected) in [
+            (
+                r#"{"model":"fable","env":{"ANTHROPIC_DEFAULT_FABLE_MODEL":"fable-route"}}"#,
+                "fable-route",
+            ),
+            (
+                r#"{"env":{"ANTHROPIC_DEFAULT_MODEL":"fallback-route"}}"#,
+                "fallback-route",
+            ),
+            (
+                r#"{"model":"chosen","env":{"ANTHROPIC_DEFAULT_MODEL":"ignored-route"}}"#,
+                "chosen",
+            ),
+            (
+                r#"{"env":{"ANTHROPIC_MODEL":"","ANTHROPIC_DEFAULT_OPUS_MODEL":""},"model":""}"#,
+                "default",
+            ),
+        ] {
+            assert_eq!(snap(text).model_plan(true).model.as_deref(), Some(expected));
+        }
+        assert!(!safe_model("--dangerously-skip-permissions"));
+    }
+
+    #[test]
+    fn provider_model_resolution_table() {
+        for (text, model, source) in [
+            (
+                r#"{"env":{"ANTHROPIC_MODEL":"fixed","ANTHROPIC_DEFAULT_OPUS_MODEL":"alias"},"model":"opus"}"#,
+                "fixed",
+                "env",
+            ),
+            (
+                r#"{"model":"opus","env":{"ANTHROPIC_DEFAULT_OPUS_MODEL":"alias"}}"#,
+                "alias",
+                "alias",
+            ),
+            (r#"{"model":"chosen"}"#, "chosen", "settings"),
+            (r#"{}"#, "default", "default"),
+        ] {
+            let plan = snap(text).model_plan(true);
+            assert_eq!((plan.model.as_deref(), plan.source), (Some(model), source));
+        }
+    }
+
+    #[test]
+    fn provider_model_revision_tracks_host_not_credentials() {
+        let plan = |host, token| {
+            snap(&serde_json::json!({"env":{"ANTHROPIC_BASE_URL":host,"ANTHROPIC_AUTH_TOKEN":token,"ANTHROPIC_MODEL":"route"}}).to_string()).model_plan(true)
+        };
+        assert_eq!(
+            plan("https://a.example", "one").revision,
+            plan("https://a.example", "two").revision
+        );
+        assert_ne!(
+            plan("https://a.example", "one").revision,
+            plan("https://b.example", "one").revision
+        );
     }
 
     #[test]

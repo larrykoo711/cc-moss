@@ -82,6 +82,8 @@ public struct RestoreResult: Decodable, Equatable, Sendable {
     public var id: String
     public var name: String
     public var ok: Bool
+    /// Newer CLIs distinguish an accepted launch from a confirmed SessionStart.
+    public var result: String?
     public var reason: RestoreReason?
     /// cc-moss's own words for a failure.
     public var message: String?
@@ -91,23 +93,35 @@ public struct RestoreResult: Decodable, Equatable, Sendable {
     public var candidates: [String]
 
     public init(id: String, name: String, ok: Bool, reason: RestoreReason? = nil, message: String? = nil,
-                reasonCode: String? = nil, candidates: [String] = []) {
+                reasonCode: String? = nil, candidates: [String] = [], result: String? = nil) {
         self.id = id
         self.name = name
         self.ok = ok
+        self.result = result
         self.reason = reason
         self.message = message
         self.reasonCode = reasonCode ?? reason.map { $0 == .other ? "other" : $0.rawValue }
         self.candidates = candidates
     }
 
-    enum CodingKeys: String, CodingKey { case id, name, ok, reason, message, candidates }
+    public var isRestored: Bool { ok && (result == nil || result == "restored") }
+    /// Unknown accepted outcomes remain unconfirmed rather than claiming success.
+    public var isStarting: Bool { ok && !isRestored }
+
+    public var recoveryNotice: String? {
+        if isRestored { return L.t("\(name) is back. Press ↵ to open it.", "\(name) 找回来了，按 ↵ 打开。") }
+        if isStarting { return L.t("\(name) is starting. Waiting for the session to confirm.", "\(name) 正在启动，等待会话确认。") }
+        return nil
+    }
+
+    enum CodingKeys: String, CodingKey { case id, name, ok, reason, message, candidates, result }
 
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         id = try c.decode(String.self, forKey: .id)
         name = try c.decode(String.self, forKey: .name)
         ok = try c.decode(Bool.self, forKey: .ok)
+        result = try c.decodeIfPresent(String.self, forKey: .result)
         reasonCode = (try? c.decodeIfPresent(String.self, forKey: .reason)) ?? nil
         reason = reasonCode.map { RestoreReason(rawValue: $0) ?? .other }
         message = (try? c.decodeIfPresent(String.self, forKey: .message)) ?? nil
@@ -141,7 +155,8 @@ public struct RestoreReport: Equatable, Sendable {
         self.results = results
     }
 
-    public var restored: [RestoreResult] { results.filter(\.ok) }
+    public var restored: [RestoreResult] { results.filter(\.isRestored) }
+    public var starting: [RestoreResult] { results.filter(\.isStarting) }
     public var failed: [RestoreResult] { results.filter { !$0.ok } }
 
     public static func decode(_ data: Data) throws -> RestoreReport {
@@ -162,6 +177,29 @@ public struct RestoreReport: Equatable, Sendable {
     }
 }
 
+
+/// Honest feedback for a batch: an accepted launch is still pending.
+public struct RestoreSummary: Equatable, Sendable {
+    public var restored: Int
+    public var failed: Int
+    public var starting: Int
+
+    public init(restored: Int, failed: Int, starting: Int = 0) {
+        self.restored = restored
+        self.failed = failed
+        self.starting = starting
+    }
+
+    public var title: String {
+        var parts: [String] = []
+        if restored > 0 { parts.append(L.t("Brought back \(restored)", "找回了 \(restored) 个")) }
+        if starting > 0 { parts.append(L.t("\(starting) starting…", "\(starting) 个正在启动…")) }
+        return parts.isEmpty ? L.t("None came back", "一个都没找回来") : parts.joined(separator: " · ")
+    }
+
+    public var confirmed: Bool { restored > 0 && failed == 0 && starting == 0 }
+}
+
 /// Bringing sessions back from the panel: which command to run, what is in
 /// flight (a second click while it runs does nothing), and what came of it.
 public struct RestoreFlow: Equatable, Sendable {
@@ -178,6 +216,8 @@ public struct RestoreFlow: Equatable, Sendable {
     public private(set) var allInFlight = false
     /// The last failure per slot id, until the session changes or is restored.
     public private(set) var failures: [String: RestoreResult] = [:]
+    /// Launches accepted by the CLI, not yet confirmed by a fresh session snapshot.
+    public private(set) var starting: [String: RestoreResult] = [:]
 
     public init() {}
 
@@ -202,11 +242,12 @@ public struct RestoreFlow: Equatable, Sendable {
             guard !isRunning(id) else { return false }
             inFlight.insert(id)
             failures[id] = nil
+            starting[id] = nil
         case .all(let ids):
             guard !busy else { return false }
             allInFlight = true
             inFlight.formUnion(ids)
-            for id in ids { failures[id] = nil }
+            for id in ids { failures[id] = nil; starting[id] = nil }
         }
         return true
     }
@@ -215,6 +256,7 @@ public struct RestoreFlow: Equatable, Sendable {
     public mutating func finish(_ scope: Scope, report: RestoreReport) {
         for r in report.results {
             failures[r.id] = r.ok ? nil : r
+            starting[r.id] = r.isStarting ? r : nil
         }
         end(scope)
     }
@@ -227,6 +269,7 @@ public struct RestoreFlow: Equatable, Sendable {
         case .all(let ids): ids
         }
         for id in ids {
+            starting[id] = nil
             failures[id] = RestoreResult(id: id, name: names[id] ?? id, ok: false, reason: .other, message: message)
         }
         end(scope)
@@ -235,6 +278,7 @@ public struct RestoreFlow: Equatable, Sendable {
     /// Forget failures of sessions that are no longer interrupted.
     public mutating func prune(keeping interrupted: Set<String>) {
         failures = failures.filter { interrupted.contains($0.key) }
+        starting = starting.filter { interrupted.contains($0.key) }
     }
 
     private mutating func end(_ scope: Scope) {

@@ -2,12 +2,6 @@ import AppKit
 import MossKit
 import SwiftUI
 
-/// What bring-all-back came to, shown on the banner for a moment.
-struct RestoreSummary: Equatable {
-    var restored: Int
-    var failed: Int
-}
-
 // MARK: - Bringing sessions back
 
 extension AppModel {
@@ -41,10 +35,10 @@ extension AppModel {
                 restoreFlow.finish(scope, report: report)
                 switch scope {
                 case .all:
-                    show(RestoreSummary(restored: report.restored.count, failed: report.failed.count))
+                    show(RestoreSummary(restored: report.restored.count, failed: report.failed.count, starting: report.starting.count))
                 case .one:
-                    if let back = report.restored.first {
-                        say(L.t("\(back.name) is back. Press ↵ to open it.", "\(back.name) 找回来了，按 ↵ 打开。"))
+                    if let notice = (report.restored.first ?? report.starting.first)?.recoveryNotice {
+                        say(notice)
                     } else if report.failed.isEmpty {
                         // cc-moss neither brought it back nor said why: never silent (F25).
                         self.report(FailureNotice(action: .restore, subject: names.first.map(FailureNotice.Subject.init),
@@ -159,12 +153,12 @@ struct RestoreBanner: View {
     private var count: Int { model.restoreGroups.recent.count }
 
     private var tint: Color {
-        if let s = model.restoreSummary { return s.failed == 0 ? .green : Theme.amber }
+        if let s = model.restoreSummary { return s.confirmed ? .green : Theme.amber }
         return Theme.red
     }
 
     private var tile: some View {
-        let symbol = model.restoreSummary.map { $0.failed == 0 ? "checkmark" : Icons.warning } ?? Icons.restore
+        let symbol = model.restoreSummary.map { $0.confirmed ? "checkmark" : $0.starting > 0 ? "clock" : Icons.warning } ?? Icons.restore
         return ZStack {
             RoundedRectangle(cornerRadius: 6).fill(tint.opacity(scheme == .dark ? 0.22 : 0.14))
             Image(systemName: symbol)
@@ -178,8 +172,7 @@ struct RestoreBanner: View {
     @ViewBuilder private var text: some View {
         if let s = model.restoreSummary {
             VStack(alignment: .leading, spacing: 1) {
-                Text(s.restored == 0 ? L.t("None came back", "一个都没找回来")
-                                     : L.t("Brought back \(s.restored)", "找回了 \(s.restored) 个"))
+                Text(s.title)
                     .font(.system(size: 13, weight: .medium))
                 if s.failed > 0 {
                     Text(L.t("\(s.failed) couldn't; the rows say why", "\(s.failed) 个没找回，原因写在各自那一行"))
