@@ -88,7 +88,8 @@ import Testing
         var b = ProviderBanner()
         b.take([change(seq: 5, minutesAgo: 1, live: true, host: "new.example.com"),
                 change(seq: 4, minutesAgo: 3, live: false, host: "old.example.com")], now: now)
-        #expect(b.state(now: now, sessions: flagged) == .live(host: "new.example.com"))
+        #expect(b.state(now: now, sessions: calm) == .live(host: "new.example.com"))
+        #expect(b.state(now: now, sessions: [flagged[1]]) == .queued(count: 1))
     }
 
     @Test func providerBannerWithoutATimeCountsFromWhenItArrived() {
@@ -100,14 +101,14 @@ import Testing
 
     @Test func providerBannerWordsInChinese() {
         L.$override.withValue(.zh) {
-            #expect(ProviderBanner.text(.live(host: "api.example.com")) == "已切到 api.example.com，下一条消息就走它")
+            #expect(ProviderBanner.text(.live(host: "api.example.com")) == "渠道设置已改为 api.example.com，请确认各会话的模型")
             #expect(ProviderBanner.text(.needsRestart(count: 3)) == "3 个会话要重开才能用上新供应商")
         }
     }
 
     @Test func providerBannerWordsInEnglish() {
         L.$override.withValue(.en) {
-            #expect(ProviderBanner.text(.live(host: "api.example.com")) == "Switched to api.example.com. Your next message uses it.")
+            #expect(ProviderBanner.text(.live(host: "api.example.com")) == "Provider settings changed to api.example.com. Check each session’s model.")
             #expect(ProviderBanner.text(.needsRestart(count: 1)) == "1 session needs a restart to use the new provider")
             #expect(ProviderBanner.text(.hidden) == nil)
         }
@@ -126,10 +127,10 @@ import Testing
         let client = MossClient(executable: "/bin/cc-moss", runner: runner)
         _ = try await client.restart(["api"])
         let all = try await client.restartStale()
-        #expect(await runner.calls == [["restart", "--json", "--", "api"], ["restart", "--stale", "--json"]])
+        #expect(await runner.calls == [["restart", "--json", "--", "api"], ["restart", "--stale", "--provider-default", "--json"]])
         L.$override.withValue(.en) {
-            #expect(Restart.summary(all) == "Restarted 1 · 1 after this turn")
-            #expect(Restart.summary([all[1]]) == "web restarts after this turn.")
+            #expect(Restart.summary(all) == "Restarted 1 · 1 queued")
+            #expect(Restart.summary([all[1]]) == "web is queued.")
         }
     }
 

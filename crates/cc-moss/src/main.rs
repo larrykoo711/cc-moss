@@ -172,6 +172,9 @@ enum Command {
         /// With --yes: print each session's result as JSON (for the menubar app).
         #[arg(long, requires = "yes", conflicts_with = "dry_run")]
         json: bool,
+        /// Explicitly apply the current channel's model when restoring.
+        #[arg(long)]
+        provider_default: bool,
         /// Only these sessions (Claude name, tmux name or id prefix).
         names: Vec<String>,
     },
@@ -211,6 +214,20 @@ enum Command {
         /// Restart a busy session right away; its current turn is lost.
         #[arg(long)]
         now: bool,
+        /// Apply the model from the session's current channel settings.
+        #[arg(long)]
+        provider_default: bool,
+        /// Cancel a queued restart without stopping the session.
+        #[arg(long, conflicts_with_all = ["now", "provider_default", "stale", "from_queue"])]
+        cancel: bool,
+        #[arg(long, hide = true)]
+        from_queue: bool,
+        /// Rebuild this pane, ending its terminal integration and other tasks.
+        #[arg(long, requires_all = ["yes", "rebuild_identity"], conflicts_with_all = ["stale", "cancel", "from_queue", "now"])]
+        rebuild_pane: bool,
+        /// The complete identity returned by a pty-proxy refusal, unchanged.
+        #[arg(long, requires = "rebuild_pane")]
+        rebuild_identity: Option<String>,
         /// With --now: don't ask.
         #[arg(long)]
         yes: bool,
@@ -610,12 +627,22 @@ fn main() -> std::process::ExitCode {
         Command::Archive { names, end, json } => exit(cmd::archive::archive(&names, end, json)),
         Command::Unarchive { names, json } => exit(cmd::archive::unarchive(&names, json)),
         Command::Restart {
+            rebuild_pane,
+            rebuild_identity,
+            provider_default,
+            cancel,
+            from_queue,
             names,
             stale,
             now,
             yes,
             json,
         } => exit(cmd::restart::run(cmd::restart::RestartArgs {
+            rebuild_pane,
+            rebuild_identity,
+            provider_default,
+            cancel,
+            from_queue,
             names,
             now,
             yes,
@@ -669,11 +696,13 @@ fn main() -> std::process::ExitCode {
             yes,
         })),
         Command::Restore {
+            provider_default,
             yes,
             dry_run,
             json,
             names,
         } => report(cmd::restore::run(cmd::restore::RestoreArgs {
+            provider_default,
             yes,
             dry_run,
             json,

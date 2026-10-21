@@ -105,7 +105,10 @@ fn restore_replays_only_whitelisted_arguments() {
         "{cmd}"
     );
     assert!(!cmd.contains("--settings"), "{cmd}");
-    assert!(cmd.contains("--model opus"), "{cmd}");
+    assert!(
+        !cmd.contains("--model"),
+        "ordinary resume must not force an old launch selection: {cmd}"
+    );
     assert!(cmd.contains("--dangerously-skip-permissions"), "{cmd}");
 }
 

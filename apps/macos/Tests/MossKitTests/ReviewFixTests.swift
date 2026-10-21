@@ -114,8 +114,8 @@ import Testing
         }
     }
 
-    @Test func providerBannerWithOnlyQueuedTurnsLive() {
-        #expect(banner([mixed[1]]) == .live(host: "h"))
+    @Test func providerBannerWithOnlyQueuedStaysPending() {
+        #expect(banner([mixed[1]]) == .queued(count: 1))
     }
 
     @Test func providerBannerWordsBothParts() {

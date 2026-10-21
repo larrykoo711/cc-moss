@@ -57,6 +57,7 @@ struct PanelView: View {
         }
         .background(Theme.surface(scheme))
         .onChange(of: model.queueItems.isEmpty) { _, empty in if empty { model.askQueue.emptied() } }
+        .onChange(of: model.providerPlanID) { _, id in searchFocused = id == nil }
         .onChange(of: model.page) { _, page in if page == .sessions { searchFocused = true } }
     }
 
@@ -392,10 +393,15 @@ struct PanelView: View {
         let rowNote = model.rowNote.flatMap { $0.id == s.id ? $0 : nil }
         let note = rowNote?.text
         let asking = !closed && model.adoptAsk?.id == s.id
-        let open = lineOpen || asking
+        let providerOpen = !closed && model.providerPlanID == s.id
+        let open = lineOpen || asking || providerOpen
         return VStack(spacing: 0) {
             rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
                       lineOpen: open, pinned: pinned, hit: hit, closed: closed)
+            if providerOpen {
+                ProviderRecoveryView(model: model, session: s)
+                    .transition(.opacity)
+            }
             if lineOpen {
                 ReplyLineView(model: model, session: s, focused: $replyFocused)
                     .transition(.opacity)
@@ -457,7 +463,12 @@ struct PanelView: View {
                        folder: hit.map { _ in Self.folderName(s) },
                        reason: hit?.reason.map(Self.reasonText),
                        progress: moving ? L.t("Moving into tmux…", "正在移进 tmux…")
-                           : model.restarting.contains(s.id) ? L.t("Restarting…", "正在重开…") : nil)
+                           : model.restoreFlow.starting[s.id]?.recoveryNotice,
+                       providerStatus: closed || model.providerPlanID == s.id || model.recoveryOperations[s.id] != nil ? nil
+                           : ProviderRecovery.state(s, confirmations: model.providerConfirmations),
+                       showProviderPlan: { model.toggleProviderPlan(s) },
+                       recoveryOperation: closed ? nil : model.recoveryOperations[s.id],
+                       recoveryExpanded: model.providerPlanID == s.id)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -657,10 +668,14 @@ struct PanelView: View {
                                          "让 Moss 删掉它。Moss 会先问你，对话记录进废纸篓。")) {
                 model.cleanUp(s)
             }
+        case .providerPlan:
+            return PanelAction(title: L.t("Model and Provider…", "模型与渠道…"), icon: Icons.provider, shortcut: "") {
+                model.toggleProviderPlan(s)
+            }
         case .restart:
-            return PanelAction(title: L.t("Restart", "重开"), icon: Icons.restart, shortcut: "",
-                               help: L.t("Restart it right where it is to use the new provider. The conversation carries on.",
-                                         "在原地重开，用上新供应商，对话接着来。")) {
+            return PanelAction(title: L.t("Restart Session", "重开会话"), icon: Icons.restart, shortcut: "",
+                               help: L.t("Reopen it in the same place and continue this conversation.",
+                                         "在原处重新打开，继续这段对话。")) {
                 model.restart(s)
             }
         }
@@ -827,7 +842,9 @@ struct PanelView: View {
     }
 
     private func escape() {
-        if model.failures.current != nil && model.form == nil && !model.closeGate.asking && !model.endArchiveGate.asking {
+        if model.providerPlanID != nil {
+            model.providerPlanID = nil
+        } else if model.failures.current != nil && model.form == nil && !model.closeGate.asking && !model.endArchiveGate.asking {
             model.failures.dismiss()
         } else if model.form != nil || model.closeGate.asking || model.endArchiveGate.asking {
             dismissForm()

@@ -2,6 +2,37 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.4",
+      "date": "2026-10-21",
+      "icon": "restore",
+      "short": {
+        "zh": "换模型更清楚，重开更稳",
+        "en": "Clearer model changes, safer restarts"
+      },
+      "headline": {
+        "zh": "换渠道后，选好模型接着聊。",
+        "en": "Choose the new provider’s model and pick up where you left off."
+      },
+      "highlights": [
+        {
+          "zh": "换渠道后，可以明确应用它在设置里选好的模型，接着原来的对话聊，不会替你重发上一条任务。正在干活的会话会等这一轮结束，开始前也能取消排队。",
+          "en": "Apply the model chosen in your provider settings and keep the same conversation, without sending your last task again. A busy session waits until its turn ends; you can cancel before the restart begins."
+        },
+        {
+          "zh": "模型不可用这类 API 问题会单独说明，不再和「设置变了」混在一起。不会反复建议换到同一个出错模型，也不会偷偷试用其他模型。",
+          "en": "API problems, such as an unavailable model, get their own explanation instead of looking like a settings change. The panel won’t keep suggesting the same failing model or quietly try other models."
+        },
+        {
+          "zh": "重开前先确认旧会话已经退出；确认不了就停下来，不再启动第二份。需要重建终端窗格时，会先说明影响、单独问你，不会自动清理以前遗留的会话。",
+          "en": "A restart waits for the old session to exit. If that can’t be confirmed, it stops instead of starting a second copy. Rebuilding a terminal pane needs your separate approval; older leftover sessions aren’t cleaned up automatically."
+        },
+        {
+          "zh": "找回或重开时，进度和结果只显示一份，技术详情默认收好。还没确认启动的会话会如实显示等待，不会把「命令已发出」说成「已经恢复」。",
+          "en": "Bringing back or restarting a session shows one progress indicator and one result, with technical details tucked away. Sending the command no longer counts as confirmation that the session is back."
+        }
+      ]
+    },
+    {
       "version": "0.3.3",
       "date": "2026-10-20",
       "icon": "restore",

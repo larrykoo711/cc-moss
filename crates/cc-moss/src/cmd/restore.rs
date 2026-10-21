@@ -17,6 +17,7 @@ use super::confirm;
 use super::ls::JSON_SCHEMA;
 
 pub struct RestoreArgs {
+    pub provider_default: bool,
     pub yes: bool,
     pub dry_run: bool,
     /// Print one result per session as JSON instead of text (for the app).
@@ -64,6 +65,7 @@ struct Outcome {
     failure: Option<(Reason, String)>,
     /// For `ambiguous`: the id prefixes of the sessions the name matches.
     candidates: Vec<String>,
+    result: Option<&'static str>,
 }
 
 impl Outcome {
@@ -73,6 +75,9 @@ impl Outcome {
             "name": self.name,
             "ok": self.failure.is_none(),
         });
+        if let Some(result) = self.result {
+            v["result"] = result.into();
+        }
         if let Some((reason, message)) = &self.failure {
             v["reason"] = reason.code().into();
             v["message"] = message.as_str().into();
@@ -132,6 +137,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
                         u.message,
                     )),
                     candidates: u.candidates,
+                    result: None,
                 }),
             }
         }
@@ -167,6 +173,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
             only.as_ref(),
             &candidates,
             unresolved,
+            args.provider_default,
         );
     }
     if candidates.is_empty() {
@@ -225,7 +232,7 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut launcher = Launcher::new(&config)?;
+    let mut launcher = Launcher::new(&config)?.provider_default(args.provider_default);
     let mut failed = 0;
     for slot in todo {
         match launcher.launch(&registry, slot)? {
@@ -291,6 +298,7 @@ fn run_json(
     only: Option<&HashSet<String>>,
     candidates: &[moss_core::restore::Candidate<'_>],
     unresolved: Vec<Outcome>,
+    provider_default: bool,
 ) -> Result<()> {
     let mut outcomes = unresolved;
     if let Some(ids) = only {
@@ -306,6 +314,7 @@ fn run_json(
                     tr!("it is already running", "它已经在运行了").to_string(),
                 )),
                 candidates: Vec::new(),
+                result: None,
             });
         }
     }
@@ -323,7 +332,11 @@ fn run_json(
             Some(r) => Some((r, verdict_text(c.verdict).to_string())),
             None => {
                 if launcher.is_none() {
-                    launcher = Some(Launcher::new(config)?.quiet());
+                    launcher = Some(
+                        Launcher::new(config)?
+                            .provider_default(provider_default)
+                            .quiet(),
+                    );
                 }
                 let l = launcher.as_mut().expect("just created");
                 match l.launch(registry, c.slot)? {
@@ -340,11 +353,22 @@ fn run_json(
                 }
             }
         };
+        let result = if failure.is_none() {
+            let confirmed = registry.slots()?.iter().any(|s| {
+                s.slot_id == c.slot.slot_id
+                    && s.restore_started_at_ms.is_none()
+                    && s.effective_status(proc::is_alive) == Status::Running
+            });
+            Some(if confirmed { "restored" } else { "starting" })
+        } else {
+            None
+        };
         outcomes.push(Outcome {
             id: c.slot.slot_id.clone(),
             name: display_name(c.slot),
             failure,
             candidates: Vec::new(),
+            result,
         });
     }
     print_json(&outcomes)
@@ -368,6 +392,7 @@ pub struct Launcher {
     claude: String,
     /// Keep stdout clean (for `--json`): no "Started …" lines.
     quiet: bool,
+    provider_default: bool,
 }
 
 impl Launcher {
@@ -389,7 +414,13 @@ impl Launcher {
             taken,
             claude,
             quiet: false,
+            provider_default: false,
         })
+    }
+
+    pub fn provider_default(mut self, apply: bool) -> Self {
+        self.provider_default = apply;
+        self
     }
 
     /// Print nothing on stdout; errors still go to stderr.
@@ -405,6 +436,13 @@ impl Launcher {
     /// Restore `slot` (planned as [`Verdict::Restore`]) in its own tmux session.
     pub fn launch(&mut self, registry: &Registry, slot: &Slot) -> Result<Launched> {
         let label = display_name(slot);
+        let owned_argv =
+            match super::restart::resume_argv(&self.claude, slot, self.provider_default) {
+                Ok(argv) => argv,
+                Err(error) => {
+                    return Ok(Launched::Failed(Reason::TmuxFailed, format!("{error:#}")))
+                }
+            };
         // Claim with the time of launch, not of planning: a prompt may have waited.
         if !registry.claim_restore(slot, now_ms())? {
             return Ok(Launched::Changed);
@@ -423,17 +461,7 @@ impl Launcher {
             );
             return Ok(Launched::Failed(Reason::MissingDir, message));
         }
-        let name_arg = slot.name.as_ref().map(|n| format!("--name={n}"));
-        // Only the whitelist again, whatever the registry holds: it is
-        // checked when recorded, and once more here before it runs.
-        let replay = moss_core::launch_args::whitelist(
-            &std::iter::once("claude")
-                .chain(slot.launch_args.iter().map(String::as_str))
-                .collect::<Vec<_>>(),
-        );
-        let mut argv: Vec<&str> = vec![&self.claude, "--resume", &slot.session_id];
-        argv.extend(name_arg.as_deref());
-        argv.extend(replay.iter().map(String::as_str));
+        let argv: Vec<&str> = owned_argv.iter().map(String::as_str).collect();
         if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
             let message = tr!(
                 format!("could not restore {label}: {e:#}"),
@@ -506,12 +534,33 @@ impl Launcher {
             now_ms(),
         )?;
         registry.close_superseded(&slot.slot_id, &slot.session_id, now_ms())?;
+        let confirmed = super::restart::wait_for_start(registry, slot)?;
         if !self.quiet {
             println!(
                 "{}",
                 tr!(
-                    format!("Started {label} in tmux session {tmux_name}."),
-                    format!("已启动 {label}（tmux 会话 {tmux_name}）。")
+                    format!(
+                        "{} {label} in tmux session {tmux_name}{}",
+                        if confirmed { "Started" } else { "Starting" },
+                        if confirmed {
+                            "."
+                        } else {
+                            "; waiting for the session start event."
+                        }
+                    ),
+                    format!(
+                        "{} {label}（tmux 会话 {tmux_name}）{}",
+                        if confirmed {
+                            "已启动"
+                        } else {
+                            "正在启动"
+                        },
+                        if confirmed {
+                            "。"
+                        } else {
+                            "，等待会话启动事件。"
+                        }
+                    )
                 )
             );
         }

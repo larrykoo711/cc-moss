@@ -170,27 +170,42 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 
 ### 换 API 供应商
 
-订阅额度用完、用 cc-switch 之类的工具换到别的供应商时，大多数情况不用退出会话：Claude Code 会盯着 `~/.claude/settings.json`，换了地址、token 或模型别名，下一条消息就走新的（2.1.303 实测）。cc-moss 的守护进程也盯着这个文件，换了之后面板顶部提示「已切到 <地址>，下一条消息就走它」。
-
-有两种情况，运行中的会话吃不进去，必须重开：
-
-- 切回官方订阅：工具会删掉 settings 里的那几项，可删掉的值还留在会话进程里，请求照旧发给原来的供应商
-- 新供应商在 settings 的 `env` 里用 `ANTHROPIC_MODEL` 指定了模型：这一项只在启动时读。settings 顶层的 `model`（你在会话里用 `/model` 换模型时写的就是它）不算，不会因此要你重开
-
-这时受影响的会话在面板里标成「要重开」，点「重开」或「全部重开」；命令行是：
+用 cc-switch 之类的工具换渠道后，地址或 key 的变化可能会被运行中的 Claude Code 读到，但这不代表旧会话选中的模型也适用于新渠道。遇到「找不到模型」时，重试不会替你换模型；可以在会话里用 `/model` 手选，或明确应用当前渠道的模型：
 
 ```sh
-cc-moss restart 名字      # 在原来的 tmux 窗格里重开，同一段对话接着聊
-cc-moss restart --stale   # 重开所有需要重开的会话
+cc-moss restart 名字                         # 普通重开：继续原会话，不强制指定模型
+cc-moss restart --provider-default 名字      # 应用当前渠道模型，并在原窗格重开
+cc-moss restart --provider-default --stale    # 应用于已识别需要重开的会话
+cc-moss restart --cancel 名字                # 取消尚未执行的排队重开
+cc-moss restore --provider-default --yes 名字 # 已中断：按当前渠道模型找回
 ```
 
-- 窗格、tmux 会话名都不变，不用重新进 tmux、也不用再敲名字；启动参数沿用当初的（新 settings 的 `env` 用 `ANTHROPIC_MODEL` 指定了模型时去掉原来的 `--model`）
-- 正在干活的会话不会被打断：排队，等这一轮做完自己重开。`--now` 立刻重开，这一轮的回复会丢（重开后发一句 continue 就行），终端里会先问你，`--yes` 跳过
-- 会话窗格里 Claude 退出后回到了 shell 的，在那个 shell 里敲 `cd '<会话的文件夹>' && claude --resume <id> --name=<名字> <沿用的参数>`。shell 里 `export` 过的环境变量照样生效；只写在当初那行命令前面的（`FOO=1 claude`）不会带上。沿用的参数只有 `--permission-mode`、`--model`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`
-- 排队的会话重开连着失败 3 次就不再试，记一条 `restart-failed` 事件，`doctor` 和面板照旧标它「要重开」，你可以手动再点
-- 不在 tmux 里的会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这里
-- `--json` 逐个报告 `restarted`、`queued` 或 `refused`（带 `reason`）。`cc-moss doctor` 有一行「API 供应商」，显示当前地址和有几个会话要重开；某个目录自己的 `.claude/settings*.json` 指定了供应商时也会提醒，那里切换不生效。每个会话按它启动时读的那份 settings 判断要不要重开；有会话读的设置目录和 cc-moss 看的不一样时，`doctor` 也会提醒你把 `[claude] config_dir` 设成你切换供应商的那个目录
-- 面板、`doctor` 和日志里只出现供应商的地址主机名和模型名，token、key 的值从不显示、不记录。Moss 跟着你换供应商：它的设置里只写地址和模型，key 不落进它能看到的文件，而是在它发请求时由 `cc-moss moss provider-key` 从你的 settings 读出交给 Claude Code（你配了自己的 `apiKeyHelper` 就照样跑它），换了 key 一分钟内跟上
+- 普通重开与应用渠道是两件事。普通重开去掉旧启动参数中的 `--model`，交给 Claude Code 恢复会话选择；不会把最近一次响应模型误当成当前选择，也不承诺能确认尚未产生响应的手动选择。`--provider-default` 则移除旧模型参数，明确传入唯一的新 `--model`，不靠“删掉旧参数”猜恢复时会选什么。
+- 渠道目标依次取 settings 的 `env.ANTHROPIC_MODEL`、顶层 `model`、`env.ANTHROPIC_DEFAULT_MODEL`；选中 `opus`、`sonnet`、`haiku` 或 `fable` 时按当前渠道对应的 family 映射解析。没有明确选择时用 Claude Code 的 `default`。显式模型、固定模型、顶层模型、`default` 与 `opus` 映射的恢复路径已在 Claude Code 2.1.306、临时配置和本机假 API 下验证；其他 family 映射及 `ANTHROPIC_DEFAULT_MODEL` 的解析由单元测试覆盖。这不是生产渠道可用性保证。
+- 会话 ID、原窗格和 tmux 会话名不变，不重发你上一条任务。恢复与重开都沿用会话记录的配置目录，不把另一份配置算出的模型套进当前进程。旧会话没有来源记录时，允许明确按 cc-moss 当前默认配置应用，但不会宣称它已经切换。
+- 项目或 local 设置覆盖了供应商、模型，或已知自定义 `--settings` 等来源无法安全重放时，应用操作会在结束旧进程前拒绝并解释。无关的项目设置不会阻止操作；配置坏了、不可读、或模型/路径含不安全字符也不会先结束进程再报错。
+- 正在干活的会话不会被打断：排队，等这一轮做完后重新读取渠道配置再应用。因此排队后又换了渠道，执行时用最新目标；重复操作以最后一次明确选择为准。`--cancel` 只取消尚未开始的队列，不结束进程；已经开始则说明不能取消。`--now` 才会立即重开并丢掉当前回复，终端会先问，`--yes` 跳过询问。
+- 排队原因不会冒充会话忙碌：`queued` 的 `reason=busy` 才表示等待本轮结束；`reason=in-progress` 表示另一项恢复操作占用会话。旧结果没有原因时只显示「已排队」。`restart_queued` 只表示尚未执行的待办，执行中的操作不计入排队。取消没有待办时幂等返回 `cancelled`、`reason=not-queued`，明确说明当前没有排队操作；不会假称撤掉了一项。
+- `--json` 逐个报告 `queued`、`starting`、`restarted`、`cancelled` 或 `refused`（带 `reason`）。`starting` 表示启动命令已交出，仍在等会话启动事件；`restarted` 只表示收到了新会话启动确认，不代表模型 API 请求通过。不会偷偷发送生产探测消息或自动重试其他模型。
+- `ls --json` 每个会话可带 `provider_model: {model, source, revision, uncertain}`。来源是 `env`、`settings`、`alias`、`default` 或 `unknown`；`uncertain` 表示当前会话是否已应用仍未知，不是说可见的目标不可用。`revision` 只根据安全模型计划、供应商主机名和配置键名生成，不含认证值。旧的 `provider_restart` 和 `restart_queued` 字段保留兼容。
+- 退出超时（`quit-timeout`）、退出信号失败（`signal-failed`）或无法确认进程状态（`process-unknown`）会立即结束本次排队操作，不自动重试；其他排队失败连续 3 次后停止，记录 `restart-failed` 事件。没有新启动确认时保持“正在启动”，不要把命令已输入当作恢复成功。不在 tmux 里的运行会话先用 `adopt` 搬进 tmux；Moss 由 cc-moss 自己照看，不走这条重开路径。
+- 配置差异提示只是待处理线索，不是实际请求模型或 API 兼容性的证明。面板、`doctor` 和日志不显示、不记录 token 或 key 的值。Moss 的 key 仍由既有 `cc-moss moss provider-key` 路径提供，不放进它能看到的设置文件。
+
+### 嵌套终端与重建窗格
+
+普通重开支持同一终端里的嵌套交互 shell：确认进程属于原窗格、Claude 是前台任务，退出后原 shell 重新回到前台，才输入恢复命令。无法确认、后台任务或未知包装程序都会拒绝，不尝试盲打命令。
+
+某些终端集成通过另一层 PTY 转发输入。普通重开会返回 `refused/pty-proxy`，**不会自动重建**，即使加了普通 `--yes`。面板会要求单独确认：重建会结束这个窗格的终端集成及其他任务，聊天历史保留。只允许空闲时重建；忙碌时请等本轮结束再确认，不排队保存这项授权。
+
+命令行先用 `restart --json 名字` 取得拒绝结果中的完整 `rebuild_identity`，核对影响后原样回传：
+
+```sh
+cc-moss restart --rebuild-pane --yes --rebuild-identity '<返回的完整 JSON 对象>' --json -- 名字
+```
+
+重建也必须先确认原 Claude 已经退出，不能只结束外层终端集成就启动另一份。退出超时、信号失败或状态未知时，保留窗格、结束本次自动操作，并提示你打开原会话处理；不会自动强杀，也不会建议向仍活着的窗格输入另一条恢复命令。退出后再次核验原 pane、所属会话／窗口及 tmux server 身份；任何变化都停止，不自动修正错配记录。
+
+这条命令仅接受一个会话。要同时应用渠道模型，明确加 `--provider-default`；否则不强制更换模型。身份对象绑定会话、Claude 进程及启动时间、tmux socket、pane 与其根进程身份，不含凭据；执行前任何身份变化都返回 `confirmation-stale`，需要重新确认。重建仍在原 pane 恢复同一个会话，不自动重发任务；`starting`／`restarted` 的含义与普通重开相同。
 
 ### 替会话接住问题
 

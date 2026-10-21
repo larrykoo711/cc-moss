@@ -20,7 +20,8 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
     ) {
         return run_from_snapshot(all, archived, as_json);
     }
-    let mut rows: Vec<(Status, Slot)> = crate::reconcile::run()?
+    let registry = crate::reconcile::run()?;
+    let mut rows: Vec<(Status, Slot)> = registry
         .slots()?
         .into_iter()
         .map(|s| (s.effective_status(proc::is_alive), s))
@@ -30,17 +31,32 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
     rows.sort_by_key(|(st, s)| (rank(*st), std::cmp::Reverse(s.last_active_at_ms)));
 
     if as_json {
+        let failures = registry.api_failures()?;
+        let evidence = super::provider::current_model_evidence(&registry, &store_dir::state_dir())?;
         let settings = super::provider::current();
         let queue = super::provider::queued(&store_dir::state_dir());
         let sessions: Vec<Value> = rows
             .iter()
             .map(|(st, s)| {
                 let mut v = to_json(*st, s);
+                v["api_failure"] = serde_json::to_value(failures.get(&s.slot_id))
+                    .expect("an API failure is serializable");
                 // Running sessions the provider switch didn't reach (T2.6).
-                v["provider_restart"] = super::provider::restart_reason(s, *st, settings.as_ref())
-                    .filter(|_| !s.is_moss())
-                    .into();
+                v["provider_restart"] = super::provider::effective_reason(
+                    s,
+                    *st,
+                    settings.as_ref(),
+                    evidence.get(&s.slot_id),
+                )
+                .filter(|_| !s.is_moss())
+                .into();
                 v["restart_queued"] = (*st == Status::Running && queue.contains(&s.slot_id)).into();
+                v["provider_model"] = serde_json::to_value(
+                    super::provider::model_plan(s)
+                        .map(|(plan, _)| plan)
+                        .unwrap_or_else(|_| moss_core::provider::ModelPlan::unknown()),
+                )
+                .expect("a model plan is serializable");
                 v
             })
             .collect();

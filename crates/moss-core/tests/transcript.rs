@@ -283,3 +283,125 @@ fn scanning_stops_after_the_budget() {
         t.elapsed()
     );
 }
+
+#[test]
+fn api_failure_last_assistant_model_ignores_untrusted_records() {
+    let f = file_with(&[
+        r#"{"type":"assistant","message":{"model":"claude-good","stop_reason":"end_turn"}}"#.into(),
+        r#"{"type":"assistant","isApiErrorMessage":true,"message":{"model":"claude-error"}}"#
+            .into(),
+        r#"{"type":"assistant","isSidechain":true,"message":{"model":"claude-side"}}"#.into(),
+        r#"{"type":"assistant","isSynthetic":true,"message":{"model":"claude-fake"}}"#.into(),
+        r#"{"type":"assistant","message":{"model":"<synthetic>"}}"#.into(),
+        r#"{"type":"assistant","message":{"model":"bad\nmodel"}}"#.into(),
+    ]);
+    assert_eq!(
+        moss_core::transcript::last_assistant_model(f.path()).as_deref(),
+        Some("claude-good")
+    );
+}
+
+#[test]
+fn api_failure_parser_requires_explicit_error_and_complete_line() {
+    use moss_core::transcript::{request_result_since, ApiFailureKind};
+    let mut f = file_with(&[r#"{"type":"assistant","isApiErrorMessage":true,"timestamp":"2026-10-21T00:00:00Z","message":{"content":[{"type":"text","text":"API Error: 400 unknown provider for model secret-token"}]}}"#.into()]);
+    let (result, end) = request_result_since(f.path(), 0).unwrap();
+    let failure = result.unwrap().failure.unwrap();
+    assert_eq!(failure.kind, ApiFailureKind::ModelUnavailable);
+    assert_eq!(failure.status, Some(400));
+    assert!(!serde_json::to_string(&failure)
+        .unwrap()
+        .contains("secret-token"));
+    f.write_all(
+        br#"{"type":"assistant","message":{"model":"claude-good","stop_reason":"end_turn"}}"#,
+    )
+    .unwrap();
+    assert_eq!(request_result_since(f.path(), end).unwrap().1, end);
+    writeln!(f).unwrap();
+    assert!(request_result_since(f.path(), end)
+        .unwrap()
+        .0
+        .unwrap()
+        .failure
+        .is_none());
+}
+
+#[test]
+fn api_failure_ignores_quotes_and_non_main_success() {
+    use moss_core::transcript::{request_result_since, ApiFailureKind};
+    let f = file_with(&[
+        r#"{"type":"assistant","isApiErrorMessage":true,"message":{"content":"API Error: 400 bad input"}}"#.into(),
+        r#"{"type":"user","message":{"content":"API Error: 400 unknown provider for model"}}"#.into(),
+        r#"{"type":"assistant","isSidechain":true,"message":{"model":"claude-good","stop_reason":"end_turn"}}"#.into(),
+        r#"{"type":"assistant","message":{"model":"<synthetic>"}}"#.into(),
+        r#"{"type":"assistant","message":{"content":"API Error: 500 quoted text"}}"#.into(),
+        "not json".into(),
+    ]);
+    assert_eq!(
+        request_result_since(f.path(), 0)
+            .unwrap()
+            .0
+            .unwrap()
+            .failure
+            .unwrap()
+            .kind,
+        ApiFailureKind::GenericApi
+    );
+}
+
+#[test]
+fn api_failure_huge_line_is_skipped_and_result_position_is_exact() {
+    use moss_core::transcript::request_result_since;
+    let good = r#"{"type":"assistant","message":{"model":"claude-good","stop_reason":"end_turn"}}"#
+        .to_string();
+    let huge=serde_json::json!({"type":"assistant","isApiErrorMessage":true,"message":{"content":"x".repeat(9<<20)}}).to_string();
+    let f = file_with(&[good, huge]);
+    let result = request_result_since(f.path(), 0).unwrap().0.unwrap();
+    assert!(result.failure.is_none());
+    assert_eq!(result.position, 0);
+}
+
+#[test]
+fn api_failure_does_not_read_other_session_results() {
+    let f=file_with(&[r#"{"type":"assistant","sessionId":"old","isApiErrorMessage":true,"message":{"content":"API Error: 500 failed"}}"#.into()]);
+    assert!(
+        moss_core::transcript::request_result_for_session(f.path(), 0, Some("new"))
+            .unwrap()
+            .0
+            .is_none()
+    );
+}
+
+#[test]
+fn api_failure_streaming_model_metadata_does_not_recover() {
+    let mut f=file_with(&[
+        r#"{"type":"assistant","isApiErrorMessage":true,"message":{"content":"API Error: 500 failed"}}"#.into(),
+        r#"{"type":"assistant","message":{"model":"claude-good","stop_reason":null}}"#.into(),
+    ]);
+    assert!(moss_core::transcript::request_result_since(f.path(), 0)
+        .unwrap()
+        .0
+        .unwrap()
+        .failure
+        .is_some());
+    writeln!(f,"{}",serde_json::json!({"type":"assistant","message":{"model":"claude-good","stop_reason":"tool_use"}})).unwrap();
+    assert!(moss_core::transcript::request_result_since(f.path(), 0)
+        .unwrap()
+        .0
+        .unwrap()
+        .failure
+        .is_none());
+}
+
+#[test]
+fn model_evidence_completed_response_carries_only_safe_model_and_time() {
+    let f=file_with(&[r#"{"type":"assistant","timestamp":"2026-10-21T00:00:00Z","message":{"model":"model+valid","stop_reason":"tool_use","content":"SECRET private text"}}"#.into()]);
+    let result = moss_core::transcript::request_result_since(f.path(), 0)
+        .unwrap()
+        .0
+        .unwrap();
+    let success = result.success.unwrap();
+    assert_eq!(success.model, "model+valid");
+    assert!(success.at_ms.is_some());
+    assert!(!serde_json::to_string(&success).unwrap().contains("SECRET"));
+}

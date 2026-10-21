@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--update <version> [--changelog <file> --whats-new <version>]] [--update-bubble <version>]
-///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--restore working|done|partial] [--failure <id>:<reason>]
+///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--provider-plan SLOT] [--provider-card-width N] [--restart-result starting|queued|refused|restarted] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
@@ -57,9 +57,12 @@ enum Render {
         if let keep = value("--ask"), let data = askData { askData = DemoRunner.keep(keep, in: data) }
         let mossChat = value("--moss-chat").flatMap { FileManager.default.contents(atPath: $0) }
         let runner = DemoRunner(sessions: value("--page") == "moss" || args.contains("--moss") ? DemoRunner.withMoss(data) : data, asks: askData,
-                                answer: value("--answer"), mossChat: mossChat, moss: value("--moss"))
+                                answer: value("--answer"), mossChat: mossChat, moss: value("--moss"), restartResult: value("--restart-result"), rebuildResult: value("--rebuild-result"),
+                                queueReason: value("--queue-reason"), cancelReason: value("--cancel-reason"),
+                                restartDelay: value("--restart-delay").flatMap(Double.init) ?? 0,
+                                rebuildDelay: value("--rebuild-delay").flatMap(Double.init) ?? 0)
         ClickTargets.shared.enabled = args.contains("--click")
-        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args))
+        let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args), providerDefaults: nil)
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             await model.loadNow()
@@ -152,10 +155,49 @@ enum Render {
                 model.providerBanner.take([SessionEvent(seq: 1, slotId: "", kind: ProviderChange.kind, at: L.clock().addingTimeInterval(-60),
                                                         provider: ProviderChange(host: host, live: kind != "restart"))])
             }
+            if let id = value("--provider-plan"), let session = model.session(id) {
+                model.toggleProviderPlan(session)
+            }
             // `--restarting <id>`: that row restarting right now.
-            if let id = value("--restarting") { model.restarting = [id] }
+            if let id = value("--restarting"), let session = model.session(id) {
+                _ = model.recoveryOperations.begin(session, intent: .restart)
+                model.providerPlanID = id
+            }
+            if let id = value("--provider-plan"), let session = model.session(id), let action = value("--provider-action") {
+                switch action {
+                case "apply": model.restart(session, applyingProvider: true)
+                case "cancel": model.restart(session, cancelling: true)
+                case "restart": model.restart(session)
+                case "keep": model.keepProviderSelection(session)
+                default: break
+                }
+                try? await Task.sleep(nanoseconds: 200_000_000)
+                print("provider-action: \(action); operation: \(model.recoveryOperations[id]?.title ?? "none"); loading: \(model.recoveryOperations[id]?.isSubmitting == true); notice: \(model.notice ?? "none"); global-failure: \(model.failures.current?.message ?? "none")")
+                if args.contains("--rebuild-busy"), let index = model.sessions.firstIndex(where: { $0.id == id }) {
+                    model.sessions[index].busy = true
+                }
+                if let rebuild = value("--rebuild-action") {
+                    if rebuild == "cancel" { model.cancelRebuild() }
+                    if rebuild == "confirm" { model.confirmRebuild(id) }
+                    try? await Task.sleep(nanoseconds: 200_000_000)
+                    print("rebuild-action: \(rebuild); operation: \(model.recoveryOperations[id]?.title ?? "none"); loading: \(model.recoveryOperations[id]?.isSubmitting == true); pending: \(model.recoveryOperations[id]?.confirmation != nil); notice: \(model.notice ?? "none"); global-failure: \(model.failures.current?.message ?? "none")")
+                }
+            }
+            if args.contains("--recovery-dismiss"), let id = value("--provider-plan") {
+                model.dismissRecovery(id)
+                print("recovery-dismissed: operation: \(model.recoveryOperations[id]?.title ?? "none")")
+            }
+            if let width = value("--provider-card-width").flatMap(Double.init),
+               let id = value("--provider-plan"), let session = model.session(id) {
+                drawView(ProviderRecoveryView(model: model, session: session)
+                    .padding(.top, 12).frame(width: width).fixedSize(horizontal: false, vertical: true),
+                    dark: args.contains("--dark"), out: out)
+                exit(0)
+            }
             switch value("--restore") {
             case "working": _ = model.restoreFlow.begin(.all(model.restoreGroups.recent.map(\.id)))
+            case "starting": model.restoreSummary = RestoreSummary(restored: 0, failed: 0, starting: 2)
+            case "mixed": model.restoreSummary = RestoreSummary(restored: 1, failed: 1, starting: 1)
             case "done": model.restoreSummary = RestoreSummary(restored: 2, failed: 0)
             case "partial": model.restoreSummary = RestoreSummary(restored: 1, failed: 1)
             default: break
@@ -757,7 +799,7 @@ enum Render {
 /// cc-moss as the demo files say it would answer: `ls --json` from the
 /// sessions file, `ask list --json` from the questions file. `ask answer` is
 /// printed, not run, and answers as `--answer` says (answered by default).
-struct DemoRunner: CommandRunner {
+actor DemoRunner: CommandRunner {
     var sessions: Data
     var asks: Data?
     var answer: String?
@@ -765,9 +807,76 @@ struct DemoRunner: CommandRunner {
     var mossChat: Data?
     /// `--moss <state>`: what `moss status --json` says (Moss up 2 hours, idle, by default).
     var moss: String?
+    var restartResult: String?
+    var rebuildResult: String?
+    var queueReason: String?
+    var cancelReason: String?
+    var restartDelay: Double = 0
+    var rebuildDelay: Double = 0
+
+    init(sessions: Data, asks: Data? = nil, answer: String? = nil, mossChat: Data? = nil,
+         moss: String? = nil, restartResult: String? = nil, rebuildResult: String? = nil,
+         queueReason: String? = nil, cancelReason: String? = nil,
+         restartDelay: Double = 0, rebuildDelay: Double = 0) {
+        self.sessions = sessions
+        self.asks = asks
+        self.answer = answer
+        self.mossChat = mossChat
+        self.moss = moss
+        self.restartResult = restartResult
+        self.rebuildResult = rebuildResult
+        self.queueReason = queueReason
+        self.cancelReason = cancelReason
+        self.restartDelay = restartDelay
+        self.rebuildDelay = rebuildDelay
+    }
 
     func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
         func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
+        if arguments.first == "restart" {
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            let list = (try? Snapshot.decode(sessions).sessions) ?? []
+            let target = arguments.last
+            let session = list.first { $0.id == target || $0.target == target || $0.name == target }
+            let rebuilding = arguments.contains("--rebuild-pane")
+            let delay = rebuilding ? rebuildDelay : restartDelay
+            if delay > 0 { try await Task.sleep(for: .seconds(delay)) }
+            let proxy = ["pty-proxy", "pty-proxy-missing", "confirmation-stale"].contains(restartResult ?? "")
+            let forced = rebuilding ? rebuildResult : restartResult
+            let typedFailures = ["quit-timeout", "signal-failed", "process-unknown", "unsafe-terminal", "confirmation-stale", "busy", "in-progress"]
+            let terminalFailure = forced.flatMap { typedFailures.contains($0) ? $0 : nil }
+            let stale = rebuilding && restartResult == "confirmation-stale"
+            let reason = terminalFailure != nil && (rebuilding || !proxy) ? terminalFailure
+                : proxy && (!rebuilding || stale) ? (stale ? "confirmation-stale" : "pty-proxy") : nil
+            let outcome = reason != nil ? "refused" : arguments.contains("--cancel") ? "cancelled"
+                : proxy && rebuilding ? (rebuildResult ?? "starting")
+                : forced ?? (session?.busy == true ? "queued" : "starting")
+            var result: [String: Any] = ["name": session?.title ?? "demo", "result": outcome]
+            if outcome == "queued", let queueReason { result["reason"] = queueReason }
+            if outcome == "cancelled", let cancelReason {
+                result["reason"] = cancelReason
+                result["message"] = "No queued operation."
+            }
+            if outcome == "refused" {
+                result["reason"] = reason ?? "model-unresolved"
+                result["message"] = "Demo detail: \(reason ?? "model-unresolved"). The operation did not complete."
+                if proxy, restartResult != "pty-proxy-missing", let session, let socket = session.tmux?.socket, let pane = session.tmux?.paneId {
+                    result["rebuild_identity"] = ["slot_id": session.id, "session_id": session.sessionId,
+                                                  "claude_pid": 123, "claude_start": "demo-start-a", "tmux_socket": socket,
+                                                  "pane_id": pane, "pane_pid": 100, "pane_start": "demo-start-b"] as [String: Any]
+                }
+            }
+            if ["queued", "cancelled"].contains(outcome), let session,
+               var top = try JSONSerialization.jsonObject(with: sessions) as? [String: Any],
+               var rows = top["sessions"] as? [[String: Any]], let index = rows.firstIndex(where: { $0["id"] as? String == session.id }) {
+                rows[index]["restart_queued"] = outcome == "queued"
+                top["sessions"] = rows
+                sessions = try JSONSerialization.data(withJSONObject: top)
+            }
+            let data = try JSONSerialization.data(withJSONObject: ["schema": 1, "results": [result]])
+            return CommandResult(status: outcome == "refused" ? 1 : 0, stdout: data, stderr: "")
+        }
         switch Array(arguments.prefix(2)) {
         case ["ask", "list"]:
             return CommandResult(status: 0, stdout: asks ?? Data(#"{"schema":1,"asks":[]}"#.utf8), stderr: "")

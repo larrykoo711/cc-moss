@@ -17,7 +17,8 @@ extension AppModel {
 
     /// The provider line at the top, now.
     var providerState: ProviderBanner.State {
-        providerBanner.state(sessions: sessions + (moss.map { [$0] } ?? []))
+        if let id = providerPlanID, recoveryOperations[id] != nil || session(id)?.restartQueued == true { return .hidden }
+        return providerBanner.state(sessions: sessions.filter { ProviderRecovery.state($0, confirmations: providerConfirmations) != nil })
     }
 
     /// Put a session that isn't running away in Archived.
@@ -85,38 +86,94 @@ extension AppModel {
         showMoss()
     }
 
-    /// Restart one in place to use the new provider (busy: after its turn).
-    func restart(_ s: Session) {
-        guard let client, restarting.insert(s.id).inserted else { return }
+    /// Every single-session recovery goes through the same tokened operation.
+    func restart(_ s: Session, applyingProvider: Bool = false, cancelling: Bool = false) {
+        guard client != nil, let current = session(s.id), current.sessionId == s.sessionId else { return }
+        let intent: RecoveryIntent = cancelling ? .cancelQueue : applyingProvider ? .applyProvider : .restart
+        guard let request = recoveryOperations.begin(current, intent: intent) else { return }
+        showRecovery(current.id)
+        runRecovery(request, session: current)
+    }
+
+    private func showRecovery(_ id: String) {
+        selectedID = id
+        providerPlanID = id
+        replyOpenID = nil
+    }
+
+    private func runRecovery(_ request: RecoveryRequest, session original: Session) {
+        guard let client else { return }
         Task {
             do {
-                let results = try await client.restart([s.target])
-                say(Restart.summary(results))
-                report(.restart, refusals: results, among: [s])
+                let results: [BatchResult]
+                switch request.intent {
+                case .restart: results = try await client.restart([request.target])
+                case .applyProvider: results = try await client.applyProvider([request.target])
+                case .cancelQueue: results = try await client.cancelRestart([request.target])
+                case let .rebuild(plan): results = try await client.rebuildPane(plan)
+                }
+                recoveryOperations.complete(request, results: results, session: session(request.slotId))
             } catch {
-                report(.restart, s, error: error)
+                recoveryOperations.fail(request, notice: FailureNotice(action: .restart, subject: .init(original), error: error),
+                    session: session(request.slotId))
             }
-            restarting.remove(s.id)
             refresh()
         }
     }
 
-    /// The banner's "Restart All": every flagged session.
+    func dismissRecovery(_ id: String) {
+        recoveryOperations.dismiss(id)
+        if providerPlanID == id { providerPlanID = nil }
+    }
+
+    func cancelRebuild() {
+        if let id = providerPlanID { recoveryOperations.cancelConfirmation(id) }
+        providerPlanID = nil
+    }
+
+    func confirmRebuild(_ id: String) {
+        guard client != nil, let current = session(id) else {
+            recoveryOperations.cancelConfirmation(id)
+            return
+        }
+        guard let request = recoveryOperations.confirm(current) else { return }
+        showRecovery(id)
+        runRecovery(request, session: current)
+    }
+
+    /// Batch transport still gives each target exactly one operation state.
     func restartStale() {
-        guard let client, !restartingAll else { return }
+        let targets = Restart.restartable(sessions)
+        guard let client, !restartingAll, ProviderRecovery.canApplyAll(sessions, confirmations: providerConfirmations),
+              targets.allSatisfy({ recoveryOperations[$0.id]?.isSubmitting != true }) else { return }
+        var requests: [(Session, RecoveryRequest)] = []
+        for target in targets {
+            if let request = recoveryOperations.begin(target, intent: .applyProvider) { requests.append((target, request)) }
+        }
+        guard !requests.isEmpty else { return }
         restartingAll = true
+        if let first = requests.first { showRecovery(first.0.id) }
         Task {
             do {
                 let results = try await client.restartStale()
-                say(Restart.summary(results))
-                report(.restart, refusals: results, among: sessions)
+                for (target, request) in requests {
+                    let matching = results.filter {
+                        $0.sessionId == target.sessionId
+                            || ($0.sessionId == nil && ($0.name == target.target || $0.name == target.title))
+                    }
+                    recoveryOperations.complete(request, results: matching, session: session(target.id))
+                }
             } catch {
-                report(FailureNotice(action: .restart, subject: nil, error: error))
+                for (target, request) in requests {
+                    recoveryOperations.fail(request, notice: FailureNotice(action: .restart, subject: .init(target), error: error),
+                        session: session(request.slotId))
+                }
             }
             restartingAll = false
             refresh()
         }
     }
+
 }
 
 /// "End “name” and put it in Archived?" with End and Archive / Cancel.
@@ -219,8 +276,7 @@ struct CountChip: View {
 
 // MARK: - Provider banner
 
-/// After a provider switch: "Switched to <host>. Your next message uses
-/// it." or "2 sessions need a restart…" with "Restart All". Closes with ×,
+/// After a provider switch: changed settings, pending application, or queued work. Closes with ×,
 /// and goes by itself 10 minutes after the switch.
 struct ProviderBannerView: View {
     @Bindable var model: AppModel
@@ -229,7 +285,10 @@ struct ProviderBannerView: View {
 
     private var restart: Bool { if case .needsRestart = state { true } else { false } }
     /// "Restart All" only while something can be restarted from here.
-    private var restartable: Bool { if case let .needsRestart(n, _) = state { n > 0 } else { false } }
+    private var restartable: Bool {
+        guard case let .needsRestart(n, _) = state, n > 0 else { return false }
+        return ProviderRecovery.canApplyAll(model.sessions, confirmations: model.providerConfirmations)
+    }
     private var tint: Color { restart ? Theme.amber : .blue }
 
     var body: some View {
@@ -249,9 +308,9 @@ struct ProviderBannerView: View {
             Spacer(minLength: 6)
             if restartable {
                 if model.restartingAll {
-                    ProgressView().controlSize(.small).scaleEffect(0.7)
+                    Text(L.t("Working…", "处理中…")).font(.system(size: 12))
                 } else {
-                    SoftButton(title: L.t("Restart All", "全部重开"), icon: Icons.restart, prominent: true) {
+                    SoftButton(title: L.t("Apply and Restart All", "全部应用并重开"), icon: Icons.restart, prominent: true) {
                         model.restartStale()
                     }
                     .tip(L.t("Each one restarts where it is and carries on. Busy ones wait for their turn to end.",

@@ -106,7 +106,7 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
     /// From one refused line of `archive|unarchive|restart --json`.
     public init(action: Action, batch r: BatchResult, subject: Subject?) {
         self.init(action: action, subject: subject ?? Subject(name: r.name, id: r.sessionId),
-                  reason: r.reason ?? r.outcome, message: nil)
+                  reason: r.reason ?? r.outcome, message: r.message)
     }
 
     // MARK: Words
@@ -121,6 +121,17 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
 
     /// One line: why, and what you can try.
     public var why: String {
+        if action == .restart {
+            switch reason {
+            case "quit-timeout": return L.t("The old session is still running. No other session was launched.", "旧会话还在运行，没有启动另一份。")
+            case "signal-failed": return L.t("Could not ask the old session to exit. Open it to check.", "无法请求旧会话退出，请打开会话检查。")
+            case "process-unknown": return L.t("The process state could not be confirmed. Open the session to check.", "无法确认进程状态，请打开会话检查。")
+            case "unsafe-terminal": return L.t("The terminal connection changed. Open the session to check.", "终端连接已变化，请打开会话检查。")
+            case "confirmation-stale": return L.t("The pane identity changed. Start again and confirm anew.", "窗格身份已变化，需要重新发起并确认。")
+            case "timeout": return L.t("The operation outcome is unknown. Open the session to check.", "操作结果尚不明确，请打开会话确认。")
+            default: break
+            }
+        }
         switch reason {
         case "empty": return L.t("It never said a word, so there's nothing to bring back. Stop reminding about it.",
                                  "它还没说过话，没什么可找回的，可以不再提醒它。")
@@ -148,6 +159,17 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
         default:
             if let message { return L.t("cc-moss said: \(message)", "cc-moss 说：\(message)") }
             return L.t("cc-moss didn't say why. Ask Moss to look into it.", "cc-moss 没说原因，交给 Moss 看看。")
+        }
+    }
+
+    /// A short recovery outcome; raw backend diagnostics belong in folded details.
+    public var recoverySummary: String {
+        switch reason {
+        case "quit-timeout", "signal-failed", "process-unknown", "unsafe-terminal", "confirmation-stale", "timeout",
+             "busy", "not-running", "not-in-tmux", "moss": why
+        case "in-progress": L.t("A recovery operation has already started. Open the session to check.", "恢复操作已经开始，请打开会话检查。")
+        case "pty-proxy": L.t("The pane identity could not be confirmed. Open the session to check.", "无法确认窗格身份，请打开会话检查。")
+        default: L.t("The operation did not complete. Open the session to check.", "操作未完成，请打开会话检查。")
         }
     }
 
@@ -184,7 +206,10 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
             if let folder = subject.folder { lines.append(L.t("Folder: \(folder)", "文件夹：\(folder)")) }
         }
         if let reason { lines.append(L.t("Reason: \(reason)", "原因：\(reason)")) }
-        if let message { lines.append(L.t("cc-moss said: \(message)", "cc-moss 说：\(message)")) }
+        if let message {
+            let raw = L.t("cc-moss said: \(message)", "cc-moss 说：\(message)")
+            if !lines.contains(raw), why != message { lines.append(raw) }
+        }
         if !candidates.isEmpty { lines.append(L.t("Candidates: ", "候选：") + candidates.joined(separator: ", ")) }
         return lines.joined(separator: "\n")
     }

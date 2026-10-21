@@ -93,6 +93,7 @@ pub fn run() -> Result<bool> {
     status::write(&paths.status, &stored).with_context(|| format!("{}", paths.status.display()))?;
     log(&paths, &format!("started: pid {pid}, version {VERSION}"));
 
+    let request_worker = super::api_failure::worker(Arc::clone(&stop));
     let beat = heartbeat();
     let mut next = Instant::now() + beat;
     let say = |line: &str| log(&paths, line);
@@ -113,6 +114,10 @@ pub fn run() -> Result<bool> {
             }
             next = Instant::now() + beat;
         }
+    }
+    request_worker.thread().unpark();
+    if request_worker.join().is_err() {
+        log(&paths, "error: request scan worker stopped unexpectedly");
     }
     log(&paths, "stopping: asked to");
     let _ = status::remove_if_ours(&paths.status, pid);

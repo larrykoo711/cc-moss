@@ -48,8 +48,10 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     /// Why it must restart to use the provider you switched to, or nil
     /// (always nil when it isn't running).
     public var providerRestart: ProviderRestart?
-    /// It restarts by itself once its current turn ends.
+    /// A restart is pending in the queue, not already executing.
     public var restartQueued: Bool
+    public var providerModel: ProviderModel?
+    public var apiFailure: APIFailure?
 
     /// Moss, the session cc-moss keeps running itself.
     public var isMoss: Bool { role == "moss" }
@@ -59,7 +61,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention, role
-        case archivedAt, providerRestart, restartQueued
+        case archivedAt, providerRestart, restartQueued, providerModel, apiFailure
     }
 
     public init(from decoder: Decoder) throws {
@@ -82,6 +84,8 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         archivedAt = (try? c.decodeIfPresent(Date.self, forKey: .archivedAt)) ?? nil
         providerRestart = ((try? c.decodeIfPresent(String.self, forKey: .providerRestart)) ?? nil).map(ProviderRestart.init)
         restartQueued = (try? c.decodeIfPresent(Bool.self, forKey: .restartQueued)) ?? false
+        providerModel = try? c.decodeIfPresent(ProviderModel.self, forKey: .providerModel)
+        apiFailure = try? c.decodeIfPresent(APIFailure.self, forKey: .apiFailure)
     }
 }
 

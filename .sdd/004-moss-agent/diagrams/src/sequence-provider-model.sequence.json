@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "会话模型恢复",
+    "output": "sequence-provider-model.html",
+    "viewBox": [
+      960,
+      620
+    ]
+  },
+  "participants": [
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "用户操作"
+    },
+    {
+      "id": "cli",
+      "type": "backend",
+      "label": "cc-moss"
+    },
+    {
+      "id": "settings",
+      "type": "database",
+      "label": "会话设置"
+    },
+    {
+      "id": "claude",
+      "type": "backend",
+      "label": "Claude Code"
+    },
+    {
+      "id": "api",
+      "type": "external",
+      "label": "假 API / 请求证据"
+    }
+  ],
+  "messages": [
+    {
+      "from": "app",
+      "to": "cli",
+      "y": 170,
+      "label": "应用渠道配置",
+      "variant": "emphasis"
+    },
+    {
+      "from": "cli",
+      "to": "settings",
+      "y": 215,
+      "label": "读取当前目标模型"
+    },
+    {
+      "from": "settings",
+      "to": "cli",
+      "y": 260,
+      "label": "模型与来源",
+      "variant": "return"
+    },
+    {
+      "from": "cli",
+      "to": "claude",
+      "y": 310,
+      "label": "结束旧进程后 resume + model",
+      "variant": "emphasis"
+    },
+    {
+      "from": "claude",
+      "to": "cli",
+      "y": 360,
+      "label": "SessionStart 确认",
+      "variant": "return"
+    },
+    {
+      "from": "claude",
+      "to": "api",
+      "y": 410,
+      "label": "主对话请求 model",
+      "variant": "emphasis"
+    },
+    {
+      "from": "api",
+      "to": "claude",
+      "y": 455,
+      "label": "隔离探针断言",
+      "variant": "return"
+    },
+    {
+      "from": "cli",
+      "to": "app",
+      "y": 505,
+      "label": "会话恢复不等于 API 验证",
+      "variant": "return"
+    }
+  ]
+}

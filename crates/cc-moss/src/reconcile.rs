@@ -40,6 +40,7 @@ pub fn run() -> Result<Registry> {
             adopt(&mut registry, &live)?;
         }
     }
+    crate::cmd::api_failure::refresh(&registry, &store_dir::state_dir())?;
     let mut scanned = load_scanned();
     let before = scanned.clone();
     let renamed = registry.backfill_names(&mut scanned)?;

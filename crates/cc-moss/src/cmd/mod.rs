@@ -1,6 +1,7 @@
 pub mod act;
 pub mod adopt;
 pub mod alias;
+pub mod api_failure;
 pub mod app;
 pub mod archive;
 pub mod ask;
