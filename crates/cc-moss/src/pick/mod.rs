@@ -105,6 +105,7 @@ pub fn run(query: &str) -> Result<()> {
                 claude_args: Vec::new(),
             }),
             None => cmd::restore::run(cmd::restore::RestoreArgs {
+                provider_default: false,
                 yes: true,
                 dry_run: false,
                 json: false,

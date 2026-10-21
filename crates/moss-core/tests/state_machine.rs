@@ -1331,3 +1331,27 @@ fn events_restore_is_not_also_started() {
         ]
     );
 }
+
+#[test]
+fn restart_terminal_failure_claim_release_is_identity_and_time_bound() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply_with(
+        &start(StartSource::Startup, "terminal", None),
+        &ctx(100, 1000),
+        &alive,
+    )
+    .unwrap();
+    let planned = reg.slots().unwrap().remove(0);
+    assert!(reg.claim_restore(&planned, 2000).unwrap());
+    reg.mark_restore_started(&planned.slot_id, 3000).unwrap();
+    assert!(!reg.clear_restore_claim(&planned, 2000).unwrap());
+    assert_eq!(reg.slots().unwrap()[0].restore_started_at_ms, Some(3000));
+    let mut wrong_identity = planned.clone();
+    wrong_identity.pid_start = Some("reused-pid".into());
+    assert!(!reg.clear_restore_claim(&wrong_identity, 3000).unwrap());
+    wrong_identity = planned.clone();
+    wrong_identity.session_id = "different-session".into();
+    assert!(!reg.clear_restore_claim(&wrong_identity, 3000).unwrap());
+    assert!(reg.clear_restore_claim(&planned, 3000).unwrap());
+    assert_eq!(reg.slots().unwrap()[0].restore_started_at_ms, None);
+}

@@ -45,3 +45,12 @@
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名
 - 端到端验证用独立状态目录（`CC_MOSS_STATE_DIR`）与独立 tmux socket，不碰真实会话
 - 用户在用这台 Mac 时不做鼠标 / 键盘模拟；UI 用离屏渲染与 `--click` 探针
+
+## 渠道模型恢复与重开修复（2026-10-21）
+
+- T2.7–T2.13 已完成并通过本机用户验收；全量看板现为21任务，P3/P4仍待后续。
+- `notes/provider-model-recovery.md`：模型恢复、失败信号与交互设计。
+- `reports/provider-model-probe.md`：隔离请求探针与已验证边界。
+- `reports/provider-review.md` / `reports/provider-delivery.md`：独立复核、逐轮验证、候选安装及用户验收。
+- `diagrams/sequence-provider-model.html`：渠道模型恢复时序。
+- 正式发布准备独立于候选验收；未授权前不推送main、不打标签、不发布。

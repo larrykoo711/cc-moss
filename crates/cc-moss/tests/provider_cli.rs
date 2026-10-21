@@ -287,3 +287,305 @@ fn provider_follows_the_settings_each_session_reads() {
         "{text}"
     );
 }
+
+#[test]
+fn provider_model_old_session_has_uncertain_safe_plan() {
+    let s = Setup::new();
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"route-b","ANTHROPIC_AUTH_TOKEN":"private-provider-credential"}}"#);
+    let p = FakeProcess::spawn();
+    s.start("old-model", p.pid());
+    let db = rusqlite::Connection::open(s.state().join("registry.db")).unwrap();
+    db.execute(
+        "UPDATE slots SET provider_started=NULL, provider_seen_keys=NULL",
+        [],
+    )
+    .unwrap();
+    let v = s.json(&["ls", "--json"]);
+    let plan = &v["sessions"][0]["provider_model"];
+    assert_eq!(plan["model"], "route-b");
+    assert_eq!(plan["source"], "env");
+    assert_eq!(plan["uncertain"], true);
+    assert!(plan["revision"]
+        .as_str()
+        .is_some_and(|revision| !revision.is_empty()));
+    assert!(!v.to_string().contains("private-provider-credential"));
+    assert_eq!(
+        v["sessions"][0]["provider_restart"],
+        serde_json::Value::Null
+    );
+}
+
+#[test]
+fn provider_model_invalid_configuration_is_unknown_without_echoing_values() {
+    let s = Setup::new();
+    s.settings("{}");
+    let p = FakeProcess::spawn();
+    s.start("bad-model", p.pid());
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"sk-private-provider-credential"}}"#);
+    let v = s.json(&["ls", "--json"]);
+    assert_eq!(v["sessions"][0]["provider_model"]["source"], "unknown");
+    assert_eq!(
+        v["sessions"][0]["provider_model"]["model"],
+        serde_json::Value::Null
+    );
+    assert!(!v.to_string().contains("sk-private-provider-credential"));
+}
+
+#[test]
+fn provider_model_known_baseline_is_not_uncertain() {
+    let s = Setup::new();
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"route-b"}}"#);
+    let p = FakeProcess::spawn();
+    s.start("known-model", p.pid());
+    let v = s.json(&["ls", "--json"]);
+    assert_eq!(v["sessions"][0]["provider_model"]["uncertain"], false);
+}
+
+fn model_evidence_setup() -> (Setup, FakeProcess, std::path::PathBuf) {
+    let s = Setup::new();
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"old-model","ANTHROPIC_AUTH_TOKEN":"private-a"}}"#);
+    let process = FakeProcess::spawn();
+    let path = s.dir.path().join("history.jsonl");
+    std::fs::write(&path, b"").unwrap();
+    let mut payload: serde_json::Value = serde_json::from_str(&common::start_json(
+        "model-evidence",
+        "startup",
+        Some("model-evidence"),
+    ))
+    .unwrap();
+    payload["transcript_path"] = path.to_str().unwrap().into();
+    payload["cwd"] = s.dir.path().to_str().unwrap().into();
+    let mut child = s
+        .cmd()
+        .env("CLAUDE_CONFIG_DIR", s.dir.path().join("claude"))
+        .env("CLAUDE_PID", process.pid().unwrap().to_string())
+        .args(["hook", "session-start"])
+        .stdin(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(payload.to_string().as_bytes())
+        .unwrap();
+    assert!(child.wait().unwrap().success());
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"new-model","ANTHROPIC_AUTH_TOKEN":"private-a"}}"#);
+    (s, process, path)
+}
+fn model_evidence_response(path: &Path, timestamp: Option<i64>) {
+    let timestamp = timestamp.map(moss_core::slot::rfc3339);
+    writeln!(std::fs::OpenOptions::new().append(true).open(path).unwrap(),"{}",serde_json::json!({"type":"assistant","sessionId":"model-evidence","timestamp":timestamp,"message":{"model":"new-model","stop_reason":"tool_use","content":"private response body"}})).unwrap();
+}
+#[test]
+fn model_evidence_new_success_suppresses_only_current_epoch_model_prompt() {
+    let (s, _process, path) = model_evidence_setup();
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    let registry = moss_core::registry::Registry::open(&s.state().join("registry.db")).unwrap();
+    let evidence = serde_json::to_string(&registry.model_evidence().unwrap()).unwrap();
+    assert!(!evidence.contains("private-a") && !evidence.contains("private response body"));
+    let started: serde_json::Value = serde_json::from_str(
+        registry.slots().unwrap()[0]
+            .provider_started
+            .as_deref()
+            .unwrap(),
+    )
+    .unwrap();
+    assert_eq!(started["env_model"], "old-model");
+    let stale = s.json(&["restart", "--stale", "--json"]);
+    assert!(stale["results"].as_array().unwrap().is_empty());
+    // 明确手动请求仍进入目标处理；本fixture不在tmux中，因此安全拒绝而非被悄悄过滤。
+    let explicit = s
+        .cmd()
+        .args([
+            "restart",
+            "--provider-default",
+            "--json",
+            "--",
+            "model-evidence",
+        ])
+        .output()
+        .unwrap();
+    let explicit: serde_json::Value = serde_json::from_slice(&explicit.stdout).unwrap();
+    assert_eq!(explicit["results"].as_array().unwrap().len(), 1);
+    assert_eq!(explicit["results"][0]["reason"], "not-in-tmux");
+    // 认证值不读取或存储，但文件stat变化使旧模型证据失效。
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"new-model","ANTHROPIC_AUTH_TOKEN":"private-b"}}"#);
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"new-model"}}"#);
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "removed"
+    );
+}
+#[test]
+fn model_evidence_cache_loss_invalid_time_and_failure_keep_prompt() {
+    let (s, _process, path) = model_evidence_setup();
+    s.json(&["ls", "--json"]);
+    model_evidence_response(&path, None);
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    model_evidence_response(&path, Some(moss_core::slot::now_ms() + 60_000));
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    std::fs::write(s.state().join("request-scan.json"), b"broken cache").unwrap();
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    writeln!(std::fs::OpenOptions::new().append(true).open(&path).unwrap(),"{}",serde_json::json!({"type":"assistant","isApiErrorMessage":true,"message":{"content":"API Error: 500 failed"}})).unwrap();
+    let result = s.json(&["ls", "--json"]);
+    assert_eq!(result["sessions"][0]["provider_restart"], "model");
+    assert!(result["sessions"][0]["api_failure"].is_object());
+}
+
+#[test]
+fn model_evidence_daemon_collects_success_without_listing_and_aba_invalidates_it() {
+    let (s, _process, path) = model_evidence_setup();
+    let _daemon = Daemon(
+        s.cmd()
+            .args(["daemon", "run"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_until("model evidence fence", || {
+        let cache: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(s.state().join("request-scan.json")).ok()?)
+                .ok()?;
+        cache
+            .as_object()?
+            .values()
+            .any(|entry| entry["fence_ms"].is_i64())
+            .then_some(())
+    });
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    wait_until("model evidence from daemon", || {
+        let reg = moss_core::registry::Registry::open(&s.state().join("registry.db")).ok()?;
+        (!reg.model_evidence().ok()?.is_empty()).then_some(())
+    });
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"third-model","ANTHROPIC_AUTH_TOKEN":"private-a"}}"#);
+    s.json(&["ls", "--json"]);
+    s.settings(r#"{"env":{"ANTHROPIC_MODEL":"new-model","ANTHROPIC_AUTH_TOKEN":"private-a"}}"#);
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+}
+
+#[test]
+fn model_evidence_rechecks_automatic_queue_but_keeps_explicit_request() {
+    let (s, _process, path) = model_evidence_setup();
+    s.json(&["ls", "--json"]);
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    let listing = s.json(&["ls", "--json"]);
+    assert!(listing["sessions"][0]["provider_restart"].is_null());
+    let id = listing["sessions"][0]["id"].as_str().unwrap();
+    let queue = s.state().join("daemon/restart-queue.json");
+    std::fs::create_dir_all(queue.parent().unwrap()).unwrap();
+    let automatic =
+        serde_json::json!([{"slot_id":id,"recheck":true,"attempts":0,"provider_default":true}]);
+    std::fs::write(&queue, automatic.to_string()).unwrap();
+    let _daemon = Daemon(
+        s.cmd()
+            .args(["daemon", "run"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_until("automatic stale queue cleared", || {
+        let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&queue).ok()?).ok()?;
+        value.as_array()?.is_empty().then_some(())
+    });
+    let manual =
+        serde_json::json!([{"slot_id":id,"recheck":false,"attempts":0,"provider_default":true}]);
+    std::fs::write(&queue, manual.to_string()).unwrap();
+    std::thread::sleep(Duration::from_millis(1250));
+    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(&queue).unwrap()).unwrap();
+    assert_eq!(value.as_array().unwrap().len(), 1);
+    assert_eq!(value[0]["attempts"], 0);
+}
+
+#[test]
+fn model_evidence_file_replacement_starts_a_new_watermark() {
+    let (s, _process, path) = model_evidence_setup();
+    s.json(&["ls", "--json"]);
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    let replacement = s.dir.path().join("new-history.jsonl");
+    std::fs::write(&replacement, b"").unwrap();
+    model_evidence_response(&replacement, Some(moss_core::slot::now_ms()));
+    std::fs::rename(&replacement, &path).unwrap();
+    assert_eq!(
+        s.json(&["ls", "--json"])["sessions"][0]["provider_restart"],
+        "model"
+    );
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+}
+
+#[test]
+fn model_evidence_non_result_appends_preserve_proof_but_api_failure_revokes_it() {
+    let (s, _process, path) = model_evidence_setup();
+    s.json(&["ls", "--json"]);
+    std::thread::sleep(Duration::from_millis(5));
+    model_evidence_response(&path, Some(moss_core::slot::now_ms()));
+    assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+    for record in [
+        serde_json::json!({"type":"user","message":{"content":"continue"}}),
+        serde_json::json!({"type":"user","message":{"content":[{"type":"tool_result","content":"done"}]}}),
+        serde_json::json!({"type":"system","subtype":"turn_duration"}),
+    ] {
+        writeln!(
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap(),
+            "{record}"
+        )
+        .unwrap();
+        assert!(s.json(&["ls", "--json"])["sessions"][0]["provider_restart"].is_null());
+        let registry = moss_core::registry::Registry::open(&s.state().join("registry.db")).unwrap();
+        assert_eq!(registry.model_evidence().unwrap().len(), 1);
+    }
+    writeln!(std::fs::OpenOptions::new().append(true).open(&path).unwrap(),"{}",serde_json::json!({"type":"assistant","isApiErrorMessage":true,"message":{"content":"API Error: 400 unknown provider for model"}})).unwrap();
+    let listing = s.json(&["ls", "--json"]);
+    assert_eq!(listing["sessions"][0]["provider_restart"], "model");
+    assert_eq!(
+        listing["sessions"][0]["api_failure"]["kind"],
+        "model_unavailable"
+    );
+    let registry = moss_core::registry::Registry::open(&s.state().join("registry.db")).unwrap();
+    assert!(registry.model_evidence().unwrap().is_empty());
+    assert_eq!(registry.api_failures().unwrap().len(), 1);
+}

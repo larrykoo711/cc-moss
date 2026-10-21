@@ -472,7 +472,18 @@ impl Registry {
                     tx.execute("UPDATE slots SET busy = 0 WHERE slot_id = ?1", [&id])?;
                     clear_attention(&tx, &id)?;
                     let (status, raw) = match reason {
-                        EndReason::Clear => (None, None),
+                        EndReason::Clear => {
+                            tx.execute(
+                                "INSERT INTO api_results(slot_id,session_id,path,generation,stamp,position,failure,cleared)
+                                 SELECT s.slot_id,s.session_id,ss.transcript_path,'','',-1,NULL,1
+                                 FROM slots s JOIN slot_sessions ss ON ss.slot_id=s.slot_id AND ss.session_id=s.session_id
+                                 WHERE s.slot_id=?1 AND ss.transcript_path IS NOT NULL
+                                 ON CONFLICT(slot_id) DO UPDATE SET session_id=excluded.session_id,
+                                 path=excluded.path,failure=NULL,model_evidence=NULL,cleared=1",
+                                [&id],
+                            )?;
+                            (None, None)
+                        }
                         EndReason::Closed(r) => (Some(Status::Closed), Some(r)),
                         EndReason::Abnormal(r) => (Some(Status::Interrupted), Some(r)),
                     };
@@ -620,6 +631,173 @@ impl Registry {
             }
         }
         Ok(renamed)
+    }
+
+    /// 一次读取安全失败映射；旧会话的数据不会挂到复用后的slot上。
+    pub fn api_failures(&self) -> Result<HashMap<String, crate::transcript::ApiFailure>> {
+        if !self
+            .conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='api_results'")?
+            .exists([])?
+        {
+            return Ok(HashMap::new());
+        }
+        let mut stmt = self.conn.prepare(
+            "SELECT a.slot_id, a.failure FROM api_results a JOIN slots s ON s.slot_id=a.slot_id
+             AND s.session_id=a.session_id JOIN slot_sessions ss ON ss.slot_id=s.slot_id AND ss.session_id=s.session_id AND ss.transcript_path=a.path
+             WHERE a.failure IS NOT NULL AND a.cleared=0 AND s.status != 'closed' AND COALESCE(s.end_reason, '') != 'clear'"
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut failures = HashMap::new();
+        for row in rows {
+            let (id, value) = row?;
+            failures.insert(id, serde_json::from_str(&value)?);
+        }
+        Ok(failures)
+    }
+
+    /// 一次加载当前会话的成功模型证据；配置epoch由调用方再次验证。
+    pub fn model_evidence(&self) -> Result<HashMap<String, crate::transcript::ModelEvidence>> {
+        if !self
+            .conn
+            .prepare("SELECT 1 FROM pragma_table_info('api_results') WHERE name='model_evidence'")?
+            .exists([])?
+        {
+            return Ok(HashMap::new());
+        }
+        let mut stmt = self.conn.prepare("SELECT a.slot_id,a.model_evidence FROM api_results a
+            JOIN slots s ON s.slot_id=a.slot_id AND s.session_id=a.session_id
+            JOIN slot_sessions ss ON ss.slot_id=s.slot_id AND ss.session_id=s.session_id AND ss.transcript_path=a.path
+            WHERE a.model_evidence IS NOT NULL AND a.failure IS NULL AND a.cleared=0 AND s.status!='closed'")?;
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        let mut map = HashMap::new();
+        for row in rows {
+            let (id, value) = row?;
+            map.insert(id, serde_json::from_str(&value)?);
+        }
+        Ok(map)
+    }
+
+    /// epoch或文件换代时仅撤销模型证明，不清除实际请求故障。
+    pub fn invalidate_model_evidence(&self, slot_id: &str, session_id: &str) -> Result<()> {
+        self.write()?.execute("UPDATE api_results SET model_evidence=NULL WHERE slot_id=?1 AND session_id=?2 AND model_evidence IS NOT NULL", params![slot_id,session_id])?;
+        Ok(())
+    }
+
+    /// 扫描在库外锁下完成；这里只做短事务校验与状态变更。
+    /// false表示快照已过期，调用方不得推进扫描缓存。
+    pub fn apply_api_result(
+        &self,
+        slot_id: &str,
+        session_id: &str,
+        path: &str,
+        generation: &str,
+        stamp: &str,
+        result: &crate::transcript::RequestResult,
+    ) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let current = tx.prepare("SELECT 1 FROM slots s JOIN slot_sessions ss ON ss.slot_id=s.slot_id AND ss.session_id=s.session_id WHERE s.slot_id=?1 AND s.session_id=?2 AND ss.transcript_path=?3 AND s.status != 'closed' AND COALESCE(s.end_reason, '') != 'clear'")?
+            .exists(params![slot_id, session_id, path])?;
+        if !current
+            || crate::transcript::request_file_stamp(Path::new(path))
+                .ok()
+                .as_deref()
+                != Some(stamp)
+        {
+            return Ok(false);
+        }
+        struct PreviousResult {
+            generation: String,
+            stamp: String,
+            position: i64,
+            failure: Option<String>,
+            cleared: bool,
+        }
+        let old = tx
+            .query_row(
+                "SELECT generation,stamp,position,failure,cleared FROM api_results
+             WHERE slot_id=?1 AND session_id=?2 AND path=?3",
+                params![slot_id, session_id, path],
+                |r| {
+                    Ok(PreviousResult {
+                        generation: r.get(0)?,
+                        stamp: r.get(1)?,
+                        position: r.get(2)?,
+                        failure: r.get(3)?,
+                        cleared: r.get(4)?,
+                    })
+                },
+            )
+            .optional()?;
+        if old.as_ref().is_some_and(|r| {
+            r.cleared
+                || ((r.generation == generation || r.stamp == stamp)
+                    && r.position as u64 >= result.position)
+        }) {
+            return Ok(true);
+        }
+        let before: Option<crate::transcript::ApiFailure> = old
+            .as_ref()
+            .and_then(|r| r.failure.as_deref())
+            .map(serde_json::from_str)
+            .transpose()?;
+        let same = match (&before, &result.failure) {
+            (Some(a), Some(b)) => a.kind == b.kind && a.status == b.status && a.model == b.model,
+            (None, None) => true,
+            _ => false,
+        };
+        let encoded = result
+            .failure
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()?;
+        let evidence = result.evidence.as_ref().filter(|e| {
+            result.failure.is_none()
+                && e.session_id == session_id
+                && e.path == path
+                && e.generation == generation
+                && e.position == result.position
+                && e.at_ms > e.fence_ms
+                && e.at_ms <= crate::slot::now_ms()
+                && result
+                    .success
+                    .as_ref()
+                    .is_some_and(|s| s.model == e.model && s.at_ms == Some(e.at_ms))
+                && crate::provider::safe_model(&e.model)
+        });
+        let evidence = evidence.map(serde_json::to_string).transpose()?;
+        tx.execute(
+            "INSERT INTO api_results(slot_id,session_id,path,generation,stamp,position,failure,model_evidence)
+            VALUES(?1,?2,?3,?4,?5,?6,?7,?8) ON CONFLICT(slot_id) DO UPDATE SET
+            session_id=excluded.session_id,path=excluded.path,generation=excluded.generation,
+            stamp=excluded.stamp,position=excluded.position,failure=excluded.failure,model_evidence=excluded.model_evidence,cleared=0",
+            params![
+                slot_id,
+                session_id,
+                path,
+                generation,
+                stamp,
+                i64::try_from(result.position)?,
+                encoded,
+                evidence
+            ],
+        )?;
+        if !same {
+            let kind = if result.failure.is_some() {
+                "api-failed"
+            } else {
+                "api-recovered"
+            };
+            let detail = result
+                .failure
+                .as_ref()
+                .map(serde_json::to_value)
+                .transpose()?
+                .unwrap_or_else(empty);
+            record_event(&tx, slot_id, kind, &detail, crate::slot::now_ms())?;
+        }
+        tx.commit()?;
+        Ok(true)
     }
 
     /// What a session last did, from its transcript when the hooks missed
@@ -835,6 +1013,20 @@ impl Registry {
         Ok(closed)
     }
 
+    /// Release only this operation's claim, never a newer launch or process.
+    pub fn clear_restore_claim(&self, planned: &Slot, claimed_at_ms: i64) -> Result<bool> {
+        let changed = self.write()?.execute(
+            "UPDATE slots SET restore_started_at = NULL
+             WHERE slot_id = :slot AND session_id = :sid
+               AND pid IS :pid AND pid_start IS :start AND restore_started_at = :claimed",
+            named_params! {
+                ":slot": planned.slot_id, ":sid": planned.session_id,
+                ":pid": planned.pid, ":start": planned.pid_start, ":claimed": claimed_at_ms,
+            },
+        )?;
+        Ok(changed == 1)
+    }
+
     /// Undo [`Registry::mark_restore_started`] when the launch failed.
     pub fn clear_restore_started(&self, slot_id: &str) -> Result<()> {
         self.write()?.execute(
@@ -959,6 +1151,7 @@ impl Registry {
                 continue;
             }
             tx.execute("DELETE FROM events WHERE slot_id = ?1", [id])?;
+            tx.execute("DELETE FROM api_results WHERE slot_id = ?1", [id])?;
             tx.execute("DELETE FROM slot_sessions WHERE slot_id = ?1", [id])?;
             tx.execute("DELETE FROM slots WHERE slot_id = ?1", [id])?;
             done.push(id.clone());
@@ -1415,6 +1608,33 @@ fn enable_wal(conn: &Connection) -> Result<()> {
 /// Earlier builds created schema v1 without later columns; v1 was never
 /// released, so missing columns are added in place.
 fn ensure_columns(conn: &Connection) -> Result<()> {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS api_results (
+        slot_id TEXT PRIMARY KEY, session_id TEXT NOT NULL, path TEXT NOT NULL,
+        generation TEXT NOT NULL, stamp TEXT NOT NULL, position INTEGER NOT NULL,
+        failure TEXT, cleared INTEGER NOT NULL DEFAULT 0
+    )",
+    )?;
+
+    if !conn
+        .prepare("SELECT 1 FROM pragma_table_info('api_results') WHERE name='model_evidence'")?
+        .exists([])?
+    {
+        if let Err(error) =
+            conn.execute_batch("ALTER TABLE api_results ADD COLUMN model_evidence TEXT")
+        {
+            // 并发首次打开可先由其他连接完成迁移；只忽略已确实存在的列。
+            if !conn
+                .prepare(
+                    "SELECT 1 FROM pragma_table_info('api_results') WHERE name='model_evidence'",
+                )?
+                .exists([])?
+            {
+                return Err(error.into());
+            }
+        }
+    }
+
     for (column, ddl) in [
         ("restore_started_at", "restore_started_at INTEGER"),
         ("busy", "busy INTEGER NOT NULL DEFAULT 0"),

@@ -12,7 +12,7 @@ import Testing
     @Test func aLiveSessionShowsRenameMessageAndOpen() {
         let a = RowActions(list[0], hopeless: false)
         #expect(a.inline == [.message, .open, .rename])
-        #expect(a.more == [[.note], [.copyCommand, .copyPath], [.endAndArchive]])
+        #expect(a.more == [[.restart], [.note], [.copyCommand, .copyPath], [.endAndArchive]])
     }
 
     @Test func aBrokenSessionLeadsWithBringBack() {
@@ -52,11 +52,11 @@ import Testing
         with(sessionJSON(id: "O", name: "outside-stale", tmux: false), ["provider_restart": "removed"]),
     ])
 
-    @Test func rowActionsRestartAStaleSessionInline() {
+    @Test func rowActionsKeepOrdinaryRestartInTheMenu() {
         let a = RowActions(more[0], hopeless: false)
-        #expect(a.inline == [.restart, .message, .open], "rename steps back into ⋯ to make room")
-        #expect(a.more.joined().contains(.rename))
-        #expect(!a.more.joined().contains(.restart))
+        #expect(a.inline == [.message, .open, .rename])
+        #expect(a.more.joined().contains(.providerPlan))
+        #expect(a.more.joined().contains(.restart))
     }
 
     @Test func rowActionsDontRestartAQueuedSessionAgain() {

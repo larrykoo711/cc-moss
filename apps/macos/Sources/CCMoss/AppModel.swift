@@ -28,8 +28,10 @@ final class AppModel {
     var archivedExpanded = false
     /// The line after a provider switch (T2.6), fed by the event stream.
     var providerBanner = ProviderBanner()
-    /// Sessions being restarted from their row right now.
-    var restarting: Set<String> = []
+    var providerPlanID: String?
+    var recoveryOperations = RecoveryOperations()
+    var providerConfirmations: ProviderConfirmations
+    @ObservationIgnored let providerDefaults: UserDefaults?
     /// "Restart All" is running.
     var restartingAll = false
 
@@ -347,7 +349,9 @@ final class AppModel {
     @ObservationIgnored var taker: AskTaker?
 
     /// `client` replaces the cc-moss lookup: demo screenshots pass a canned one.
-    init(client: MossClient? = nil, terminals: TerminalPrefs? = nil) {
+    init(client: MossClient? = nil, terminals: TerminalPrefs? = nil, providerDefaults: UserDefaults? = .standard) {
+        self.providerDefaults = providerDefaults
+        self.providerConfirmations = providerDefaults.map(ProviderConfirmations.load) ?? ProviderConfirmations()
         self.terminals = terminals ?? TerminalPrefs()
         mossDesk.say = { [weak self] text in
             guard let client = self?.client else { throw MossClient.Failure.command(L.t("cc-moss isn't installed yet.", "还没装 cc-moss。")) }
@@ -500,6 +504,7 @@ final class AppModel {
             let shelf = Archive.split(split.others)
             if archived != shelf.archived { archived = shelf.archived }
             sessions = shelf.open
+            recoveryOperations.observe(sessions)
             // Pins of sessions that are gone or closed go (saved with the next pin).
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
