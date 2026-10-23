@@ -2008,7 +2008,11 @@ start "$source""#,
     );
     assert_eq!(current, target);
     assert_eq!(hops, 1);
-    assert!(!alive(pid));
+    // The refusal can return while the transferred process is still exiting; wait for it,
+    // then check that nothing relaunched it.
+    wait_until("the transferred process to exit", || {
+        (!alive(pid)).then_some(())
+    });
     let launches = std::fs::read_to_string(w.path("fifos/launches")).unwrap();
     assert_eq!(
         launches.lines().count(),
@@ -2129,7 +2133,10 @@ fn resume_identity_owner_transfer_blocks_rebuild_and_shell_input() {
         assert_eq!(after, generation);
         assert_eq!(owner, target);
         assert_eq!(hops, 1);
-        assert!(!alive(pid));
+        // As above: the refusal can return before the transferred process has exited.
+        wait_until("the transferred process to exit", || {
+            (!alive(pid)).then_some(())
+        });
         assert_eq!(
             std::fs::read_to_string(w.path("fifos/launches"))
                 .unwrap()
