@@ -95,59 +95,11 @@ pub fn refusal(
     None
 }
 
-/// Whether a process's command line (`ps -o args=`) is Claude Code running
-/// `session_id`: a `claude` program, not resuming or starting another
-/// session by id.
-///
-/// `ids` are every id the session has had: after `/clear` the process still
-/// says the id it was started with. With `--fork-session` the id after
-/// `--resume` is the conversation it branched from, not its own.
-pub fn process_is_session(args: &str, ids: &[&str]) -> bool {
-    let words: Vec<&str> = args.split_whitespace().collect();
-    let claude = words
-        .iter()
-        .any(|w| w.rsplit('/').next().is_some_and(|b| b.contains("claude")));
-    let forked = words.contains(&"--fork-session");
-    let mut other_id = false;
-    for (i, w) in words.iter().enumerate() {
-        let (flag, id) = match w.split_once('=') {
-            Some((f @ ("--resume" | "--session-id"), v)) => (f, Some(v)),
-            _ if matches!(*w, "--resume" | "--session-id" | "-r") => {
-                (*w, words.get(i + 1).copied())
-            }
-            _ => (*w, None),
-        };
-        let branched_from = forked && flag != "--session-id";
-        if !branched_from && id.is_some_and(|id| !ids.contains(&id)) {
-            other_id = true;
-        }
-    }
-    claude && !other_id
-}
-
-/// The command line of `pid`, or `None` when `ps` can't say.
-fn command_line(pid: u32) -> Option<String> {
-    let out = moss_core::command::output_with_timeout(
-        std::process::Command::new("ps").args(["-o", "args=", "-p", &pid.to_string()]),
-        Duration::from_secs(2),
-    )?;
-    out.status
-        .success()
-        .then(|| String::from_utf8_lossy(&out.stdout).trim().to_string())
-}
-
-/// Still that Claude Code, right now: same start time and its command line.
+/// Shared process identity, including a durable, verified single-hop resume.
 pub(super) fn still_it(slot: &Slot) -> bool {
-    let Some(pid) = slot.pid else {
-        return false;
-    };
-    proc::liveness(pid, slot.pid_start.as_deref()) == Liveness::Alive
-        && command_line(pid).is_some_and(|a| {
-            let ids: Vec<&str> = std::iter::once(slot.session_id.as_str())
-                .chain(slot.session_ids.iter().map(String::as_str))
-                .collect();
-            process_is_session(&a, &ids)
-        })
+    Registry::open(&store_dir::registry_path())
+        .ok()
+        .is_some_and(|registry| super::process_identity::verify(&registry, slot).is_ok())
 }
 
 /// The name an auto-named session gets: its folder's, unique among the
@@ -203,7 +155,38 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         );
         return Ok(false);
     }
+    let identity = match super::process_identity::verify(&registry, &slot) {
+        Ok(identity) => identity,
+        Err(error) => {
+            say(
+                json!({"schema":1,"result":"refused","reason":"not-its-process","message":error.to_string()}),
+                error.to_string(),
+            );
+            return Ok(false);
+        }
+    };
     let named = new_name(&slot, &slots);
+    let mut preview = slot.clone();
+    if let Some(name) = &named {
+        preview.name = Some(name.clone());
+    }
+    if let Err(error) = super::restart::resume_argv("claude", &preview, false) {
+        say(
+            json!({"schema":1,"result":"refused","reason":"config-source","message":error.to_string()}),
+            error.to_string(),
+        );
+        return Ok(false);
+    }
+    let working = match super::working_directory::for_slot(&slot) {
+        Ok(working) => working,
+        Err(error) => {
+            say(
+                json!({"schema":1,"result":"refused","reason":super::working_directory::code(&error),"message":error.to_string()}),
+                error.to_string(),
+            );
+            return Ok(false);
+        }
+    };
     let tail = slot
         .transcript_path
         .as_deref()
@@ -225,6 +208,15 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         );
         return Ok(true);
     }
+    let config = Config::load()?;
+    let mut launcher = Launcher::new(&config)?.quiet();
+    if let Err(error) = moss_core::working_directory::recheck(&working) {
+        say(
+            json!({"schema":1,"result":"refused","reason":error.code(),"message":error.to_string()}),
+            error.to_string(),
+        );
+        return Ok(false);
+    }
     // Tidy first: a name, and what it last did.
     if let Some(n) = &named {
         registry.set_name(&slot.slot_id, n)?;
@@ -241,14 +233,22 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         audit(&slot, "failed", &message);
         Ok(false)
     };
-    // Checked again right before the signal: still that very process.
-    if !still_it(&slot) {
-        let r = Refusal::NotItsProcess;
-        say(
-            json!({"schema": 1, "result": "refused", "reason": r.code(), "message": r.message()}),
-            r.message(),
-        );
-        return Ok(false);
+    let current = registry
+        .slots()?
+        .into_iter()
+        .find(|s| s.slot_id == slot.slot_id)
+        .ok_or_else(|| anyhow::anyhow!("the session disappeared"))?;
+    let claimed_at = now_ms();
+    if !registry.claim_restore(&current, claimed_at)? {
+        return fail("another operation owns this session".into());
+    }
+    if let Err(error) = identity.recheck(&registry, &slot) {
+        registry.clear_restore_claim(&current, claimed_at)?;
+        return fail(error.to_string());
+    }
+    if let Err(error) = moss_core::working_directory::recheck(&working) {
+        registry.clear_restore_claim(&current, claimed_at)?;
+        return fail(error.to_string());
     }
     // Ask it to quit, and wait for it to go.
     // SAFETY: a signal to a pid we just checked is that Claude Code.
@@ -258,6 +258,7 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
     let until = Instant::now() + QUIT;
     while proc::liveness(pid, slot.pid_start.as_deref()) == Liveness::Alive {
         if Instant::now() >= until {
+            registry.clear_restore_claim(&current, claimed_at)?;
             return fail(tr!(
                 "It didn't quit within 10 seconds, so it stays where it is. Quit it in its own terminal and try again.",
                 "它 10 秒内没有退出，所以留在原处。在它自己的终端里退出后再试。"
@@ -266,6 +267,11 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    if !identity.after_exit(&registry, &slot, claimed_at) {
+        registry.clear_restore_claim(&current, claimed_at)?;
+        return fail("the process owner changed while exiting; no replacement was started".into());
+    }
+    registry.clear_restore_claim(&current, claimed_at)?;
     // Its SessionEnd hook may still be writing: a moment for it (the
     // process is already gone). A SessionEnd that comes later from this old
     // process is ignored by the registry, so it can't end the new one.
@@ -282,13 +288,24 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         std::thread::sleep(Duration::from_millis(100));
         fresh = reread()?;
     }
-    let config = Config::load()?;
-    let mut launcher = Launcher::new(&config)?.quiet();
+    if fresh.cwd != slot.cwd {
+        return fail(moss_core::working_directory::Error::Changed.to_string());
+    }
+    if let Err(error) = moss_core::working_directory::recheck(&working) {
+        return fail(error.to_string());
+    }
     let mut launched = launcher.launch(&registry, &fresh)?;
     // A hook wrote meanwhile: once more, from what is recorded now.
     if matches!(launched, Launched::Changed) {
         std::thread::sleep(Duration::from_millis(500));
-        launched = launcher.launch(&registry, &reread()?)?;
+        let retry = reread()?;
+        if retry.cwd != slot.cwd {
+            return fail(moss_core::working_directory::Error::Changed.to_string());
+        }
+        if let Err(error) = moss_core::working_directory::recheck(&working) {
+            return fail(error.to_string());
+        }
+        launched = launcher.launch(&registry, &retry)?;
     }
     let tmux = match launched {
         Launched::Started(name) => name,
@@ -426,46 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn adopt_checks_the_process_is_that_session() {
-        let id = &["0837a145-0000"][..];
-        assert!(
-            process_is_session("claude", id),
-            "plain claude, as in a terminal"
-        );
-        assert!(process_is_session(
-            "/Users/me/.local/bin/claude --dangerously-skip-permissions",
-            id
-        ));
-        assert!(process_is_session("claude --resume 0837a145-0000", id));
-        assert!(process_is_session(
-            "/bin/bash /t/fake-claude --session-id 0837a145-0000",
-            id
-        ));
-        assert!(
-            !process_is_session("claude --resume ffff0000-9999", id),
-            "another session"
-        );
-        assert!(!process_is_session("claude --session-id=ffff0000-9999", id));
-        assert!(
-            !process_is_session("vim notes.md", id),
-            "pid reused by something else"
-        );
-        assert!(!process_is_session("", id));
-        // After /clear the process still says the id it started with.
-        assert!(process_is_session(
-            "claude --resume aaaa1111-0000",
-            &["bbbb2222-0000", "aaaa1111-0000"]
-        ));
-        // A fork resumes the conversation it branches from under a new id.
-        assert!(process_is_session(
-            "claude --dangerously-skip-permissions --resume 3b264e24-0000 --fork-session -n term-kit",
-            id
-        ));
-        assert!(
-            !process_is_session("claude --fork-session --session-id ffff0000-9999", id),
-            "a fork told its own id is still that id"
-        );
-        // Without the recorded start time, no telling: refused.
+    fn adopt_refuses_missing_process_start() {
         let mut s = slot();
         s.pid_start = None;
         assert_eq!(

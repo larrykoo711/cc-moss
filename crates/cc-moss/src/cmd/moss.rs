@@ -1374,7 +1374,11 @@ impl Looker {
     /// Lay out the home and start a fresh Moss. The old records are left to
     /// the caller, once this one runs.
     fn launch(&mut self, log: &dyn Fn(&str)) -> std::result::Result<String, Launch> {
-        let home = moss::home_dir(&self.state);
+        let requested_home = moss::home_dir(&self.state);
+        let context = super::working_directory::current_context().map_err(Launch::Failed)?;
+        let working = moss_core::working_directory::prepare_runtime(&requested_home, &context)
+            .map_err(|error| Launch::Failed(error.into()))?;
+        let home = working.canonical().to_path_buf();
         home::lay_out(&home, &files(&self.exe, &self.state))
             .with_context(|| format!("cannot lay out {}", home.display()))
             .map_err(Launch::Failed)?;
@@ -1410,8 +1414,17 @@ impl Looker {
         for e in &env {
             command.extend(["-e", e.as_str()]);
         }
+        let source =
+            moss_core::provider::LaunchSource::capture(std::env::var_os("CLAUDE_CONFIG_DIR"));
+        let mut launch_env = source
+            .env_argv()
+            .map_err(|error| Launch::Failed(anyhow::anyhow!(error)))?;
+        launch_env.push(format!("HOME={}", working.target_home().display()));
+        command.extend(launch_env.iter().map(String::as_str));
         command.push(&claude);
         command.extend(args.iter().map(String::as_str));
+        moss_core::working_directory::recheck(&working)
+            .map_err(|error| Launch::Failed(error.into()))?;
         let out = tmux(
             &self.socket,
             &[
@@ -1601,8 +1614,16 @@ fn session_env(session_id: &str) -> Vec<String> {
         // `cc-moss moss provider-key` is asked again a minute after the last
         // time: a switch of token reaches Moss without a restart.
         format!("{KEY_TTL_ENV}={KEY_TTL_MS}"),
+        // The panel reads Moss's screen. Claude Code's fullscreen view draws
+        // a command's panel without the line echoing the command, so
+        // `/status` and `/usage` came back empty (2026-10-23).
+        format!("{INLINE_SCREEN_ENV}=1"),
     ]
 }
+
+/// Keeps Moss's Claude Code in its inline view, whatever the user picked
+/// for their own sessions.
+const INLINE_SCREEN_ENV: &str = "CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN";
 
 /// How long Claude Code keeps what its `apiKeyHelper` said.
 const KEY_TTL_ENV: &str = "CLAUDE_CODE_API_KEY_HELPER_TTL_MS";
@@ -1916,6 +1937,12 @@ mod tests {
             env.contains(&"CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000".to_string()),
             "{env:?}"
         );
+        // The panel reads Moss's screen: Claude Code's fullscreen view
+        // draws a command's panel without the line that echoes it.
+        assert!(
+            env.contains(&"CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1".to_string()),
+            "{env:?}"
+        );
         // A switched token reaches it within a minute.
         assert!(
             env.contains(&"CLAUDE_CODE_API_KEY_HELPER_TTL_MS=60000".to_string()),
@@ -1982,8 +2009,20 @@ mod tests {
         for reason in [
             "empty",
             "missing_dir",
+            "cwd_forbidden",
+            "cwd_missing",
+            "cwd_not_directory",
+            "cwd_unreadable",
+            "cwd_unavailable",
+            "cwd_invalid",
+            "cwd_changed",
             "exited_at_once",
             "tmux_failed",
+            "config_source_unknown",
+            "config_source_changed",
+            "config_source_unsupported",
+            "invalid_config_source",
+            "resume_preflight_failed",
             "already_running",
             "ambiguous",
             "busy",

@@ -52,6 +52,14 @@ fn restart(w: &World, args: &[&str]) -> (serde_json::Value, bool) {
     (v, out.status.success())
 }
 
+fn shell_exports(w: &World) -> String {
+    format!(
+        "unset CC_MOSS_TEST_CLAUDE_ENTRY; export HOME='{}' CLAUDE_CONFIG_DIR='{}' CC_MOSS_CONFIG='{}' CC_MOSS_CLAUDE_BIN='{}' CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
+        w.path("home").display(), w.path("claude").display(), w.config_path().display(), w.claude.display(),
+        w.state().display(), env!("CARGO_BIN_EXE_cc-moss"), w.path("fifos").display()
+    )
+}
+
 fn args_of(pid: u64) -> String {
     let out = Command::new("ps")
         .args(["-o", "args=", "-p", &pid.to_string()])
@@ -72,6 +80,237 @@ fn restarted(w: &World, name: &str, old_pid: u64) -> serde_json::Value {
         let pid = s["pid"].as_u64()?;
         (s["status"] == "running" && pid != old_pid && alive(pid)).then_some(s)
     })
+}
+
+fn launch_snapshot(w: &World, sid: &str) -> serde_json::Value {
+    wait_until("captured launch source", || {
+        let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+        let value: Option<String> = db
+            .query_row(
+                "SELECT provider_started FROM slots WHERE session_id=?1",
+                [sid],
+                |r| r.get(0),
+            )
+            .unwrap();
+        value.map(|v| serde_json::from_str(&v).unwrap())
+    })
+}
+
+#[test]
+fn launch_source_restart_preserves_environment_under_tmux_pollution() {
+    for (tag, source, provider_default) in [
+        ("ls-unset", None, false),
+        ("ls-default", Some("home/.claude"), false),
+        ("ls-custom", Some("custom"), false),
+        ("ls-model", None, true),
+    ] {
+        let w = World::new(tag);
+        std::fs::create_dir_all(w.path("home/.claude")).unwrap();
+        std::fs::write(
+            w.path("home/.claude/settings.json"),
+            r#"{"env":{"ANTHROPIC_MODEL":"route-b"}}"#,
+        )
+        .unwrap();
+        let mut cmd = w.cc_moss();
+        cmd.env("HOME", w.path("home"));
+        if let Some(source) = source {
+            cmd.env("CLAUDE_CONFIG_DIR", w.path(source));
+        }
+        let out = cmd
+            .args(["new", "api", "--detach", "-C"])
+            .arg(w.path("work"))
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let sid = w.session_id("api");
+        let snapshot = launch_snapshot(&w, &sid);
+        let expected = source
+            .map(|s| format!("explicit\n{}", w.path(s).display()))
+            .unwrap_or_else(|| "unset".into());
+        if source.is_none() {
+            assert_eq!(snapshot["launch_source"], "unset");
+        }
+        let old = session(&w, "api")["pid"].as_u64().unwrap();
+        w.tmux(&[
+            "set-environment",
+            "-g",
+            "CLAUDE_CONFIG_DIR",
+            w.path("polluted").to_str().unwrap(),
+        ]);
+        let args = if provider_default {
+            vec!["--provider-default", "api"]
+        } else {
+            vec!["api"]
+        };
+        let (result, ok) = restart(&w, &args);
+        assert!(ok, "{result}");
+        restarted(&w, "api", old);
+        let actual =
+            std::fs::read_to_string(w.path(&format!("fifos/{sid}.config-source"))).unwrap();
+        assert_eq!(actual, expected);
+    }
+}
+
+#[test]
+fn launch_source_unknown_and_cli_markers_refuse_before_restart() {
+    for (tag, replacement) in [
+        ("ls-unknown", serde_json::Value::Null),
+        ("ls-cli", serde_json::json!(["--mcp-config"])),
+    ] {
+        let w = World::new(tag);
+        w.new_session("api");
+        let sid = w.session_id("api");
+        let mut snapshot = launch_snapshot(&w, &sid);
+        if replacement.is_null() {
+            snapshot.as_object_mut().unwrap().remove("launch_source");
+        } else {
+            snapshot["unreplayable_args"] = replacement;
+        }
+        let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+        db.execute(
+            "UPDATE slots SET provider_started=?1 WHERE session_id=?2",
+            [snapshot.to_string(), sid],
+        )
+        .unwrap();
+        let old = session(&w, "api")["pid"].as_u64().unwrap();
+        let (result, ok) = restart(&w, &["api"]);
+        assert!(!ok, "{result}");
+        assert!(alive(old));
+        assert_eq!(session(&w, "api")["pid"], old);
+        assert!(session(&w, "api")["restore_started_at"].is_null());
+    }
+}
+
+#[test]
+fn launch_source_busy_unknown_and_unsupported_refuse_before_queue() {
+    for (tag, unsupported) in [("busy-source-unknown", false), ("busy-source-cli", true)] {
+        let w = World::new(tag);
+        w.new_session("api");
+        let sid = w.session_id("api");
+        let mut snapshot = launch_snapshot(&w, &sid);
+        w.first_prompt(&sid, "api");
+        wait_until("busy session", || {
+            (session(&w, "api")["busy"] == true).then_some(())
+        });
+        let old = session(&w, "api")["pid"].as_u64().unwrap();
+        let (queued, ok) = restart(&w, &["api"]);
+        assert!(ok, "{queued}");
+        assert_eq!(queued["results"][0]["result"], "queued");
+        if unsupported {
+            snapshot["unreplayable_args"] = serde_json::json!(["--mcp-config"]);
+        } else {
+            snapshot.as_object_mut().unwrap().remove("launch_source");
+        }
+        let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+        db.execute(
+            "UPDATE slots SET provider_started=?1 WHERE session_id=?2",
+            [snapshot.to_string(), sid],
+        )
+        .unwrap();
+        let (cancelled, ok) = restart(&w, &["--cancel", "api"]);
+        assert!(ok, "{cancelled}");
+        assert_eq!(cancelled["results"][0]["result"], "cancelled");
+        assert!(
+            cancelled["results"][0]["reason"].is_null(),
+            "已有队列确实被撤销"
+        );
+        let (result, ok) = restart(&w, &["api"]);
+        assert!(!ok, "{result}");
+        assert_eq!(result["results"][0]["result"], "refused");
+        assert!(alive(old));
+        assert_eq!(session(&w, "api")["restart_queued"], false);
+        let queue = w.state().join("daemon/restart-queue.json");
+        if queue.exists() {
+            assert_eq!(
+                serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(queue).unwrap())
+                    .unwrap(),
+                serde_json::json!([])
+            );
+        }
+        let (cancelled, ok) = restart(&w, &["--cancel", "api"]);
+        assert!(ok, "{cancelled}");
+        assert_eq!(cancelled["results"][0]["result"], "cancelled");
+    }
+}
+
+#[test]
+fn launch_source_arity_hook_preserves_option_boundaries() {
+    for (tag, args, blocked) in [
+        (
+            "arity-dash-value",
+            vec![
+                "--append-system-prompt",
+                "--",
+                "--mcp-config",
+                "/tmp/mcp.json",
+            ],
+            true,
+        ),
+        (
+            "arity-flag-value",
+            vec!["--append-system-prompt", "--mcp-config"],
+            false,
+        ),
+    ] {
+        let w = World::new(tag);
+        let out = w
+            .cc_moss()
+            .args(["new", "api", "--detach", "-C"])
+            .arg(w.path("work"))
+            .arg("--")
+            .args(args)
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
+        let sid = w.session_id("api");
+        let snapshot = launch_snapshot(&w, &sid);
+        let old = session(&w, "api")["pid"].as_u64().unwrap();
+        let (result, ok) = restart(&w, &["api"]);
+        if blocked {
+            assert_eq!(
+                snapshot["unreplayable_args"],
+                serde_json::json!(["--mcp-config"])
+            );
+            assert!(!ok, "{result}");
+            assert!(alive(old));
+        } else {
+            assert!(snapshot["unreplayable_args"].is_null());
+            assert!(ok, "{result}");
+            restarted(&w, "api", old);
+        }
+    }
+}
+
+#[test]
+fn launch_source_bad_settings_still_captures_source_and_cli_names() {
+    let w = World::new("ls-bad");
+    std::fs::create_dir_all(w.path("broken")).unwrap();
+    std::fs::write(w.path("broken/settings.json"), "not-json").unwrap();
+    let out = w
+        .cc_moss()
+        .env("CLAUDE_CONFIG_DIR", w.path("broken"))
+        .args(["new", "api", "--detach", "-C"])
+        .arg(w.path("work"))
+        .args([
+            "--",
+            "--mcp-config={\"token\":\"fixture-secret\"}",
+            "--strict-mcp-config",
+        ])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let sid = w.session_id("api");
+    let snapshot = launch_snapshot(&w, &sid);
+    assert_eq!(
+        snapshot["launch_source"]["explicit"],
+        w.path("broken").to_str().unwrap()
+    );
+    assert_eq!(snapshot["settings_valid"], false);
+    assert_eq!(
+        snapshot["unreplayable_args"],
+        serde_json::json!(["--mcp-config", "--strict-mcp-config"])
+    );
+    assert!(!snapshot.to_string().contains("fixture-secret"));
 }
 
 #[test]
@@ -215,12 +454,7 @@ fn restart_in_a_shell_pane() {
     let (pane, shell_pid) = info.trim().split_once(' ').unwrap();
     let shell_pid: u64 = shell_pid.parse().unwrap();
     let sid = "11111111-2222-3333-4444-555555555555";
-    let exports = format!(
-        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
-        w.state().display(),
-        env!("CARGO_BIN_EXE_cc-moss"),
-        w.path("fifos").display()
-    );
+    let exports = shell_exports(&w);
     w.tmux(&["send-keys", "-t", pane, "-l", &exports]);
     w.tmux(&["send-keys", "-t", pane, "Enter"]);
     let start = format!("{} --session-id {sid} --name=shellie", w.claude.display());
@@ -249,6 +483,39 @@ fn restart_in_a_shell_pane() {
     let args = args_of(after["pid"].as_u64().unwrap());
     assert!(args.contains(&format!("--resume {sid}")), "{args}");
     assert!(args.contains("--name=shellie"), "{args}");
+}
+
+#[test]
+fn launch_source_not_running_refusal_does_not_change_queue() {
+    let w = World::new("not-running-keeps-queue");
+    w.new_session("api");
+    let sid = w.session_id("api");
+    launch_snapshot(&w, &sid);
+    w.first_prompt(&sid, "api");
+    wait_until("busy session", || {
+        (session(&w, "api")["busy"] == true).then_some(())
+    });
+    let (queued, ok) = restart(&w, &["api"]);
+    assert!(ok, "{queued}");
+    assert_eq!(queued["results"][0]["result"], "queued");
+    w.tmux(&["kill-server"]);
+    wait_until("interrupted session", || {
+        (session(&w, "api")["status"] == "interrupted").then_some(())
+    });
+    let queue = w.state().join("daemon/restart-queue.json");
+    let before = std::fs::read(&queue).unwrap();
+    let (refusal, ok) = restart(&w, &["api"]);
+    assert!(!ok, "{refusal}");
+    assert_eq!(refusal["results"][0]["reason"], "not-running");
+    assert_eq!(
+        std::fs::read(&queue).unwrap(),
+        before,
+        "拒绝不能隐式改写已有队列"
+    );
+    let (cancelled, ok) = restart(&w, &["--cancel", "api"]);
+    assert!(ok, "{cancelled}");
+    assert_eq!(cancelled["results"][0]["result"], "cancelled");
+    assert!(cancelled["results"][0]["reason"].is_null());
 }
 
 #[test]
@@ -405,12 +672,7 @@ fn restart_in_a_shell_goes_to_the_sessions_folder() {
         .tmux(&["display-message", "-p", "-t", "shellpane", "#{pane_id}"])
         .trim()
         .to_string();
-    let exports = format!(
-        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
-        w.state().display(),
-        env!("CARGO_BIN_EXE_cc-moss"),
-        w.path("fifos").display()
-    );
+    let exports = shell_exports(&w);
     let sid = "22222222-2222-3333-4444-555555555555";
     for line in [
         exports,
@@ -458,7 +720,7 @@ fn restart_in_a_shell_goes_to_the_sessions_folder() {
 fn channel(w: &World, model: &str) {
     std::fs::create_dir_all(w.path("claude")).unwrap();
     std::fs::write(
-        w.path("config.toml"),
+        w.config_path(),
         format!(
             "[claude]\nconfig_dir = {:?}\ndefault_args = [\"--model\", \"old-route\"]\n",
             w.path("claude").to_str().unwrap()
@@ -487,13 +749,6 @@ fn provider_default_restart_overrides_old_model() {
     assert!(out.status.success(), "{out:?}");
     let before = session(&w, "api");
     let old = before["pid"].as_u64().unwrap();
-    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
-    db.execute(
-        "UPDATE slots SET provider_started=NULL, provider_seen_keys=NULL",
-        [],
-    )
-    .unwrap();
-    drop(db);
     let (v, ok) = restart(&w, &["--provider-default", "api"]);
     assert!(ok, "{v}");
     let after = restarted(&w, "api", old);
@@ -867,12 +1122,7 @@ fn nested_restart_in_same_tty_shells() {
     let (pane, shell_pid) = info.trim().split_once(' ').unwrap();
     let shell_pid: u64 = shell_pid.parse().unwrap();
     let sid = "11111111-2222-3333-4444-555555555555";
-    let exports = format!(
-        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
-        w.state().display(),
-        env!("CARGO_BIN_EXE_cc-moss"),
-        w.path("fifos").display()
-    );
+    let exports = shell_exports(&w);
     w.tmux(&["send-keys", "-t", pane, "-l", &exports]);
     w.tmux(&["send-keys", "-t", pane, "Enter"]);
     w.tmux(&["send-keys", "-t", pane, "-l", "bash --norc --noprofile"]);
@@ -909,6 +1159,7 @@ fn pty_proxy_world(test: &str) -> World {
     use std::os::unix::fs::PermissionsExt;
     let mut w = World::new(test);
     let fake = w.claude.clone();
+    w.identity_entry = Some(fake.clone());
     let script = format!(
         r#"#!/usr/bin/env python3
 import os, pty, select, sys
@@ -1084,12 +1335,7 @@ fn nested_restart_foreground_takeover_receives_no_input() {
     let (pane, shell_pid) = info.trim().split_once(' ').unwrap();
     let shell_pid: u64 = shell_pid.parse().unwrap();
     let sid = "11111111-2222-3333-4444-555555555555";
-    let exports = format!(
-        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
-        w.state().display(),
-        env!("CARGO_BIN_EXE_cc-moss"),
-        w.path("fifos").display()
-    );
+    let exports = shell_exports(&w);
     w.tmux(&["send-keys", "-t", pane, "-l", &exports]);
     w.tmux(&["send-keys", "-t", pane, "Enter"]);
     let start = format!(
@@ -1147,12 +1393,7 @@ fn nested_restart_background_claude_is_not_stopped() {
     let (pane, shell_pid) = info.trim().split_once(' ').unwrap();
     let shell_pid: u64 = shell_pid.parse().unwrap();
     let sid = "11111111-2222-3333-4444-555555555555";
-    let exports = format!(
-        "export CC_MOSS_STATE_DIR='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
-        w.state().display(),
-        env!("CARGO_BIN_EXE_cc-moss"),
-        w.path("fifos").display()
-    );
+    let exports = shell_exports(&w);
     w.tmux(&["send-keys", "-t", pane, "-l", &exports]);
     w.tmux(&["send-keys", "-t", pane, "Enter"]);
     let start = format!("{} --session-id {sid} --name=shellie &", w.claude.display());
@@ -1403,9 +1644,10 @@ fn rebuild_does_not_launch_while_old_claude_lives() {
             }
         }
     }
-    let w = pty_proxy_world("rebuildoldalive");
+    let mut w = pty_proxy_world("rebuildoldalive");
     let original = common::fixture("fake-claude");
     let stubborn = w.path("stubborn-claude");
+    w.identity_entry = Some(stubborn.clone());
     let text = std::fs::read_to_string(&original).unwrap().replace(
         "start \"$source\"", "trap '' HUP TERM\nprintf '%s\\n' \"$source\" >> \"$CC_MOSS_FAKE_DIR/launches\"\nstart \"$source\"");
     std::fs::write(&stubborn, text).unwrap();
@@ -1546,9 +1788,10 @@ fn restart_terminal_failure_pending_cancel_ignores_unowned_restore_marker() {
 #[test]
 fn rebuild_refuses_pane_moved_to_another_window_during_exit() {
     use std::os::unix::fs::PermissionsExt;
-    let w = pty_proxy_world("rebuildtopology");
+    let mut w = pty_proxy_world("rebuildtopology");
     let original = common::fixture("fake-claude");
     let moving = w.path("moving-claude");
+    w.identity_entry = Some(moving.clone());
     let script = std::fs::read_to_string(&original).unwrap().replace("start \"$source\"",
         "trap 'target=$(cat \"$CC_MOSS_FAKE_DIR/target-pane\"); tmux move-pane -s \"$TMUX_PANE\" -t \"$target\"; exit 0' TERM\nprintf '%s\\n' \"$source\" >> \"$CC_MOSS_FAKE_DIR/launches\"\nstart \"$source\"");
     std::fs::write(&moving, script).unwrap();
@@ -1668,4 +1911,240 @@ fn restart_terminal_failure_cancel_absent_queue_is_explicit_noop() {
     assert!(ok, "{v}");
     assert_eq!(v["results"][0]["result"], "cancelled");
     assert_eq!(v["results"][0]["reason"], "not-queued");
+}
+
+#[test]
+fn resume_identity_single_hop_restart_keeps_current_conversation() {
+    let w = World::new("rboundresume");
+    w.new_session("switch");
+    let origin = w.session_id("switch");
+    let before = session(&w, "switch");
+    let target = uuid::Uuid::new_v4().to_string();
+    w.send(&origin, &format!("resume {target}"));
+    wait_until("same process switched", || {
+        let r = moss_core::registry::Registry::open(&w.state().join("registry.db")).ok()?;
+        r.slots().ok()?.into_iter().find(|s| {
+            s.session_id == target
+                && s.status == moss_core::slot::Status::Running
+                && s.provider_started
+                    .as_deref()
+                    .and_then(moss_core::provider::Snapshot::from_json)
+                    .is_some_and(|snapshot| {
+                        snapshot.launch_source != moss_core::provider::LaunchSource::Unknown
+                    })
+        })
+    });
+    let (v, ok) = restart(&w, &[&target]);
+    assert!(ok, "{v}");
+    let after = restarted(&w, "switch", before["pid"].as_u64().unwrap());
+    assert_eq!(after["session_id"], target);
+    assert_eq!(after["tmux"]["pane_id"], before["tmux"]["pane_id"]);
+    assert!(!alive(before["pid"].as_u64().unwrap()));
+}
+
+#[test]
+fn resume_identity_restart_rejects_generation_replaced_after_claim() {
+    let w = World::new("restart-generation-race");
+    w.new_session("race");
+    w.session_id("race");
+    let before = session(&w, "race");
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    db.execute_batch("CREATE TRIGGER test_change_generation AFTER UPDATE OF restore_started_at ON slots WHEN NEW.restore_started_at IS NOT NULL
+        BEGIN UPDATE process_bindings SET generation='replacement-generation' WHERE owner_slot=NEW.slot_id; END;").unwrap();
+    let (v, ok) = restart(&w, &["race"]);
+    assert!(!ok, "{v}");
+    assert!(
+        alive(before["pid"].as_u64().unwrap()),
+        "no signal or respawn after generation changes"
+    );
+    assert_eq!(session(&w, "race")["pid"], before["pid"]);
+}
+
+#[test]
+fn resume_identity_owner_transfers_during_term_without_relaunching_old_session() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut w = World::new("owner-transfer-term");
+    let target = uuid::Uuid::new_v4().to_string();
+    std::fs::write(w.path("fifos/transfer-target"), &target).unwrap();
+    let fixture = std::fs::read_to_string(&w.claude).unwrap();
+    let fixture = fixture.replace(
+        "start \"$source\"",
+        r#"transfer_on_term() {
+  hook session-end "{\"session_id\":\"$sid\",\"reason\":\"resume\"}"
+  sid=$(cat "$CC_MOSS_FAKE_DIR/transfer-target")
+  start resume
+  exit 0
+}
+trap transfer_on_term TERM
+printf '%s\n' "$source" >> "$CC_MOSS_FAKE_DIR/launches"
+start "$source""#,
+    );
+    w.claude = w.path("transfer-claude");
+    std::fs::write(&w.claude, fixture).unwrap();
+    std::fs::set_permissions(&w.claude, std::fs::Permissions::from_mode(0o700)).unwrap();
+    w.new_session("origin");
+    let origin = w.session_id("origin");
+    let before = session(&w, "origin");
+    let pid = before["pid"].as_u64().unwrap();
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    let old_generation: String = db
+        .query_row(
+            "SELECT generation FROM process_bindings WHERE pid=?1",
+            [pid as i64],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let (result, ok) = restart(&w, &[&origin]);
+    let (generation, current, hops): (String, String, i64) = db
+        .query_row(
+            "SELECT generation,current_session_id,hops FROM process_bindings WHERE pid=?1",
+            [pid as i64],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap();
+    assert_eq!(
+        generation, old_generation,
+        "this is same-generation transfer, not replacement"
+    );
+    assert_eq!(current, target);
+    assert_eq!(hops, 1);
+    assert!(!alive(pid));
+    let launches = std::fs::read_to_string(w.path("fifos/launches")).unwrap();
+    assert_eq!(
+        launches.lines().count(),
+        1,
+        "must not relaunch old A after ownership moved to B: {launches}; {result}"
+    );
+    assert!(
+        !ok && result["results"][0]["reason"] == "confirmation-stale",
+        "{result}"
+    );
+}
+
+fn owner_transfer_fixture(w: &World) -> std::path::PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let text = std::fs::read_to_string(common::fixture("fake-claude"))
+        .unwrap()
+        .replace(
+            "start \"$source\"",
+            r#"transfer_on_term() {
+  hook session-end "{\"session_id\":\"$sid\",\"reason\":\"resume\"}"
+  sid=$(cat "$CC_MOSS_FAKE_DIR/transfer-target")
+  start resume
+  exit 0
+}
+trap transfer_on_term TERM
+printf '%s\n' "$source" >> "$CC_MOSS_FAKE_DIR/launches"
+start "$source""#,
+        );
+    let path = w.path("transfer-claude");
+    std::fs::write(&path, text).unwrap();
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o700)).unwrap();
+    path
+}
+
+#[test]
+fn resume_identity_owner_transfer_blocks_rebuild_and_shell_input() {
+    for proxy in [true, false] {
+        let mut w = if proxy {
+            pty_proxy_world("owner-transfer-proxy")
+        } else {
+            World::new("owner-transfer-shell")
+        };
+        let target = uuid::Uuid::new_v4().to_string();
+        std::fs::write(w.path("fifos/transfer-target"), &target).unwrap();
+        let script = owner_transfer_fixture(&w);
+        let origin = if proxy {
+            let text = std::fs::read_to_string(&w.claude).unwrap().replace(
+                common::fixture("fake-claude").to_str().unwrap(),
+                script.to_str().unwrap(),
+            );
+            std::fs::write(&w.claude, text).unwrap();
+            w.identity_entry = Some(script.clone());
+            w.new_session("origin");
+            w.session_id("origin")
+        } else {
+            w.claude = script.clone();
+            w.tmux(&[
+                "new-session",
+                "-d",
+                "-s",
+                "shell",
+                "-c",
+                w.path("work").to_str().unwrap(),
+                "bash",
+                "--norc",
+                "--noprofile",
+            ]);
+            let pane = w.tmux(&["display-message", "-p", "-t", "shell", "#{pane_id}"]);
+            let exports=format!("export HOME='{}' CLAUDE_CONFIG_DIR='{}' CC_MOSS_STATE_DIR='{}' CC_MOSS_CONFIG='{}' CC_MOSS_CLAUDE_BIN='{}' CC_MOSS_BIN='{}' CC_MOSS_FAKE_DIR='{}' CC_MOSS_LANG=en",
+                w.path("home").display(),w.path("claude").display(),w.state().display(),w.config_path().display(),script.display(),env!("CARGO_BIN_EXE_cc-moss"),w.path("fifos").display());
+            w.tmux(&["send-keys", "-t", pane.trim(), "-l", &exports]);
+            w.tmux(&["send-keys", "-t", pane.trim(), "Enter"]);
+            let origin = uuid::Uuid::new_v4().to_string();
+            let command = format!(
+                "'{}' --session-id {} --name=origin",
+                script.display(),
+                origin
+            );
+            w.tmux(&["send-keys", "-t", pane.trim(), "-l", &command]);
+            w.tmux(&["send-keys", "-t", pane.trim(), "Enter"]);
+            w.session_id("origin");
+            origin
+        };
+        let before = session(&w, "origin");
+        let pid = before["pid"].as_u64().unwrap();
+        let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+        let generation: String = db
+            .query_row(
+                "SELECT generation FROM process_bindings WHERE pid=?1",
+                [pid as i64],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let (result, ok) = if proxy {
+            let (v, _) = restart(&w, &[&origin]);
+            let identity = v["results"][0]["rebuild_identity"].to_string();
+            restart(
+                &w,
+                &[
+                    "--rebuild-pane",
+                    "--yes",
+                    "--rebuild-identity",
+                    &identity,
+                    &origin,
+                ],
+            )
+        } else {
+            restart(&w, &[&origin])
+        };
+        assert!(!ok, "proxy={proxy}: {result}");
+        let (after, owner, hops): (String, String, i64) = db
+            .query_row(
+                "SELECT generation,current_session_id,hops FROM process_bindings WHERE pid=?1",
+                [pid as i64],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(after, generation);
+        assert_eq!(owner, target);
+        assert_eq!(hops, 1);
+        assert!(!alive(pid));
+        assert_eq!(
+            std::fs::read_to_string(w.path("fifos/launches"))
+                .unwrap()
+                .lines()
+                .count(),
+            1,
+            "no relaunch for old owner"
+        );
+        if !proxy {
+            let pane = before["tmux"]["pane_id"].as_str().unwrap();
+            assert!(
+                !w.tmux(&["capture-pane", "-p", "-t", pane])
+                    .contains("--resume"),
+                "no resume input to original shell"
+            );
+        }
+    }
 }

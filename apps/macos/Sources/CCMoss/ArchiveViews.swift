@@ -89,6 +89,7 @@ extension AppModel {
     /// Every single-session recovery goes through the same tokened operation.
     func restart(_ s: Session, applyingProvider: Bool = false, cancelling: Bool = false) {
         guard client != nil, let current = session(s.id), current.sessionId == s.sessionId else { return }
+        guard cancelling || permitsLaunch(current, action: .restart) else { return }
         let intent: RecoveryIntent = cancelling ? .cancelQueue : applyingProvider ? .applyProvider : .restart
         guard let request = recoveryOperations.begin(current, intent: intent) else { return }
         showRecovery(current.id)
@@ -136,7 +137,7 @@ extension AppModel {
             recoveryOperations.cancelConfirmation(id)
             return
         }
-        guard let request = recoveryOperations.confirm(current) else { return }
+        guard permitsLaunch(current, action: .restart), let request = recoveryOperations.confirm(current) else { return }
         showRecovery(id)
         runRecovery(request, session: current)
     }
@@ -146,6 +147,7 @@ extension AppModel {
         let targets = Restart.restartable(sessions)
         guard let client, !restartingAll, ProviderRecovery.canApplyAll(sessions, confirmations: providerConfirmations),
               targets.allSatisfy({ recoveryOperations[$0.id]?.isSubmitting != true }) else { return }
+        guard targets.allSatisfy({ permitsLaunch($0, action: .restart) }) else { return }
         var requests: [(Session, RecoveryRequest)] = []
         for target in targets {
             if let request = recoveryOperations.begin(target, intent: .applyProvider) { requests.append((target, request)) }

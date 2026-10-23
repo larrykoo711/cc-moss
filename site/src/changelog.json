@@ -2,6 +2,41 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.5",
+      "date": "2026-10-23",
+      "icon": "restore",
+      "short": {
+        "zh": "找回更准，启动更安全",
+        "en": "Safer starts, exact restores"
+      },
+      "headline": {
+        "zh": "找回的就是你点的那个会话，新会话也不会开在系统目录里。",
+        "en": "Restore exactly the session you picked, and never start one in a system folder."
+      },
+      "highlights": [
+        {
+          "zh": "找回、重开或移进 tmux 时，保留原来读取设置的方式；原来的设置还在就直接用，只有它不见了或坏了才请你选。以前没记下来源的旧会话，会问你这次用默认设置还是指定文件夹，不改全局设置。",
+          "en": "Bringing back, restarting or moving a session into tmux keeps its original settings source. If it is still there it is used directly; you only choose when it is missing or broken. Older sessions with no recorded source ask whether to use the default settings or a folder you pick, without changing your global settings."
+        },
+        {
+          "zh": "App、选择器和「全部找回」都按会话本身逐个找回，名字相同的另一个会话不会被错找回来。会话中途变了会直接告诉你，不当作成功。",
+          "en": "The app, the picker and Restore all bring back the exact session you picked, one at a time, so another session with the same name is never restored instead. If a session changed in the meantime, you are told, and it doesn’t count as restored."
+        },
+        {
+          "zh": "根目录、主目录本身、系统目录和 ~/.claude 这类配置目录不能再作为会话的工作目录，文稿、桌面、下载照常能用。jarvis 每次都新开一个会话，名字被占用时自动加编号；claude 仍在当前终端原样运行，只是启动前先检查目录。",
+          "en": "Sessions can no longer start in /, your home folder itself, system folders or configuration folders like ~/.claude; Documents, Desktop and Downloads still work. jarvis always starts a new session and adds a number when the name is taken, while claude runs as usual with a folder check first."
+        },
+        {
+          "zh": "Moss 面板里的 /status、/usage 又能看到内容了；会话恢复后开始使用，「会话已恢复」提示会自己消失。",
+          "en": "/status and /usage show their output in the Moss panel again, and the “Session restored” note goes away once you use the session."
+        },
+        {
+          "zh": "升级前要备份会话登记数据；升级后的数据不能直接交给旧版继续修改，只换回旧版程序还不够。",
+          "en": "Back up the session registry before upgrading: older versions can’t write the upgraded data, so reverting the app alone isn’t enough."
+        }
+      ]
+    },
+    {
       "version": "0.3.4",
       "date": "2026-10-21",
       "icon": "restore",

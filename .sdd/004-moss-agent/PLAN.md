@@ -183,6 +183,12 @@ R1 ◄── 全部
 | **T2.11** 嵌套终端安全重开 | cc-moss | T2.8 | ✅ Done | done/T2.11-nested-restart.spec.md | 同TTY安全重开、PTY独立确认重建 |
 | **T2.12** 目标模型响应证据 | cc-moss | T2.8,T2.10 | ✅ Done | done/T2.12-model-evidence.spec.md | 新epoch成功消除模型误报、removed与故障保留 |
 | **T2.13** 退出确认与单一终态 | cc-moss | T2.11,T2.12 | ✅ Done | done/T2.13-restart-lifecycle.spec.md | 旧进程退出前零新启动、超时不重试、单loading与单错误呈现 |
+| **T2.14** 同进程恢复身份一致性 | cc-moss | T2.13 | ✅ Done | done/T2.14-resume-identity.spec.md | A→B恢复后操作可用，严格证据关联、跨代次拒绝 |
+| **T2.15** MCP启动来源保真 | cc-moss | T2.14 | ✅ Done | done/T2.15-mcp-launch-source.spec.md | unset/explicit不混淆，未知或不可回放在退出前拒绝 |
+| **T2.16** 面板当前状态与操作层级 | cc-moss | T2.15 | ✅ Done | done/T2.16-panel-current-state.spec.md | 搜索返回最新会话，正常渠道无强告警CTA |
+| **T2.17** 旧会话来源选择 | cc-moss | T2.15,T2.16 | ✅ Done | done/T2.17-restore-source-choice.spec.md | typed来源错误、单次选择、零隐式授权 |
+| **T2.18** 恢复选择布局重整 | cc-moss | T2.17 | ✅ Done | done/T2.18-restore-choice-layout.spec.md | 单标题、轻量选择、相邻取消与唯一找回 |
+| **T2.19** 原来源优先与异常更换 | cc-moss | T2.18 | ✅ Done | done/T2.19-source-first-restore.spec.md | 有效原源直接恢复，灰路径，异常才更换 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -379,3 +385,24 @@ R1 ◄── 全部
 - SELF-UPGRADE: 本轮复盘：旧版本冻结通知迟到不能充当最新结论，最终以磁盘子树与最新证据为准。现有spec冻结/独立复核/证据匹配纪律已覆盖，问题为执行未遵守而非缺少新流程；本次不扩写全局skill。重复借机包装可后续沉入宿主验证工具，不混入本次产品发版。
 
 - RELEASE: 2026-10-21 v0.3.4已正式发布，PR40 squash至04292c0；最终CI、四平台预演、合并后CI、生产网站、Release及Homebrew实际通过。四包下载SHA256、双Mac App签名与公网smoke通过。详见reports/v0.3.4-release.md。用户设备未升级，P3/P4不在本次范围。
+
+## F52 同进程恢复后的结束归档误拒绝（2026-10-22）
+
+用户反馈结束归档失败，随后批准「按这个方案实施，要治根」。只读元数据证实启动A与恢复B共享PID/start/socket/pane，A明确End resume后B Start resume；B不包含A的会话历史是正确行为。旧F11只测登记状态，F41只测本slot历史及fork，未连操作守卫。T2.14统一archive/adopt/restart身份判断，先真实隔离红测，不放宽误杀保护。真实会话ID、名称和路径不入档案。
+
+- G3: T2.14 spec门禁PASS；架构级按声明执行设计图及独立安全设计审查，不以脚本关键词arch=no替代人工判定。作者先写隔离红测，产品修复待设计证据可证明后实施。
+- 后续安全债：归档退出路径忽略signal失败/Unknown及marker CAS，与当前前置ID误拒绝不同；独立记录，不在T2.14中悄悄扩大范围。
+
+- AMEND T2.14 2026-10-22：用户明确「同意新增持久绑定表，按这个方案实施，确保治根」。旧event链/仅detail方案否决：无generation证明且7天裁剪。改独立持久process_bindings、事务转移与失效、共享resolver、兼容迁移/旧writer拒写；旧现场不回填、不操作。新合同gate PASS，作者获实施权，独立评审与设计图同步。真实F11 archive红测已核实rc101（非runner错误）。
+
+- F53 / G3 T2.15：用户反馈恢复后MCP失效并明确「修复发版」。临时HOME真实Claude探针证明unset与explicit-default读取不同全局配置；settings路径归一化丢语义，恢复无条件赋值是直接根因。独立三态来源、env -u回放、共享预检；CLI安全来源标记不保存秘密、不静默丢限制。门禁PASS，T2.14+T2.15完整验证后发布0.3.5；不自动安装或改真实会话。
+
+- 最新授权调整：2026-10-22 用户反馈当前恢复会话面板状态/模型重开提示滞留，明确「bug修复先不着急发版，都在本机验证测试通过了」。暂停0.3.5正式发布，先修复、隔离与完整验证，再本机备份安装候选供用户验收。只读现场hooks仍写最新working、App/daemon存活，UI缓存/刷新与模型提示独立排查，不据截图猜根因。
+
+- T2.16 gate PASS，按用户本机反馈修两项已证问题：搜索缓存完整Session失效、正常渠道重开CTA误导。活动时间滞留尚无同一时点证据，不改watcher周期或伪造成功。Runner对子进程忽略TERM/后代持pipe的无界等待为独立待验证缺口，记录后续，不在当前UI补丁偷扩scope。
+
+- CANDIDATE: 2026-10-22 T2.14/T2.15/T2.16最终后端1038/0/6ignored、Swift900/116 suites、独立复核与签名通过；本机备份后安装0.3.5候选/schema2，10/10普通会话身份未变，待用户验收。正式发版暂停，未提交/推送/tag；旧现场不自动改绑或改配置。
+
+- 本机验收F55：旧会话Unknown来源在启动前被拒却误标tmux_failed，新增T2.17typed错误及单目标明确来源选择；不把--yes/provider-default当授权，不绕过不可回放参数。用户另明确选择仅23条已有默认settings路径记录批量补Unset，备份/CAS修复23条、其余58条未动，真实会话未启动。私有变更manifest不入库。T2.17 gate PASS，独立后端/App实施与安全复核；发版继续暂停。
+
+- T2.18用户反馈：来源选择功能已安装，但完整会话行重复标题、双大灰按钮与远离取消造成视觉粗糙。按用户要求重做呈现，不变来源授权。门禁PASS；本轮必须验完整行+展开区明暗窄宽，不仅局部组件图。正式发布暂停。

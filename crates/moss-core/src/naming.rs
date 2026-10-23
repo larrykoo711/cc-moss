@@ -122,6 +122,23 @@ pub fn session_name(prefix: Option<&str>, name: &str) -> String {
     }
 }
 
+/// 新建显示名先为编号保留空间；同一结果交给 Claude、tmux 和标题。
+pub fn fresh_name(seed: &str, ordinal: usize) -> String {
+    let clean = clean_name(seed);
+    let seed = if clean.is_empty() { "session" } else { &clean };
+    let suffix = if ordinal <= 1 {
+        String::new()
+    } else {
+        format!("-{ordinal}")
+    };
+    let base: String = seed
+        .chars()
+        .take(MAX_CHARS.saturating_sub(suffix.len()))
+        .collect();
+    let base = base.trim_end_matches([' ', '-']);
+    format!("{}{suffix}", if base.is_empty() { "session" } else { base })
+}
+
 /// `desired`, or `desired-2`, `desired-3`… if another session already has it.
 /// `current` is the session being renamed; its own name is not a conflict.
 pub fn unique(desired: &str, taken: &[String], current: Option<&str>) -> String {

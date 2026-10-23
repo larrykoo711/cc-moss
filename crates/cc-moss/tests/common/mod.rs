@@ -149,6 +149,7 @@ pub struct World {
     pub dir: tempfile::TempDir,
     /// Fake claude for `cc-moss new` / `restore`.
     pub claude: PathBuf,
+    pub identity_entry: Option<PathBuf>,
 }
 
 impl World {
@@ -157,11 +158,14 @@ impl World {
             socket: format!("cc-moss-test-{}-{test}", std::process::id()),
             dir: tempfile::tempdir().unwrap(),
             claude: fixture("fake-claude"),
+            identity_entry: None,
         };
         std::fs::create_dir_all(w.path("fifos")).unwrap();
         std::fs::create_dir_all(w.path("work")).unwrap();
+        std::fs::create_dir_all(w.path("home")).unwrap();
+        std::fs::create_dir_all(w.config_path().parent().unwrap()).unwrap();
         std::fs::write(
-            w.path("config.toml"),
+            w.config_path(),
             "[claude]\ndefault_args = [\"--dangerously-skip-permissions\"]\n",
         )
         .unwrap();
@@ -172,10 +176,19 @@ impl World {
         self.dir.path().join(p)
     }
 
+    pub fn config_path(&self) -> PathBuf {
+        self.path("config/cc-moss/config.toml")
+    }
+
     pub fn cc_moss(&self) -> Command {
         let mut cmd = bin();
-        cmd.env("CC_MOSS_STATE_DIR", self.path("state"))
-            .env("CC_MOSS_CONFIG", self.path("config.toml"))
+        cmd.env_remove("CC_MOSS_TEST_CLAUDE_ENTRY");
+        if let Some(entry) = &self.identity_entry {
+            cmd.env("CC_MOSS_TEST_CLAUDE_ENTRY", entry);
+        }
+        cmd.env("HOME", self.path("home"))
+            .env("CC_MOSS_STATE_DIR", self.path("state"))
+            .env("CC_MOSS_CONFIG", self.config_path())
             .env("CC_MOSS_TMUX_SOCKET", &self.socket)
             .env("CC_MOSS_HOST_PREFIX", "host")
             .env("CC_MOSS_CLAUDE_BIN", &self.claude)

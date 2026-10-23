@@ -223,7 +223,7 @@ fn json_exit_at_once_and_missing_dir_have_codes() {
 
     std::fs::remove_dir_all(w.path("work")).unwrap();
     let v = restore_json(&w, &[]);
-    assert_eq!(v["results"][0]["reason"], "missing_dir", "{v}");
+    assert_eq!(v["results"][0]["reason"], "cwd_missing", "{v}");
 }
 
 #[test]

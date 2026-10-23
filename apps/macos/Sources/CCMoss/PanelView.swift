@@ -7,6 +7,8 @@ import SwiftUI
 /// summary).
 struct PanelView: View {
     @Bindable var model: AppModel
+    /// Off-screen checks use the same complete row composition as the live list.
+    var renderedSession: Session? = nil
     @FocusState private var searchFocused: Bool
     @FocusState private var replyFocused: Bool
     /// The open menu: one session's, or cc-moss's own.
@@ -31,6 +33,16 @@ struct PanelView: View {
     @State private var hoverGate = HoverGate()
 
     var body: some View {
+        Group {
+            if let renderedSession {
+                row(renderedSession).padding(8).background(Theme.surface(scheme))
+            } else {
+                panel
+            }
+        }
+    }
+
+    private var panel: some View {
         HStack(spacing: 0) {
             NavRail(model: model, appMenu: { toggleMenu(.app) }, appMenuOpen: menu == .app)
             page
@@ -394,13 +406,17 @@ struct PanelView: View {
         let note = rowNote?.text
         let asking = !closed && model.adoptAsk?.id == s.id
         let providerOpen = !closed && model.providerPlanID == s.id
-        let open = lineOpen || asking || providerOpen
+        let sourceOpen = !closed && model.restoreSourceExpanded(s)
+        let open = lineOpen || asking || providerOpen || sourceOpen
         return VStack(spacing: 0) {
             rowButton(s, shownSession: shownSession, menuOpen: menuOpen, shown: shown, actions: actions,
                       lineOpen: open, pinned: pinned, hit: hit, closed: closed)
             if providerOpen {
                 ProviderRecoveryView(model: model, session: s)
                     .transition(.opacity)
+            }
+            if sourceOpen {
+                RestoreSourceChoiceView(model: model, session: s)
             }
             if lineOpen {
                 ReplyLineView(model: model, session: s, focused: $replyFocused)
@@ -449,8 +465,9 @@ struct PanelView: View {
             model.openReply(s)
         } label: {
             let moving = !closed && model.adopting.contains(s.id)
+            let sourceOpen = !closed && model.restoreSourceExpanded(s)
             SessionRow(session: shownSession, selected: !closed && s.id == model.selected?.id, hovered: shown,
-                       actions: closed ? [bringBackClosed(s)] : shown && !moving ? actions.inline.map { action($0, for: s) } : [],
+                       actions: closed ? [bringBackClosed(s)] : shown && !moving && !sourceOpen ? actions.inline.map { action($0, for: s) } : [],
                        more: !closed && shown && !moving && !actions.more.isEmpty ? { toggleMenu(.session(s.id, full: false)) } : nil,
                        menuOpen: menuOpen,
                        perform: { perform($0) },
@@ -468,7 +485,8 @@ struct PanelView: View {
                            : ProviderRecovery.state(s, confirmations: model.providerConfirmations),
                        showProviderPlan: { model.toggleProviderPlan(s) },
                        recoveryOperation: closed ? nil : model.recoveryOperations[s.id],
-                       recoveryExpanded: model.providerPlanID == s.id)
+                       recoveryExpanded: model.providerPlanID == s.id,
+                       restoreSourceExpanded: sourceOpen)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -541,8 +559,9 @@ struct PanelView: View {
 
     // MARK: Actions
 
-    private var primaryAction: PanelAction? {
-        guard let s = model.selected, model.phase == .ready else { return nil }
+    /// Shared by Return, the action pill and off-screen action checks.
+    var primaryAction: PanelAction? {
+        guard let s = model.selected, model.phase == .ready, !model.restoreSourceExpanded(s) else { return nil }
         // Asking "Move into tmux?": Return says yes, and the pill says so.
         if let ask = model.adoptAsk, ask.id == s.id {
             return PanelAction(title: AppModel.adoptTitle(s, named: ask.named), icon: Icons.adopt, shortcut: "↵") { model.adopt(s) }

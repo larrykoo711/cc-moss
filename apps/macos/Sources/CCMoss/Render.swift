@@ -60,12 +60,33 @@ enum Render {
                                 answer: value("--answer"), mossChat: mossChat, moss: value("--moss"), restartResult: value("--restart-result"), rebuildResult: value("--rebuild-result"),
                                 queueReason: value("--queue-reason"), cancelReason: value("--cancel-reason"),
                                 restartDelay: value("--restart-delay").flatMap(Double.init) ?? 0,
-                                rebuildDelay: value("--rebuild-delay").flatMap(Double.init) ?? 0)
+                                rebuildDelay: value("--rebuild-delay").flatMap(Double.init) ?? 0,
+                                restoreReason: value("--restore-reason"))
         ClickTargets.shared.enabled = args.contains("--click")
         let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args), providerDefaults: nil)
         let done = DispatchSemaphore(value: 0)
         Task { @MainActor in
             await model.loadNow()
+            if let action = value("--directory-action"), let session = value("--action-session").flatMap(model.session) ?? model.sessions.first {
+                switch action {
+                case "restore": model.restore(session)
+                case "restore-all": model.restoreAll()
+                case "restart": model.restart(session)
+                case "adopt": model.adopt(session)
+                default: break
+                }
+                // `--restore-renew SLOT`: that slot gets a new conversation after the click, before its turn.
+                if let slot = value("--restore-renew"), let i = model.sessions.firstIndex(where: { $0.id == slot }) {
+                    model.sessions[i].sessionId = "99999999-9999-4999-8999-999999999999"
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+                print("directory-action: \(action); launch-calls=\(await runner.launchCalls.count); why=\(model.failures.current?.why ?? "none")")
+                for (id, failure) in model.restoreFlow.failures.sorted(by: { $0.key < $1.key }) {
+                    print("restore-failure: \(id) \(failure.reasonCode ?? "none") \(failure.message ?? "")")
+                }
+                for notice in model.failures.list { print("restore-notice: \(notice.subject?.name ?? "-") \(notice.why)") }
+                if let summary = model.restoreSummary { print("restore-summary: \(summary.title)") }
+            }
             if let id = value("--waiting-input"), let i = model.sessions.firstIndex(where: { $0.id == id }) {
                 model.sessions[i].attention = "input"
             }
@@ -202,11 +223,87 @@ enum Render {
             case "partial": model.restoreSummary = RestoreSummary(restored: 1, failed: 1)
             default: break
             }
+            var sourceFixtureID = value("--restore-source-plan")
             if let failure = value("--failure"), let cut = failure.firstIndex(of: ":") {
                 let id = String(failure[..<cut])
                 let reason = RestoreReason(rawValue: String(failure[failure.index(after: cut)...])) ?? .other
                 _ = model.restoreFlow.begin(.one(id))
                 model.restoreFlow.finish(.one(id), report: RestoreReport(results: [RestoreResult(id: id, name: id, ok: false, reason: reason)]))
+                sourceFixtureID = id
+            }
+            if let id = sourceFixtureID, let session = model.session(id) {
+                let reason = model.restoreFlow.failures[id]?.reason ?? session.restoreSource?.issue
+                model.restoreSourceFlow.offer(session, reason: reason)
+                model.selectedID = id
+                switch value("--restore-source-choice") {
+                case "default":
+                    if let ticket = model.restoreSourceFlow[id]?.ticket {
+                        model.showRestoreSourceOptions(ticket)
+                        model.chooseRestoreDefault(ticket)
+                    }
+                case "directory":
+                    if let ticket = model.restoreSourceFlow.beginPicker(current: session, reason: reason) {
+                        _ = model.restoreSourceFlow.receiveDirectory(value("--restore-source-path") ?? "/Users/demo/configuration folders/project settings",
+                                                                    ticket: ticket, current: session, reason: reason)
+                    }
+                case "advanced":
+                    if let ticket = model.restoreSourceFlow[id]?.ticket { model.showRestoreSourceOptions(ticket) }
+                case "cancel": model.cancelRestoreSource(id)
+                default: break
+                }
+                if args.contains("--restore-control-activate") {
+                    let target = value("--restore-control-target") ?? "change"
+                    let feedback = RestoreControlFeedback(isEnabled: true,
+                        preview: value("--restore-control-state").flatMap(RestoreControlState.init(rawValue:)))
+                    let activated = feedback.activate {
+                        if target == "cancel" { model.cancelRestoreSource(id) }
+                        else if target == "change", let ticket = model.restoreSourceFlow[id]?.ticket { model.showRestoreSourceOptions(ticket) }
+                    }
+                    print("restore-control: target=\(target); activated=\(activated); advanced=\(model.restoreSourceFlow[id]?.advanced == true)")
+                }
+                if let invalidation = value("--restore-source-invalidate"),
+                   let index = model.sessions.firstIndex(where: { $0.id == id }) {
+                    if invalidation == "revision" { model.sessions[index].restoreSource?.revision = "fixture-new-revision" }
+                    if invalidation == "unavailable" {
+                        model.sessions[index].restoreSource?.status = "blocked"
+                        model.sessions[index].restoreSource?.issue = .configSourceUnavailable
+                        model.sessions[index].restoreSource?.revision = ""
+                        model.sessions[index].restoreSource?.displayPath = nil
+                        model.sessions[index].restoreSource?.defaultPath = nil
+                    }
+                    model.restoreSourceFlow.observe(model.sessions)
+                }
+                if args.contains("--restore-source-recorded") {
+                    model.restore(session)
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                if args.contains("--restore-source-use-current"), let ticket = model.restoreSourceFlow[id]?.ticket {
+                    model.useCurrentRestoreSettings(ticket)
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                if args.contains("--restore-source-return") {
+                    let action = PanelView(model: model).primaryAction
+                    print("restore-source-return: available=\(action != nil)")
+                    action?.perform()
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                if args.contains("--restore-source-confirm"), let ticket = model.restoreSourceFlow[id]?.ticket {
+                    model.confirmRestoreSource(ticket)
+                    try? await Task.sleep(for: .milliseconds(200))
+                }
+                let displayedSession = model.session(id) ?? session
+                let choice = model.restoreSourceFlow[id]
+                let proposal = choice?.offersDefaultProposal(for: displayedSession) == true
+                print("restore-source: choice=\(choice?.source == nil ? "none" : "selected"); calls=\(await runner.restoreCalls.count); failure=\(model.restoreFlow.failures[id]?.reasonCode ?? "none"); card=\(choice != nil); primary-enabled=\(choice?.canConfirm == true || proposal); proposal=\(proposal); notice=\(model.failures.current?.reason ?? "none")")
+                if let width = value("--restore-source-width").flatMap(Double.init) {
+                    drawView(PanelView(model: model, renderedSession: displayedSession, hoveredID: args.contains("--hover") ? id : nil)
+                        .environment(\.restoreControlPreview, value("--restore-control-state").flatMap(RestoreControlState.init(rawValue:)).map {
+                            RestoreControlPreview(target: value("--restore-control-target") ?? "change", state: $0)
+                        })
+                        .frame(width: width).fixedSize(horizontal: false, vertical: true),
+                        dark: args.contains("--dark"), out: out)
+                    exit(0)
+                }
             }
             // `--pinned 01D,01A`: those sessions pinned (newest first); never saved.
             model.pinsPersist = false
@@ -262,8 +359,23 @@ enum Render {
             }
             switch value("--form") {
             case "new":
-                model.startNewSession()
+                model.startNewSession(workspaceOverride: args.contains("--new-check") ? "" : nil)
                 if let name = value("--form-name") { model.newDraft.name = name; model.newDraft.nameEdited = true }
+                for _ in 0..<100 where model.newDraft.checkingDirectory { try? await Task.sleep(for: .milliseconds(20)) }
+                if args.contains("--new-submit") {
+                    let opened = await model.submitNewSession()
+                    print("new-opened: \(opened?.sessionId ?? "none")")
+                    if args.contains("--new-submit-twice") { _ = await model.submitNewSession() }
+                }
+                if args.contains("--new-check") {
+                    print("new-check: directory-empty=\(model.newDraft.directory.isEmpty); calls=\(await runner.newCalls.count)")
+                    print("directory-checks: \(await runner.directoryCalls.count); error=\(model.newDraft.error ?? "none"); receipt=\(model.newDraft.receipt?.result ?? "none")")
+                }
+                if let width = value("--new-width").flatMap(Double.init) {
+                    drawView(NewSessionForm(model: model, open: { _ in }).frame(width: width).fixedSize(horizontal: false, vertical: true),
+                             dark: args.contains("--dark"), out: out)
+                    exit(0)
+                }
             case "note": if let s = model.selected { model.editNote(s) }
             case "close": if let s = model.selected { model.askToClose([s]) }
             case "message":
@@ -813,11 +925,16 @@ actor DemoRunner: CommandRunner {
     var cancelReason: String?
     var restartDelay: Double = 0
     var rebuildDelay: Double = 0
+    private(set) var restoreCalls: [[String]] = []
+    private(set) var newCalls: [[String]] = []
+    private(set) var directoryCalls: [[String]] = []
+    private(set) var launchCalls: [[String]] = []
+    var restoreReason: String?
 
     init(sessions: Data, asks: Data? = nil, answer: String? = nil, mossChat: Data? = nil,
          moss: String? = nil, restartResult: String? = nil, rebuildResult: String? = nil,
          queueReason: String? = nil, cancelReason: String? = nil,
-         restartDelay: Double = 0, rebuildDelay: Double = 0) {
+         restartDelay: Double = 0, rebuildDelay: Double = 0, restoreReason: String? = nil) {
         self.sessions = sessions
         self.asks = asks
         self.answer = answer
@@ -829,10 +946,61 @@ actor DemoRunner: CommandRunner {
         self.cancelReason = cancelReason
         self.restartDelay = restartDelay
         self.rebuildDelay = rebuildDelay
+        self.restoreReason = restoreReason
     }
 
     func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
         func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
+        if let command = arguments.first, ["new", "restore", "restart", "adopt"].contains(command) { launchCalls.append(arguments) }
+        if arguments.first == "check-directory" {
+            directoryCalls.append(arguments)
+            let top = try JSONSerialization.jsonObject(with: sessions) as? [String: Any] ?? [:]
+            let rows = top["sessions"] as? [[String: Any]] ?? []
+            let explicit = top["directory_checks"] as? [[String: Any]] ?? []
+            let paths = arguments.drop(while: { $0 != "--" }).dropFirst()
+            let results: [[String: Any]] = paths.map { path in
+                var result = explicit.first(where: { $0["path"] as? String == path })
+                    ?? rows.first(where: { $0["cwd"] as? String == path })?["working_directory"] as? [String: Any]
+                    ?? ["ok": false, "canonical": NSNull(), "reason": "cwd_unavailable", "source_resolved": false]
+                result["path"] = path
+                return result
+            }
+            return CommandResult(status: 0, stdout: try JSONSerialization.data(withJSONObject: ["schema": 1, "results": results]), stderr: "")
+        }
+        if arguments.first == "new" {
+            newCalls.append(arguments)
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            let directory = arguments.firstIndex(of: "-C").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil } ?? "/demo/project"
+            let name = arguments.count > 1 ? arguments[1] : "demo"
+            var top = try JSONSerialization.jsonObject(with: sessions) as? [String: Any] ?? [:]
+            let mode = top["new_mode"] as? String ?? "starting"
+            if mode == "failed" { return CommandResult(status: 1, stdout: Data(), stderr: "cwd_changed: working directory changed") }
+            let identity = "00000000-0000-4000-8000-000000000123"
+            let connection = ["session_id": "$123", "pane_id": "%123", "socket": "/demo/isolated-socket"]
+            if mode == "registered" {
+                var rows = top["sessions"] as? [[String: Any]] ?? []
+                rows.append(["id": "FRESH", "session_id": identity, "name": name + "-2", "cwd": directory,
+                             "status": "running", "busy": false, "last_active_at": "2026-10-22T12:01:00Z", "notes": [:], "tmux": connection])
+                top["sessions"] = rows
+                sessions = try JSONSerialization.data(withJSONObject: top)
+            }
+            let receipt: [String: Any] = ["schema": 1, "result": mode == "unconfirmed" ? "unconfirmed" : "starting", "session_id": identity,
+                                           "name": name + "-2", "cwd": directory, "slot_id": NSNull(),
+                                           "tmux": mode == "unconfirmed" ? NSNull() : connection as Any]
+            return CommandResult(status: 0, stdout: try JSONSerialization.data(withJSONObject: receipt), stderr: "")
+        }
+        if arguments.first == "restore" {
+            restoreCalls.append(arguments)
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            let list = (try? Snapshot.decode(sessions).sessions) ?? []
+            let session = list.first { $0.target == arguments.last }
+            var result: [String: Any] = ["id": session?.id ?? "demo", "name": session?.title ?? "demo", "ok": restoreReason == nil]
+            if let restoreReason { result["reason"] = restoreReason }
+            else { result["result"] = "starting" }
+            // `--restore-reason empty-results`: the exact target is no longer restorable.
+            let results = restoreReason == "empty-results" ? [] : [result]
+            return CommandResult(status: 0, stdout: try JSONSerialization.data(withJSONObject: ["schema": 1, "results": results]), stderr: "")
+        }
         if arguments.first == "restart" {
             print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
             fflush(stdout)

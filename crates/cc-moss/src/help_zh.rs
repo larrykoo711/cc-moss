@@ -31,6 +31,9 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("ls", "all", "也列出主动关闭的会话"),
     ("ls", "archived", "只列归档的会话（平时不列）"),
     ("ls", "json", "机器可读的输出（schema 1）；归档的会话也在里面"),
+    ("check-directory", "", "只读检查会话工作目录；通过时静默，不启动会话"),
+    ("check-directory", "json", "逐路径返回结构化结果，最多64个路径"),
+    ("check-directory", "paths", "要检查的绝对工作目录"),
     (
         "events",
         "",
@@ -51,7 +54,8 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("new", "name", "会话名，默认用目录名"),
     ("new", "dir", "工作目录（默认当前目录）"),
     ("new", "detach", "建好后先不进入"),
-    ("new", "yes", "名字属于一个中断的会话时，不问直接恢复"),
+    ("new", "yes", "兼容旧命令；新建不会恢复已有同名会话"),
+    ("new", "json", "返回本次新会话的结构化回执，需配合 --detach"),
     ("new", "safe", "这一次按普通模式开，不用 bypass，连配置里 default_args 额外加的也不用"),
     (
         "new",
@@ -171,6 +175,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ),
     ("restore", "yes", "不问直接恢复"),
     ("restore", "provider_default", "按当前渠道的模型设置恢复会话"),
+    ("restore", "require_unknown_config", "仅在记录来源仍未知时接受本次选择，变化后需重新确认"),
+    ("restore", "expected_source_revision", "仅在原来源计划版本未变化时接受替换配置"),
+    ("restore", "exact_slot_id", "内部精确slot与完整会话UUID匹配，不按名称解析"),
+    ("restore", "config_source", "仅本次恢复使用默认配置来源（取消 CLAUDE_CONFIG_DIR），只允许一个目标"),
+    ("restore", "config_dir", "仅本次恢复使用指定的绝对、已存在配置目录，只允许一个目标"),
     ("restore", "dry_run", "只列出会恢复哪些，不做任何改动"),
     (
         "restore",

@@ -66,7 +66,7 @@ macOS 上，`cc-moss install --uninstall` 也会先退出、再删掉 App（在 
 ```sh
 t                                    # 打开选择器（等同于直接运行 `cc-moss`）
 t api                                # 打开时已经在搜「api」
-cc-moss new api-gateway              # 新建、进入或恢复名为 api-gateway 的会话
+cc-moss new api-gateway              # 独立新建；名字占用时自动编号 api-gateway-2
 cc-moss new -C ~/code/acme --model opus   # 指定目录；Claude Code 自己的参数直接写，cc-moss 会转交给它
 cc-moss note api-gateway --state "在等预发环境的配置"
 cc-moss ls                           # 先列中断的会话，再列运行中的
@@ -93,15 +93,37 @@ cc-moss restore                      # 崩溃之后：全部找回来
   </tr>
 </table>
 
+### 新建与继续已有会话
+
+`cc-moss new`、普通 `jarvis` 与 App 新建总是创建独立会话。同名占用时分配 `project`、`project-2`、`project-3` 等当前可用名称；不会自动进入、重命名、结束、恢复或关闭同名的运行中、中断或空旧会话。只有 tmux 明确报告名称冲突才尝试下一个编号，最多竞争 32 次；超时或响应丢失返回 `unconfirmed`，保留本次 UUID，不能自动再建一份。显式 `attach`、`restore` 和原生 `--resume/--continue` 维持各自语义。
+
+`new --detach --json` 返回 `schema=1`、`result=starting|unconfirmed`、完整 `session_id`、实际 `name` 与 canonical `cwd`。`slot_id` 在尚无登记证据时为 null；`tmux` 仅在创建回执明确时包含 session/pane/socket 身份。`starting` 不是 hook 已确认，更不代表模型请求成功。`unconfirmed` 的退出码 0 仅表示请求已处理、启动结果未知；只读跟踪同一个 UUID，不自动再 new、attach 或按名字兜底，明确失败仍非零退出。App 先检查 `ls --json` 的 `capabilities.new_receipt=1`，缺能力时要求更新，不向旧 CLI 试发 `new --json` 后再回退；收到回执后按 UUID/精确 tmux 身份跟踪，不按旧请求名称找别人的会话。
+
+仓库提供的 zsh 入口中，`claude` 保持原生，不包进 tmux、不追加权限参数、不吞 stdin/TTY 或退出码；启动会话前只做同一 cwd 门禁。精确 help/version 等非会话命令免于 cwd 门禁；无法证明目标目录的后台 attach/respawn/交互 agents 或未知参数结构拒绝，不猜测运行位置。普通 `jarvis --model …` 和兼容的 `jarvis -n 名字` 仍走独立新建；print/resume/continue 保持原生路线并检查实际 PWD。`-C` 是 `jarvis`/`cc-moss new` 的目录参数，不擅自给原生 Claude 增加非原生目录语义。
+
+已有同名 alias/function 不会静默覆盖。`CC_MOSS_LAUNCH_CLI` 可显式绑定已验 CLI 的绝对可执行路径，绑定无效则拒绝，不偷偷回退 PATH；未绑定时使用 PATH 上的 cc-moss。`command claude`、绝对路径执行、IDE 等可绕过 shell 函数，这不是 OS 执行沙箱。原生 Claude 的权限模式不被包装器改变，cc-moss 新建的默认 bypass 与 `--safe` 仍按既有设置生效；cwd 政策不因 bypass 而跳过。
+
+### 工作目录保护
+
+受管的新建、恢复、重开、移入 tmux 和 Moss 常驻启动共用同一工作目录政策，在入队、claim 或停止旧进程之前检查，启动前再次核对。根目录、可信系统账户 HOME 与本次目标 HOME 本身、明确系统树和用户配置/凭据树不能作为会话工作目录；`~/Documents`、`~/Desktop`、`~/Downloads` 本身以及正常项目目录仍允许。工作目录与设置文件夹不同：默认 `~/.claude` 可以读取配置，但不能用作会话工作目录。项目中有 `.claude` 子目录不影响项目父目录合法性。cc-moss 实际配置文件的父目录也属于配置禁区，包括自定义 `CC_MOSS_CONFIG` / `XDG_CONFIG_HOME`，即使配置为空或文件尚未创建；配置文件或父目录的符号链接会同时检查原位置与真实位置。请把配置放在专用配置目录，不与项目工作目录共用父目录。恢复与移入 tmux 均明确绑定工作目录检查确认的 HOME，不继承旧 tmux 服务里的另一份 HOME；恢复若另有设置来源检查，其 HOME 必须与工作目录检查一致。
+
+系统树包括系统二进制/库/共享资源、`/etc`、设备/内核目录、`/var/db`、`/var/root`、`/var/run`、`/var/log`；macOS 还包括 `/System`、`/Library`、`/Applications`、`/opt/homebrew`。`/usr/local` 只禁止明确的系统子树，不误伤 `/usr/local/projects`；`/opt/projects`、挂载项目和专用临时工作区也不因父容器被一刀切禁止。政策同时检查原路径和 canonical 真实路径，处理符号链接与 macOS Data 卷别名。
+
+`cc-moss check-directory --json -- /项目/目录 ...` 是只读批量查询（最多 64 个路径），结果含 `ok/canonical/reason/message/source_resolved`；不加 `--json` 时只接受一个路径，通过静默退出 0，拒绝写 stderr 并非零退出，不消费 stdin。`ls --json` 的 `capabilities.working_directory=1` 表示可用，每条历史记录附 `working_directory`。旧 Unknown 来源即使基础目录检查通过，`source_resolved=false` 仍不代表配置来源获授权。App 无安全候选时要求选择，不回退 HOME。
+
+`ls --json` 的 `capabilities.exact_restore=1` 表示 CLI 支持按 slot 与完整会话 UUID 精确恢复：picker 与 App 恢复只在两者同时匹配当前记录时启动，换代、错配或另一会话恰好以该 UUID 为显示名都不会改恢复别的会话；缺此能力时 App 要求更新 CLI，不回退按名称恢复。普通 `cc-moss restore <名字>` 的名称解析规则不变。
+
+目录错误分为 `cwd_forbidden`、`cwd_missing`、`cwd_not_directory`、`cwd_unreadable`、`cwd_unavailable`、`cwd_invalid`、`cwd_changed`。旧 CLI 的 `missing_dir` 对应目录缺失；新 CLI 用 `cwd_missing`，权限错误不再冒充缺失。检查有界，批量共享 200ms，总量最多 64 个不同探测；独立执行检查/重核各最多 2 秒，进程最多两个 cwd worker，超时不等待其退出、不无限新建线程。目录失效不偷偷改历史 cwd，不自动重试或终止已经运行的会话；attach/view 保留救援能力。门禁不是 OS 沙箱，绕过 shell 函数直接执行原生二进制、IDE 或第三方 exec 不受此包装层控制。
+
 ### 命令
 
 | 命令 | 做什么 |
 |---|---|
 | `cc-moss` / `cc-moss pick [关键词]` | 选择会话、中断的会话或目录 |
-| `cc-moss new [名字] [-C 目录] [--detach] [--yes] [--safe] [-- 参数]` | 新建一个命名会话，独占一个 tmux 会话；同名已存在则复用。默认 bypass，`--safe` 这一次按普通模式开，连配置里额外加的 bypass 也不用（见[新会话的权限](#新会话的权限)） |
+| `cc-moss new [名字] [-C 目录] [--detach [--json]] [--yes] [--safe] [-- 参数]` | 总是独立新建，同名占用时编号；不进入或恢复旧会话。`--yes` 只保留参数兼容。默认 bypass，`--safe` 这一次按普通模式开（见[新会话的权限](#新会话的权限)） |
 | `cc-moss ls [--all] [--archived] [--json]` | 列出会话（`--archived` 只列归档的；`--json` 给脚本用；1.0 之前格式仍可能调整） |
 | `cc-moss events [--json] [--since 序号] [--limit 条数]` | 会话刚发生了什么，按先后列出（给 App 和脚本用） |
-| `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`missing_dir`、`exited_at_once`、`tmux_failed`、`already_running`） |
+| `cc-moss restore [名字…] [--dry-run] [--yes [--json]]` | 把中断的会话恢复回来（`--json` 逐个报告结果，失败带稳定的原因代码：`empty`、`cwd_missing`、其他 `cwd_*`、`exited_at_once`、`tmux_failed`、`already_running`） |
 | `cc-moss attach 名字` | 跳到会话所在的 tmux 会话 |
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
 | `cc-moss ask list [--json]` / `ask answer id (--choice 选项… \| --text 文字… \| --allow \| --deny [--message 理由]) [--json]` / `ask take --name 名字` | 看、答会话正在等你回答的问题（见[替会话接住问题](#替会话接住问题)） |
@@ -182,7 +204,13 @@ cc-moss restore --provider-default --yes 名字 # 已中断：按当前渠道模
 
 - 普通重开与应用渠道是两件事。普通重开去掉旧启动参数中的 `--model`，交给 Claude Code 恢复会话选择；不会把最近一次响应模型误当成当前选择，也不承诺能确认尚未产生响应的手动选择。`--provider-default` 则移除旧模型参数，明确传入唯一的新 `--model`，不靠“删掉旧参数”猜恢复时会选什么。
 - 渠道目标依次取 settings 的 `env.ANTHROPIC_MODEL`、顶层 `model`、`env.ANTHROPIC_DEFAULT_MODEL`；选中 `opus`、`sonnet`、`haiku` 或 `fable` 时按当前渠道对应的 family 映射解析。没有明确选择时用 Claude Code 的 `default`。显式模型、固定模型、顶层模型、`default` 与 `opus` 映射的恢复路径已在 Claude Code 2.1.306、临时配置和本机假 API 下验证；其他 family 映射及 `ANTHROPIC_DEFAULT_MODEL` 的解析由单元测试覆盖。这不是生产渠道可用性保证。
-- 会话 ID、原窗格和 tmux 会话名不变，不重发你上一条任务。恢复与重开都沿用会话记录的配置目录，不把另一份配置算出的模型套进当前进程。旧会话没有来源记录时，允许明确按 cc-moss 当前默认配置应用，但不会宣称它已经切换。
+- 会话 ID、原窗格和 tmux 会话名不变，不重发你上一条任务。`restore`、`adopt`、`restart` 保留原启动配置来源：原来未设置 `CLAUDE_CONFIG_DIR`，恢复时明确清除它；原来显式设置的目录（即使是 `~/.claude` 的绝对路径）仍显式设置。两种方式可能读取不同的全局 MCP 配置，不能互换。`--provider-default` 只改模型，不改配置来源。
+- 旧记录缺少来源时，普通找回返回 `config_source_unknown`，不是 tmux 故障。可以只为这一次明确选择：`cc-moss restore --config-source default --yes 名字` 取消 `CLAUDE_CONFIG_DIR`，或 `cc-moss restore --config-dir /绝对/配置目录 --yes 名字` 使用已存在的目录。两项互斥、只允许一个明确目标，也不能与 `--provider-default` 合用；`--yes` 本身不代表选择默认来源。默认来源与显式目录可能读取不同的全局 MCP JSON，即使设置文件路径看起来相同也不能互换。旧设置路径只是线索，不会自动选中；选择仅影响本次启动，不预改旧记录或全局设置，正常启动事件会记录实际来源。面板还会附带 `--require-unknown-config`：来源若在选择期间变为已知，返回 `config_source_changed`，不启动，需要重新发起确认；该参数必须与显式来源选项合用。恢复 claim 原子比较来源快照，期间变化不会自动重试。
+- 已知来源正常时直接沿原来源找回，不必重新选择。`ls --json` 对中断会话附带 `restore_source: {kind, status, display_path, default_path, revision, issue}`：`kind` 为 `unset/explicit/unknown`，`status` 为 `ready/needs_location/blocked`。`display_path` 是原来源配置目录；Unknown 时为 null。`default_path` 只是当前默认提案的配置目录（目标 HOME 下的 `.claude`），不是全局 MCP JSON 文件，也不证明旧会话曾用默认来源。恢复会明确固定经验证的目标 HOME，使路径显示与实际启动一致。
+- 恢复执行前重新检查目录与现有 `settings.json`：显式目录缺失、不是目录、不可读分别返回 `config_directory_missing`、`config_not_directory`、`config_source_unreadable`；现有设置不是合法 JSON 对象返回 `config_settings_invalid`。没有 `settings.json` 合法；默认配置目录尚未创建也不误判损坏，但 HOME 必须可用。只流式验证 JSON 语法，不读取凭据文件、不保存设置正文、不发 MCP 网络探测；MCP 连接失败不是路径损坏。面板仅在异常时提供更换位置，Unknown 的“使用当前设置找回”明确点击才授权默认来源。
+- 替换失效的已知来源时，面板将 `restore_source.revision` 作为 `--expected-source-revision` 与显式来源选项一起传回。revision 绑定原来源、slot/session 和本地元数据，不包含配置内容；执行先校验原计划，变化则返回 `config_source_changed`，不沿旧确认启动。与 `--require-unknown-config` 同用时两个前提都必须满足。数据库 claim 继续比较原来源快照，文件系统在检查后的变化仍可能造成实际启动失败，不自动切换或重试。
+- 来源健康检查有界：一次列表共用 200ms 预算，单次恢复预检共用 2 秒预算；最多检查 64 个不同来源，进程中最多 2 个探测 worker。所有文件系统读取在 worker 中完成，超时不等待线程退出，也不另起无限替代线程。`settings.json` 最多 1MiB，读取另带一字节检测并发增长。超时、超限或探测不可用返回 `config_source_unavailable`（`blocked`，路径为 null、revision 为空），表示尚未确认，不表示路径损坏，不自动启动、更换或重试。
+- 使用 `--mcp-config`、`--strict-mcp-config`、`--settings`、`--setting-sources` 等不可重放配置参数的记录仍返回 `config_source_unsupported`，明确选择来源也不能绕过；非法目录返回 `invalid_config_source`，其他启动前检查失败返回 `resume_preflight_failed`，真正的 tmux 启动失败仍为 `tmux_failed`。`adopt` 和 `restart` 不增加来源覆盖入口，拒绝时不会先结束原进程。cc-moss 只记录不可重放参数名，不保存其内联 JSON 或凭据；这类会话需自行在原终端选择正确来源及参数，手动启动/恢复。cc-moss 不从 settings 路径猜来源，不自动迁移旧记录，不复制或合并配置。
 - 项目或 local 设置覆盖了供应商、模型，或已知自定义 `--settings` 等来源无法安全重放时，应用操作会在结束旧进程前拒绝并解释。无关的项目设置不会阻止操作；配置坏了、不可读、或模型/路径含不安全字符也不会先结束进程再报错。
 - 正在干活的会话不会被打断：排队，等这一轮做完后重新读取渠道配置再应用。因此排队后又换了渠道，执行时用最新目标；重复操作以最后一次明确选择为准。`--cancel` 只取消尚未开始的队列，不结束进程；已经开始则说明不能取消。`--now` 才会立即重开并丢掉当前回复，终端会先问，`--yes` 跳过询问。
 - 排队原因不会冒充会话忙碌：`queued` 的 `reason=busy` 才表示等待本轮结束；`reason=in-progress` 表示另一项恢复操作占用会话。旧结果没有原因时只显示「已排队」。`restart_queued` 只表示尚未执行的待办，执行中的操作不计入排队。取消没有待办时幂等返回 `cancelled`、`reason=not-queued`，明确说明当前没有排队操作；不会假称撤掉了一项。
@@ -563,7 +591,9 @@ cc-moss events --json --since 42
 
 ### 恢复时带回什么
 
-`restore` 在原来的目录里接上同一段对话（`claude --resume <id>`），如果会话启动时带了下面这些参数，也会原样带上：`--model`、`--permission-mode`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`。其他参数（`--mcp-config`、`--settings`、系统提示词等）不会带回，看起来像密钥的值一律丢弃。
+`restore` 在原来的目录里接上同一段对话（`claude --resume <id>`），回放安全白名单中的 `--permission-mode`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`。普通恢复不回放旧 `--model`，交给 Claude Code 恢复会话选择；只有显式 `--provider-default` 才指定当前渠道模型。看起来像密钥的参数值不会保存或回放，系统提示词也不自动带回。
+
+配置来源必须已知且可安全回放。新捕获的 `--mcp-config`、`--strict-mcp-config`、`--settings`、`--setting-sources` 会留下仅参数名的阻断标记；参数结构无法确认也会拒绝，不是默默丢掉来源后启动。旧记录 Unknown 不猜默认，历史已污染的 Explicit 不自动纠正。保留配置来源不代表 MCP 服务连通性已通过验证。
 
 ## 和其他方案比
 

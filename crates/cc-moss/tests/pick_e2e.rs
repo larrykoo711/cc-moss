@@ -21,7 +21,7 @@ fn open_picker_with(w: &World, extra: &[&str]) {
 fn open_picker_env(w: &World, extra: &[&str], vars: &[(String, String)]) {
     let bin = env!("CARGO_BIN_EXE_cc-moss");
     let state = w.state();
-    let config = w.path("config.toml");
+    let config = w.config_path();
     let fifos = w.path("fifos");
     let args: Vec<String> = [
         "new-session".into(),

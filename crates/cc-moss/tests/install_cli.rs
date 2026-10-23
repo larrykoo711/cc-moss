@@ -393,7 +393,8 @@ fn doctor_flags_blocks_after_starship_and_install_moves_them() {
     // Someone moves the ssh block below the prompt.
     let zshrc = h.read(".zshrc");
     let start = zshrc.find("# >>> cc-moss: ssh-tty-restore >>>").unwrap();
-    let end = zshrc.find("# <<< cc-moss: ssh-tty-restore <<<\n").unwrap() + 36;
+    let end_marker = "# <<< cc-moss: ssh-tty-restore <<<\n";
+    let end = zshrc.find(end_marker).unwrap() + end_marker.len();
     let block = zshrc[start..end].to_string();
     h.write(".zshrc", &(zshrc.replace(&block, "") + &block));
     let out = h.run(&["doctor"]);

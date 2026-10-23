@@ -2,39 +2,70 @@ import AppKit
 import MossKit
 import SwiftUI
 
-/// Where new sessions start (Claude Code works in a folder, so this matters):
-/// a workspace you choose, or simply the folder you used last.
+/// A saved preference is only a candidate; the backend approves it again at launch.
 struct WorkspaceRow: View {
+    @Bindable var model: AppModel
     var divider = false
     @AppStorage(NewSession.workspaceKey) private var workspace = ""
+    @State private var request = UUID()
+    @State private var checking = false
+    @State private var error: String?
 
     var body: some View {
         CardRow(title: L.t("Start new sessions in", "新会话从这里开始"), detail: detail, divider: divider) {
             HStack(spacing: 8) {
                 if !workspace.isEmpty {
-                    SoftButton(title: L.t("Last Used", "用最近的"), icon: "clock.arrow.circlepath") { workspace = "" }
-                        .tip(L.t("Start where you worked last", "从上次工作的目录开始"))
+                    SoftButton(title: L.t("Last Used", "用最近的"), icon: "clock.arrow.circlepath") {
+                        request = UUID(); workspace = ""; checking = false; error = nil
+                    }
+                    .tip(L.t("Use the most recent approved folder", "使用最近通过检查的工作目录"))
                 }
                 SoftButton(title: L.t("Choose…", "选择…"), icon: Icons.chooseFolder) { choose() }
+                    .disabled(checking)
             }
         }
+        .onDisappear { request = UUID() }
     }
 
     private var detail: String {
+        if let error { return error }
+        if checking { return L.t("Checking working folder…", "正在检查工作目录…") }
         guard !workspace.isEmpty else {
-            return L.t("The folder you used last. Pick one to always start there.",
-                       "默认是上次用的文件夹，也可以固定一个。")
-        }
-        if !FileManager.default.fileExists(atPath: workspace) {
-            return L.t("\(Grouping.tilde(workspace, home: NSHomeDirectory())) is gone; using the last folder for now.",
-                       "\(Grouping.tilde(workspace, home: NSHomeDirectory())) 不见了，先用上次的目录。")
+            return L.t("The most recent approved folder, or choose a project folder.", "使用最近通过检查的工作目录；没有合适目录时需要手动选择。")
         }
         return Grouping.tilde(workspace, home: NSHomeDirectory())
     }
 
     private func choose() {
+        guard let client = model.client, model.cliCapabilities.checksWorkingDirectory else {
+            error = WorkingDirectoryPolicy.updateRequired
+            return
+        }
+        let token = UUID()
+        request = token
+        let capabilities = model.cliCapabilities
         FilePicker.choose(.folder, from: NSApp.keyWindow, startingAt: workspace.isEmpty ? nil : workspace,
                           message: L.t("New sessions will start here.", "以后新会话都从这里开始。"),
-                          prompt: L.t("Use This Folder", "用这个目录")) { workspace = $0 }
+                          prompt: L.t("Use This Folder", "用这个目录")) { path in
+            guard request == token else { return }
+            checking = true
+            error = nil
+            Task { @MainActor in
+                do {
+                    let checks = try await client.checkDirectories([path], capabilities: capabilities)
+                    guard request == token else { return }
+                    checking = false
+                    guard let check = checks.first, check.approvedForNewSession, let canonical = check.canonical else {
+                        error = checks.first?.explanation ?? WorkingDirectoryReason.unavailable.explanation
+                        return
+                    }
+                    workspace = canonical
+                } catch {
+                    guard request == token else { return }
+                    checking = false
+                    self.error = AppModel.describe(error)
+                }
+            }
+        }
     }
 }

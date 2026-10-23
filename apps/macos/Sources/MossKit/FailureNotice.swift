@@ -88,7 +88,10 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
     /// From an error thrown by a `MossClient` call.
     public init(action: Action, subject: Subject?, error: Error) {
         let (reason, message): (String?, String?) = switch error {
-        case let MossClient.Failure.command(m): (nil, m)
+        case let MossClient.Failure.command(m):
+            (m.split(separator: ":", maxSplits: 1).first
+                .flatMap { WorkingDirectoryReason(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                .flatMap { $0 == .other ? nil : $0.rawValue }, m)
         case MossClient.Failure.timedOut: ("timeout", nil)
         case let MossClient.Failure.newerSchema(n): ("newer_schema", "schema \(n)")
         case let MossClient.Failure.unreadable(m): ("unreadable", m)
@@ -116,11 +119,13 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
     /// "Couldn't bring back “X”" / 「没能找回「X」」.
     public var title: String {
         if action == .newSession, subject == nil { return L.t("Couldn't start a new session", "没能新建会话") }
+        if action == .restore, subject == nil { return L.t("Couldn't bring sessions back", "没能找回会话") }
         return L.t("Couldn't \(action.verb) “\(who)”", "没能\(action.verb)「\(who)」")
     }
 
     /// One line: why, and what you can try.
     public var why: String {
+        if let code = reason.flatMap(WorkingDirectoryReason.init(rawValue:)), code != .other { return code.explanation }
         if action == .restart {
             switch reason {
             case "quit-timeout": return L.t("The old session is still running. No other session was launched.", "旧会话还在运行，没有启动另一份。")
@@ -131,6 +136,11 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
             case "timeout": return L.t("The operation outcome is unknown. Open the session to check.", "操作结果尚不明确，请打开会话确认。")
             default: break
             }
+        }
+        if action == .restore, reason == RestoreReason.notFound.rawValue { return RestoreReason.notFound.explanation }
+        if let code = reason.flatMap(RestoreReason.init(rawValue:)),
+           (code.isLocationProblem || [.configSourceUnknown, .configSourceChanged, .configSourceUnsupported, .configSourceUnavailable, .resumePreflightFailed].contains(code)) {
+            return code.explanation
         }
         switch reason {
         case "empty": return L.t("It never said a word, so there's nothing to bring back. Stop reminding about it.",
@@ -154,6 +164,8 @@ public struct FailureNotice: Equatable, Identifiable, Sendable {
         case "not-in-tmux": return L.t("It isn't in tmux. Move it into tmux first.", "它不在 tmux 里，先把它移进去。")
         case "in-tmux": return L.t("It's already in tmux.", "它已经在 tmux 里了。")
         case "moss": return L.t("cc-moss looks after Moss itself.", "Moss 由 cc-moss 自己照看。")
+        // The app's own words (cc-moss is too old to ask), not something cc-moss said.
+        case RestorePolicy.updateRequiredCode: return message ?? RestorePolicy.updateRequired
         case "timeout": return L.t("cc-moss took too long to answer. Try again, or ask Moss.", "cc-moss 太久没回话。再试一次，或者交给 Moss。")
         case "newer_schema": return L.t("This app is older than your cc-moss. Update both.", "这个 App 比 cc-moss 旧，两个一起升级。")
         default:

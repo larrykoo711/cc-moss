@@ -54,13 +54,14 @@ private let mixedJSON = """
 
 @Suite struct RestoreFlowTests {
     @Test func buildsCommand() async throws {
-        #expect(RestoreFlow.arguments(targets: []) == ["restore", "--yes", "--json"])
-        // `--` keeps a name starting with "-" from reading as an option.
-        #expect(RestoreFlow.arguments(targets: ["job-a", "-odd"]) == ["restore", "--yes", "--json", "--", "job-a", "-odd"])
+        // `--` keeps an id starting with "-" from reading as an option; the slot pins it.
+        let odd = RestoreTarget(slotId: "01A", sessionId: "-odd")
+        #expect(RestoreFlow.arguments(exact: odd) == ["restore", "--yes", "--json", "--exact-slot-id", "01A", "--", "-odd"])
 
         let runner = RecordingRunner([reply(#"{"schema":1,"results":[]}"#)])
-        _ = try await MossClient(executable: "/x/cc-moss", runner: runner).restore(["job-a"])
-        #expect(await runner.calls == [["restore", "--yes", "--json", "--", "job-a"]])
+        _ = try await MossClient(executable: "/x/cc-moss", runner: runner)
+            .restore(RestoreTarget(slotId: "01A", sessionId: "job-a"), capabilities: .init(workingDirectory: 1, exactRestore: 1))
+        #expect(await runner.calls == [["restore", "--yes", "--json", "--exact-slot-id", "01A", "--", "job-a"]])
     }
 
     @Test func targetsByConversationIdNeverName() {
@@ -122,7 +123,8 @@ private let mixedJSON = """
         // cc-moss itself said no: its words reach the row.
         let runner = RecordingRunner([reply("", status: 1, stderr: "cc-moss: tmux is not installed\n")])
         await #expect(throws: MossClient.Failure.command("cc-moss: tmux is not installed")) {
-            _ = try await MossClient(executable: "/x/cc-moss", runner: runner).restore([])
+            _ = try await MossClient(executable: "/x/cc-moss", runner: runner)
+                .restore(RestoreTarget(slotId: "01C", sessionId: "01C-sid-0000"), capabilities: .init(workingDirectory: 1, exactRestore: 1))
         }
         ok = flow.begin(.one("01C")); #expect(ok)
         flow.fail(.one("01C"), message: "cc-moss: tmux is not installed")

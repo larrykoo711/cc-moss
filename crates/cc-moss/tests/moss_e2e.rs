@@ -354,11 +354,7 @@ fn moss_that_cannot_start_backs_off_and_keeps_its_old_record() {
 #[test]
 fn an_unreadable_config_starts_nothing() {
     let w = World::new("moss-bad-config");
-    std::fs::write(
-        w.path("config.toml"),
-        "[moss]\nenabled = false\n[[[ broken\n",
-    )
-    .unwrap();
+    std::fs::write(w.config_path(), "[moss]\nenabled = false\n[[[ broken\n").unwrap();
     let _d = daemon(&w);
     wait_until("the daemon to notice", 10, || {
         log(&w).contains("cannot read config.toml").then_some(())
@@ -366,7 +362,7 @@ fn an_unreadable_config_starts_nothing() {
     std::thread::sleep(Duration::from_millis(1_500));
     assert!(!has_moss(&w), "{}", log(&w));
     // Once it reads, the switch decides.
-    std::fs::write(w.path("config.toml"), "[moss]\nenabled = true\n").unwrap();
+    std::fs::write(w.config_path(), "[moss]\nenabled = true\n").unwrap();
     moss_up(&w);
 }
 
@@ -437,7 +433,7 @@ fn moss_stop_keeps_it_down() {
         (false.into(), false.into()),
         "{st}"
     );
-    let config = std::fs::read_to_string(w.path("config.toml")).unwrap();
+    let config = std::fs::read_to_string(w.config_path()).unwrap();
     assert!(config.contains("[moss]\nenabled = false"), "{config}");
     let old = ls_json(&w.state(), true)["sessions"]
         .as_array()

@@ -67,7 +67,8 @@ extension AppModel {
     /// "Move into tmux" in the confirm line: the move, then the row is a tmux
     /// row (its new name, its summary), still selected and in view.
     func adopt(_ s: Session) {
-        guard let client, !adopting.contains(s.id) else { return }
+        guard let client, !adopting.contains(s.id), let current = session(s.id),
+              current.sessionId == s.sessionId, permitsLaunch(current, action: .adopt) else { return }
         adoptAsk = nil
         adoptProblems[s.id] = nil
         adopting.insert(s.id)

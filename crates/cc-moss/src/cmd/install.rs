@@ -21,12 +21,14 @@ pub const PROMPT_ZSH: &str = include_str!("../../assets/zsh/prompt.zsh");
 pub const SSH_TTY_ZSH: &str = include_str!("../../assets/zsh/ssh-tty-restore.zsh");
 pub const PATH_ZSH: &str = include_str!("../../assets/zsh/path.zsh");
 pub const ALIASES_ZSH: &str = include_str!("../../assets/zsh/aliases.zsh");
+pub const LAUNCH_ZSH: &str = include_str!("../../assets/zsh/launch.zsh");
 
 pub const TAG_TMUX: &str = "cc-moss";
 pub const TAG_PROMPT: &str = "cc-moss: prompt";
 pub const TAG_SSH: &str = "cc-moss: ssh-tty-restore";
 pub const TAG_PATH: &str = "cc-moss: path";
 pub const TAG_ALIASES: &str = "cc-moss: aliases";
+pub const TAG_LAUNCH: &str = "cc-moss: launch";
 
 /// What `install` can set up: hooks (Claude Code hooks and `t`), tmux,
 /// starship, shell (ssh reset, PATH for scripts), the menubar app (macOS)
@@ -190,6 +192,7 @@ fn zshrc_text(original: &str, opts: &Options) -> Result<String> {
     }
     if opts.wants(Part::Shell) {
         text = managed_block::upsert(&text, TAG_SSH, SSH_TTY_ZSH)?;
+        text = managed_block::upsert(&text, TAG_LAUNCH, LAUNCH_ZSH)?;
     }
     if opts.wants(Part::Aliases) {
         text = managed_block::upsert(&text, TAG_ALIASES, ALIASES_ZSH)?;
@@ -211,7 +214,7 @@ fn not_zsh_note(shell: &str) -> String {
 
 /// The managed blocks install writes into `.zshrc`.
 pub fn is_ours(tag: &str) -> bool {
-    [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES].contains(&tag)
+    [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES, TAG_LAUNCH].contains(&tag)
 }
 
 /// A change to `path`, if `new_text` differs from what is there.
@@ -556,7 +559,7 @@ pub fn uninstall(opts: &Options) -> Result<()> {
     let (alias_changes, alias_notes) = alias::uninstall_changes(&alias::Place::detect()?, true)?;
     changes.extend(alias_changes);
     notes.extend(alias_notes);
-    let zsh_tags = [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES];
+    let zsh_tags = [setup::ZSH_TAG, TAG_PROMPT, TAG_SSH, TAG_ALIASES, TAG_LAUNCH];
     changes.extend(strip_blocks(&paths.zshrc, &zsh_tags)?);
     changes.extend(strip_blocks(&paths.zshenv, &[TAG_PATH])?);
     changes.extend(strip_blocks(&paths.tmux_conf, &[TAG_TMUX])?);

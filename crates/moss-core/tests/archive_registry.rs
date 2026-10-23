@@ -89,12 +89,12 @@ fn a_030_registry_takes_the_archive_and_restart_claims() {
     assert!(!old.is_archived());
     assert!(r.claim_restore(&old, 7_000).unwrap());
     assert!(!r.claim_restore(&old, 7_001).unwrap(), "claimed once");
-    // The old cc-moss still reads it: same schema version, only columns added.
+    // Durable process binding invariants require schema 2; old writers must refuse.
     let conn = rusqlite::Connection::open(&path).unwrap();
     let version: i64 = conn
         .pragma_query_value(None, "user_version", |r| r.get(0))
         .unwrap();
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 }
 
 #[test]

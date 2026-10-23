@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "cc-moss"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -128,6 +128,7 @@ dependencies = [
  "nucleo-matcher",
  "ratatui",
  "rusqlite",
+ "serde",
  "serde_json",
  "signal-hook",
  "tempfile",
@@ -620,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "moss-core"
-version = "0.3.4"
+version = "0.3.5"
 dependencies = [
  "anyhow",
  "libc",

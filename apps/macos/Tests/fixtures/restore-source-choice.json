@@ -1,0 +1,16 @@
+{
+  "schema": 1,
+  "sessions": [
+    {
+      "id": "SOURCE",
+      "name": "历史会话 · 本次配置由你选择",
+      "status": "interrupted",
+      "session_id": "demo-source-session",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-22T12:00:00Z",
+      "notes": {},
+      "busy": false,
+      "tmux": null
+    }
+  ]
+}

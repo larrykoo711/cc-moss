@@ -84,7 +84,10 @@ final class AppModel {
     var openProblem: OpenProblem?
 
     /// Bringing sessions back: what is in flight and what failed (T1.3).
+    var cliCapabilities = CLICapabilities()
     var restoreFlow = RestoreFlow()
+    var restoreSourceFlow = RestoreSourceFlow()
+    @ObservationIgnored var restoreSourcePicker: NSOpenPanel?
     /// "Brought back N" on the banner, for a moment after bring-all-back.
     var restoreSummary: RestoreSummary?
     /// The "stopped earlier" group is open.
@@ -498,6 +501,7 @@ final class AppModel {
         defer { refreshing = false }
         do {
             let snap = try await client.snapshot()
+            cliCapabilities = snap.capabilities
             let split = Grouping.splitMoss(snap.sessions)
             moss = split.moss
             // Archived ones live in their own group, out of every count.
@@ -509,6 +513,8 @@ final class AppModel {
             let kept = pins.pruned(keeping: sessions)
             if kept != pins { pins = kept }
             restoreFlow.prune(keeping: Set(sessions.filter { $0.state == .interrupted }.map(\.id)))
+            restoreSourceFlow.observe(sessions)
+            if restoreSourceFlow.picker == nil { restoreSourcePicker?.cancel(nil) }
             // Suggestions of sessions that ended or went: forgotten.
             suggestionCache.keep(only: Set(sessions.filter { $0.state != .closed }.map(\.id)).union(["moss"]))
             phase = .ready
@@ -634,46 +640,4 @@ enum PanelPage: Equatable {
     case queue
     /// Moss's status and a conversation with it (T2.3).
     case moss
-}
-
-/// The search indexes, rebuilt only when the sessions change (pinyin isn't
-/// free), never per keystroke.
-final class SearchIndexes {
-    private var liveKey: [String] = []
-    private var liveIndex = SearchIndex([])
-    private var closedKey: [String] = []
-    private var closedIndex = SearchIndex([])
-    private var archivedKey: [String] = []
-    private var archivedIndex = SearchIndex([])
-
-    private static func key(_ list: [Session]) -> [String] {
-        list.map { "\($0.id)|\($0.title)|\($0.cwd)|\($0.lastActiveAt.timeIntervalSince1970)|\($0.lastPrompt ?? "")|\($0.notes.note ?? "")|\($0.state)" }
-    }
-
-    func live(_ sessions: [Session], folders: [String: String]) -> SearchIndex {
-        let k = Self.key(sessions)
-        if k != liveKey {
-            liveKey = k
-            liveIndex = SearchIndex(sessions, folders: folders)
-        }
-        return liveIndex
-    }
-
-    func archived(_ sessions: [Session]) -> SearchIndex {
-        let k = Self.key(sessions)
-        if k != archivedKey {
-            archivedKey = k
-            archivedIndex = SearchIndex(sessions)
-        }
-        return archivedIndex
-    }
-
-    func closed(_ sessions: [Session]) -> SearchIndex {
-        let k = Self.key(sessions)
-        if k != closedKey {
-            closedKey = k
-            closedIndex = SearchIndex(sessions)
-        }
-        return closedIndex
-    }
 }
