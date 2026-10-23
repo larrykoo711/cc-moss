@@ -119,6 +119,53 @@ fn dropped(w: &World, sid: &str, cwd: &Path) {
     });
 }
 
+/// 可恢复正例从活的隔离 fixture 采集启动证据，再模拟崩溃。
+fn dropped_with_captured_source(w: &World, sid: &str, cwd: &Path) {
+    std::fs::create_dir_all(cwd).unwrap();
+    let mut cmd = Command::new(&w.claude);
+    for (key, value) in w.cc_moss().get_envs() {
+        match value {
+            Some(value) => {
+                cmd.env(key, value);
+            }
+            None => {
+                cmd.env_remove(key);
+            }
+        }
+    }
+    let process = Daemon(
+        cmd.args(["--session-id", sid])
+            .current_dir(cwd)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap(),
+    );
+    wait_until("captured startup source", 10, || {
+        let all = ls_json(&w.state(), true);
+        session(&all, sid)?;
+        let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+        let snapshot: Option<String> = db
+            .query_row(
+                "SELECT provider_started FROM slots WHERE session_id=?1",
+                [sid],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let snapshot = moss_core::provider::Snapshot::from_json(snapshot.as_deref()?)?;
+        (snapshot.launch_source != moss_core::provider::LaunchSource::Unknown
+            && snapshot.unreplayable_args.is_empty())
+        .then_some(())
+    });
+    std::fs::write(w.path("fifos").join(format!("{sid}.jsonl")), "{}\n").unwrap();
+    drop(process);
+    wait_until("captured session to show as dropped", 10, || {
+        let all = ls_json(&w.state(), true);
+        (session(&all, sid)?["status"] == "interrupted").then_some(())
+    });
+}
+
 /// RFC 3339 for `ms` after the epoch (UTC).
 fn rfc3339(ms: i64) -> String {
     let secs = ms.div_euclid(1000);
@@ -370,7 +417,7 @@ fn act_restores_with_your_reply() {
     let _d = daemon(&w);
     moss_up(&w);
     let sid = "e1e2e3e4-0000-4000-8000-000000000005";
-    dropped(&w, sid, &w.path("work"));
+    dropped_with_captured_source(&w, sid, &w.path("work"));
     let other = "e9e9e9e9-0000-4000-8000-000000000006";
     dropped(&w, other, &w.path("work"));
     let slot = slot_id(&w, sid);

@@ -5,6 +5,105 @@ fn args(line: &str) -> Vec<String> {
 }
 
 #[test]
+fn shell_mode_prompt_words_cannot_bypass_directory_guard() {
+    for word in ["config", "completion", "uninstall", "help"] {
+        assert_eq!(
+            moss_core::launch_args::shell_mode(&[word.into()]).as_str(),
+            "fresh",
+            "{word}"
+        );
+    }
+}
+
+#[test]
+fn shell_mode_unknown_target_is_blocked_not_fresh_or_unguarded() {
+    for words in [
+        vec!["attach", "old"],
+        vec!["respawn", "old"],
+        vec!["agents"],
+        vec!["--unknown", "--help"],
+        vec!["--worktree", "name"],
+    ] {
+        let args: Vec<String> = words.into_iter().map(str::to_owned).collect();
+        assert_eq!(
+            moss_core::launch_args::shell_mode(&args).as_str(),
+            "blocked",
+            "{args:?}"
+        );
+    }
+}
+
+#[test]
+fn shell_launch_modes_follow_argument_arity() {
+    use moss_core::launch_args::{shell_mode, ShellMode};
+    for (words, want) in [
+        (vec![], ShellMode::Fresh),
+        (vec!["--model", "opus"], ShellMode::Fresh),
+        (vec!["--name", "session", "--debug"], ShellMode::Fresh),
+        (vec!["--debug=hooks,mcp"], ShellMode::Fresh),
+        (vec!["-d", "hooks", "--model", "opus"], ShellMode::Fresh),
+        (vec!["--debug", "--help"], ShellMode::NonSession),
+        (
+            vec!["--plugin-dir", "/tmp/plugin", "--brief"],
+            ShellMode::Fresh,
+        ),
+        (vec!["--append-system-prompt", "--help"], ShellMode::Fresh),
+        (vec!["--append-system-prompt", "--resume"], ShellMode::Fresh),
+        (vec!["--resume", "abc"], ShellMode::Native),
+        (vec!["--continue"], ShellMode::Native),
+        (vec!["--print", "hello"], ShellMode::Native),
+        (vec!["--unknown", "--help"], ShellMode::Blocked),
+        (vec!["--help"], ShellMode::NonSession),
+        (vec!["--version"], ShellMode::NonSession),
+        (vec!["mcp", "list"], ShellMode::NonSession),
+        (
+            vec!["agents", "--json", "--all", "--cwd", "/tmp/project"],
+            ShellMode::NonSession,
+        ),
+        (vec!["agents", "--cwd", "--json"], ShellMode::Blocked),
+        (vec!["--verbose", "attach", "old"], ShellMode::Blocked),
+        (vec!["--resume"], ShellMode::Native),
+        (vec!["-C", "/tmp/project", "--model=opus"], ShellMode::Fresh),
+    ] {
+        let args: Vec<String> = words.into_iter().map(str::to_owned).collect();
+        assert_eq!(shell_mode(&args), want, "{args:?}");
+    }
+}
+
+#[test]
+fn fresh_launch_arguments_cannot_override_receipt_identity() {
+    for words in [
+        vec!["--session-id", "fixed"],
+        vec!["--resume", "old"],
+        vec!["--continue"],
+        vec!["--name=other"],
+        vec!["-n", "other"],
+        vec!["--json"],
+    ] {
+        let args: Vec<String> = words.into_iter().map(str::to_owned).collect();
+        assert!(!moss_core::launch_args::fresh_arguments(&args), "{args:?}");
+    }
+}
+
+#[test]
+fn jarvis_name_alias_becomes_fresh_name_without_duplicate_claude_name() {
+    let args = ["-n", "project", "--debug", "--model", "opus", "--detach"].map(str::to_owned);
+    assert_eq!(
+        moss_core::launch_args::normalize_new(&args),
+        ["project", "--detach", "--", "--debug", "--model", "opus"]
+    );
+}
+
+#[test]
+fn new_json_is_owned_by_moss_not_forwarded_to_claude() {
+    let args = ["--json", "--model", "opus", "project", "--detach"].map(str::to_owned);
+    assert_eq!(
+        moss_core::launch_args::normalize_new(&args),
+        ["--json", "project", "--detach", "--", "--model", "opus"]
+    );
+}
+
+#[test]
 fn whitelist_cases() {
     let cases: [(&str, &[&str]); 9] = [
         ("claude", &[]),

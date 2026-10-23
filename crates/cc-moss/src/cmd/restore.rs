@@ -15,8 +15,12 @@ use moss_core::{naming, proc, store_dir};
 
 use super::confirm;
 use super::ls::JSON_SCHEMA;
+use super::restart::{RestoreConfigSource, ResumePreflightError};
 
 pub struct RestoreArgs {
+    pub config_source: RestoreConfigSource,
+    pub require_unknown_config: bool,
+    pub expected_source_revision: Option<String>,
     pub provider_default: bool,
     pub yes: bool,
     pub dry_run: bool,
@@ -30,12 +34,21 @@ pub struct RestoreArgs {
 pub enum Reason {
     /// Killed before the first message: nothing to resume.
     Empty,
-    /// Its folder is gone.
-    MissingDir,
     /// Claude Code exited right after it started.
     ExitedAtOnce,
     /// tmux could not start (or reach) the session.
     TmuxFailed,
+    ConfigSourceUnknown,
+    ConfigSourceChanged,
+    ConfigSourceUnsupported,
+    InvalidConfigSource,
+    ConfigDirectoryMissing,
+    ConfigNotDirectory,
+    ConfigSourceUnreadable,
+    ConfigSourceUnavailable,
+    ConfigSettingsInvalid,
+    ResumePreflightFailed,
+    WorkingDirectory(moss_core::working_directory::Error),
     /// It is running, on its way back, or comes back through another copy.
     AlreadyRunning,
     /// The name matches several sessions (`--json` only).
@@ -48,9 +61,19 @@ impl Reason {
     pub fn code(self) -> &'static str {
         match self {
             Reason::Empty => "empty",
-            Reason::MissingDir => "missing_dir",
             Reason::ExitedAtOnce => "exited_at_once",
             Reason::TmuxFailed => "tmux_failed",
+            Reason::ConfigSourceUnknown => "config_source_unknown",
+            Reason::ConfigSourceChanged => "config_source_changed",
+            Reason::ConfigSourceUnsupported => "config_source_unsupported",
+            Reason::InvalidConfigSource => "invalid_config_source",
+            Reason::ConfigDirectoryMissing => "config_directory_missing",
+            Reason::ConfigNotDirectory => "config_not_directory",
+            Reason::ConfigSourceUnreadable => "config_source_unreadable",
+            Reason::ConfigSourceUnavailable => "config_source_unavailable",
+            Reason::ConfigSettingsInvalid => "config_settings_invalid",
+            Reason::ResumePreflightFailed => "resume_preflight_failed",
+            Reason::WorkingDirectory(error) => error.code(),
             Reason::AlreadyRunning => "already_running",
             Reason::Ambiguous => "ambiguous",
             Reason::NotFound => "not_found",
@@ -102,9 +125,54 @@ fn print_json(outcomes: &[Outcome]) -> Result<()> {
 }
 
 pub fn run(args: RestoreArgs) -> Result<()> {
+    run_selected(args, None)
+}
+
+pub fn run_exact(args: RestoreArgs, slot_id: &str) -> Result<()> {
+    run_selected(args, Some(slot_id))
+}
+
+fn exact_missing(args: &RestoreArgs, slot_id: &str) -> Result<()> {
+    let message = "the selected slot or current session identity changed; no session was started";
+    if args.json {
+        return print_json(&[Outcome {
+            id: slot_id.into(),
+            name: args.names[0].clone(),
+            failure: Some((Reason::NotFound, message.into())),
+            candidates: Vec::new(),
+            result: None,
+        }]);
+    }
+    bail!(message)
+}
+
+fn run_selected(args: RestoreArgs, exact_slot_id: Option<&str>) -> Result<()> {
+    if exact_slot_id.is_some()
+        && (args.names.len() != 1
+            || args.names[0].len() != 36
+            || uuid::Uuid::parse_str(&args.names[0]).is_err())
+    {
+        bail!("exact restore requires one complete session UUID");
+    }
+    if (args.require_unknown_config || args.expected_source_revision.is_some())
+        && matches!(args.config_source, RestoreConfigSource::Recorded)
+    {
+        bail!("--require-unknown-config requires an explicit config source choice");
+    }
+    if !matches!(args.config_source, RestoreConfigSource::Recorded) {
+        if args.names.len() != 1 {
+            bail!("config source selection requires exactly one session target");
+        }
+        if args.provider_default {
+            bail!("config source selection cannot be combined with --provider-default");
+        }
+    }
     let config = Config::load()?;
     let path = store_dir::registry_path();
     if !path.exists() {
+        if let Some(slot_id) = exact_slot_id {
+            return exact_missing(&args, slot_id);
+        }
         if args.json {
             return print_json(&[]);
         }
@@ -116,7 +184,15 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     // Names select exact slots (by id), whatever form the user typed.
     // With --json a name that picks no one session is a result of its own.
     let mut unresolved = Vec::new();
-    let only: Option<HashSet<String>> = if args.names.is_empty() {
+    let only: Option<HashSet<String>> = if let Some(slot_id) = exact_slot_id {
+        let Some(slot) = slots
+            .iter()
+            .find(|slot| slot.slot_id == slot_id && slot.session_id == args.names[0])
+        else {
+            return exact_missing(&args, slot_id);
+        };
+        Some([slot.slot_id.clone()].into())
+    } else if args.names.is_empty() {
         None
     } else if args.json {
         let mut ids = HashSet::new();
@@ -164,16 +240,45 @@ pub fn run(args: RestoreArgs) -> Result<()> {
                 .collect(),
         )
     });
-    let candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| p.exists());
+    let mut cwd_probe = super::working_directory::PlanningChecks::new();
+    let mut cwd_results = std::collections::HashMap::new();
+    let mut cwd_errors = std::collections::HashMap::new();
+    for (status, slot) in &rows {
+        if *status != Status::Interrupted
+            || slot.is_moss()
+            || pool
+                .as_ref()
+                .is_some_and(|ids| !ids.contains(&slot.slot_id))
+        {
+            continue;
+        }
+        let result = cwd_probe.check(Path::new(&slot.cwd));
+        cwd_results.insert(Path::new(&slot.cwd), result);
+        if let Err(error) = result {
+            cwd_errors.insert(slot.slot_id.clone(), error);
+        }
+    }
+    // 旧plan只使用可恢复性；完整typed错误一直保留，返回时绝不由bool猜成missing。
+    let candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| {
+        cwd_results.get(p).map_or_else(|| p.exists(), Result::is_ok)
+    });
     if args.json {
+        let running: Vec<_> = rows
+            .iter()
+            .filter(|(status, slot)| {
+                *status == Status::Running
+                    && only.as_ref().is_some_and(|ids| ids.contains(&slot.slot_id))
+            })
+            .map(|(_, slot)| slot)
+            .collect();
         return run_json(
             &config,
             &registry,
-            &rows,
-            only.as_ref(),
+            &running,
             &candidates,
             unresolved,
-            args.provider_default,
+            &args,
+            &cwd_errors,
         );
     }
     if candidates.is_empty() {
@@ -182,7 +287,10 @@ pub fn run(args: RestoreArgs) -> Result<()> {
     }
 
     for c in &candidates {
-        let why = verdict_text(c.verdict);
+        let why = cwd_errors
+            .get(&c.slot.slot_id)
+            .map(ToString::to_string)
+            .unwrap_or_else(|| verdict_text(c.verdict).to_string());
         let note = c
             .slot
             .notes
@@ -192,14 +300,14 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         println!(
             "{} {} {}{}",
             super::pad(&display_name(c.slot), 24),
-            super::pad(why, 52),
+            super::pad(&why, 52),
             c.slot.cwd,
             note.map(|n| format!("  [{n}]")).unwrap_or_default()
         );
     }
     let todo: Vec<&Slot> = candidates
         .iter()
-        .filter(|c| c.verdict == Verdict::Restore)
+        .filter(|c| c.verdict == Verdict::Restore && !cwd_errors.contains_key(&c.slot.slot_id))
         .map(|c| c.slot)
         .collect();
     if todo.is_empty() {
@@ -232,7 +340,10 @@ pub fn run(args: RestoreArgs) -> Result<()> {
         return Ok(());
     }
 
-    let mut launcher = Launcher::new(&config)?.provider_default(args.provider_default);
+    let mut launcher = Launcher::new(&config)?
+        .provider_default(args.provider_default)
+        .config_source(args.config_source, args.require_unknown_config)
+        .expected_source_revision(args.expected_source_revision);
     let mut failed = 0;
     for slot in todo {
         match launcher.launch(&registry, slot)? {
@@ -294,47 +405,57 @@ fn verdict_text(verdict: Verdict) -> &'static str {
 fn run_json(
     config: &Config,
     registry: &Registry,
-    rows: &[(Status, Slot)],
-    only: Option<&HashSet<String>>,
+    running: &[&Slot],
     candidates: &[moss_core::restore::Candidate<'_>],
     unresolved: Vec<Outcome>,
-    provider_default: bool,
+    args: &RestoreArgs,
+    cwd_errors: &std::collections::HashMap<String, moss_core::working_directory::Error>,
 ) -> Result<()> {
     let mut outcomes = unresolved;
-    if let Some(ids) = only {
-        for (_, slot) in rows
-            .iter()
-            .filter(|(st, s)| *st == Status::Running && ids.contains(&s.slot_id))
-        {
-            outcomes.push(Outcome {
-                id: slot.slot_id.clone(),
-                name: display_name(slot),
-                failure: Some((
-                    Reason::AlreadyRunning,
-                    tr!("it is already running", "它已经在运行了").to_string(),
-                )),
-                candidates: Vec::new(),
-                result: None,
-            });
-        }
+    for slot in running {
+        outcomes.push(Outcome {
+            id: slot.slot_id.clone(),
+            name: display_name(slot),
+            failure: Some((
+                Reason::AlreadyRunning,
+                tr!("it is already running", "它已经在运行了").to_string(),
+            )),
+            candidates: Vec::new(),
+            result: None,
+        });
     }
     let mut launcher: Option<Launcher> = None;
     for c in candidates {
         let reason = match c.verdict {
-            Verdict::Restore => None,
+            Verdict::Restore => cwd_errors
+                .get(&c.slot.slot_id)
+                .copied()
+                .map(Reason::WorkingDirectory),
             Verdict::EmptySession => Some(Reason::Empty),
-            Verdict::MissingCwd => Some(Reason::MissingDir),
+            Verdict::MissingCwd => Some(Reason::WorkingDirectory(
+                *cwd_errors
+                    .get(&c.slot.slot_id)
+                    .expect("cwd rejection retains its typed error"),
+            )),
             Verdict::RestorePending | Verdict::OpenElsewhere | Verdict::Duplicate => {
                 Some(Reason::AlreadyRunning)
             }
         };
         let failure = match reason {
-            Some(r) => Some((r, verdict_text(c.verdict).to_string())),
+            Some(r) => Some((
+                r,
+                match r {
+                    Reason::WorkingDirectory(error) => error.to_string(),
+                    _ => verdict_text(c.verdict).to_string(),
+                },
+            )),
             None => {
                 if launcher.is_none() {
                     launcher = Some(
                         Launcher::new(config)?
-                            .provider_default(provider_default)
+                            .provider_default(args.provider_default)
+                            .config_source(args.config_source.clone(), args.require_unknown_config)
+                            .expected_source_revision(args.expected_source_revision.clone())
                             .quiet(),
                     );
                 }
@@ -383,9 +504,85 @@ pub enum Launched {
     Failed(Reason, String),
 }
 
+fn source_is_unknown(slot: &Slot) -> bool {
+    slot.provider_started
+        .as_deref()
+        .and_then(moss_core::provider::Snapshot::from_json)
+        .unwrap_or_default()
+        .launch_source
+        == moss_core::provider::LaunchSource::Unknown
+}
+
+fn preflight_failure(error: anyhow::Error) -> Launched {
+    if let Some(error) = error.downcast_ref::<moss_core::working_directory::Error>() {
+        return Launched::Failed(Reason::WorkingDirectory(*error), error.to_string());
+    }
+    if let Some(issue) = error.downcast_ref::<super::restore_source::Issue>() {
+        use super::restore_source::Issue;
+        let reason = match issue {
+            Issue::Unknown => Reason::ConfigSourceUnknown,
+            Issue::Unsupported => Reason::ConfigSourceUnsupported,
+            Issue::InvalidPath => Reason::InvalidConfigSource,
+            Issue::MissingDirectory => Reason::ConfigDirectoryMissing,
+            Issue::NotDirectory => Reason::ConfigNotDirectory,
+            Issue::Unreadable => Reason::ConfigSourceUnreadable,
+            Issue::Unavailable => Reason::ConfigSourceUnavailable,
+            Issue::InvalidSettings => Reason::ConfigSettingsInvalid,
+        };
+        return Launched::Failed(reason, issue.to_string());
+    }
+    let reason = match error.downcast_ref::<ResumePreflightError>() {
+        Some(ResumePreflightError::ConfigSourceUnknown) => Reason::ConfigSourceUnknown,
+        Some(ResumePreflightError::ConfigSourceChanged) => Reason::ConfigSourceChanged,
+        Some(ResumePreflightError::ConfigSourceUnsupported) => Reason::ConfigSourceUnsupported,
+        Some(ResumePreflightError::InvalidConfigSource) => Reason::InvalidConfigSource,
+        None => Reason::ResumePreflightFailed,
+    };
+    Launched::Failed(reason, format!("{error:#}"))
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum SourceClaim {
+    Claimed,
+    Changed,
+    SourceChanged,
+}
+
+fn claim_with_source_guard(
+    registry: &Registry,
+    slot: &Slot,
+    require_unknown: bool,
+) -> Result<SourceClaim> {
+    if require_unknown && !source_is_unknown(slot) {
+        return Ok(SourceClaim::SourceChanged);
+    }
+    if registry.claim_restore(slot, now_ms())? {
+        return Ok(SourceClaim::Claimed);
+    }
+    if require_unknown
+        && registry.slots()?.iter().any(|current| {
+            current.slot_id == slot.slot_id
+                && current.session_id == slot.session_id
+                && !source_is_unknown(current)
+        })
+    {
+        return Ok(SourceClaim::SourceChanged);
+    }
+    Ok(SourceClaim::Changed)
+}
+
+pub(super) fn launcher_home<'a>(
+    source_home: Option<&Path>,
+    working: &'a moss_core::working_directory::ValidatedWorkingDirectory,
+) -> std::result::Result<&'a Path, moss_core::working_directory::Error> {
+    if source_home.is_some_and(|home| home != working.target_home()) {
+        return Err(moss_core::working_directory::Error::Changed);
+    }
+    Ok(working.target_home())
+}
+
 /// Relaunches interrupted slots in tmux: claim, start, record the process.
 pub struct Launcher {
-    socket: Socket,
     tmux: Tmux<ProcessRunner>,
     prefix: Option<String>,
     taken: Vec<String>,
@@ -393,6 +590,10 @@ pub struct Launcher {
     /// Keep stdout clean (for `--json`): no "Started …" lines.
     quiet: bool,
     provider_default: bool,
+    config_source: RestoreConfigSource,
+    require_unknown_config: bool,
+    expected_source_revision: Option<String>,
+    check_source_health: bool,
 }
 
 impl Launcher {
@@ -408,18 +609,33 @@ impl Launcher {
         let claude = super::launch::claude_bin()?;
         let taken = tmux.session_names()?;
         Ok(Launcher {
-            socket,
             tmux,
             prefix,
             taken,
             claude,
             quiet: false,
             provider_default: false,
+            config_source: RestoreConfigSource::Recorded,
+            require_unknown_config: false,
+            expected_source_revision: None,
+            check_source_health: false,
         })
     }
 
     pub fn provider_default(mut self, apply: bool) -> Self {
         self.provider_default = apply;
+        self
+    }
+
+    fn config_source(mut self, source: RestoreConfigSource, require_unknown: bool) -> Self {
+        self.config_source = source;
+        self.check_source_health = true;
+        self.require_unknown_config = require_unknown;
+        self
+    }
+
+    fn expected_source_revision(mut self, revision: Option<String>) -> Self {
+        self.expected_source_revision = revision;
         self
     }
 
@@ -429,40 +645,111 @@ impl Launcher {
         self
     }
 
-    pub fn socket(&self) -> &Socket {
-        &self.socket
-    }
-
     /// Restore `slot` (planned as [`Verdict::Restore`]) in its own tmux session.
     pub fn launch(&mut self, registry: &Registry, slot: &Slot) -> Result<Launched> {
         let label = display_name(slot);
-        let owned_argv =
-            match super::restart::resume_argv(&self.claude, slot, self.provider_default) {
-                Ok(argv) => argv,
-                Err(error) => {
-                    return Ok(Launched::Failed(Reason::TmuxFailed, format!("{error:#}")))
-                }
+        if self.require_unknown_config && !source_is_unknown(slot) {
+            return Ok(preflight_failure(
+                ResumePreflightError::ConfigSourceChanged.into(),
+            ));
+        }
+        let mut planner = super::restore_source::Planner::for_restore();
+        if let Some(expected) = self.expected_source_revision.as_deref() {
+            let plan = planner.plan(slot);
+            if plan.issue == Some("config_source_unavailable") {
+                return Ok(preflight_failure(
+                    super::restore_source::Issue::Unavailable.into(),
+                ));
+            }
+            if plan.revision != expected {
+                return Ok(preflight_failure(
+                    ResumePreflightError::ConfigSourceChanged.into(),
+                ));
+            }
+        }
+        let (source_home, argv) = if self.check_source_health {
+            let validated = match planner.validate_choice(slot, &self.config_source) {
+                Ok(source) => source,
+                Err(issue) => return Ok(preflight_failure(issue.into())),
             };
+            let home = validated.home().to_string_lossy().into_owned();
+            (
+                Some(home),
+                super::restart::resume_argv_with_validated_source(
+                    &self.claude,
+                    slot,
+                    self.provider_default,
+                    &validated,
+                ),
+            )
+        } else {
+            (
+                None,
+                super::restart::resume_argv(&self.claude, slot, self.provider_default),
+            )
+        };
+        let mut owned_argv = match argv {
+            Ok(argv) => argv,
+            Err(error) => return Ok(preflight_failure(error)),
+        };
+        let source = match &self.config_source {
+            RestoreConfigSource::Recorded => super::working_directory::source(slot),
+            RestoreConfigSource::Default => moss_core::provider::LaunchSource::Unset,
+            RestoreConfigSource::Directory(path) => {
+                moss_core::provider::LaunchSource::Explicit(path.clone())
+            }
+        };
+        let working =
+            match super::working_directory::context_for_source(&source).and_then(|context| {
+                Ok(moss_core::working_directory::check(
+                    Path::new(&slot.cwd),
+                    &context,
+                )?)
+            }) {
+                Ok(working) => working,
+                Err(error) => return Ok(preflight_failure(error)),
+            };
+        if let Err(error) = moss_core::working_directory::recheck(&working) {
+            return Ok(preflight_failure(error.into()));
+        }
+        let home = match launcher_home(source_home.as_deref().map(Path::new), &working) {
+            Ok(home) => home,
+            Err(error) => return Ok(preflight_failure(error.into())),
+        };
+        let cwd = working.canonical().to_string_lossy().into_owned();
+        // 所有Launcher入口都固定同一cwd能力的HOME；adopt不扩来源健康检查。
+        let home_index = if owned_argv.get(1).is_some_and(|arg| arg == "-u") {
+            3
+        } else {
+            1
+        };
+        owned_argv.insert(home_index, format!("HOME={}", home.display()));
         // Claim with the time of launch, not of planning: a prompt may have waited.
-        if !registry.claim_restore(slot, now_ms())? {
-            return Ok(Launched::Changed);
+        match claim_with_source_guard(registry, slot, self.require_unknown_config)? {
+            SourceClaim::Claimed => {}
+            SourceClaim::Changed if self.expected_source_revision.is_some() => {
+                return Ok(preflight_failure(
+                    ResumePreflightError::ConfigSourceChanged.into(),
+                ));
+            }
+            SourceClaim::Changed => return Ok(Launched::Changed),
+            SourceClaim::SourceChanged => {
+                return Ok(preflight_failure(
+                    ResumePreflightError::ConfigSourceChanged.into(),
+                ))
+            }
         }
         let tmux_name = naming::unique(
             &naming::session_name(self.prefix.as_deref(), &label),
             &self.taken,
             None,
         );
-        // Its folder has to be one: a session never starts anywhere else.
-        if !Path::new(&slot.cwd).is_dir() {
+        if let Err(error) = moss_core::working_directory::recheck(&working) {
             registry.clear_restore_started(&slot.slot_id)?;
-            let message = tr!(
-                format!("could not restore {label}: its folder {} is gone", slot.cwd),
-                format!("没能恢复 {label}：它的目录 {} 已经不在了", slot.cwd)
-            );
-            return Ok(Launched::Failed(Reason::MissingDir, message));
+            return Ok(preflight_failure(error.into()));
         }
         let argv: Vec<&str> = owned_argv.iter().map(String::as_str).collect();
-        if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &slot.cwd) {
+        if let Err(e) = moss_core::tmux::ensure_access(&self.tmux, &cwd) {
             let message = tr!(
                 format!("could not restore {label}: {e:#}"),
                 format!("没能恢复 {label}：{e:#}")
@@ -474,7 +761,7 @@ impl Launcher {
         let mut failure: Option<(Reason, String)> = None;
         // A timeout or error does not prove the session was not created:
         // look for it before deciding.
-        let pane = match self.tmux.new_session(&tmux_name, &slot.cwd, &argv) {
+        let pane = match self.tmux.new_session(&tmux_name, &cwd, &argv) {
             Ok(pane) => Some(pane),
             // Only a pane that runs this very resume counts: a same-named
             // session someone else created must not be adopted.
@@ -588,4 +875,97 @@ fn nothing_to_restore() -> &'static str {
         "Nothing to restore. Everything made it through.",
         "没有需要恢复的会话，全员健在。"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use moss_core::event::{Context, Event, StartSource};
+    use moss_core::provider::{LaunchSource, Snapshot};
+
+    #[test]
+    fn config_source_guard_detects_two_connection_change_without_claim() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.db");
+        let mut registry = Registry::open(&path).unwrap();
+        registry
+            .apply(
+                &Event::Start {
+                    session_id: "source-race".into(),
+                    cwd: "/work".into(),
+                    title: None,
+                    transcript_path: None,
+                    source: StartSource::Startup,
+                },
+                &Context {
+                    pid: None,
+                    pid_start: None,
+                    tmux: None,
+                    launch_args: None,
+                    now_ms: 1000,
+                },
+            )
+            .unwrap();
+        let planned = registry.slots().unwrap().remove(0);
+        assert!(source_is_unknown(&planned));
+        let other = Registry::open(&path).unwrap();
+        let known = Snapshot {
+            launch_source: LaunchSource::Unset,
+            ..Snapshot::default()
+        }
+        .to_json();
+        other.set_provider(&planned.slot_id, &known, "[]").unwrap();
+        assert_eq!(
+            registry.slots().unwrap()[0].last_active_at_ms,
+            planned.last_active_at_ms
+        );
+        assert_eq!(
+            claim_with_source_guard(&registry, &planned, true).unwrap(),
+            SourceClaim::SourceChanged
+        );
+        assert!(registry.slots().unwrap()[0].restore_started_at_ms.is_none());
+        assert!(matches!(
+            preflight_failure(ResumePreflightError::ConfigSourceChanged.into()),
+            Launched::Failed(Reason::ConfigSourceChanged, _)
+        ));
+        assert_eq!(
+            claim_with_source_guard(&registry, &planned, false).unwrap(),
+            SourceClaim::Changed
+        );
+        let current = registry.slots().unwrap().remove(0);
+        other.set_provider(&current.slot_id, &known, "[]").unwrap();
+        assert_eq!(
+            claim_with_source_guard(&registry, &current, false).unwrap(),
+            SourceClaim::Claimed
+        );
+    }
+
+    #[test]
+    fn config_source_guard_accepts_unchanged_null_snapshot() {
+        let mut registry = Registry::open_in_memory().unwrap();
+        registry
+            .apply(
+                &Event::Start {
+                    session_id: "source-null".into(),
+                    cwd: "/work".into(),
+                    title: None,
+                    transcript_path: None,
+                    source: StartSource::Startup,
+                },
+                &Context {
+                    pid: None,
+                    pid_start: None,
+                    tmux: None,
+                    launch_args: None,
+                    now_ms: 1000,
+                },
+            )
+            .unwrap();
+        let planned = registry.slots().unwrap().remove(0);
+        assert!(planned.provider_started.is_none());
+        assert_eq!(
+            claim_with_source_guard(&registry, &planned, true).unwrap(),
+            SourceClaim::Claimed
+        );
+    }
 }

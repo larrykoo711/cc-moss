@@ -5,6 +5,301 @@ use std::time::Duration;
 
 use crate::command::output_with_timeout;
 
+/// 已知 Claude 选项的参数数量；身份核验与来源采集共用，不扩大回放白名单。
+pub fn option_arity(flag: &str) -> Option<usize> {
+    const VALUES: &[&str] = &[
+        "--append-system-prompt",
+        "--system-prompt",
+        "--append-system-prompt-file",
+        "--system-prompt-file",
+        "--model",
+        "--effort",
+        "--permission-mode",
+        "--add-dir",
+        "--agent",
+        "--name",
+        "-n",
+        "--settings",
+        "--setting-sources",
+        "--mcp-config",
+        "--allowedTools",
+        "--disallowedTools",
+        "--tools",
+        "--output-format",
+        "--input-format",
+        "--max-turns",
+        "--max-budget-usd",
+        "--fallback-model",
+        "--debug-file",
+        "--session-id",
+        "--resume",
+        "-r",
+    ];
+    const FLAGS: &[&str] = &[
+        "--dangerously-skip-permissions",
+        "--allow-dangerously-skip-permissions",
+        "--fork-session",
+        "--continue",
+        "-c",
+        "--strict-mcp-config",
+        "--bare",
+        "--safe-mode",
+        "--disable-slash-commands",
+        "--verbose",
+        "--no-session-persistence",
+        "--include-partial-messages",
+    ];
+    if VALUES.contains(&flag) {
+        Some(1)
+    } else if FLAGS.contains(&flag) {
+        Some(0)
+    } else {
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShellMode {
+    Fresh,
+    Native,
+    NonSession,
+    Blocked,
+}
+
+impl ShellMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fresh => "fresh",
+            Self::Native => "native",
+            Self::NonSession => "non-session",
+            Self::Blocked => "blocked",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ShellArity {
+    Flag,
+    Value,
+    Optional,
+    Many,
+}
+
+/// 原生 --help 的启动选项；不扩大破坏性操作身份核验的窄表。
+fn shell_arity(flag: &str) -> Option<ShellArity> {
+    match flag {
+        "--debug" | "-d" | "--resume" | "-r" | "--prompt-suggestions" | "--remote-control" => {
+            Some(ShellArity::Optional)
+        }
+        "--add-dir" | "--allowedTools" | "--allowed-tools" | "--disallowedTools"
+        | "--disallowed-tools" | "--tools" | "--mcp-config" | "--betas" | "--file" => {
+            Some(ShellArity::Many)
+        }
+        "--agents"
+        | "--autocompact"
+        | "--json-schema"
+        | "--permission-prompts"
+        | "--plugin-dir"
+        | "--plugin-url"
+        | "--remote-control-session-name-prefix"
+        | "--system-prompt-snapshot"
+        | "-C"
+        | "--dir" => Some(ShellArity::Value),
+        "--ax-screen-reader"
+        | "--brief"
+        | "--chrome"
+        | "--no-chrome"
+        | "--exclude-dynamic-system-prompt-sections"
+        | "--forward-subagent-text"
+        | "--ide"
+        | "--include-hook-events"
+        | "--replay-user-messages"
+        | "--restricted"
+        | "--bg"
+        | "--background"
+        | "--print"
+        | "-p"
+        | "--detach"
+        | "--yes"
+        | "--safe"
+        | "--json" => Some(ShellArity::Flag),
+        _ => match option_arity(flag) {
+            Some(0) => Some(ShellArity::Flag),
+            Some(1) => Some(ShellArity::Value),
+            _ => None,
+        },
+    }
+}
+
+fn consume_shell_value(args: &[String], i: &mut usize, arity: ShellArity, inline: bool) -> bool {
+    match arity {
+        ShellArity::Flag => !inline,
+        ShellArity::Value => {
+            if inline {
+                true
+            } else if *i < args.len() {
+                *i += 1;
+                true
+            } else {
+                false
+            }
+        }
+        ShellArity::Optional => {
+            if !inline && args.get(*i).is_some_and(|value| !value.starts_with('-')) {
+                *i += 1;
+            }
+            true
+        }
+        ShellArity::Many => {
+            if !inline {
+                if *i == args.len() {
+                    return false;
+                }
+                *i += 1;
+            }
+            while args.get(*i).is_some_and(|value| !value.starts_with('-')) {
+                *i += 1;
+            }
+            true
+        }
+    }
+}
+
+/// 模式仅识别选项边界；未知 arity 不允许借后面的 help 绕过目录守卫。
+pub fn shell_mode(args: &[String]) -> ShellMode {
+    let mut mode = ShellMode::Fresh;
+    let mut positional = false;
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        i += 1;
+        if arg == "--" {
+            break;
+        }
+        let (flag, inline) = arg
+            .split_once('=')
+            .map_or((arg.as_str(), None), |(flag, value)| (flag, Some(value)));
+        if matches!(flag, "--help" | "-h" | "--version" | "-v") && inline.is_none() {
+            return ShellMode::NonSession;
+        }
+        if !flag.starts_with('-') && !positional {
+            positional = true;
+            if matches!(flag, "attach" | "respawn") {
+                return ShellMode::Blocked;
+            }
+            if flag == "agents" {
+                return if i == 1 {
+                    agents_mode(&args[i..])
+                } else {
+                    ShellMode::Blocked
+                };
+            }
+            // 来源：隔离 HOME 中的原生 --help；不把普通 prompt 词当子命令。
+            if matches!(
+                flag,
+                "mcp"
+                    | "auth"
+                    | "doctor"
+                    | "update"
+                    | "upgrade"
+                    | "install"
+                    | "plugin"
+                    | "plugins"
+                    | "setup-token"
+                    | "auto-mode"
+                    | "logs"
+                    | "rm"
+                    | "stop"
+                    | "kill"
+                    | "purge"
+                    | "import"
+                    | "gateway"
+            ) {
+                return if i == 1 {
+                    ShellMode::NonSession
+                } else {
+                    ShellMode::Native
+                };
+            }
+            if flag == "ultrareview" {
+                return ShellMode::Native;
+            }
+        }
+        if matches!(
+            flag,
+            "--resume"
+                | "-r"
+                | "--continue"
+                | "-c"
+                | "--session-id"
+                | "--print"
+                | "-p"
+                | "--bg"
+                | "--background"
+        ) {
+            mode = ShellMode::Native;
+        }
+        if let Some(arity) = shell_arity(flag) {
+            if !consume_shell_value(args, &mut i, arity, inline.is_some()) {
+                return ShellMode::Blocked;
+            }
+        } else if flag.starts_with('-') {
+            return ShellMode::Blocked;
+        }
+    }
+    mode
+}
+
+/// agents --json 明确只读退出；交互界面可派发新会话，不能按当前 PWD 授权。
+fn agents_mode(args: &[String]) -> ShellMode {
+    let mut json = false;
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        i += 1;
+        match arg.as_str() {
+            "--help" | "-h" => return ShellMode::NonSession,
+            "--json" => json = true,
+            "--all" => {}
+            "--cwd" if i < args.len() => i += 1,
+            _ if arg.starts_with("--cwd=") => {}
+            _ => return ShellMode::Blocked,
+        }
+    }
+    if json {
+        ShellMode::NonSession
+    } else {
+        ShellMode::Blocked
+    }
+}
+
+/// fresh 请求不能被附带的身份参数改成恢复，也不能覆盖分配的名字与 UUID。
+pub fn fresh_arguments(args: &[String]) -> bool {
+    if shell_mode(args) != ShellMode::Fresh {
+        return false;
+    }
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        i += 1;
+        if arg == "--" {
+            break;
+        }
+        let (flag, inline) = arg
+            .split_once('=')
+            .map_or((arg.as_str(), None), |(flag, value)| (flag, Some(value)));
+        if matches!(
+            flag,
+            "--name" | "-n" | "--json" | "--detach" | "--yes" | "--safe" | "-C" | "--dir"
+        ) {
+            return false;
+        }
+        if let Some(arity) = shell_arity(flag) {
+            if !consume_shell_value(args, &mut i, arity, inline.is_some()) {
+                return false;
+            }
+        }
+    }
+    true
+}
+
 /// Flags that take a value and are kept.
 const WITH_VALUE: [&str; 5] = [
     "--permission-mode",
@@ -89,7 +384,7 @@ pub fn without_permissions(args: &[String]) -> Vec<String> {
 /// `cc-moss new`'s own flags; everything else that looks like a flag is
 /// Claude Code's.
 const NEW_OWN_WITH_VALUE: [&str; 2] = ["-C", "--dir"];
-const NEW_OWN_BOOLEAN: [&str; 5] = ["--detach", "--yes", "--safe", "-h", "--help"];
+const NEW_OWN_BOOLEAN: [&str; 6] = ["--detach", "--yes", "--safe", "--json", "-h", "--help"];
 
 /// Let `cc-moss new` take Claude Code's flags directly, anywhere on the line:
 /// `new --dangerously-skip-permissions login-page` becomes
@@ -108,7 +403,17 @@ pub fn normalize_new(args: &[String]) -> Vec<String> {
             break;
         }
         let flag = arg.split_once('=').map_or(arg.as_str(), |(f, _)| f);
-        if NEW_OWN_BOOLEAN.contains(&arg.as_str()) {
+        if matches!(flag, "-n" | "--name") {
+            if let Some((_, value)) = arg.split_once('=') {
+                own.push(value.to_string());
+            } else if let Some(value) = args.get(i) {
+                own.push(value.clone());
+                i += 1;
+            } else {
+                // 缺值交给 CLI 拒绝，不把它当成无名新建。
+                own.push(arg.clone());
+            }
+        } else if NEW_OWN_BOOLEAN.contains(&arg.as_str()) {
             own.push(arg.clone());
         } else if NEW_OWN_WITH_VALUE.contains(&flag) {
             own.push(arg.clone());
@@ -118,9 +423,10 @@ pub fn normalize_new(args: &[String]) -> Vec<String> {
             }
         } else if arg.starts_with('-') && arg.len() > 1 {
             claude.push(arg.clone());
-            if WITH_VALUE.contains(&flag) && !arg.contains('=') && i < args.len() {
-                claude.push(args[i].clone());
-                i += 1;
+            let start = i;
+            if let Some(arity) = shell_arity(flag) {
+                consume_shell_value(args, &mut i, arity, arg.contains('='));
+                claude.extend(args[start..i].iter().cloned());
             }
         } else {
             own.push(arg.clone());
@@ -163,7 +469,7 @@ pub fn argv(pid: u32) -> Option<Vec<String>> {
 }
 
 #[cfg(target_os = "macos")]
-fn exact_argv(pid: u32) -> Option<Vec<String>> {
+pub fn exact_argv(pid: u32) -> Option<Vec<String>> {
     let pid = libc::c_int::try_from(pid).ok()?;
     let mut argmax: libc::c_int = 0;
     let mut size = std::mem::size_of::<libc::c_int>();
@@ -203,7 +509,7 @@ fn exact_argv(pid: u32) -> Option<Vec<String>> {
 }
 
 #[cfg(not(target_os = "macos"))]
-fn exact_argv(pid: u32) -> Option<Vec<String>> {
+pub fn exact_argv(pid: u32) -> Option<Vec<String>> {
     let raw = std::fs::read(format!("/proc/{pid}/cmdline")).ok()?;
     if raw.is_empty() {
         return None;

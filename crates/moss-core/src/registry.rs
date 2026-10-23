@@ -15,7 +15,7 @@ use ulid::Ulid;
 use crate::event::{Context, EndReason, Event, StartSource, TmuxLoc};
 use crate::slot::{Notes, Slot, Status};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 2;
 /// `needs_you` keeps at most this many characters of the agent's message.
 pub const MESSAGE_MAX: usize = 200;
 /// Events older than this are pruned when `ls` or the picker opens.
@@ -252,6 +252,27 @@ impl Registry {
 
     /// Apply one event. Events for sessions we never saw are ignored.
     pub fn apply_with(&mut self, event: &Event, ctx: &Context, is_alive: IsAlive) -> Result<()> {
+        self.apply_observed(event, ctx, is_alive, None)
+    }
+
+    /// Only a freshly OS-verified hook may provide an explicit process origin.
+    pub fn apply_verified(
+        &mut self,
+        event: &Event,
+        ctx: &Context,
+        is_alive: IsAlive,
+        origin: &str,
+    ) -> Result<()> {
+        self.apply_observed(event, ctx, is_alive, Some(origin))
+    }
+
+    fn apply_observed(
+        &mut self,
+        event: &Event,
+        ctx: &Context,
+        is_alive: IsAlive,
+        origin: Option<&str>,
+    ) -> Result<()> {
         self.write()?;
         if let Event::ToolDone { session_id } = event {
             // Runs after every tool call: read one row, write only when a
@@ -275,6 +296,7 @@ impl Registry {
         let tx = self
             .conn
             .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let binding_before = crate::process_binding::before(&tx, ctx)?;
         match event {
             Event::Start {
                 source,
@@ -532,8 +554,86 @@ impl Registry {
             // Handled before the transaction.
             Event::ToolDone { .. } => {}
         }
+        crate::process_binding::after(&tx, event, ctx, origin, binding_before)?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Read owner and durable binding in one SQLite read snapshot.
+    pub fn process_binding(
+        &self,
+        slot: &Slot,
+    ) -> Result<Option<crate::process_binding::ProcessBinding>> {
+        let tx = self.conn.unchecked_transaction()?;
+        let binding = crate::process_binding::verified_for(&tx, slot)?;
+        tx.commit()?;
+        Ok(binding)
+    }
+
+    /// Current owner and optional binding in one read transaction. The raw
+    /// generation remains visible after invalidation so operation tokens cannot
+    /// silently cross a newly authorized generation.
+    pub fn operation_identity(
+        &self,
+        slot: &Slot,
+    ) -> Result<
+        Option<(
+            Option<crate::process_binding::ProcessBinding>,
+            Option<crate::process_binding::ProcessBinding>,
+        )>,
+    > {
+        let Some((pid, start)) = slot
+            .pid
+            .zip(slot.pid_start.as_deref().filter(|s| !s.is_empty()))
+        else {
+            return Ok(None);
+        };
+        let tx = self.conn.unchecked_transaction()?;
+        let count: i64 = tx.query_row(
+            "SELECT count(*) FROM slots WHERE pid=?1 AND pid_start=?2 AND status='running'",
+            params![pid, start],
+            |r| r.get(0),
+        )?;
+        let current=tx.prepare("SELECT 1 FROM slots WHERE slot_id=?1 AND pid=?2 AND pid_start=?3 AND session_id=?4 AND status='running' AND tmux_socket IS ?5 AND tmux_pane IS ?6")?.exists(params![slot.slot_id,pid,start,slot.session_id,slot.tmux.as_ref().map(|t|&t.socket),slot.tmux.as_ref().map(|t|&t.pane_id)])?;
+        let result = if current && count == 1 {
+            let raw = crate::process_binding::read(&tx, pid, start)?;
+            Some((crate::process_binding::verified_for(&tx, slot)?, raw))
+        } else {
+            None
+        };
+        tx.commit()?;
+        Ok(result)
+    }
+
+    /// Validate the original slot, pane, claim and immutable raw binding in
+    /// one snapshot after exit. A normal End may invalidate the state, but it
+    /// may not change the owner, current session, origin, hop or generation.
+    pub fn stopped_operation_matches(
+        &self,
+        slot: &Slot,
+        claimed_at: i64,
+        expected: Option<&crate::process_binding::ProcessBinding>,
+    ) -> Result<bool> {
+        let Some((pid, start)) = slot.pid.zip(slot.pid_start.as_deref()) else {
+            return Ok(false);
+        };
+        let tx = self.conn.unchecked_transaction()?;
+        let current=tx.prepare("SELECT 1 FROM slots WHERE slot_id=?1 AND pid=?2 AND pid_start=?3 AND session_id=?4 AND restore_started_at=?5 AND tmux_socket IS ?6 AND tmux_pane IS ?7")?
+            .exists(params![slot.slot_id,pid,start,slot.session_id,claimed_at,slot.tmux.as_ref().map(|t|&t.socket),slot.tmux.as_ref().map(|t|&t.pane_id)])?;
+        let other=tx.prepare("SELECT 1 FROM slots WHERE pid=?1 AND pid_start=?2 AND slot_id<>?3 AND status='running'")?.exists(params![pid,start,slot.slot_id])?;
+        let actual = crate::process_binding::read(&tx, pid, start)?;
+        let same = match (expected, actual) {
+            (None, None) => true,
+            (Some(expected), Some(mut actual)) => {
+                if actual.state == "invalid" {
+                    actual.state = expected.state.clone();
+                }
+                actual == *expected
+            }
+            _ => false,
+        };
+        tx.commit()?;
+        Ok(current && !other && same)
     }
 
     /// The slot an event for `session_id` from this process would act on.
@@ -913,6 +1013,7 @@ impl Registry {
             "UPDATE slots SET restore_started_at = :now
              WHERE slot_id = :slot AND session_id = :sid
                AND pid IS :pid AND pid_start IS :pid_start AND last_active_at = :active
+               AND provider_started IS :provider_started
                AND (restore_started_at IS NULL OR restore_started_at < :now - :window)",
             named_params! {
                 ":now": now_ms,
@@ -921,6 +1022,7 @@ impl Registry {
                 ":pid": planned.pid,
                 ":pid_start": planned.pid_start,
                 ":active": planned.last_active_at_ms,
+                ":provider_started": planned.provider_started,
                 ":window": crate::restore::PENDING_WINDOW_MS,
             },
         )?;
@@ -1732,6 +1834,10 @@ fn migrate(conn: &mut Connection) -> Result<()> {
              CREATE INDEX IF NOT EXISTS slot_sessions_session ON slot_sessions(session_id);
              PRAGMA user_version = 1;",
         )?;
+    }
+    if version < 2 {
+        crate::process_binding::migrate(&tx)?;
+        tx.pragma_update(None, "user_version", 2)?;
     }
     tx.commit()?;
     Ok(())

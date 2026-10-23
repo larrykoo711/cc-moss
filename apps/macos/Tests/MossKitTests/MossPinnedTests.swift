@@ -43,7 +43,9 @@ private func moss(id: String, status: String = "running", lastActive: String = "
         #expect(pins.pinned.map(\.id) == ["A"], "pinning Moss's id does nothing")
         let listed = pins.pinned + Grouping.projects(pins.rest, home: "/home/u").flatMap(\.sessions)
         #expect(!listed.contains { $0.isMoss })
-        #expect(StateCounts(others).interrupted == 1, "Moss never counts")
+        // A fixed clock: the fixtures' dates must not age into "older" (failed on 2026-10-23).
+        let now = ISO8601DateFormatter().date(from: "2026-10-16T12:00:00Z")!
+        #expect(StateCounts(others, now: now).interrupted == 1, "Moss never counts")
     }
 
     @Test func noRunningMossNoPinnedRow() {

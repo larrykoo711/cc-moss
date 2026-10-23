@@ -7,6 +7,20 @@ import SwiftUI
 extension AppModel {
     var restoreGroups: RestoreGroups { RestoreGroups(sessions) }
 
+    /// Snapshot denials explain the block; the CLI still rechecks the final source context.
+    func permitsLaunch(_ current: Session, action: FailureNotice.Action) -> Bool {
+        guard cliCapabilities.checksWorkingDirectory else {
+            report(FailureNotice(action: action, subject: .init(current), message: WorkingDirectoryPolicy.updateRequired))
+            return false
+        }
+        if let check = current.workingDirectory, !check.ok {
+            report(FailureNotice(action: action, subject: .init(current),
+                                 reason: check.reason?.rawValue, message: check.explanation))
+            return false
+        }
+        return true
+    }
+
     /// The folded group after the search and the state filter, newest first.
     var olderShown: [Session] {
         Filter.apply(query, state: stateFilter, to: Grouping.projects(RestoreGroups(unpinned).older))
@@ -14,54 +28,199 @@ extension AppModel {
             .sorted { $0.lastActiveAt > $1.lastActiveAt }
     }
 
-    /// The banner's button: every recently interrupted session.
+    /// Restores go out only by slot and full UUID; an older CLI gets no request at all.
+    func permitsExactRestore(_ subject: Session?) -> Bool {
+        guard cliCapabilities.restoresExactly else {
+            report(FailureNotice(action: .restore, subject: subject.map(FailureNotice.Subject.init),
+                                 reason: RestorePolicy.updateRequiredCode, message: RestorePolicy.updateRequired))
+            return false
+        }
+        return true
+    }
+
+    /// The banner's button: every recently interrupted session, one exact
+    /// request each. The (slot, UUID) pairs are frozen now; each is rechecked
+    /// right before its turn and skipped, never retargeted, if it moved on.
     func restoreAll() {
         let recent = restoreGroups.recent
-        guard !recent.isEmpty else { return }
-        run(.all(recent.map(\.id)), targets: recent.map(\.target), names: recent)
+        guard !recent.isEmpty, let client, permitsExactRestore(nil) else { return }
+        guard cliCapabilities.checksWorkingDirectory else {
+            report(FailureNotice(action: .restore, subject: nil, reason: RestorePolicy.updateRequiredCode,
+                                 message: WorkingDirectoryPolicy.updateRequired))
+            return
+        }
+        let targets = recent.map(RestoreTarget.init)
+        let scope = RestoreFlow.Scope.all(targets.map(\.slotId))
+        guard restoreFlow.begin(scope) else { return }
+        for s in recent { cancelRestoreSource(s.id) }
+        let names = Dictionary(recent.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a })
+        let capabilities = cliCapabilities
+        Task {
+            defer { refresh() }
+            let outcome: RestoreReport
+            do {
+                outcome = try await client.restoreEach(targets, names: names, capabilities: capabilities) { target in
+                    await MainActor.run {
+                        target.skip(current: self.session(target.slotId), capabilities: self.cliCapabilities, name: names[target.slotId])
+                    }
+                }
+            } catch {
+                report(FailureNotice(action: .restore, subject: nil, error: error))
+                restoreFlow.fail(scope, message: Self.describe(error), names: names)
+                show(RestoreSummary(restored: 0, failed: targets.count))
+                return
+            }
+            show(RestoreSummary(restored: outcome.restored.count, failed: outcome.failed.count, starting: outcome.starting.count))
+            // A row keeps only its own generation's failure; a skipped or late
+            // one for a renewed slot is still said out loud.
+            restoreFlow.finish(scope, report: outcome.attributable(to: targets) { self.session($0) })
+            offerOrReport(outcome.failed, names: recent, source: nil)
+        }
     }
 
     /// One session, from its row, the action pill or Return.
     func restore(_ s: Session) {
-        run(.one(s.id), targets: [s.target], names: [s])
+        guard let current = session(s.id), current.sessionId == s.sessionId, permitsExactRestore(current),
+              permitsLaunch(current, action: .restore) else { return }
+        if let plan = current.restoreSource, !plan.isReady {
+            if RestoreSourceFlow.canOffer(current, reason: plan.issue) {
+                restoreSourceFlow.offer(current, reason: plan.issue)
+                selectedID = current.id
+            } else {
+                report(FailureNotice(action: .restore, subject: .init(current),
+                                     reason: (plan.issue ?? .resumePreflightFailed).rawValue))
+                refresh()
+            }
+            return
+        }
+        restoreSourceFlow.cancel(current.id)
+        run(RestoreTarget(current), names: [current])
     }
 
-    private func run(_ scope: RestoreFlow.Scope, targets: [String], names: [Session]) {
-        // A second click while it runs does nothing.
-        guard let client, restoreFlow.begin(scope) else { return }
-        Task {
-            do {
-                let report = try await client.restore(targets)
-                restoreFlow.finish(scope, report: report)
-                switch scope {
-                case .all:
-                    show(RestoreSummary(restored: report.restored.count, failed: report.failed.count, starting: report.starting.count))
-                case .one:
-                    if let notice = (report.restored.first ?? report.starting.first)?.recoveryNotice {
-                        say(notice)
-                    } else if report.failed.isEmpty {
-                        // cc-moss neither brought it back nor said why: never silent (F25).
-                        self.report(FailureNotice(action: .restore, subject: names.first.map(FailureNotice.Subject.init),
-                                             message: L.t("cc-moss didn't bring it back and didn't say why.",
-                                                          "cc-moss 没把它找回来，也没说原因。")))
-                    }
-                }
-                for failed in report.failed {
-                    let s = names.first { $0.id == failed.id }
-                    self.report(FailureNotice(restore: failed, subject: s.map(FailureNotice.Subject.init)))
-                }
-            } catch {
-                switch scope {
-                case .one: report(.restore, names.first, error: error)
-                case .all: report(FailureNotice(action: .restore, subject: nil, error: error))
-                }
-                restoreFlow.fail(scope, message: Self.describe(error),
-                                 names: Dictionary(names.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a }))
-                if case .all = scope {
-                    show(RestoreSummary(restored: 0, failed: names.count))
+    func restoreSourceExpanded(_ session: Session) -> Bool {
+        guard let choice = restoreSourceFlow[session.id] else { return false }
+        return choice.ticket.matches(session) && !choice.submitting
+    }
+
+    func restoreSourceReason(_ id: String) -> RestoreReason? {
+        restoreSourceFlow[id]?.issue ?? restoreFlow.failures[id]?.reason ?? session(id)?.restoreSource?.issue
+    }
+
+    func chooseRestoreDefault(_ ticket: RestoreSourceTicket) {
+        _ = restoreSourceFlow.select(.defaultConfig, ticket: ticket, current: session(ticket.slotId),
+                                     reason: restoreSourceReason(ticket.slotId))
+    }
+
+    func useCurrentRestoreSettings(_ ticket: RestoreSourceTicket) {
+        guard let current = session(ticket.slotId), let choice = restoreSourceFlow[current.id],
+              choice.ticket == ticket, choice.offersDefaultProposal(for: current) else { return }
+        guard restoreSourceFlow.select(.defaultConfig, ticket: ticket, current: current, reason: restoreSourceReason(current.id)) else { return }
+        confirmRestoreSource(ticket)
+    }
+
+    func showRestoreSourceOptions(_ ticket: RestoreSourceTicket) {
+        restoreSourceFlow.showAdvanced(ticket, current: session(ticket.slotId), reason: restoreSourceReason(ticket.slotId))
+    }
+
+    func cancelRestoreSource(_ id: String) {
+        let closingPicker = restoreSourceFlow.picker?.slotId == id
+        restoreSourceFlow.cancel(id)
+        if closingPicker { restoreSourcePicker?.cancel(nil) }
+    }
+
+    func chooseRestoreDirectory(_ id: String) {
+        guard restoreSourcePicker == nil, let current = session(id),
+              let ticket = restoreSourceFlow.beginPicker(current: current, reason: restoreSourceReason(id)) else { return }
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.message = L.t("Choose the configuration folder for this restore only. Global settings won't change.",
+                            "选择本次找回使用的配置目录，不修改全局设置。")
+        panel.prompt = L.t("Choose Folder", "选择目录")
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)
+        restoreSourcePicker = panel
+        PanelHold.begin()
+        panel.begin { [weak self] response in
+            Task { @MainActor in
+                PanelHold.end()
+                guard let self else { return }
+                if self.restoreSourcePicker === panel { self.restoreSourcePicker = nil }
+                if response == .OK, let path = panel.url?.path {
+                    _ = self.restoreSourceFlow.receiveDirectory(path, ticket: ticket, current: self.session(id),
+                                                               reason: self.restoreSourceReason(id))
+                } else {
+                    self.restoreSourceFlow.pickerCancelled(ticket)
                 }
             }
-            refresh()
+        }
+    }
+
+    func confirmRestoreSource(_ ticket: RestoreSourceTicket) {
+        guard client != nil, let current = session(ticket.slotId), !restoreFlow.isRunning(current.id),
+              let choice = restoreSourceFlow[current.id], choice.ticket == ticket,
+              permitsExactRestore(current), permitsLaunch(current, action: .restore) else { return }
+        // The CLI distinguishes missing, unreadable and damaged settings before claim/launch.
+        guard let request = restoreSourceFlow.confirm(ticket, current: current, reason: restoreSourceReason(current.id)) else { return }
+        run(request.ticket.target, names: [current], source: request)
+    }
+
+    private func run(_ target: RestoreTarget, names: [Session], source: RestoreSourceRequest? = nil) {
+        let scope = RestoreFlow.Scope.one(target.slotId)
+        // A second click while it runs does nothing.
+        guard let client, permitsExactRestore(names.first), names.allSatisfy({ permitsLaunch($0, action: .restore) }),
+              restoreFlow.begin(scope) else { return }
+        if source == nil { for s in names { cancelRestoreSource(s.id) } }
+        let capabilities = cliCapabilities
+        Task {
+            defer { refresh() }
+            if let source, !restoreSourceFlow.isCurrent(source.ticket, session: session(source.ticket.slotId)) {
+                restoreFlow.finish(scope, report: RestoreReport(results: []))
+                return
+            }
+            do {
+                // A source override is single-target; the CLI rechecks the current recorded source.
+                let report: RestoreReport
+                if let source { report = try await client.restore(source, capabilities: capabilities) }
+                else { report = try await client.restore(target, capabilities: capabilities) }
+                if let source, !restoreSourceFlow.isCurrent(source.ticket, session: session(source.ticket.slotId)) {
+                    restoreFlow.finish(scope, report: RestoreReport(results: []))
+                    return
+                }
+                if let source { restoreSourceFlow.cancel(source.ticket.slotId) }
+                let current = report.attributable(to: [target]) { self.session($0) }
+                restoreFlow.finish(scope, report: current)
+                // No line for the target already arrives as a not_found failure: never silent (F25).
+                if let notice = (current.restored.first ?? current.starting.first)?.recoveryNotice { say(notice) }
+                offerOrReport(report.failed, names: names, source: source)
+            } catch {
+                if let source, !restoreSourceFlow.isCurrent(source.ticket, session: session(source.ticket.slotId)) {
+                    restoreFlow.finish(scope, report: RestoreReport(results: []))
+                    return
+                }
+                if let source { restoreSourceFlow.cancel(source.ticket.slotId) }
+                report(.restore, names.first, error: error)
+                restoreFlow.fail(scope, message: Self.describe(error),
+                                 names: Dictionary(names.map { ($0.id, $0.title) }, uniquingKeysWith: { a, _ in a }))
+            }
+        }
+    }
+
+    /// A source problem on the same session reopens the choice; anything else is a notice.
+    private func offerOrReport(_ failures: [RestoreResult], names: [Session], source: RestoreSourceRequest?) {
+        for failed in failures {
+            let s = names.first { $0.id == failed.id }
+            if let s, let current = session(s.id), current.sessionId == s.sessionId,
+               RestoreSourceFlow.canOffer(current, reason: failed.reason) {
+                let failedPath: String?
+                if case let .directory(path) = source?.source { failedPath = path }
+                else { failedPath = nil }
+                restoreSourceFlow.offer(current, reason: failed.reason, failedPath: failedPath)
+            } else {
+                report(FailureNotice(restore: failed, subject: s.map(FailureNotice.Subject.init)))
+            }
         }
     }
 
@@ -109,14 +268,179 @@ extension AppModel {
 
     /// Why `s` did not come back last time, in words for its row.
     func restoreProblem(_ s: Session) -> String? {
-        guard s.state == .interrupted, let failure = restoreFlow.failures[s.id] else { return nil }
-        if let reason = failure.reason, reason != .other { return reason.explanation }
-        return failure.message ?? RestoreReason.other.explanation
+        guard s.state == .interrupted else { return nil }
+        if let failure = restoreFlow.failures[s.id] {
+            if let reason = failure.reason, reason != .other { return reason.explanation }
+            return failure.message ?? RestoreReason.other.explanation
+        }
+        if let plan = s.restoreSource, plan.status == "blocked" {
+            return (plan.issue ?? .configSourceUnavailable).explanation
+        }
+        return nil
     }
 
     /// Trying again will not help (nothing to resume, or no folder).
     func restoreIsHopeless(_ s: Session) -> Bool {
         restoreFlow.failures[s.id]?.reason?.isFinal == true
+    }
+}
+
+struct RestoreControlPreview {
+    var target: String
+    var state: RestoreControlState
+}
+
+private struct RestoreControlPreviewKey: EnvironmentKey {
+    static let defaultValue: RestoreControlPreview? = nil
+}
+
+extension EnvironmentValues {
+    var restoreControlPreview: RestoreControlPreview? {
+        get { self[RestoreControlPreviewKey.self] }
+        set { self[RestoreControlPreviewKey.self] = newValue }
+    }
+}
+
+/// Lightweight restore actions share feedback without the global press scale.
+private struct RestoreQuietButton: View {
+    let title: String
+    let target: String
+    var fontSize: CGFloat = 11
+    let action: () -> Void
+    @State private var hovering = false
+    @FocusState private var focused: Bool
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.restoreControlPreview) private var preview
+
+    private var state: RestoreControlState? { preview?.target == target ? preview?.state : nil }
+    private var feedback: RestoreControlFeedback {
+        RestoreControlFeedback(isEnabled: isEnabled, hovered: hovering, focused: focused, preview: state)
+    }
+
+    var body: some View {
+        Button { feedback.activate(action) } label: {
+            Text(title).font(.system(size: fontSize))
+                .padding(.horizontal, 8).frame(minHeight: 28)
+                .contentShape(RoundedRectangle(cornerRadius: 6))
+        }
+        .buttonStyle(RestoreQuietStyle(hovered: hovering, focused: focused, preview: state))
+        .disabled(state == .disabled)
+        .focusable(feedback.isEnabled)
+        .focused($focused)
+        .focusEffectDisabled()
+        .onKeyPress(.return) { feedback.activate(action) ? .handled : .ignored }
+        .onHover { hovering = $0 }
+        .onContinuousHover { phase in
+            switch phase {
+            case .active: (feedback.isEnabled ? NSCursor.pointingHand : NSCursor.arrow).set()
+            case .ended: NSCursor.arrow.set()
+            }
+        }
+        .accessibilityLabel(title)
+    }
+}
+
+private struct RestoreQuietStyle: ButtonStyle {
+    let hovered: Bool
+    let focused: Bool
+    let preview: RestoreControlState?
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.colorScheme) private var scheme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        let feedback = RestoreControlFeedback(isEnabled: isEnabled, hovered: hovered,
+                                              pressed: configuration.isPressed, focused: focused, preview: preview)
+        configuration.label
+            .foregroundStyle(feedback.emphasized ? .primary : .secondary)
+            .background(RoundedRectangle(cornerRadius: 6).fill(
+                feedback.state == .pressed ? Color.primary.opacity(0.14)
+                    : feedback.state == .hover ? Theme.selection(scheme) : .clear))
+            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(
+                feedback.showsFocus ? Color.primary.opacity(0.6) : .clear, lineWidth: 2))
+            .opacity(feedback.opacity)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: feedback)
+    }
+}
+
+/// Original settings come first; explicit replacement stays in this same card.
+struct RestoreSourceChoiceView: View {
+    @Bindable var model: AppModel
+    let session: Session
+
+    var body: some View {
+        if let choice = model.restoreSourceFlow[session.id], choice.ticket.matches(session), !choice.submitting {
+            let proposal = choice.offersDefaultProposal(for: session)
+            let enabled = choice.canConfirm || proposal
+            VStack(alignment: .leading, spacing: 12) {
+                Text(choice.issue == .configSourceUnknown
+                     ? RestoreSettingsCopy.unknown(advanced: choice.advanced)
+                     : choice.issue?.explanation ?? L.t("Check the settings location before restoring.", "找回前请检查设置位置。"))
+                    .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                if choice.advanced {
+                    Picker(L.t("Settings for this restore", "本次使用的设置"), selection: mode(choice)) {
+                        Text(L.t("Default", "默认设置")).tag(Optional("default"))
+                        Text(L.t("Folder", "指定文件夹")).tag(Optional("directory"))
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                    .disabled(model.restoreSourcePicker != nil || model.restoreFlow.isRunning(session.id))
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    if let label = RestoreSettingsCopy.locationLabel {
+                        Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    if let path = displayPath(choice) {
+                        Text(path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                            .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+                    } else {
+                        Text(L.t("Settings location not confirmed", "设置位置未确认"))
+                            .font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    RestoreQuietButton(title: choice.advanced ? RestoreSettingsCopy.chooseFolder : RestoreSettingsCopy.changeFolder,
+                                       target: choice.advanced ? "choose" : "change") {
+                        if choice.advanced { model.chooseRestoreDirectory(session.id) }
+                        else { model.showRestoreSourceOptions(choice.ticket) }
+                    }
+                    .help(RestoreSettingsCopy.folderHelp)
+                    .disabled(model.restoreSourcePicker != nil || model.restoreFlow.isRunning(session.id))
+                }
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    RestoreQuietButton(title: L.t("Cancel", "取消"), target: "cancel", fontSize: 12) {
+                        model.cancelRestoreSource(session.id)
+                    }
+                    SoftButton(title: proposal ? L.t("Use Current Settings", "使用当前设置找回") : L.t("Bring Back", "找回"),
+                               icon: Icons.restore, prominent: true) {
+                        if proposal { model.useCurrentRestoreSettings(choice.ticket) }
+                        else { model.confirmRestoreSource(choice.ticket) }
+                    }
+                    .disabled(!enabled || model.restoreSourcePicker != nil || model.restoreFlow.isRunning(session.id))
+                    .opacity(enabled ? 1 : 0.4)
+                }
+            }
+            .padding(.top, 4).padding(.leading, 44).padding(.trailing, 12).padding(.bottom, 12)
+        }
+    }
+
+    private func displayPath(_ choice: RestoreSourceChoice) -> String? {
+        switch choice.source {
+        case let .directory(path): path
+        case .defaultConfig: session.restoreSource?.defaultPath
+        case nil: choice.advanced ? nil : choice.issuePath ?? (choice.issue == .configSourceUnknown ? session.restoreSource?.defaultPath : session.restoreSource?.displayPath)
+        }
+    }
+
+    private func mode(_ choice: RestoreSourceChoice) -> Binding<String?> {
+        Binding(get: {
+            switch choice.source {
+            case .defaultConfig: "default"
+            case .directory: "directory"
+            case nil: nil
+            }
+        }, set: { value in
+            if value == "default" { model.chooseRestoreDefault(choice.ticket) }
+            if value == "directory" { model.chooseRestoreDirectory(session.id) }
+        })
     }
 }
 

@@ -37,6 +37,12 @@ tool_event() {
     "$sid" "$PWD" "$sid" "$1" "$question" "$2"
 }
 start() {
+  # 仅输出待验证的配置来源，不转储环境。
+  if [ "${CLAUDE_CONFIG_DIR+x}" = x ]; then
+    printf 'explicit\n%s' "$CLAUDE_CONFIG_DIR" > "$CC_MOSS_FAKE_DIR/$sid.config-source"
+  else
+    printf 'unset' > "$CC_MOSS_FAKE_DIR/$sid.config-source"
+  fi
   rm -f "$CC_MOSS_FAKE_DIR/$sid.fifo"
   mkfifo "$CC_MOSS_FAKE_DIR/$sid.fifo"
   hook session-start "{\"session_id\":\"$sid\",\"cwd\":\"$PWD\",\"source\":\"$1\",\"session_title\":\"$name\",\"transcript_path\":\"$(transcript "$sid")\"}"
@@ -61,6 +67,10 @@ while true; do
       hook session-end "{\"session_id\":\"$sid\",\"reason\":\"clear\"}"
       sid=$( (uuidgen 2>/dev/null || cat /proc/sys/kernel/random/uuid) | tr "A-Z" "a-z")
       start clear ;;
+    resume)
+      hook session-end "{\"session_id\":\"$sid\",\"reason\":\"resume\"}"
+      sid="$arg"
+      start resume ;;
     ask)
       out="$CC_MOSS_FAKE_DIR/$sid.ask"
       rm -f "$out.out" "$out.done"

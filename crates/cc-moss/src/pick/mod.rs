@@ -86,32 +86,9 @@ pub fn run(query: &str) -> Result<()> {
     // The screen is restored: hand the terminal to whatever comes next.
     match action {
         Action::Attach(s) => cmd::attach::attach_tmux(&socket, &s.tmux_id),
-        Action::New { name } => cmd::new::run(cmd::new::NewArgs {
-            name,
-            dir: None,
-            detach: false,
-            yes: false,
-            safe: false,
-            claude_args: Vec::new(),
-        }),
-        Action::Restore(r) => match &r.name {
-            // `new <name>` restores an interrupted session of that name and attaches (T1.5).
-            Some(name) => cmd::new::run(cmd::new::NewArgs {
-                name: Some(name.clone()),
-                dir: None,
-                detach: false,
-                yes: true,
-                safe: false,
-                claude_args: Vec::new(),
-            }),
-            None => cmd::restore::run(cmd::restore::RestoreArgs {
-                provider_default: false,
-                yes: true,
-                dry_run: false,
-                json: false,
-                names: vec![r.session_id.clone()],
-            }),
-        },
+        action @ (Action::New { .. } | Action::Restore(_)) => {
+            dispatch_launch(action, cmd::new::run, restore_selected)
+        }
         Action::Update => {
             let result = cmd::update::run(cmd::update::UpdateArgs {
                 check: false,
@@ -129,6 +106,175 @@ pub fn run(query: &str) -> Result<()> {
         }
         _ => Ok(()),
     }
+}
+
+fn dispatch_launch(
+    action: Action,
+    new: impl FnOnce(cmd::new::NewArgs) -> Result<()>,
+    restore: impl FnOnce(&source::SlotRow) -> Result<()>,
+) -> Result<()> {
+    match action {
+        Action::New { name } => new(cmd::new::NewArgs {
+            name,
+            dir: None,
+            detach: false,
+            yes: false,
+            safe: false,
+            claude_args: Vec::new(),
+        }),
+        Action::Restore(row) => restore(&row),
+        _ => Ok(()),
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct RestoredTarget {
+    socket: Socket,
+    session_id: String,
+    pane_id: String,
+    pid: u32,
+    pid_start: String,
+}
+
+/// 隐藏的精确恢复（contracts.md AMEND-5）：slot 与完整 UUID 同时匹配，显示名无法遮蔽。
+fn restore_argv(row: &source::SlotRow) -> Vec<String> {
+    [
+        "restore",
+        "--exact-slot-id",
+        &row.slot_id,
+        "--yes",
+        "--json",
+        "--",
+        &row.session_id,
+    ]
+    .map(String::from)
+    .into()
+}
+
+fn restore_selected(row: &source::SlotRow) -> Result<()> {
+    restore_then_attach(
+        row,
+        |_| {
+            // 与 Moss 的显式恢复相同：复用 CLI 的 typed 结果，不把 skipped 的 Ok 当成功。
+            let out = moss_core::command::run_with_timeout(
+                std::process::Command::new(std::env::current_exe()?).args(restore_argv(row)),
+                Duration::from_secs(90),
+            )
+            .map_err(|error| {
+                anyhow::anyhow!("restore did not finish: {error:?}; no terminal was attached")
+            })?;
+            anyhow::ensure!(
+                out.status.success(),
+                "restore failed: {}",
+                String::from_utf8_lossy(&out.stderr).trim()
+            );
+            serde_json::from_slice(&out.stdout)
+                .context("restore returned an unreadable result; no terminal was attached")
+        },
+        |row| {
+            let registry = registry()?;
+            let slots = registry.slots()?;
+            let slot = slots
+                .iter()
+                .find(|slot| slot.slot_id == row.slot_id)
+                .context("the selected session disappeared after restore")?;
+            let alive = slot
+                .pid
+                .zip(slot.pid_start.as_deref())
+                .is_some_and(|(pid, start)| {
+                    proc::liveness(pid, Some(start)) == proc::Liveness::Alive
+                });
+            restored_target(row, slot, alive)
+        },
+        |target| {
+            let tmux = Tmux::with_socket(target.socket.clone());
+            anyhow::ensure!(
+                proc::liveness(target.pid, Some(&target.pid_start)) == proc::Liveness::Alive
+                    && tmux
+                        .panes()
+                        .iter()
+                        .any(|(pid, session, _, pane)| *pid == target.pid
+                            && session == &target.session_id
+                            && pane == &target.pane_id),
+                "the restored process or tmux target changed; no terminal was attached"
+            );
+            if let Ok(current) = std::env::var("TMUX") {
+                anyhow::ensure!(tmux.matches_client(&current), "the restored session uses another tmux server; select it explicitly in cc-moss");
+            }
+            cmd::attach::attach_tmux(&target.socket, &target.session_id)
+        },
+    )
+}
+
+fn restore_then_attach(
+    row: &source::SlotRow,
+    restore: impl FnOnce(&str) -> Result<serde_json::Value>,
+    locate: impl FnOnce(&source::SlotRow) -> Result<RestoredTarget>,
+    attach: impl FnOnce(RestoredTarget) -> Result<()>,
+) -> Result<()> {
+    let response = restore(&row.session_id)?;
+    anyhow::ensure!(
+        response["schema"] == 1,
+        "restore returned an unsupported result schema"
+    );
+    let results = response["results"]
+        .as_array()
+        .context("restore returned no session result")?;
+    anyhow::ensure!(
+        results.len() == 1,
+        "restore did not return exactly the selected session"
+    );
+    let result = &results[0];
+    anyhow::ensure!(
+        result["id"] == row.slot_id
+            && result["ok"] == true
+            && matches!(result["result"].as_str(), Some("restored" | "starting")),
+        "restore refused: {}",
+        result["message"]
+            .as_str()
+            .unwrap_or("the selected session was not restored")
+    );
+    attach(locate(row)?)
+}
+
+fn restored_target(row: &source::SlotRow, slot: &Slot, alive: bool) -> Result<RestoredTarget> {
+    anyhow::ensure!(
+        slot.slot_id == row.slot_id
+            && slot.session_id == row.session_id
+            && slot.status != Status::Closed
+            && alive,
+        "the selected conversation identity is not running after restore"
+    );
+    let (pid, pid_start) = slot
+        .pid
+        .zip(slot.pid_start.as_ref())
+        .context("the restored process identity is missing")?;
+    let loc = slot
+        .tmux
+        .as_ref()
+        .context("the restored session has no tmux identity")?;
+    let session_id = loc
+        .session_id
+        .as_deref()
+        .filter(|id| {
+            id.starts_with('$') && id.len() > 1 && id[1..].bytes().all(|b| b.is_ascii_digit())
+        })
+        .context("the restored tmux session id is missing")?;
+    anyhow::ensure!(
+        std::path::Path::new(&loc.socket).is_absolute()
+            && !loc.socket.chars().any(char::is_control)
+            && loc.pane_id.starts_with('%')
+            && loc.pane_id.len() > 1
+            && loc.pane_id[1..].bytes().all(|b| b.is_ascii_digit()),
+        "the restored tmux identity is invalid"
+    );
+    Ok(RestoredTarget {
+        socket: Socket::Path(loc.socket.clone()),
+        session_id: session_id.into(),
+        pane_id: loc.pane_id.clone(),
+        pid,
+        pid_start: pid_start.clone(),
+    })
 }
 
 /// Wait for Enter when someone is there to press it.
@@ -358,5 +504,218 @@ impl Screen {
 impl Drop for Screen {
     fn drop(&mut self) {
         Screen::leave();
+    }
+}
+
+#[cfg(test)]
+mod launch_tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    fn row(name: Option<&str>) -> source::SlotRow {
+        source::SlotRow {
+            slot_id: "slot-exact".into(),
+            session_id: "11111111-2222-4333-8444-555555555555".into(),
+            name: name.map(str::to_string),
+            note: None,
+            cwd: "/tmp/project".into(),
+            last_active_ms: 0,
+            busy: false,
+            preview: None,
+            moss: false,
+        }
+    }
+
+    #[test]
+    fn picker_restore_named_and_unnamed_never_dispatch_new() {
+        for name in [Some("same-name"), None] {
+            let row = row(name);
+            let calls = RefCell::new(Vec::new());
+            dispatch_launch(
+                Action::Restore(row.clone()),
+                |_| {
+                    calls.borrow_mut().push("new".to_string());
+                    Ok(())
+                },
+                |selected| {
+                    calls
+                        .borrow_mut()
+                        .push(format!("restore:{}", selected.session_id));
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(*calls.borrow(), [format!("restore:{}", row.session_id)]);
+        }
+    }
+
+    #[test]
+    fn picker_restore_routes_exact_slot_and_full_uuid_not_name() {
+        // AMEND-5：picker 恢复先精确绑定 slot 与完整 UUID，不经名称 resolver。
+        let row = row(Some("same-name"));
+        assert_eq!(
+            restore_argv(&row),
+            [
+                "restore",
+                "--exact-slot-id",
+                "slot-exact",
+                "--yes",
+                "--json",
+                "--",
+                "11111111-2222-4333-8444-555555555555",
+            ]
+        );
+    }
+
+    #[test]
+    fn picker_restore_refusal_is_not_replaced_with_new() {
+        let result = dispatch_launch(
+            Action::Restore(row(Some("same-name"))),
+            |_| Ok(()),
+            |_| anyhow::bail!("restore refused"),
+        );
+        assert!(result.is_err());
+    }
+
+    fn target() -> RestoredTarget {
+        RestoredTarget {
+            socket: Socket::Path("/tmp/picker-test-socket".into()),
+            session_id: "$9".into(),
+            pane_id: "%7".into(),
+            pid: 42,
+            pid_start: "fixture-start".into(),
+        }
+    }
+
+    fn receipt(row: &source::SlotRow) -> serde_json::Value {
+        serde_json::json!({"schema":1,"results":[{"id":row.slot_id,"ok":true,"result":"restored"}]})
+    }
+
+    #[test]
+    fn picker_restore_attaches_only_exact_receipt_target_for_both_names() {
+        for name in [Some("same-name"), None] {
+            let row = row(name);
+            let calls = RefCell::new(Vec::new());
+            restore_then_attach(
+                &row,
+                |id| {
+                    assert_eq!(id, row.session_id);
+                    calls.borrow_mut().push(format!("restore:{id}"));
+                    Ok(receipt(&row))
+                },
+                |selected| {
+                    assert_eq!(selected.slot_id, row.slot_id);
+                    assert_eq!(selected.session_id, row.session_id);
+                    Ok(target())
+                },
+                |actual| {
+                    assert_eq!(actual, target());
+                    calls
+                        .borrow_mut()
+                        .push(format!("attach:{}", actual.session_id));
+                    Ok(())
+                },
+            )
+            .unwrap();
+            assert_eq!(
+                *calls.borrow(),
+                [format!("restore:{}", row.session_id), "attach:$9".into()]
+            );
+        }
+    }
+
+    #[test]
+    fn picker_restore_refused_failed_unknown_or_mismatched_receipt_never_attaches() {
+        let row = row(Some("same-name"));
+        for response in [
+            serde_json::json!({"schema":1,"results":[{"id":row.slot_id,"ok":false,"reason":"config_source_unknown"}]}),
+            serde_json::json!({"schema":1,"results":[{"id":row.slot_id,"ok":false,"reason":"tmux_failed"}]}),
+            serde_json::json!({"schema":1,"results":[{"id":"other-slot","ok":true,"result":"restored"}]}),
+            serde_json::json!({"schema":1,"results":[{"id":row.slot_id,"ok":true,"result":"unconfirmed"}]}),
+            serde_json::json!({"schema":2,"results":[]}),
+            serde_json::json!({"schema":1,"results":[]}),
+        ] {
+            assert!(restore_then_attach(
+                &row,
+                |_| Ok(response),
+                |_| panic!("refusal must not resolve an attach target"),
+                |_| panic!("refusal must not attach")
+            )
+            .is_err());
+        }
+        assert!(restore_then_attach(
+            &row,
+            |_| anyhow::bail!("restore timed out"),
+            |_| panic!("failed request must not resolve a target"),
+            |_| panic!("failed request must not attach")
+        )
+        .is_err());
+        assert!(restore_then_attach(
+            &row,
+            |_| Ok(receipt(&row)),
+            |_| anyhow::bail!("exact identity disappeared"),
+            |_| panic!("missing identity must not attach")
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn picker_restore_identity_never_falls_back_to_display_name() {
+        use moss_core::event::{Context, Event, StartSource, TmuxLoc};
+        let dir = tempfile::tempdir().unwrap();
+        let mut registry = Registry::open(&dir.path().join("registry.db")).unwrap();
+        let selected = row(Some("same-name"));
+        registry
+            .apply_with(
+                &Event::Start {
+                    source: StartSource::Startup,
+                    session_id: selected.session_id,
+                    cwd: selected.cwd,
+                    title: selected.name,
+                    transcript_path: None,
+                },
+                &Context {
+                    pid: Some(42),
+                    pid_start: Some("fixture-start".into()),
+                    tmux: Some(TmuxLoc {
+                        socket: "/tmp/picker-test-socket".into(),
+                        session_id: Some("$9".into()),
+                        session_name: Some("same-name".into()),
+                        pane_id: "%7".into(),
+                    }),
+                    launch_args: None,
+                    now_ms: 1,
+                },
+                &|_, _| true,
+            )
+            .unwrap();
+        let slot = registry.slots().unwrap().remove(0);
+        let row = source::SlotRow::from_slot(&slot);
+        assert_eq!(restored_target(&row, &slot, true).unwrap(), target());
+        assert!(restored_target(&row, &slot, false).is_err());
+        let mut changed = slot.clone();
+        changed.session_id = "99999999-2222-4333-8444-555555555555".into();
+        assert!(restored_target(&row, &changed, true).is_err());
+        let mut changed = slot.clone();
+        changed.slot_id = "other-slot".into();
+        assert!(restored_target(&row, &changed, true).is_err());
+        let mut changed = slot.clone();
+        changed.tmux.as_mut().unwrap().session_id = None;
+        assert!(restored_target(&row, &changed, true).is_err());
+        let mut changed = slot.clone();
+        changed.tmux = None;
+        assert!(restored_target(&row, &changed, true).is_err());
+    }
+
+    #[test]
+    fn picker_cancel_dispatches_neither_restore_nor_new() {
+        for action in [Action::None, Action::Quit] {
+            dispatch_launch(
+                action,
+                |_| panic!("cancel must not create"),
+                |_| panic!("cancel must not restore"),
+            )
+            .unwrap();
+        }
     }
 }

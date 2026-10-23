@@ -146,8 +146,20 @@ prefix or name). Then say in one or two lines what happened and what can be done
 |---|---|---|
 | `empty` | it never got a first message: nothing to resume | `[[confirm: forget <session>]]` |
 | `missing_dir` | its folder is gone (moved or deleted) | if `folder_exists` is false, `cc-moss moss act forget-gone <session> --wait`; if the folder was moved, ask them to move it back, then restore again |
+| `cwd_forbidden` | its working directory is a protected system, home or configuration location | explain that this history cannot be relaunched there; offer a new session in a safe project folder, never silently relocate it or change its configuration source |
+| `cwd_missing` | its working directory no longer exists | ask the user to put the original project folder back; do not guess another directory |
+| `cwd_not_directory` | the recorded working location is not a directory | explain the working-directory problem; changing settings folders cannot fix it |
+| `cwd_unreadable` | the working directory cannot be accessed | ask the user to check its access permissions; do not describe it as missing |
+| `cwd_unavailable` | the working-directory safety check could not finish | report that it could not be confirmed; do not retry automatically or bypass the check |
+| `cwd_invalid` | the working directory or launch context is not a safe absolute path | ask for a valid project folder for a new session, without editing old records |
+| `cwd_changed` | the working directory changed during the operation | ask the user to start again and confirm the current target; never reuse the stale choice |
 | `exited_at_once` | Claude Code quit right after starting | ask them to run `claude` in that folder to see why (login, update, settings); then restore again |
 | `tmux_failed` | tmux couldn't start it | ask them to try again; if it keeps failing, `cc-moss doctor` in a terminal |
+| `config_source_unknown` | the old record does not say which configuration source was used | ask the user to choose the source in the panel for this restore, or explicitly run `cc-moss restore --config-source default --yes <session>` / `cc-moss restore --config-dir <absolute-existing-directory> --yes <session>` themselves; never choose for them, infer a directory from the settings path, or reuse an earlier restore consent for this choice |
+| `config_source_changed` | the recorded source changed while the user was choosing | ask the user to start recovery again in the panel and confirm anew; never reuse the earlier choice |
+| `config_source_unsupported` | configuration arguments cannot be safely replayed | ask the user to resume manually with the original arguments; choosing a source does not bypass this check |
+| `invalid_config_source` | the chosen source is invalid | ask the user to select an absolute, existing configuration directory in the panel; do not copy or change configuration |
+| `resume_preflight_failed` | a safety check failed before launch | explain the reported check; do not treat it as a tmux problem or retry with different settings |
 | `already_running` | it is running, or coming back through another copy | nothing to do: point at it with `[[sessions: <session>]]` |
 | `ambiguous` | the name fits several sessions (`candidates` are their ids) | name each by id with `[[sessions: <id> \| <id>]]` and ask which; then `[[confirm: restore <id>]]` for that one |
 | `busy` (restart, archive) | it is in the middle of a turn | wait until it's done; restart queues it by itself |

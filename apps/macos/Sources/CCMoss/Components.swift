@@ -220,6 +220,7 @@ struct SessionRow: View {
     var showProviderPlan: (() -> Void)?
     var recoveryOperation: RecoveryOperation?
     var recoveryExpanded = false
+    var restoreSourceExpanded = false
     @Environment(\.colorScheme) private var scheme
 
     /// The name, with the matched characters in bold brand.
@@ -288,6 +289,12 @@ struct SessionRow: View {
                     }
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
+                } else if restoreSourceExpanded {
+                    Text(session.restoreSource?.isKnown == true
+                         ? L.t("Settings location needs attention", "设置位置需要修正")
+                         : L.t("Confirm settings to continue", "需要确认设置"))
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .lineLimit(1)
                 } else if let reason {
                     HStack(spacing: 4) {
                         Image(systemName: "magnifyingglass")
@@ -307,6 +314,10 @@ struct SessionRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .tip(problem)
+                } else if session.state == .interrupted, let plan = session.restoreSource, plan.isReady,
+                          let path = plan.displayPath {
+                    Text(path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
+                        .lineLimit(1).truncationMode(.middle).help(path)
                 } else if let sub = session.subtitle {
                     HStack(spacing: 4) {
                         Image(systemName: session.subtitleIsNote ? Icons.note : Icons.lastPrompt)

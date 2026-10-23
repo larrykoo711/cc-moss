@@ -174,12 +174,19 @@ fn end_idle(registry: &Registry, name: &str, slot: &Slot) -> Option<Outcome> {
     let Some(pid) = slot.pid else {
         return failed("cc-moss doesn't know its process".into());
     };
-    if !super::adopt::still_it(slot) {
-        return failed("its process isn't that Claude Code any more".into());
+    let identity = match super::process_identity::verify(registry, slot) {
+        Ok(identity) => identity,
+        Err(error) => return failed(error.to_string()),
+    };
+    let claimed_at = now_ms();
+    match registry.claim_restore(slot, claimed_at) {
+        Ok(true) => {}
+        Ok(false) => return failed("another operation changed or claimed the session".into()),
+        Err(error) => return failed(error.to_string()),
     }
-    // Its exit is on purpose: no interrupted news while it goes.
-    if let Err(e) = registry.mark_restore_started(&slot.slot_id, now_ms()) {
-        return failed(format!("{e:#}"));
+    if let Err(error) = identity.recheck(registry, slot) {
+        let _ = registry.clear_restore_claim(slot, claimed_at);
+        return failed(error.to_string());
     }
     // SAFETY: a signal to a pid just checked to be this Claude Code.
     unsafe {
@@ -188,14 +195,18 @@ fn end_idle(registry: &Registry, name: &str, slot: &Slot) -> Option<Outcome> {
     let until = Instant::now() + Duration::from_secs(10);
     while proc::liveness(pid, slot.pid_start.as_deref()) == proc::Liveness::Alive {
         if Instant::now() >= until {
-            let _ = registry.clear_restore_started(&slot.slot_id);
+            let _ = registry.clear_restore_claim(slot, claimed_at);
             return failed(tr!("it didn't quit within 10 seconds", "它 10 秒内没有退出").into());
         }
         std::thread::sleep(Duration::from_millis(100));
     }
+    if !identity.after_exit(registry, slot, claimed_at) {
+        let _ = registry.clear_restore_claim(slot, claimed_at);
+        return failed("the process owner changed while exiting; nothing was archived".into());
+    }
     let closed = registry
         .close_by_user(&slot.slot_id, now_ms())
-        .and_then(|()| registry.clear_restore_started(&slot.slot_id));
+        .and_then(|()| registry.clear_restore_claim(slot, claimed_at).map(|_| ()));
     match closed {
         Ok(()) => None,
         Err(e) => failed(format!("{e:#}")),

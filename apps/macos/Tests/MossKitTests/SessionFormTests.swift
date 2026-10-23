@@ -13,21 +13,23 @@ import Testing
 
     @Test func buildsCommand() {
         #expect(NewSession.arguments(name: "my job", directory: "/home/u/a b")
-            == ["new", "my job", "-C", "/home/u/a b", "--detach"])
-        #expect(NewSession.arguments(name: "x", directory: "/d", restore: true)
-            == ["new", "x", "-C", "/d", "--detach", "--yes"])
+            == ["new", "my job", "-C", "/home/u/a b", "--detach", "--json"])
+        #expect(!NewSession.arguments(name: "x", directory: "/d").contains("--yes"))
         #expect(NewSession.plan(name: "  fresh ", directory: "/home/u/projects/acme", sessions: list)
-            == .create(["new", "fresh", "-C", "/home/u/projects/acme", "--detach"]))
+            == .create(["new", "fresh", "-C", "/home/u/projects/acme", "--detach", "--json"]))
     }
 
-    @Test func workspaceWinsWhileItExists() {
-        #expect(NewSession.defaultDirectory(list, workspace: "/home/u/work", exists: { _ in true }) == "/home/u/work")
-        #expect(NewSession.defaultDirectory(list, workspace: "/home/u/gone", exists: { _ in false }) == "/home/u/projects/docs")
-        #expect(NewSession.defaultDirectory(list, workspace: "", exists: { _ in true }) == "/home/u/projects/docs")
+    @Test func noDirectoryIsSelectedWithoutBackendApproval() {
+        var selection = WorkingDirectorySelection()
+        #expect(selection.canonical == nil)
+        _ = selection.begin("/home/u/work")
+        #expect(selection.canonical == nil)
+        selection.cancel()
+        #expect(selection.canonical == nil)
     }
 
     @Test func defaultsToRecentProject() {
-        #expect(NewSession.defaultDirectory(list) == "/home/u/projects/docs")
+        #expect(NewSession.recentProjects([]).isEmpty)
         #expect(NewSession.recentProjects(list) == [
             "/home/u/projects/docs", "/home/u/projects/acme", "/home/u/projects/billing", "/home/u/projects/old",
         ])
@@ -35,14 +37,15 @@ import Testing
         #expect(NewSession.defaultName(for: "/home/u/projects/docs") == "docs")
     }
 
-    @Test func sameNameRunningOpensInstead() {
+    @Test func sameNameRunningCreatesFreshIdentity() {
         let plan = NewSession.plan(name: "login", directory: "/anywhere", sessions: list)
-        #expect(plan == .open(list[0]))
+        #expect(plan == .create(NewSession.arguments(name: "login", directory: "/anywhere")))
         #expect(NewSession.hint(name: "login", sessions: list) == .running(list[0]))
     }
 
-    @Test func sameNameInterruptedAsks() {
-        #expect(NewSession.plan(name: "invoice", directory: "/anywhere", sessions: list) == .askRestore(list[1]))
+    @Test func sameNameInterruptedCreatesFreshIdentity() {
+        #expect(NewSession.plan(name: "invoice", directory: "/anywhere", sessions: list)
+            == .create(NewSession.arguments(name: "invoice", directory: "/anywhere")))
         // A closed session does not hold its name.
         #expect(NewSession.hint(name: "gone", sessions: list) == .free)
     }

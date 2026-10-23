@@ -79,7 +79,7 @@ fn user_settings(w: &World) -> PathBuf {
     let dir = w.path("claude");
     if !dir.exists() {
         std::fs::create_dir_all(&dir).unwrap();
-        let config = w.path("config.toml");
+        let config = w.config_path();
         let mut text = std::fs::read_to_string(&config).unwrap();
         text = text.replacen(
             "[claude]\n",

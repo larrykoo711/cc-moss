@@ -24,6 +24,7 @@ struct ProviderRecoveryView: View {
     @State private var detailsExpanded = false
 
     private var operation: RecoveryOperation? { model.recoveryOperations[session.id] }
+    private var promotesApply: Bool { ProviderRecovery.promotesApply(session, confirmations: model.providerConfirmations) }
 
     var body: some View {
         Group {
@@ -167,7 +168,7 @@ struct ProviderRecoveryView: View {
                     Text(L.t("Runs after this turn.", "本轮结束后执行。"))
                         .foregroundStyle(.secondary)
                 }
-            } else if ProviderRecovery.canApply(session) {
+            } else if promotesApply {
                 Text(session.busy ? L.t("Restarts after this turn.", "本轮结束后重开。")
                      : L.t("Restart with this model. Keep the history.", "按此模型重开，历史保留。"))
                     .foregroundStyle(.secondary)
@@ -184,16 +185,25 @@ struct ProviderRecoveryView: View {
         if session.restartQueued {
             cancelQueue
         } else if ProviderRecovery.canApply(session) {
-            SoftButton(title: session.busy ? L.t("Restart Later", "稍后重开") : L.t("Restart", "重开"),
-                       icon: Icons.restart, prominent: true) {
-                model.restart(session, applyingProvider: true)
+            if promotesApply {
+                SoftButton(title: session.busy ? L.t("Restart Later", "稍后重开") : L.t("Restart", "重开"),
+                           icon: Icons.restart, prominent: true) {
+                    model.restart(session, applyingProvider: true)
+                }
+                .accessibilityLabel(session.busy
+                    ? L.t("Apply this model and restart after the current turn", "本轮结束后应用此模型并重开会话")
+                    : L.t("Apply this model and restart the session", "应用此模型并重开会话"))
+                .help(L.t("Restart using the target model and keep the conversation history. This does not resend your last request or verify API availability.",
+                          "按目标模型重开并保留历史记录，不会自动重发上次请求，也不代表 API 已验证可用。"))
+                .focusable().focused($actionFocused)
+            } else {
+                secondaryAction(session.busy ? L.t("Use Model After Turn", "本轮后按此模型重开") : L.t("Restart with Model", "按此模型重开"),
+                                detail: L.t("Optionally restart with this model and keep the history. Busy sessions restart after this turn; API availability is not verified.",
+                                            "可按此模型重开并保留历史；忙碌时本轮后执行，不代表 API 已验证可用。")) {
+                    model.restart(session, applyingProvider: true)
+                }
+                .focusable().focused($actionFocused)
             }
-            .accessibilityLabel(session.busy
-                ? L.t("Apply this model and restart after the current turn", "本轮结束后应用此模型并重开会话")
-                : L.t("Apply this model and restart the session", "应用此模型并重开会话"))
-            .help(L.t("Restart using the target model and keep the conversation history. This does not resend your last request or verify API availability.",
-                      "按目标模型重开并保留历史记录，不会自动重发上次请求，也不代表 API 已验证可用。"))
-            .focusable().focused($actionFocused)
         } else if !session.inTmux {
             SoftButton(title: L.t("Move into tmux", "移进 tmux"), icon: Icons.adopt, prominent: true) {
                 model.providerPlanID = nil

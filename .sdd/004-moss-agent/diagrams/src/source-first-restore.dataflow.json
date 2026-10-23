@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {"title": "原来源优先", "locale": "zh-CN", "output": ".sdd/004-moss-agent/diagrams/source-first-restore.html", "quality_profile": "showcase"},
+  "stages": [{"label":"记录"},{"label":"本地检查"},{"label":"用户操作"},{"label":"一次性请求"},{"label":"执行"}],
+  "nodes": [
+    {"id":"record","type":"backend","label":"原启动来源","sublabel":"Unset / Explicit / Unknown","stage":0,"row":1},
+    {"id":"plan","type":"backend","label":"来源计划","sublabel":"健康状态与 revision","stage":1,"row":1},
+    {"id":"ready","type":"frontend","label":"有效原来源","sublabel":"灰路径与直接找回","stage":2,"row":0},
+    {"id":"unknown","type":"frontend","label":"原设置未记录","sublabel":"明确当前默认提案","stage":2,"row":1},
+    {"id":"repair","type":"frontend","label":"路径确有异常","sublabel":"更换位置后确认","stage":2,"row":2},
+    {"id":"blocked","type":"frontend","label":"检查不可用","sublabel":"不换源、不自动重试","stage":2,"row":3},
+    {"id":"recorded","type":"backend","label":"Recorded 恢复","sublabel":"不附来源覆盖参数","stage":3,"row":0},
+    {"id":"override","type":"backend","label":"显式来源覆盖","sublabel":"Unknown 或 revision 门禁","stage":3,"row":2},
+    {"id":"launch","type":"backend","label":"复验后启动","sublabel":"健康检查与来源 CAS","stage":4,"row":1}
+  ],
+  "flows": [
+    {"from":"record","to":"plan","label":"安全元数据"},
+    {"from":"plan","to":"ready","label":"ready"},
+    {"from":"plan","to":"unknown","label":"unknown"},
+    {"from":"plan","to":"repair","label":"typed 路径错误"},
+    {"from":"plan","to":"blocked","label":"blocked"},
+    {"from":"ready","to":"recorded","label":"点击找回"},
+    {"from":"unknown","to":"override","label":"明确授权"},
+    {"from":"repair","to":"override","label":"确认替代位置"},
+    {"from":"recorded","to":"launch","label":"重核原来源"},
+    {"from":"override","to":"launch","label":"门禁与候选检查"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"T2.19 行为合同","items":["设计图，不冒充已发布源码。有效已知来源保持 Unset/Explicit 语义，普通找回不强迫选择。","Unknown 的 display_path 为空；default_path 仅是明确目标 HOME 的当前默认目录提案，不是原来源或全局 MCP JSON 文件。"]},
+    {"dot":"slate","title":"同卡修正","items":["Unknown 通过“使用当前设置找回”按钮一次明确授权，未点击零执行；手动更换才展开分段控件。","执行前确切路径错误回同卡修正；原 plan revision 变化清除旧选择。MCP 连接、认证和网络错误不当作坏目录。"]},
+    {"dot":"amber","title":"安全边界","items":["未知来源覆盖保留 require-unknown-config；替换已知来源绑定 expected-source-revision。票据继续绑定 slot、session 与单次 token。","不可用、超时或预算耗尽是 blocked，不合成 ready。预检与来源 CAS 通过才启动；文件系统竞态不能被宣称完全消失。"]}
+  ]
+}

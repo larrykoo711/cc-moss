@@ -35,10 +35,17 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
         let evidence = super::provider::current_model_evidence(&registry, &store_dir::state_dir())?;
         let settings = super::provider::current();
         let queue = super::provider::queued(&store_dir::state_dir());
+        let mut source_planner = super::restore_source::Planner::current();
+        let mut cwd_checks = super::working_directory::Checks::new();
         let sessions: Vec<Value> = rows
             .iter()
             .map(|(st, s)| {
                 let mut v = to_json(*st, s);
+                v["working_directory"] = cwd_checks.session(s);
+                if *st == Status::Interrupted {
+                    v["restore_source"] = serde_json::to_value(source_planner.plan(s))
+                        .expect("restore source plan is serializable");
+                }
                 v["api_failure"] = serde_json::to_value(failures.get(&s.slot_id))
                     .expect("an API failure is serializable");
                 // Running sessions the provider switch didn't reach (T2.6).
@@ -64,6 +71,7 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "schema": JSON_SCHEMA,
+                "capabilities": {"working_directory": 1, "new_receipt": 1, "exact_restore": 1},
                 "state_dir": store_dir::state_dir(),
                 "provider": { "host": settings.as_ref().and_then(|s| s.host.clone()) },
                 "sessions": sessions,

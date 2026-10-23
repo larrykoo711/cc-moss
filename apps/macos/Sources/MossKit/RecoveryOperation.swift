@@ -46,19 +46,25 @@ public struct RecoveryOperation: Equatable, Sendable {
     public var stage: Stage
     public let kind: Kind
     public let queueReason: QueueReason
+    /// The prompt the session showed when a receipt landed; a different one means it is in use again.
+    public let promptAtReceipt: String?
 
-    public init(token: UUID, sessionId: String, stage: Stage, kind: Kind = .restart, queueReason: QueueReason = .unknown(nil)) {
+    public init(token: UUID, sessionId: String, stage: Stage, kind: Kind = .restart, queueReason: QueueReason = .unknown(nil),
+                promptAtReceipt: String? = nil) {
         self.token = token
         self.sessionId = sessionId
         self.stage = stage
         self.kind = kind
         self.queueReason = queueReason
+        self.promptAtReceipt = promptAtReceipt
     }
 
     public var isSubmitting: Bool { if case .submitting = stage { true } else { false } }
     public var isFailure: Bool { if case .failed = stage { true } else { false } }
     public var confirmation: RebuildPlan? { if case let .confirmRebuild(plan) = stage { plan } else { nil } }
     public var failure: FailureNotice? { if case let .failed(notice) = stage { notice } else { nil } }
+    /// Settled outcomes that only report what happened. "Starting" still waits for a confirmation.
+    public var isReceipt: Bool { [.restarted, .cancelled, .notQueued].contains(stage) }
 
     public var title: String {
         switch stage {
@@ -174,6 +180,11 @@ public struct RecoveryOperations: Equatable, Sendable {
         for session in sessions where !session.restartQueued && bySlot[session.id]?.stage == .queued {
             bySlot[session.id] = nil
         }
+        // A receipt has done its job once the session is working or has a new prompt.
+        for session in sessions {
+            guard let operation = bySlot[session.id], operation.isReceipt else { continue }
+            if session.busy || session.lastPrompt != operation.promptAtReceipt { bySlot[session.id] = nil }
+        }
     }
 
     @discardableResult public mutating func complete(_ request: RecoveryRequest, results: [BatchResult], session: Session?) -> Bool {
@@ -204,7 +215,7 @@ public struct RecoveryOperations: Equatable, Sendable {
             }
         }
         bySlot[request.slotId] = RecoveryOperation(token: request.token, sessionId: request.sessionId, stage: stage, kind: request.intent.kind,
-            queueReason: stage == .queued ? .init(result.reason) : .unknown(nil))
+            queueReason: stage == .queued ? .init(result.reason) : .unknown(nil), promptAtReceipt: session.lastPrompt)
         return true
     }
 

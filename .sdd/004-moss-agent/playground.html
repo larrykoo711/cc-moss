@@ -485,16 +485,22 @@ const TASKS = [
   {id:'T2.11', t:'嵌套终端安全重开', repo:'cc-moss', dep:'T2.8', st:'done', sdd:'—', ac:'同TTY安全重开、PTY独立确认重建', steps:[]},
   {id:'T2.12', t:'目标模型响应证据', repo:'cc-moss', dep:'T2.8,T2.10', st:'done', sdd:'—', ac:'新epoch成功消除模型误报、removed与故障保留', steps:[]},
   {id:'T2.13', t:'退出确认与单一终态', repo:'cc-moss', dep:'T2.11,T2.12', st:'done', sdd:'—', ac:'旧进程退出前零新启动、超时不重试、单loading与单错误呈现', steps:[]},
+  {id:'T2.14', t:'同进程恢复身份一致性', repo:'cc-moss', dep:'T2.13', st:'done', sdd:'—', ac:'A→B恢复后操作可用，严格证据关联、跨代次拒绝', steps:[]},
+  {id:'T2.15', t:'MCP启动来源保真', repo:'cc-moss', dep:'T2.14', st:'done', sdd:'—', ac:'unset/explicit不混淆，未知或不可回放在退出前拒绝', steps:[]},
+  {id:'T2.16', t:'面板当前状态与操作层级', repo:'cc-moss', dep:'T2.15', st:'done', sdd:'—', ac:'搜索返回最新会话，正常渠道无强告警CTA', steps:[]},
+  {id:'T2.17', t:'旧会话来源选择', repo:'cc-moss', dep:'T2.15,T2.16', st:'done', sdd:'—', ac:'typed来源错误、单次选择、零隐式授权', steps:[]},
+  {id:'T2.18', t:'恢复选择布局重整', repo:'cc-moss', dep:'T2.17', st:'done', sdd:'—', ac:'单标题、轻量选择、相邻取消与唯一找回', steps:[]},
+  {id:'T2.19', t:'原来源优先与异常更换', repo:'cc-moss', dep:'T2.18', st:'done', sdd:'—', ac:'有效原源直接恢复，灰路径，异常才更换', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
   {id:'R1', t:'收口评审', repo:'cc-moss', dep:'T1.1–T4.2', st:'backlog', sdd:'—', ac:'评审报告与交付四桶', steps:[]},
 ];
 const PHASES = [
-  {k:'P1', name:'<填 Phase 名>', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
-  {k:'P2', name:'<填 Phase 名>', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13']},
-  {k:'P3', name:'<填 Phase 名>', ids:['T3.1']},
-  {k:'P4', name:'<填 Phase 名>', ids:['T4.1','T4.2']},
+  {k:'P1', name:'放手干 + 替你接住问题', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
+  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19']},
+  {k:'P3', name:'Moss 派活', ids:['T3.1']},
+  {k:'P4', name:'Slack 与路由', ids:['T4.1','T4.2']},
 ];
 
 /* ═══ 以下为通用渲染 + 空态/主题/导航逻辑，无需改 ═══ */

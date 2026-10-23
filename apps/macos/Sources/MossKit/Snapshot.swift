@@ -52,6 +52,8 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     public var restartQueued: Bool
     public var providerModel: ProviderModel?
     public var apiFailure: APIFailure?
+    public var restoreSource: RestoreSourcePlan?
+    public var workingDirectory: WorkingDirectoryCheck?
 
     /// Moss, the session cc-moss keeps running itself.
     public var isMoss: Bool { role == "moss" }
@@ -61,7 +63,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention, role
-        case archivedAt, providerRestart, restartQueued, providerModel, apiFailure
+        case archivedAt, providerRestart, restartQueued, providerModel, apiFailure, restoreSource, workingDirectory
     }
 
     public init(from decoder: Decoder) throws {
@@ -86,6 +88,8 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         restartQueued = (try? c.decodeIfPresent(Bool.self, forKey: .restartQueued)) ?? false
         providerModel = try? c.decodeIfPresent(ProviderModel.self, forKey: .providerModel)
         apiFailure = try? c.decodeIfPresent(APIFailure.self, forKey: .apiFailure)
+        restoreSource = try? c.decodeIfPresent(RestoreSourcePlan.self, forKey: .restoreSource)
+        workingDirectory = try? c.decodeIfPresent(WorkingDirectoryCheck.self, forKey: .workingDirectory)
     }
 }
 
@@ -99,11 +103,13 @@ public struct Snapshot: Equatable, Sendable {
     /// The provider Claude Code's settings point at now: the base URL's
     /// host, nil for the default (or an older cc-moss that doesn't say).
     public var providerHost: String?
+    public var capabilities: CLICapabilities
 
-    public init(stateDir: String?, sessions: [Session], providerHost: String? = nil) {
+    public init(stateDir: String?, sessions: [Session], providerHost: String? = nil, capabilities: CLICapabilities = .init()) {
         self.stateDir = stateDir
         self.sessions = sessions
         self.providerHost = providerHost
+        self.capabilities = capabilities
     }
 }
 
@@ -119,6 +125,16 @@ extension Snapshot {
         var stateDir: String?
         var sessions: [Session]?
         var provider: Provider?
+        var capabilities: CLICapabilities
+        enum CodingKeys: String, CodingKey { case schema, stateDir, sessions, provider, capabilities }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            schema = try c.decode(Int.self, forKey: .schema)
+            stateDir = try c.decodeIfPresent(String.self, forKey: .stateDir)
+            sessions = try c.decodeIfPresent([Session].self, forKey: .sessions)
+            provider = try c.decodeIfPresent(Provider.self, forKey: .provider)
+            capabilities = (try? c.decodeIfPresent(CLICapabilities.self, forKey: .capabilities)) ?? .init()
+        }
     }
     private struct Provider: Decodable { var host: String? }
 
@@ -146,7 +162,7 @@ extension Snapshot {
         }
         do {
             let wire = try decoder.decode(Wire.self, from: data)
-            return Snapshot(stateDir: wire.stateDir, sessions: wire.sessions ?? [], providerHost: wire.provider?.host)
+            return Snapshot(stateDir: wire.stateDir, sessions: wire.sessions ?? [], providerHost: wire.provider?.host, capabilities: wire.capabilities)
         } catch {
             throw SnapshotError.invalid("\(error)")
         }

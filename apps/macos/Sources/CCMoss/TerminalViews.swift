@@ -233,6 +233,8 @@ struct Dropdown<ID: Hashable, Label: View>: View {
     var placeholder = L.t("Search…", "搜索…")
     /// An extra first row made from what's typed (a folder path).
     var typed: ((String) -> DropdownOption<ID>?)?
+    var checkedTyped: ((String) async -> (option: DropdownOption<ID>?, message: String?))?
+    var fixedLabel = true
     @ViewBuilder let label: () -> Label
     @State private var hovering = false
     @State private var open = false
@@ -241,7 +243,7 @@ struct Dropdown<ID: Hashable, Label: View>: View {
     var body: some View {
         Button { toggle() } label: {
             HStack(spacing: 8) {
-                label().font(.system(size: 13, weight: .medium)).lineLimit(1).fixedSize()
+                label().font(.system(size: 13, weight: .medium)).lineLimit(1).fixedSize(horizontal: fixedLabel, vertical: true)
                 Image(systemName: open ? "chevron.up" : "chevron.down")
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.secondary)
@@ -263,7 +265,7 @@ struct Dropdown<ID: Hashable, Label: View>: View {
         let rect = window.convertToScreen(view.convert(view.bounds, to: nil))
         open = true
         let list = DropdownList(options: options(), selection: selection, width: listWidth,
-                                placeholder: placeholder, typed: typed) { id in
+                                placeholder: placeholder, typed: typed, checkedTyped: checkedTyped) { id in
             // Close first: a choice may open the system picker, and the list
             // must not hang over it.
             DropdownWindow.close()
@@ -388,32 +390,42 @@ struct DropdownList<ID: Hashable>: View {
     var width: CGFloat = 260
     var placeholder = L.t("Search…", "搜索…")
     var typed: ((String) -> DropdownOption<ID>?)?
+    var checkedTyped: ((String) async -> (option: DropdownOption<ID>?, message: String?))?
     let pick: (ID) -> Void
     @State private var hovered: ID?
     @State private var query: String
+    @State private var checkedQuery = ""
+    @State private var checkedOption: DropdownOption<ID>?
+    @State private var checkMessage: String?
     @FocusState private var searching: Bool
     @Environment(\.colorScheme) private var scheme
 
     init(options: [DropdownOption<ID>], selection: ID?, width: CGFloat = 260, placeholder: String = L.t("Search…", "搜索…"),
-         typed: ((String) -> DropdownOption<ID>?)? = nil, initialQuery: String = "", pick: @escaping (ID) -> Void) {
+         typed: ((String) -> DropdownOption<ID>?)? = nil,
+         checkedTyped: ((String) async -> (option: DropdownOption<ID>?, message: String?))? = nil,
+         initialQuery: String = "", pick: @escaping (ID) -> Void) {
         self.options = options
         self.selection = selection
         self.width = width
         self.placeholder = placeholder
         self.typed = typed
+        self.checkedTyped = checkedTyped
         self.pick = pick
         _query = State(initialValue: initialQuery)
     }
 
     private var shown: [DropdownOption<ID>] {
         let q = query.lowercased().trimmingCharacters(in: .whitespaces)
+        if checkedTyped != nil, q.hasPrefix("/") || q.hasPrefix("~") {
+            return checkedQuery == query ? checkedOption.map { [$0] } ?? [] : []
+        }
         if let extra = typed?(query) { return [extra] }
         guard !q.isEmpty else { return options }
         return options.filter { ($0.title + " " + ($0.subtitle ?? "")).lowercased().contains(q) }
     }
 
     /// The row Return picks: the one under the keyboard, else the first.
-    private var active: ID? { hovered ?? shown.first?.id }
+    private var active: ID? { hovered.flatMap { id in shown.contains(where: { $0.id == id }) ? id : nil } ?? shown.first?.id }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -431,7 +443,7 @@ struct DropdownList<ID: Hashable>: View {
             VStack(spacing: 2) {
                 ForEach(shown) { option in row(option) }
                 if shown.isEmpty {
-                    Text(L.t("Nothing matches", "没有对得上的"))
+                    Text(checkMessage ?? L.t("Nothing matches", "没有对得上的"))
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(height: 40)
@@ -446,6 +458,20 @@ struct DropdownList<ID: Hashable>: View {
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Theme.hairline(scheme)))
         .focusEffectDisabled()
         .onAppear { searching = true }
+        .task(id: query) {
+            checkedOption = nil
+            checkedQuery = ""
+            checkMessage = nil
+            let request = query
+            let path = request.trimmingCharacters(in: .whitespaces)
+            guard let checkedTyped, path.hasPrefix("/") || path.hasPrefix("~") else { return }
+            checkMessage = L.t("Checking folder…", "正在检查工作目录…")
+            let result = await checkedTyped(request)
+            guard !Task.isCancelled, query == request else { return }
+            checkedQuery = request
+            checkedOption = result.option
+            checkMessage = result.message
+        }
     }
 
     private func row(_ option: DropdownOption<ID>) -> some View {

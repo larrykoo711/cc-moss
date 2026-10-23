@@ -30,6 +30,70 @@ const MODEL: &str = "ANTHROPIC_MODEL";
 const TOP_MODEL: &str = "model";
 const TOP_HELPER: &str = "apiKeyHelper";
 
+/// 启动时的精确来源；不能从归一化后的 settings 路径反推。
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LaunchSource {
+    #[default]
+    Unknown,
+    Unset,
+    Explicit(String),
+}
+
+impl LaunchSource {
+    pub fn capture(value: Option<std::ffi::OsString>) -> Self {
+        match value {
+            None => Self::Unset,
+            Some(value) => value.into_string().map(Self::Explicit).unwrap_or_default(),
+        }
+    }
+
+    pub fn env_argv(&self) -> Result<Vec<String>, &'static str> {
+        match self {
+            Self::Unknown => Err("the session's config source is unknown; start it manually with the intended CLAUDE_CONFIG_DIR source first"),
+            Self::Unset => Ok(vec!["/usr/bin/env".into(), "-u".into(), "CLAUDE_CONFIG_DIR".into()]),
+            Self::Explicit(path) if Path::new(path).is_absolute() && !path.chars().any(char::is_control) => {
+                Ok(vec!["/usr/bin/env".into(), format!("CLAUDE_CONFIG_DIR={path}")])
+            }
+            Self::Explicit(_) => Err("the session's config source is not safe to replay"),
+        }
+    }
+}
+
+/// 输入必须是已验证入口的选项，不含程序名或解释器前缀。
+/// 仅记录固定参数名或不可解析标记，不保存参数值、内联 JSON 或凭据。
+pub fn unreplayable_args(args: Option<&[String]>) -> Vec<String> {
+    let Some(args) = args else {
+        return vec!["argv-unavailable".into()];
+    };
+    let mut names = BTreeSet::new();
+    let mut i = 0;
+    while let Some(arg) = args.get(i) {
+        i += 1;
+        if arg == "--" {
+            break;
+        }
+        let (name, inline) = arg
+            .split_once('=')
+            .map_or((arg.as_str(), None), |(f, v)| (f, Some(v)));
+        if matches!(
+            name,
+            "--mcp-config" | "--strict-mcp-config" | "--settings" | "--setting-sources"
+        ) {
+            names.insert(name.to_string());
+        }
+        match (crate::launch_args::option_arity(name), inline) {
+            (Some(0), None) | (Some(1), Some(_)) => {}
+            (Some(1), None) if i < args.len() => i += 1,
+            _ => {
+                names.insert("argv-unparseable".into());
+                break;
+            }
+        }
+    }
+    names.into_iter().collect()
+}
+
 /// The provider as the settings say: which keys are set, the base URL's
 /// host, and the fixed models. Never a token's or key's value.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -55,6 +119,13 @@ pub struct Snapshot {
     /// switch has to reach.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
+    #[serde(default)]
+    pub launch_source: LaunchSource,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unreplayable_args: Vec<String>,
+    /// false 表示只采集到启动来源，不把坏 settings 当成空配置。
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub settings_valid: Option<bool>,
 }
 
 /// Whether a key name is one that decides the provider.
@@ -168,6 +239,9 @@ impl Snapshot {
             model_aliases: env.model_aliases,
             default_model: env.default_model,
             source: None,
+            launch_source: LaunchSource::Unknown,
+            unreplayable_args: Vec::new(),
+            settings_valid: None,
         })
     }
 
@@ -437,6 +511,9 @@ pub fn seen_with(seen: &BTreeSet<String>, now: &Snapshot) -> BTreeSet<String> {
 /// has seen, from the registry's JSON columns.
 pub fn recorded(started: Option<&str>, seen: Option<&str>) -> Option<(Snapshot, BTreeSet<String>)> {
     let started = Snapshot::from_json(started?)?;
+    if started.settings_valid == Some(false) {
+        return None;
+    }
     let seen: BTreeSet<String> = seen
         .and_then(|s| serde_json::from_str(s).ok())
         .unwrap_or_else(|| started.keys.clone());
@@ -453,6 +530,113 @@ mod tests {
     use super::*;
 
     const SECRET: &str = "sk-ant-THIS-IS-A-SECRET-VALUE";
+
+    #[test]
+    fn launch_source_roundtrip_distinguishes_same_settings_path() {
+        let unset = Snapshot {
+            source: Some("/tmp/home/.claude/settings.json".into()),
+            launch_source: LaunchSource::Unset,
+            ..Snapshot::default()
+        };
+        let mut explicit = unset.clone();
+        explicit.launch_source = LaunchSource::Explicit("/tmp/home/.claude".into());
+        assert_ne!(
+            Snapshot::from_json(&unset.to_json()),
+            Snapshot::from_json(&explicit.to_json())
+        );
+        assert_eq!(Snapshot::from_json(&explicit.to_json()), Some(explicit));
+    }
+
+    #[test]
+    fn launch_source_invalid_settings_are_not_an_empty_provider() {
+        let snapshot = Snapshot {
+            launch_source: LaunchSource::Unset,
+            settings_valid: Some(false),
+            ..Snapshot::default()
+        };
+        assert!(recorded(Some(&snapshot.to_json()), Some("[]")).is_none());
+        assert_eq!(
+            Snapshot::from_json(&snapshot.to_json())
+                .unwrap()
+                .launch_source,
+            LaunchSource::Unset
+        );
+    }
+
+    #[test]
+    fn launch_source_legacy_is_unknown() {
+        let old = r#"{"keys":[],"host":null,"env_model":null,"model":null,"source":"/tmp/home/.claude/settings.json"}"#;
+        assert_eq!(
+            Snapshot::from_json(old).unwrap().launch_source,
+            LaunchSource::Unknown
+        );
+    }
+
+    #[test]
+    fn launch_source_cli_markers_never_store_values() {
+        let args: Vec<String> = [
+            "--mcp-config={\"token\":\"secret\"}",
+            "--settings",
+            "credential-value",
+            "--strict-mcp-config",
+            "--setting-sources=user",
+        ]
+        .into_iter()
+        .map(str::to_string)
+        .collect();
+        assert_eq!(
+            unreplayable_args(Some(&args)),
+            [
+                "--mcp-config",
+                "--setting-sources",
+                "--settings",
+                "--strict-mcp-config"
+            ]
+        );
+        assert_eq!(unreplayable_args(None), ["argv-unavailable"]);
+    }
+
+    #[test]
+    fn launch_source_arity_dash_value_does_not_hide_mcp_flag() {
+        let args = [
+            "--append-system-prompt",
+            "--",
+            "--mcp-config",
+            "/tmp/mcp.json",
+        ]
+        .map(str::to_string);
+        assert_eq!(unreplayable_args(Some(&args)), ["--mcp-config"]);
+    }
+
+    #[test]
+    fn launch_source_arity_flag_shaped_prompt_is_not_a_flag() {
+        let args = ["--append-system-prompt", "--mcp-config"].map(str::to_string);
+        assert!(unreplayable_args(Some(&args)).is_empty());
+    }
+
+    #[test]
+    fn launch_source_arity_unknown_or_missing_values_fail_closed() {
+        for words in [
+            vec!["--unknown=fixture-secret"],
+            vec!["--append-system-prompt"],
+            vec!["--verbose=fixture-secret"],
+        ] {
+            let args: Vec<String> = words.into_iter().map(str::to_string).collect();
+            assert_eq!(unreplayable_args(Some(&args)), ["argv-unparseable"]);
+        }
+        let args = ["--", "--mcp-config", "fixture-secret"].map(str::to_string);
+        assert!(unreplayable_args(Some(&args)).is_empty());
+    }
+
+    #[test]
+    fn launch_source_invalid_paths_refuse_without_echoing_values() {
+        for path in ["", "relative", "/tmp/path\nsecret"] {
+            assert_eq!(
+                LaunchSource::Explicit(path.into()).env_argv().unwrap_err(),
+                "the session's config source is not safe to replay"
+            );
+        }
+    }
 
     fn snap(text: &str) -> Snapshot {
         Snapshot::parse(text).expect("parses")

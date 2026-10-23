@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "diagram_type": "dataflow",
+  "meta": {
+    "title": "面板当前状态",
+    "locale": "zh-CN",
+    "output": ".sdd/004-moss-agent/diagrams/panel-current-state.html",
+    "quality_profile": "showcase"
+  },
+  "stages": [
+    { "label": "输入" },
+    { "label": "快照一致性" },
+    { "label": "搜索" },
+    { "label": "呈现" }
+  ],
+  "nodes": [
+    { "id": "snapshot", "type": "backend", "label": "当前会话", "sublabel": "完整 Session 数组", "stage": 0, "row": 0 },
+    { "id": "folders", "type": "backend", "label": "文件夹标题", "sublabel": "live 搜索输入", "stage": 0, "row": 2 },
+    { "id": "cache", "type": "backend", "label": "完整等价比较", "sublabel": "变化即重建索引", "stage": 1, "row": 1 },
+    { "id": "query", "type": "frontend", "label": "搜索词", "sublabel": "不改变会话状态", "stage": 1, "row": 3 },
+    { "id": "hits", "type": "backend", "label": "匹配与排序", "sublabel": "携带当前 Session", "stage": 2, "row": 1 },
+    { "id": "normal", "type": "frontend", "label": "正常配置", "sublabel": "手动重开弱入口", "stage": 3, "row": 0 },
+    { "id": "pending", "type": "frontend", "label": "待处理状态", "sublabel": "保留明确主操作", "stage": 3, "row": 2 }
+  ],
+  "flows": [
+    { "from": "snapshot", "to": "cache", "label": "完整字段" },
+    { "from": "folders", "to": "cache", "label": "标题映射" },
+    { "from": "cache", "to": "hits", "label": "等价索引" },
+    { "from": "query", "to": "hits", "label": "查询文本" },
+    { "from": "hits", "to": "normal", "label": "无需处理" },
+    { "from": "hits", "to": "pending", "label": "有待处理" }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "T2.16 设计合同", "items": ["设计图，不是已提交版本的源码快照。采用完整 Session 等价 key，不是逐字段字符串拼接。", "live 同时比较文件夹标题；archived 和 closed 各自比较完整 Session 数组。完全等价时复用拼音索引。"] },
+    { "dot": "slate", "title": "显示与动作", "items": ["搜索命中携带当前完整 Session，provider、API、queue、sessionId 或 notes 改变都会失效。", "正常配置不突出重开；手动按模型重开仍可访问。故障、待应用、排队沿用既有动作与安全判据。"] },
+    { "dot": "amber", "title": "明确边界", "items": ["不修改 watcher、刷新周期、Rust 或 hook，不将缓存缺陷当成截图活动时间滞留的已证根因。", "starting 保持待确认，不凭 running 或模型响应推断本次启动成功。"] }
+  ]
+}

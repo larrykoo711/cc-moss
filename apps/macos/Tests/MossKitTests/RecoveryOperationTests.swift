@@ -284,6 +284,31 @@ import Testing
         #expect(operations[session.id] == nil)
     }
 
+    @Test func restoredReceiptClearsOnceTheSessionIsUsedAgain() throws {
+        for used in [true, false] {
+            var operations = RecoveryOperations()
+            let pending = try request(&operations)
+            operations.complete(pending, results: [.init(name: "demo", outcome: "restarted")], session: session)
+            var later = session
+            later.lastActiveAt = Date()
+            operations.observe([later])
+            #expect(operations[session.id]?.stage == .restarted)
+            if used { later.busy = true } else { later.lastPrompt = "next question" }
+            operations.observe([later])
+            #expect(operations[session.id] == nil)
+        }
+    }
+
+    @Test func startingStaysUntilDismissedEvenWhenTheSessionWorks() throws {
+        var operations = RecoveryOperations()
+        let pending = try request(&operations)
+        operations.complete(pending, results: [.init(name: "demo", outcome: "starting")], session: session)
+        var busy = session
+        busy.busy = true
+        operations.observe([busy])
+        #expect(operations[session.id]?.stage == .starting)
+    }
+
     @Test func replacementSessionRejectsOldSuccessAndInvalidatesState() throws {
         var operations = RecoveryOperations()
         let old = try request(&operations)

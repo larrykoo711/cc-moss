@@ -61,22 +61,102 @@ fn rfc3339(ms: i64) -> String {
 }
 
 #[test]
+fn launch_source_adopt_refuses_unknown_or_custom_cli_before_term() {
+    for (tag, unsupported) in [("adopt-source-unknown", false), ("adopt-source-cli", true)] {
+        let w = World::new(tag);
+        let sid = uuid::Uuid::new_v4().to_string();
+        let mut cmd = Command::new(&w.claude);
+        for var in [
+            "TMUX",
+            "TMUX_PANE",
+            "CLAUDE_PID",
+            "CLAUDE_CODE_SESSION_ID",
+            "CLAUDE_CONFIG_DIR",
+        ] {
+            cmd.env_remove(var);
+        }
+        cmd.args(["--session-id", &sid]);
+        if unsupported {
+            cmd.args(["--settings", "{\"token\":\"fixture-secret\"}"]);
+        }
+        let child = cmd
+            .current_dir(w.path("work"))
+            .env("HOME", w.path("home"))
+            .env("CC_MOSS_BIN", env!("CARGO_BIN_EXE_cc-moss"))
+            .env("CC_MOSS_CLAUDE_BIN", &w.claude)
+            .env("CC_MOSS_STATE_DIR", w.state())
+            .env("CC_MOSS_FAKE_DIR", w.path("fifos"))
+            .env("CC_MOSS_CONFIG", w.config_path())
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut outside = Outside(child);
+        wait_until("recorded source", 10, || {
+            session(&w, &sid)?;
+            let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+            let value: Option<String> = db
+                .query_row(
+                    "SELECT provider_started FROM slots WHERE session_id=?1",
+                    [&sid],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            value
+        });
+        if !unsupported {
+            let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+            db.execute(
+                "UPDATE slots SET provider_started=NULL WHERE session_id=?1",
+                [&sid],
+            )
+            .unwrap();
+        }
+        let out = w
+            .cc_moss()
+            .args(["adopt", &sid, "--json"])
+            .output()
+            .unwrap();
+        let result: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+        assert!(!out.status.success(), "{result}");
+        assert_eq!(result["reason"], "config-source");
+        assert!(
+            outside.0.try_wait().unwrap().is_none(),
+            "拒绝前不能发送TERM"
+        );
+        assert!(w.session_names().is_empty());
+        assert!(
+            session(&w, &sid).unwrap()["name"].is_null(),
+            "拒绝前不能改名"
+        );
+    }
+}
+
+#[test]
 fn adopt_moves_a_session_into_tmux() {
     let w = World::new("adopt");
     let sid = "0837a145-0000-4000-8000-000000000001";
     // Started in a terminal of its own, not in tmux, with no name.
     let mut cmd = Command::new(&w.claude);
-    for var in ["TMUX", "TMUX_PANE", "CLAUDE_PID", "CLAUDE_CODE_SESSION_ID"] {
+    for var in [
+        "TMUX",
+        "TMUX_PANE",
+        "CLAUDE_PID",
+        "CLAUDE_CODE_SESSION_ID",
+        "CLAUDE_CONFIG_DIR",
+    ] {
         cmd.env_remove(var);
     }
     let child = cmd
         .args(["--session-id", sid])
         .current_dir(w.path("work"))
         .env("HOME", "/nonexistent/cc-moss-test-home")
+        .env("CC_MOSS_CLAUDE_BIN", &w.claude)
         .env("CC_MOSS_BIN", env!("CARGO_BIN_EXE_cc-moss"))
         .env("CC_MOSS_STATE_DIR", w.state())
         .env("CC_MOSS_FAKE_DIR", w.path("fifos"))
-        .env("CC_MOSS_CONFIG", w.path("config.toml"))
+        .env("CC_MOSS_CONFIG", w.config_path())
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -173,4 +253,111 @@ fn adopt_moves_a_session_into_tmux() {
     assert_eq!(out.status.code(), Some(1));
     let again: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(again["reason"], "in-tmux", "{again}");
+}
+
+#[test]
+fn resume_identity_single_hop_adopt_uses_current_owner() {
+    let w = World::new("adopt-bound-resume");
+    let origin = uuid::Uuid::new_v4().to_string();
+    let target = uuid::Uuid::new_v4().to_string();
+    let mut cmd = Command::new(&w.claude);
+    for name in [
+        "TMUX",
+        "TMUX_PANE",
+        "CLAUDE_PID",
+        "CLAUDE_CODE_SESSION_ID",
+        "CC_MOSS_TEST_CLAUDE_ENTRY",
+    ] {
+        cmd.env_remove(name);
+    }
+    let child = cmd
+        .args(["--session-id", &origin])
+        .current_dir(w.path("work"))
+        .env("HOME", w.path("home"))
+        .env("CLAUDE_CONFIG_DIR", w.path("claude"))
+        .env("CC_MOSS_CLAUDE_BIN", &w.claude)
+        .env("CC_MOSS_BIN", env!("CARGO_BIN_EXE_cc-moss"))
+        .env("CC_MOSS_STATE_DIR", w.state())
+        .env("CC_MOSS_FAKE_DIR", w.path("fifos"))
+        .env("CC_MOSS_CONFIG", w.config_path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut outside = Outside(child);
+    wait_until("origin", 10, || session(&w, &origin));
+    w.send(&origin, &format!("resume {target}"));
+    let before = wait_until("transferred", 10, || {
+        session(&w, &target).filter(|v| v["status"] == "running")
+    });
+    assert!(before["tmux"].is_null());
+    let out = w
+        .cc_moss()
+        .args(["adopt", "--json", &target])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let value: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(value["result"], "moved", "{value}");
+    assert!(
+        outside.0.try_wait().unwrap().is_some(),
+        "old process exited"
+    );
+    let after = wait_until("moved target", 10, || {
+        session(&w, &target).filter(|v| !v["tmux"].is_null())
+    });
+    assert_eq!(after["session_id"], target);
+}
+
+#[test]
+fn resume_identity_adopt_rejects_generation_replaced_after_claim() {
+    let w = World::new("adopt-binding-race");
+    let origin = uuid::Uuid::new_v4().to_string();
+    let target = uuid::Uuid::new_v4().to_string();
+    let mut cmd = Command::new(&w.claude);
+    for name in [
+        "TMUX",
+        "TMUX_PANE",
+        "CLAUDE_PID",
+        "CLAUDE_CODE_SESSION_ID",
+        "CC_MOSS_TEST_CLAUDE_ENTRY",
+    ] {
+        cmd.env_remove(name);
+    }
+    let child = cmd
+        .args(["--session-id", &origin])
+        .current_dir(w.path("work"))
+        .env("HOME", w.path("home"))
+        .env("CLAUDE_CONFIG_DIR", w.path("claude"))
+        .env("CC_MOSS_CLAUDE_BIN", &w.claude)
+        .env("CC_MOSS_BIN", env!("CARGO_BIN_EXE_cc-moss"))
+        .env("CC_MOSS_STATE_DIR", w.state())
+        .env("CC_MOSS_FAKE_DIR", w.path("fifos"))
+        .env("CC_MOSS_CONFIG", w.config_path())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    let mut outside = Outside(child);
+    wait_until("origin", 10, || session(&w, &origin));
+    w.send(&origin, &format!("resume {target}"));
+    let before = wait_until("transferred", 10, || {
+        session(&w, &target).filter(|v| v["status"] == "running")
+    });
+    assert!(before["tmux"].is_null());
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    db.execute_batch("CREATE TRIGGER test_change_generation AFTER UPDATE OF restore_started_at ON slots WHEN NEW.restore_started_at IS NOT NULL
+        BEGIN UPDATE process_bindings SET generation='replacement-generation' WHERE owner_slot=NEW.slot_id; END;").unwrap();
+    let out = w
+        .cc_moss()
+        .args(["adopt", "--json", &target])
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{out:?}");
+    assert!(
+        outside.0.try_wait().unwrap().is_none(),
+        "no signal after generation changes"
+    );
 }

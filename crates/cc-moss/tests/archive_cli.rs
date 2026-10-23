@@ -456,3 +456,127 @@ fn archive_by_conversation_id_when_two_share_a_name() {
         .collect();
     assert_eq!(archived, ["aaaa1111-twin"]);
 }
+
+#[test]
+fn in_session_resume_archives_current_conversation_without_merging_history() {
+    let w = common::World::new("archive-resume-switch");
+    w.new_session("resume-target");
+    let target_id = w.session_id("resume-target");
+    w.send(&target_id, "exit");
+    common::wait_for(|| {
+        let reg = moss_core::registry::Registry::open(&w.state().join("registry.db")).unwrap();
+        reg.slots()
+            .unwrap()
+            .iter()
+            .any(|s| s.session_id == target_id && s.status == moss_core::slot::Status::Closed)
+            .then_some(())
+    });
+    w.new_session("startup-placeholder");
+    let origin_id = w.session_id("startup-placeholder");
+    let reg = moss_core::registry::Registry::open(&w.state().join("registry.db")).unwrap();
+    let origin = reg
+        .slots()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.session_id == origin_id)
+        .unwrap();
+    w.send(&origin_id, &format!("resume {target_id}"));
+    let current = common::wait_for(|| {
+        reg.slots().unwrap().into_iter().find(|s| {
+            s.session_id == target_id
+                && s.status == moss_core::slot::Status::Running
+                && s.pid == origin.pid
+        })
+    });
+    assert_eq!(current.pid_start, origin.pid_start);
+    assert_eq!(
+        current.tmux.as_ref().unwrap().pane_id,
+        origin.tmux.as_ref().unwrap().pane_id
+    );
+    let left = reg
+        .slots()
+        .unwrap()
+        .into_iter()
+        .find(|s| s.slot_id == origin.slot_id)
+        .unwrap();
+    assert_eq!(left.end_reason.as_deref(), Some("resume"));
+    assert_eq!(
+        left.session_ids.as_slice(),
+        std::slice::from_ref(&origin_id)
+    );
+    assert_eq!(
+        current.session_ids.as_slice(),
+        std::slice::from_ref(&target_id)
+    );
+    let argv = moss_core::launch_args::argv(origin.pid.unwrap()).unwrap();
+    assert!(
+        argv.iter().any(|arg| arg == &origin_id),
+        "process still has its original startup ID"
+    );
+    let (result, ok) = archive_end(&w, &target_id);
+    assert!(
+        ok,
+        "same-process F11 transfer must remain operable: {result}"
+    );
+    assert_eq!(result["results"][0]["result"], "archived");
+    common::wait_for(|| (!alive(origin.pid.unwrap() as u64)).then_some(()));
+    let slots = reg.slots().unwrap();
+    let current = slots.iter().find(|s| s.slot_id == current.slot_id).unwrap();
+    let left = slots.iter().find(|s| s.slot_id == origin.slot_id).unwrap();
+    assert!(current.is_archived());
+    assert_eq!(current.session_ids, [target_id]);
+    assert_eq!(left.session_ids, [origin_id]);
+}
+
+#[test]
+fn resume_identity_generation_changed_after_claim_does_not_end_session() {
+    let w = common::World::new("archive-generation-race");
+    w.new_session("race");
+    let sid = w.session_id("race");
+    let before = session_of(&w, "race");
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    let count: i64 = db
+        .query_row(
+            "SELECT count(*) FROM process_bindings WHERE state='root'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
+    assert_eq!(count, 1);
+    db.execute_batch("CREATE TRIGGER test_change_generation AFTER UPDATE OF restore_started_at ON slots WHEN NEW.restore_started_at IS NOT NULL
+        BEGIN UPDATE process_bindings SET generation='replacement-generation' WHERE owner_slot=NEW.slot_id; END;").unwrap();
+    let (result, ok) = archive_end(&w, &sid);
+    assert!(!ok, "{result}");
+    assert!(
+        alive(before["pid"].as_u64().unwrap()),
+        "no signal after generation changed across claim"
+    );
+    assert!(session_of(&w, "race")["archived_at"].is_null());
+}
+
+#[test]
+fn resume_identity_no_binding_refuses_unrelated_id_without_history_changes() {
+    let w = common::World::new("archive-no-binding");
+    w.new_session("origin");
+    let origin = w.session_id("origin");
+    let before = session_of(&w, "origin");
+    let db = rusqlite::Connection::open(w.state().join("registry.db")).unwrap();
+    db.execute("UPDATE process_bindings SET state='invalid'", [])
+        .unwrap();
+    let target = uuid::Uuid::new_v4().to_string();
+    w.send(&origin, &format!("resume {target}"));
+    common::wait_for(|| {
+        let reg = moss_core::registry::Registry::open(&w.state().join("registry.db")).ok()?;
+        reg.slots()
+            .ok()?
+            .into_iter()
+            .find(|s| s.session_id == target && s.status == moss_core::slot::Status::Running)
+    });
+    let (result, ok) = archive_end(&w, &target);
+    assert!(!ok, "{result}");
+    assert!(result["results"][0]["message"]
+        .as_str()
+        .unwrap()
+        .contains("association cannot be verified"));
+    assert!(alive(before["pid"].as_u64().unwrap()));
+}

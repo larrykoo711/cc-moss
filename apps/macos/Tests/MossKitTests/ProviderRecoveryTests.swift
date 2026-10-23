@@ -32,6 +32,28 @@ import Testing
                                                          "uncertain": uncertain]].merging(extras) { _, new in new })])[0]
     }
 
+    @Test func normalProviderKeepsManualApplyWithoutPromotingIt() {
+        let session = planned(uncertain: false)
+        #expect(ProviderRecovery.canApply(session))
+        #expect(!ProviderRecovery.promotesApply(session))
+    }
+
+    @Test func keptSelectionDoesNotPromoteManualApply() {
+        let session = planned(extras: ["provider_restart": "model"])
+        var confirmations = ProviderConfirmations()
+        confirmations.confirm(session)
+        #expect(ProviderRecovery.canApply(session))
+        #expect(!ProviderRecovery.promotesApply(session, confirmations: confirmations))
+    }
+
+    @Test func pendingAndFailedProvidersKeepTheirPrimaryAction() {
+        #expect(ProviderRecovery.promotesApply(planned(extras: ["provider_restart": "model"])))
+        #expect(ProviderRecovery.promotesApply(planned()))
+        #expect(ProviderRecovery.promotesApply(planned(extras: ["api_failure": ["kind": "generic_api", "model": "model-a"]])))
+        #expect(!ProviderRecovery.promotesApply(planned(extras: ["api_failure": ["kind": "generic_api", "model": "model-b"]])))
+        #expect(!ProviderRecovery.promotesApply(planned(extras: ["restart_queued": true])))
+    }
+
     @Test func oldCLIAndMalformedOptionalFieldsKeepTheSession() {
         let old = sessions([sessionJSON()])[0]
         #expect(old.providerModel == nil && old.apiFailure == nil)

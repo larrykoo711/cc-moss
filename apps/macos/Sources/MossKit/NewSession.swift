@@ -1,17 +1,11 @@
 import Foundation
 
-/// Starting a named session from the panel: `cc-moss new <name> -C <dir>
-/// --detach`, then open it in the terminal. One open session per name: a
-/// running one is opened instead, an interrupted one is offered back.
+/// A fresh identity on every creation; only its receipt can identify the session to open.
 public enum NewSession {
     /// What pressing "Create" leads to.
     public enum Plan: Equatable, Sendable {
         /// Run cc-moss with these arguments, then open the new session.
         case create([String])
-        /// A session of that name is running: open it, start nothing.
-        case open(Session)
-        /// A session of that name stopped: ask "bring it back?" first.
-        case askRestore(Session)
         /// The name can't be used; why, in words.
         case invalid(String)
     }
@@ -35,14 +29,6 @@ public enum NewSession {
             .map { $0 }
     }
 
-    /// The folder the form starts with: your workspace when you set one
-    /// (and it is still there), else where the last activity was.
-    public static func defaultDirectory(_ sessions: [Session], workspace: String? = nil,
-                                        exists: (String) -> Bool = { FileManager.default.fileExists(atPath: $0) }) -> String? {
-        if let workspace, !workspace.isEmpty, exists(workspace) { return workspace }
-        return recentProjects(sessions, limit: 1).first
-    }
-
     /// Settings › General: where new sessions start. Unset: the most recent folder.
     public static let workspaceKey = "newSessionWorkspace"
 
@@ -63,10 +49,9 @@ public enum NewSession {
         return "\(base)-\(n)"
     }
 
-    /// The arguments for cc-moss. `restore` adds `--yes`: the name belongs
-    /// to an interrupted session and the user said bring it back (T1.5).
-    public static func arguments(name: String, directory: String, restore: Bool = false) -> [String] {
-        ["new", name, "-C", directory, "--detach"] + (restore ? ["--yes"] : [])
+    /// Fresh creation always asks for a structured identity receipt; restoration is a separate command.
+    public static func arguments(name: String, directory: String) -> [String] {
+        ["new", name, "-C", directory, "--detach", "--json"]
     }
 
     /// Why `name` can't be used, or nil.
@@ -97,19 +82,64 @@ public enum NewSession {
 
     public static func plan(name: String, directory: String, sessions: [Session]) -> Plan {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
-        switch hint(name: trimmed, sessions: sessions) {
-        case .invalid(let why): return .invalid(why)
-        case .running(let s): return .open(s)
-        case .interrupted(let s): return .askRestore(s)
-        case .free: return .create(arguments(name: trimmed, directory: directory))
+        if let why = problem(with: trimmed) { return .invalid(why) }
+        return .create(arguments(name: trimmed, directory: directory))
+    }
+}
+
+/// A launch receipt identifies this request even before its first hook arrives.
+public struct NewSessionReceipt: Decodable, Equatable, Sendable {
+    public var result: String
+    public var sessionId: String
+    public var name: String
+    public var cwd: String
+    public var slotId: String?
+    public var tmux: Session.Tmux?
+    public var unconfirmed: Bool { result == "unconfirmed" }
+
+    public static func decode(_ data: Data) throws -> Self {
+        struct Wire: Decodable { var schema: Int }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        let head = try decoder.decode(Wire.self, from: data)
+        guard head.schema <= Snapshot.supportedSchema else { throw SnapshotError.newerSchema(head.schema) }
+        let receipt = try decoder.decode(Self.self, from: data)
+        guard head.schema == 1, ["starting", "unconfirmed"].contains(receipt.result),
+              UUID(uuidString: receipt.sessionId) != nil, !receipt.name.isEmpty,
+              receipt.cwd.hasPrefix("/"), receipt.cwd.rangeOfCharacter(from: .controlCharacters) == nil else {
+            throw SnapshotError.invalid("Invalid new-session receipt.")
         }
+        return receipt
+    }
+
+    public func registeredSession(in sessions: [Session]) -> Session? {
+        let matching = sessions.filter {
+            $0.sessionId == sessionId && (slotId == nil || $0.id == slotId)
+                && $0.status == "running" && $0.inTmux && !$0.isArchived
+        }
+        return matching.count == 1 ? matching.first : nil
+    }
+
+    public func statusMessage(in sessions: [Session]) -> String {
+        guard let registered = registeredSession(in: sessions) else { return waitingMessage }
+        return L.t("\(registered.title) is registered and ready to open.", "\(registered.title) 已登记，可打开会话。")
+    }
+
+    public var waitingMessage: String {
+        unconfirmed
+            ? L.t("The launch result isn't confirmed. Following this session ID; nothing will be started again automatically.", "启动结果尚未确认，正在按会话编号跟踪，不会自动再次新建。")
+            : L.t("\(name) is starting. Waiting for its session to register.", "\(name) 正在启动，等待会话登记。")
     }
 }
 
 extension MossClient {
-    /// Run `cc-moss new …`; cc-moss's own words when it says no. Starting
-    /// tmux and Claude Code takes a moment, hence the longer wait.
-    public func newSession(_ arguments: [String]) async throws {
-        _ = try await plainData(arguments, timeout: 30)
+    public func createNewSession(name: String, directory: String, capabilities: CLICapabilities) async throws -> NewSessionReceipt {
+        guard capabilities.returnsNewReceipt && capabilities.checksWorkingDirectory else {
+            throw Failure.command(L.t("Update cc-moss in Terminal before creating a session.", "请先更新终端里的 cc-moss，再新建会话。"))
+        }
+        let data = try await plainData(NewSession.arguments(name: name, directory: directory), timeout: 30)
+        do { return try NewSessionReceipt.decode(data) }
+        catch SnapshotError.newerSchema(let schema) { throw Failure.newerSchema(schema) }
+        catch { throw Failure.unreadable("Invalid new-session receipt; do not retry automatically.") }
     }
 }

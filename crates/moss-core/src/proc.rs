@@ -202,6 +202,39 @@ pub fn parents() -> std::collections::HashMap<u32, u32> {
         .collect()
 }
 
+/// The executable image reported by the OS, not a mutable argv/title word.
+pub fn executable(pid: u32) -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "linux")]
+    {
+        std::fs::read_link(format!("/proc/{pid}/exe")).ok()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let mut path = vec![0u8; 4096];
+        // SAFETY: writable owned buffer of the supplied size; no process mutation.
+        let size = unsafe {
+            libc::proc_pidpath(
+                pid as libc::c_int,
+                path.as_mut_ptr().cast(),
+                path.len() as u32,
+            )
+        };
+        if size <= 0 {
+            return None;
+        }
+        let end = path.iter().position(|byte| *byte == 0)?;
+        use std::os::unix::ffi::OsStrExt;
+        Some(std::path::PathBuf::from(std::ffi::OsStr::from_bytes(
+            &path[..end],
+        )))
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        let _ = pid;
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

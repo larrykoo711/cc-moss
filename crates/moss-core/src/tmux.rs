@@ -11,6 +11,25 @@ use crate::event::TmuxLoc;
 
 const TMUX_TIMEOUT: Duration = Duration::from_millis(500);
 
+/// 只有 tmux 明确确认同名冲突时允许换号；未知结果不能再创建。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NewSessionFailure {
+    DuplicateName,
+    Unconfirmed,
+}
+
+impl std::fmt::Display for NewSessionFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::DuplicateName => "tmux new-session: duplicate session name",
+            Self::Unconfirmed => {
+                "tmux new-session result is unconfirmed; do not start another session"
+            }
+        })
+    }
+}
+impl std::error::Error for NewSessionFailure {}
+
 pub trait Runner {
     /// Run `tmux <args>` and return stdout.
     fn run(&self, args: &[String]) -> Result<String>;
@@ -62,6 +81,9 @@ impl Runner for ProcessRunner {
         let mut all = self.socket.args();
         all.extend_from_slice(args);
         let Some(out) = output_with_timeout(Command::new("tmux").args(&all), self.timeout) else {
+            if args.first().is_some_and(|arg| arg == "new-session") {
+                return Err(NewSessionFailure::Unconfirmed.into());
+            }
             bail!(
                 "tmux {} did not finish",
                 args.first().map_or("", |s| s.as_str())
@@ -71,6 +93,13 @@ impl Runner for ProcessRunner {
             let what = args.first().map_or("", |s| s.as_str());
             let why = String::from_utf8_lossy(&out.stderr);
             let why = why.trim();
+            if what == "new-session"
+                && args
+                    .windows(2)
+                    .any(|pair| pair[0] == "-s" && why == format!("duplicate session: {}", pair[1]))
+            {
+                return Err(NewSessionFailure::DuplicateName.into());
+            }
             if why.is_empty() {
                 bail!("tmux {what} failed");
             }
@@ -200,7 +229,7 @@ impl<R: Runner> Tmux<R> {
         ];
         args.extend(argv.iter().map(String::as_str));
         let out = self.run(&args)?;
-        parse_pane(&out).ok_or_else(|| anyhow::anyhow!("tmux new-session printed no pane"))
+        parse_pane(&out).ok_or_else(|| NewSessionFailure::Unconfirmed.into())
     }
 
     /// Whether the running server can read `dir`. A long-running tmux server
@@ -225,6 +254,26 @@ impl<R: Runner> Tmux<R> {
             .ok()
             .map(|s| s.trim().to_string())
             .filter(|s| !s.is_empty())
+    }
+
+    /// 同时核对 socket 与 server PID；不因仅存在 TMUX 就切换另一服务器。
+    pub fn matches_client(&self, client: &str) -> bool {
+        let mut parts = client.split(',');
+        let Some(socket) = parts.next().filter(|value| !value.is_empty()) else {
+            return false;
+        };
+        let Some(pid) = parts.next().and_then(|value| value.parse::<u32>().ok()) else {
+            return false;
+        };
+        let Ok(server) = self.run(&["display-message", "-p", "#{socket_path}|:|#{pid}"]) else {
+            return false;
+        };
+        server
+            .trim()
+            .split_once(SEP)
+            .is_some_and(|(path, process)| {
+                path == socket && process.parse::<u32>().ok() == Some(pid)
+            })
     }
 
     /// The first pane of session `name`, if that session exists.

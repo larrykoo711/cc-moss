@@ -101,7 +101,7 @@ fn has_table(path: &std::path::Path, name: &str) -> bool {
 }
 
 #[test]
-fn additive_events_keep_version_1() {
+fn process_binding_migrates_legacy_events_and_blocks_v1_writer() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("registry.db");
     // A registry as 0.1.x left it: schema 1, no event table, no attention.
@@ -110,12 +110,16 @@ fn additive_events_keep_version_1() {
     drop(reg);
     rusqlite::Connection::open(&path)
         .unwrap()
-        .execute_batch("DROP TABLE events; ALTER TABLE slots DROP COLUMN attention;")
+        .execute_batch(
+            "DROP TABLE events; ALTER TABLE slots DROP COLUMN attention;
+         DROP TRIGGER process_binding_identity_changed; DROP TRIGGER process_binding_owner_deleted;
+         DROP TABLE process_bindings; PRAGMA user_version=1;",
+        )
         .unwrap();
     assert!(!has_table(&path, "events"));
     assert_eq!(user_version(&path), 1);
 
-    // The new version fills in what is missing and stays on schema 1.
+    // Identity invariants require a version bump, with no binding backfill.
     let mut reg = Registry::open(&path).unwrap();
     assert!(has_table(&path, "events"));
     assert!(columns(&path).contains(&"attention".to_string()));
@@ -126,18 +130,22 @@ fn additive_events_keep_version_1() {
     reg.apply(&ended, &ctx()).unwrap();
     assert_eq!(reg.events(Some(0), 10).unwrap()[0].kind, "interrupted");
     drop(reg);
-    assert_eq!(user_version(&path), 1);
+    assert_eq!(user_version(&path), 2);
 
-    // 0.1.x keeps working on it: its statements name only the old columns.
+    // Version-1 Registry::init enters query_only for any version above 1.
+    // Mirror that existing old-writer gate, including SQLite enforcement.
     let old = rusqlite::Connection::open(&path).unwrap();
-    old.execute_batch(
-        "UPDATE slots SET busy = 1, last_prompt = 'x', status = 'running';
-         INSERT INTO slots (slot_id, agent, session_id, cwd, status, created_at, last_active_at)
-         VALUES ('S2', 'claude', 'U2', '/work', 'running', 1, 1);",
-    )
-    .unwrap();
-    drop(old);
-    let reg = Registry::open(&path).unwrap();
-    assert_eq!(reg.slots().unwrap().len(), 2);
-    assert_eq!(user_version(&path), 1);
+    let version: i64 = old
+        .pragma_query_value(None, "user_version", |r| r.get(0))
+        .unwrap();
+    assert!(version > 1);
+    old.pragma_update(None, "query_only", true).unwrap();
+    assert!(old
+        .execute("UPDATE slots SET status='running'", [])
+        .is_err());
+    let count: i64 = old
+        .query_row("SELECT count(*) FROM process_bindings", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(count, 0);
+    assert_eq!(Registry::open(&path).unwrap().slots().unwrap().len(), 1);
 }

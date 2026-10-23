@@ -23,13 +23,16 @@ pub mod moss;
 pub mod moss_talk;
 pub mod new;
 pub mod note;
+mod process_identity;
 pub mod provider;
 pub mod restart;
 pub mod restore;
+mod restore_source;
 pub mod send;
 pub mod setup;
 pub mod suggest;
 pub mod update;
+pub mod working_directory;
 
 /// `text` padded with spaces to `width` terminal columns (Chinese takes two).
 pub fn pad(text: &str, width: usize) -> String {

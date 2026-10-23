@@ -71,7 +71,7 @@ fn ls_labels_sessions_that_have_no_title_yet() {
 fn bypass_in_pane() {
     let w = World::new("bypass-pane");
     // No `default_args`: bypass comes from cc-moss itself.
-    std::fs::write(w.path("config.toml"), "").unwrap();
+    std::fs::write(w.config_path(), "").unwrap();
     std::fs::create_dir_all(w.path("home")).unwrap();
     for (name, extra) in [("job-a", None), ("job-b", Some("--safe"))] {
         let out = w

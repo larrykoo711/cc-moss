@@ -214,6 +214,45 @@ public struct SearchIndex: Sendable {
     }
 }
 
+/// Search hits carry whole sessions, so every field participates in cache identity.
+/// Equal snapshots reuse the index (pinyin isn't free), never rebuilding per keystroke.
+public final class SearchIndexes {
+    private var liveKey: [Session] = []
+    private var liveFolders: [String: String] = [:]
+    private var liveIndex = SearchIndex([])
+    private var closedKey: [Session] = []
+    private var closedIndex = SearchIndex([])
+    private var archivedKey: [Session] = []
+    private var archivedIndex = SearchIndex([])
+
+    public init() {}
+
+    public func live(_ sessions: [Session], folders: [String: String]) -> SearchIndex {
+        if sessions != liveKey || folders != liveFolders {
+            liveKey = sessions
+            liveFolders = folders
+            liveIndex = SearchIndex(sessions, folders: folders)
+        }
+        return liveIndex
+    }
+
+    public func archived(_ sessions: [Session]) -> SearchIndex {
+        if sessions != archivedKey {
+            archivedKey = sessions
+            archivedIndex = SearchIndex(sessions)
+        }
+        return archivedIndex
+    }
+
+    public func closed(_ sessions: [Session]) -> SearchIndex {
+        if sessions != closedKey {
+            closedKey = sessions
+            closedIndex = SearchIndex(sessions)
+        }
+        return closedIndex
+    }
+}
+
 extension MossClient {
     /// `cc-moss ls --json --all`: closed sessions too (searched lazily).
     public func snapshotAll() async throws -> Snapshot {

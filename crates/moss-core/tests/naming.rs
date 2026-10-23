@@ -1,6 +1,19 @@
 use moss_core::naming::{has_hidden_chars, sanitize, session_name, unique};
 
 #[test]
+fn fresh_naming_keeps_number_after_unicode_truncation_and_sanitizing() {
+    let seed = "长名称".repeat(30);
+    for ordinal in [2, 32, 1234] {
+        let name = moss_core::naming::fresh_name(&seed, ordinal);
+        assert!(name.chars().count() <= moss_core::naming::MAX_CHARS);
+        assert!(sanitize(&name).ends_with(&format!("-{ordinal}")));
+    }
+    assert_eq!(moss_core::naming::fresh_name("project", 1), "project");
+    assert_eq!(moss_core::naming::fresh_name("project", 2), "project-2");
+    assert_eq!(moss_core::naming::fresh_name("   ", 1), "session");
+}
+
+#[test]
 fn sanitize_cases() {
     // Keeps what people name things with (any script, case, emoji); only
     // what tmux or a shell can't take becomes `-` (2026-10-19,
