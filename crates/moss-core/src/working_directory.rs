@@ -498,6 +498,12 @@ fn trusted_home() -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Tests share the process-wide worker permits with each other; run them one at a time
+    /// so a busy neighbour reads as "unavailable" only where a test asks for that.
+    fn serial() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
     #[test]
     fn working_directory_budget_keeps_worker_permits_until_real_exit() {
         use std::time::Instant;
@@ -538,6 +544,7 @@ mod tests {
     }
     #[test]
     fn working_directory_trusted_os_home_cannot_be_replaced_by_environment_context() {
+        let _serial = serial();
         let target = tempfile::tempdir().unwrap();
         let ctx = Context::new(target.path().to_path_buf(), vec![]).unwrap();
         assert!(matches!(
@@ -547,6 +554,7 @@ mod tests {
     }
     #[test]
     fn working_directory_missing_file_permissions_and_config_context() {
+        let _serial = serial();
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
@@ -572,6 +580,7 @@ mod tests {
     }
     #[test]
     fn working_directory_config_file_and_config_symlink_are_checked_in_context() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
@@ -597,6 +606,7 @@ mod tests {
     }
     #[test]
     fn working_directory_claude_config_dir_follows_runtime_parsing() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
@@ -626,6 +636,7 @@ mod tests {
     }
     #[test]
     fn working_directory_claude_config_dir_matches_moss_resolve_table() {
+        let _serial = serial();
         let home = Path::new("/Users/me");
         let cases = [
             (Some("~/cc"), Some("/Users/me/cc")),
@@ -648,6 +659,7 @@ mod tests {
     }
     #[test]
     fn working_directory_config_parent_link_and_file_link_are_both_exact() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let real = temp.path().join("R");
@@ -675,6 +687,7 @@ mod tests {
     }
     #[test]
     fn working_directory_custom_config_parent_is_exact_not_subtree() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let documents = home.join("Documents");
@@ -694,6 +707,7 @@ mod tests {
     }
     #[test]
     fn working_directory_configuration_errors_never_become_empty_roots() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let file = temp.path().join("config.toml");
         assert!(bounded_config(&file).is_ok());
@@ -707,6 +721,7 @@ mod tests {
     }
     #[test]
     fn working_directory_policy_table_and_containers() {
+        let _serial = serial();
         let p = Policy::table(Path::new("/Users/test"), Path::new("/target"), true);
         for path in [
             "/",
@@ -740,6 +755,7 @@ mod tests {
     }
     #[test]
     fn working_directory_data_aliases_do_not_block_user_projects() {
+        let _serial = serial();
         let p = Policy::table(Path::new("/Users/test"), Path::new("/target"), true);
         assert!(p
             .allow(Path::new("/System/Volumes/Data/Users/test/Documents"))
@@ -755,6 +771,7 @@ mod tests {
     }
     #[test]
     fn working_directory_symlink_context_and_recheck() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let work = temp.path().join("work");
@@ -772,6 +789,7 @@ mod tests {
     }
     #[test]
     fn working_directory_runtime_allows_exact_ancestor_not_forbidden_tree() {
+        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let ctx = Context::new(temp.path().to_path_buf(), vec![]).unwrap();
         let target = temp.path().join("state/moss");
