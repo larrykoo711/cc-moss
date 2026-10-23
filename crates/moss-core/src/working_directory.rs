@@ -128,11 +128,17 @@ fn bounded_in<T: Send + 'static>(
         return Err(Error::Unavailable);
     }
     let deadline = std::time::Instant::now() + budget;
-    active
-        .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-            (n < MAX_WORKERS).then_some(n + 1)
-        })
-        .map_err(|_| Error::Unavailable)?;
+    // A compare-exchange loop rather than `fetch_update`, which newer Rust deprecates.
+    let mut n = active.load(Ordering::Acquire);
+    loop {
+        if n >= MAX_WORKERS {
+            return Err(Error::Unavailable);
+        }
+        match active.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
+            Ok(_) => break,
+            Err(current) => n = current,
+        }
+    }
     let permit = Permit(active);
     let (tx, rx) = mpsc::sync_channel(1);
     std::thread::Builder::new()

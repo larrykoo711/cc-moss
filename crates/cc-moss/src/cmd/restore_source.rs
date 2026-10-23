@@ -19,12 +19,17 @@ static ACTIVE_WORKERS: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
 struct WorkerPermit(Arc<AtomicUsize>);
 impl WorkerPermit {
     fn acquire(active: &Arc<AtomicUsize>) -> Option<Self> {
-        active
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < MAX_WORKERS).then_some(n + 1)
-            })
-            .ok()?;
-        Some(Self(active.clone()))
+        // A compare-exchange loop rather than `fetch_update`, which newer Rust deprecates.
+        let mut n = active.load(Ordering::Acquire);
+        loop {
+            if n >= MAX_WORKERS {
+                return None;
+            }
+            match active.compare_exchange_weak(n, n + 1, Ordering::AcqRel, Ordering::Acquire) {
+                Ok(_) => return Some(Self(active.clone())),
+                Err(current) => n = current,
+            }
+        }
     }
 }
 impl Drop for WorkerPermit {
