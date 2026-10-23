@@ -123,9 +123,66 @@ pub fn restart_argv(claude: &str, slot: &Slot) -> Vec<String> {
     argv
 }
 
-/// Resume with an explicit target only for an explicit channel application.
-/// The recorded config directory is replayed with env, never its credentials.
+/// 本次恢复选择；不改写记录中的启动来源或凭据。
+#[derive(Debug, Clone, Default)]
+pub enum RestoreConfigSource {
+    #[default]
+    Recorded,
+    Default,
+    Directory(String),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum ResumePreflightError {
+    ConfigSourceUnknown,
+    ConfigSourceChanged,
+    ConfigSourceUnsupported,
+    InvalidConfigSource,
+}
+
+impl std::fmt::Display for ResumePreflightError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::ConfigSourceUnknown => "the session's config source is unknown; choose the default source or an explicit config directory for this restore",
+            Self::ConfigSourceChanged => "the recorded config source changed; start recovery again and confirm the source anew",
+            Self::ConfigSourceUnsupported => "the session used config arguments that cannot be replayed safely; start it manually with its original arguments",
+            Self::InvalidConfigSource => "the config source is not safe to replay; choose an absolute, existing directory without control characters",
+        })
+    }
+}
+
+impl std::error::Error for ResumePreflightError {}
+
 pub fn resume_argv(claude: &str, slot: &Slot, provider_default: bool) -> Result<Vec<String>> {
+    resume_argv_with_source(
+        claude,
+        slot,
+        provider_default,
+        &RestoreConfigSource::Recorded,
+    )
+}
+
+pub fn resume_argv_with_validated_source(
+    claude: &str,
+    slot: &Slot,
+    provider_default: bool,
+    source: &super::restore_source::ValidatedConfigSource,
+) -> Result<Vec<String>> {
+    if !source.matches(slot) {
+        return Err(ResumePreflightError::ConfigSourceChanged.into());
+    }
+    resume_argv_with_source(claude, slot, provider_default, source.choice())
+}
+
+fn resume_argv_with_source(
+    claude: &str,
+    slot: &Slot,
+    provider_default: bool,
+    source: &RestoreConfigSource,
+) -> Result<Vec<String>> {
+    if !matches!(source, RestoreConfigSource::Recorded) && provider_default {
+        anyhow::bail!("config source selection cannot be combined with --provider-default");
+    }
     if !std::path::Path::new(&slot.cwd).is_absolute() || slot.cwd.chars().any(char::is_control) {
         anyhow::bail!("the session's working directory is not safe to replay");
     }
@@ -134,35 +191,53 @@ pub fn resume_argv(claude: &str, slot: &Slot, provider_default: bool) -> Result<
     // Let Claude resume its conversation; only explicit channel application
     // is allowed to impose a model override.
     let mut argv = without_model(&restart_argv(claude, slot));
-    let path = if provider_default {
-        let (plan, path) = super::provider::model_plan(slot)?;
-        argv = without_model(&argv);
+    let mut with_env = launch_source_env_with_source(slot, source)?;
+    if provider_default {
+        let (plan, _) = super::provider::model_plan(slot)?;
         argv.extend([
             "--model".to_string(),
             plan.model.expect("a resolved plan has a model"),
         ]);
-        Some(path)
-    } else {
-        super::provider::settings_of(slot).or_else(super::provider::settings_path)
-    };
-    if let Some(path) = path {
-        let config = path
-            .parent()
-            .ok_or_else(|| anyhow::anyhow!("invalid settings folder"))?;
-        if !config.is_absolute() || config.to_string_lossy().chars().any(char::is_control) {
-            anyhow::bail!("the settings folder is not safe to replay");
-        }
-        let mut with_env = vec![
-            "/usr/bin/env".to_string(),
-            format!("CLAUDE_CONFIG_DIR={}", config.display()),
-        ];
-        with_env.extend(argv);
-        argv = with_env;
     }
+    with_env.extend(argv);
+    argv = with_env;
     if has_control(&argv) {
         anyhow::bail!("the session name or arguments contain control characters");
     }
     Ok(argv)
+}
+
+/// 入队前只验证来源，不提前固定执行时的渠道模型。
+fn launch_source_env(slot: &Slot) -> Result<Vec<String>> {
+    launch_source_env_with_source(slot, &RestoreConfigSource::Recorded)
+}
+
+fn launch_source_env_with_source(slot: &Slot, source: &RestoreConfigSource) -> Result<Vec<String>> {
+    use moss_core::provider::LaunchSource;
+    let snapshot = slot
+        .provider_started
+        .as_deref()
+        .and_then(moss_core::provider::Snapshot::from_json)
+        .unwrap_or_default();
+    if !snapshot.unreplayable_args.is_empty() {
+        return Err(ResumePreflightError::ConfigSourceUnsupported.into());
+    }
+    let selected = match source {
+        RestoreConfigSource::Recorded => snapshot.launch_source,
+        RestoreConfigSource::Default => LaunchSource::Unset,
+        RestoreConfigSource::Directory(path) => {
+            if !std::path::Path::new(path).is_absolute() || path.chars().any(char::is_control) {
+                return Err(ResumePreflightError::InvalidConfigSource.into());
+            }
+            LaunchSource::Explicit(path.clone())
+        }
+    };
+    if selected == LaunchSource::Unknown {
+        return Err(ResumePreflightError::ConfigSourceUnknown.into());
+    }
+    selected
+        .env_argv()
+        .map_err(|_| ResumePreflightError::InvalidConfigSource.into())
 }
 
 /// Whitelisted arguments (flag and value as separate words) without
@@ -382,7 +457,6 @@ fn restart_one(
         ));
     }
     if slot.effective_status(proc::is_alive) != Status::Running {
-        let _ = super::provider::dequeue(&state, &slot.slot_id);
         return Ok(refused(
             name,
             Some(slot),
@@ -421,6 +495,20 @@ fn restart_one(
             }
         }
     }
+    if let Err(error) = launch_source_env(slot) {
+        return Ok(refused(name, Some(slot), "settings", format!("{error:#}")));
+    }
+    let working = match super::working_directory::for_slot(slot) {
+        Ok(working) => working,
+        Err(error) => {
+            return Ok(refused(
+                name,
+                Some(slot),
+                super::working_directory::code(&error),
+                error.to_string(),
+            ))
+        }
+    };
     if args.provider_default {
         if let Err(error) = super::provider::model_plan(slot) {
             return Ok(refused(name, Some(slot), "settings", format!("{error:#}")));
@@ -490,9 +578,32 @@ fn restart_one(
         }
     }
     let claude = super::launch::claude_bin()?;
-    let argv = match resume_argv(&claude, slot, args.provider_default) {
+    let mut argv = match resume_argv(&claude, slot, args.provider_default) {
         Ok(argv) => argv,
         Err(error) => return Ok(refused(name, Some(slot), "settings", format!("{error:#}"))),
+    };
+    if let Err(error) = moss_core::working_directory::recheck(&working) {
+        return Ok(refused(name, Some(slot), error.code(), error.to_string()));
+    }
+    let env_index = if argv.get(1).is_some_and(|arg| arg == "-u") {
+        3
+    } else {
+        1
+    };
+    argv.insert(
+        env_index,
+        format!("HOME={}", working.target_home().display()),
+    );
+    let operation_identity = match super::process_identity::verify(registry, slot) {
+        Ok(identity) => identity,
+        Err(error) => {
+            return Ok(refused(
+                name,
+                Some(slot),
+                "process-unknown",
+                error.to_string(),
+            ))
+        }
     };
     let direct_execution = if args.from_queue {
         None
@@ -578,11 +689,11 @@ fn restart_one(
     match in_place(
         registry,
         slot,
-        &loc.socket,
-        &loc.pane_id,
         &argv,
         rebuild.as_ref(),
         claimed_at,
+        &operation_identity,
+        &working,
     ) {
         Ok(()) => {
             let confirmed = wait_for_start_in_pane(registry, slot, slot.tmux.as_ref())?;
@@ -629,6 +740,9 @@ fn restart_one(
         }
         Err(e) => {
             registry.clear_restore_claim(&fresh, claimed_at)?;
+            if let Some(error) = e.downcast_ref::<moss_core::working_directory::Error>() {
+                return Ok(refused(name, Some(slot), error.code(), error.to_string()));
+            }
             if let Some(failure) = e.downcast_ref::<QuitFailure>() {
                 registry.record(
                     &slot.slot_id,
@@ -966,26 +1080,14 @@ fn stopped_rebuild_matches(
     claimed_at: i64,
     tmux: &Tmux<ProcessRunner>,
     before: &PaneState,
+    operation: &super::process_identity::OperationIdentity,
 ) -> bool {
     let until = Instant::now() + Duration::from_secs(1);
     loop {
         if proc::liveness(identity.claude_pid, Some(&identity.claude_start)) != Liveness::Dead {
             return false;
         }
-        let Ok(slots) = registry.slots() else {
-            return false;
-        };
-        let Some(current) = slots.iter().find(|s| s.slot_id == identity.slot_id) else {
-            return false;
-        };
-        if current.session_id != identity.session_id
-            || current.pid != slot.pid
-            || current.pid_start != slot.pid_start
-            || current.restore_started_at_ms != Some(claimed_at)
-            || current.tmux.as_ref().is_none_or(|loc| {
-                loc.socket != identity.tmux_socket || loc.pane_id != identity.pane_id
-            })
-        {
+        if !operation.after_exit(registry, slot, claimed_at) {
             return false;
         }
         let Some(now) = pane_state(tmux, &identity.pane_id) else {
@@ -1137,13 +1239,21 @@ fn launch_target(slot: &Slot, tmux: &Tmux<ProcessRunner>, pane: &str) -> Result<
 fn in_place(
     registry: &Registry,
     slot: &Slot,
-    socket: &str,
-    pane: &str,
     argv: &[String],
     rebuild: Option<&RebuildIdentity>,
     claimed_at: i64,
+    operation_identity: &super::process_identity::OperationIdentity,
+    working: &moss_core::working_directory::ValidatedWorkingDirectory,
 ) -> Result<()> {
-    let tmux = Tmux::with_timeout(Socket::Path(socket.to_string()), Duration::from_secs(5));
+    moss_core::working_directory::recheck(working)?;
+    let cwd = working.canonical().to_string_lossy();
+    operation_identity.recheck(registry, slot)?;
+    let loc = slot
+        .tmux
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("the pane identity is missing"))?;
+    let pane = loc.pane_id.as_str();
+    let tmux = Tmux::with_timeout(Socket::Path(loc.socket.clone()), Duration::from_secs(5));
     if let Some(identity) = rebuild {
         if !identity_matches(registry, slot, identity) {
             return Err(StaleConfirmation.into());
@@ -1167,12 +1277,22 @@ fn in_place(
         }
         // Ending a PTY wrapper is not evidence that its detached child exited.
         // Ask the identity-bound Claude itself to exit before touching the wrapper.
+        operation_identity.recheck(registry, &fresh)?;
         quit(&fresh, identity.claude_pid)?;
-        if !stopped_rebuild_matches(registry, &fresh, identity, claimed_at, &tmux, &topology) {
+        if !stopped_rebuild_matches(
+            registry,
+            &fresh,
+            identity,
+            claimed_at,
+            &tmux,
+            &topology,
+            operation_identity,
+        ) {
             return Err(StaleConfirmation.into());
         }
+        moss_core::working_directory::recheck(working)?;
         let words: Vec<&str> = argv.iter().map(String::as_str).collect();
-        let done = tmux.respawn_pane(pane, &slot.cwd, &words, true);
+        let done = tmux.respawn_pane(pane, &cwd, &words, true);
         let _ = tmux.set_pane_option(pane, "remain-on-exit", before.as_deref());
         return done;
     }
@@ -1188,6 +1308,7 @@ fn in_place(
             {
                 anyhow::bail!("the foreground shell or session changed; nothing was stopped");
             }
+            operation_identity.recheck(registry, slot)?;
             quit(slot, pid)?;
             let until = Instant::now() + Duration::from_secs(2);
             while !shell.ready() {
@@ -1201,8 +1322,12 @@ fn in_place(
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
-            let line = format!("cd {} && {}", shell_word(&slot.cwd), shell_line(argv));
-            if tmux.pane_process(pane) != Some((shell.pane.pid, false)) || !shell.ready() {
+            moss_core::working_directory::recheck(working)?;
+            let line = format!("cd {} && {}", shell_word(&cwd), shell_line(argv));
+            if !operation_identity.after_exit(registry, slot, claimed_at)
+                || tmux.pane_process(pane) != Some((shell.pane.pid, false))
+                || !shell.ready()
+            {
                 anyhow::bail!("the foreground or pane mapping changed; no command was entered");
             }
             return tmux.type_line(pane, &line);
@@ -1221,14 +1346,24 @@ fn in_place(
     if !identity_matches(registry, slot, &identity) {
         return Err(StaleConfirmation.into());
     }
+    operation_identity.recheck(registry, slot)?;
     quit(slot, pid)?;
     // A different controller may have replaced the pane during the wait.
     // The old PID being dead does not authorize killing that replacement.
-    if !stopped_rebuild_matches(registry, slot, &identity, claimed_at, &tmux, &topology) {
+    if !stopped_rebuild_matches(
+        registry,
+        slot,
+        &identity,
+        claimed_at,
+        &tmux,
+        &topology,
+        operation_identity,
+    ) {
         return Err(StaleConfirmation.into());
     }
+    moss_core::working_directory::recheck(working)?;
     let words: Vec<&str> = argv.iter().map(String::as_str).collect();
-    let done = tmux.respawn_pane(pane, &slot.cwd, &words, true);
+    let done = tmux.respawn_pane(pane, &cwd, &words, true);
     // Put back once the pane runs again, or after a failed respawn (a dead
     // pane stays until it is respawned or closed).
     let _ = tmux.set_pane_option(pane, "remain-on-exit", before.as_deref());
@@ -1332,6 +1467,76 @@ mod tests {
             provider_started: None,
             provider_seen_keys: None,
         }
+    }
+
+    #[test]
+    fn launch_source_unset_clears_inherited_config() {
+        let mut s = slot(&[]);
+        s.provider_started = Some(r#"{"keys":[],"host":null,"env_model":null,"model":null,"source":"/tmp/home/.claude/settings.json","launch_source":"unset"}"#.into());
+        let argv = resume_argv("claude", &s, false).unwrap();
+        assert_eq!(&argv[..3], ["/usr/bin/env", "-u", "CLAUDE_CONFIG_DIR"]);
+    }
+
+    #[test]
+    fn launch_source_unknown_refuses_even_with_settings_path() {
+        let mut s = slot(&[]);
+        s.provider_started = Some(r#"{"keys":[],"host":null,"env_model":null,"model":null,"source":"/tmp/home/.claude/settings.json"}"#.into());
+        assert!(resume_argv("claude", &s, false).is_err());
+    }
+
+    #[test]
+    fn launch_source_unsupported_cli_refuses() {
+        let mut s = slot(&[]);
+        s.provider_started = Some(r#"{"keys":[],"host":null,"env_model":null,"model":null,"launch_source":"unset","unreplayable_args":["--mcp-config"]}"#.into());
+        assert!(resume_argv("claude", &s, false).is_err());
+    }
+
+    #[test]
+    fn config_source_choice_builds_argv_without_changing_old_snapshot() {
+        let mut s = slot(&[]);
+        s.provider_started = Some(r#"{"keys":[],"host":null,"env_model":null,"model":null,"source":"/tmp/old/settings.json"}"#.into());
+        let original = s.provider_started.clone();
+        let default =
+            resume_argv_with_source("claude", &s, false, &RestoreConfigSource::Default).unwrap();
+        assert_eq!(
+            &default[..4],
+            ["/usr/bin/env", "-u", "CLAUDE_CONFIG_DIR", "claude"]
+        );
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("config with spaces ' quote");
+        std::fs::create_dir(&path).unwrap();
+        let chosen = RestoreConfigSource::Directory(path.to_string_lossy().into_owned());
+        let explicit = resume_argv_with_source("claude", &s, false, &chosen).unwrap();
+        assert_eq!(
+            &explicit[..3],
+            [
+                "/usr/bin/env",
+                &format!("CLAUDE_CONFIG_DIR={}", path.display()),
+                "claude"
+            ]
+        );
+        assert_eq!(s.provider_started, original);
+        assert!(resume_argv("claude", &s, false)
+            .unwrap_err()
+            .is::<ResumePreflightError>());
+    }
+
+    #[test]
+    fn config_source_override_preserves_other_preflight_checks() {
+        let mut s = slot(&[]);
+        s.cwd = "relative".into();
+        assert!(
+            resume_argv_with_source("claude", &s, false, &RestoreConfigSource::Default).is_err()
+        );
+        s.cwd = "/work".into();
+        s.name = Some("bad\nname".into());
+        assert!(
+            resume_argv_with_source("claude", &s, false, &RestoreConfigSource::Default).is_err()
+        );
+        s.name = None;
+        assert!(
+            resume_argv_with_source("claude", &s, true, &RestoreConfigSource::Default).is_err()
+        );
     }
 
     #[test]
@@ -1516,7 +1721,7 @@ mod tests {
     fn provider_model_opusplan_is_not_replaced_by_observed_model() {
         let mut s = slot(&["--model", "opusplan"]);
         s.provider_started =
-            Some(r#"{"keys":[],"source":"/nonexistent/channel/settings.json"}"#.into());
+            Some(r#"{"keys":[],"source":"/nonexistent/channel/settings.json","launch_source":{"explicit":"/nonexistent/channel"}}"#.into());
         let file = tempfile::NamedTempFile::new().unwrap();
         std::fs::write(
             file.path(),
@@ -1535,7 +1740,7 @@ mod tests {
         let mut s = slot(&[]);
         s.cwd = "/nonexistent/work\nunsafe".into();
         s.provider_started =
-            Some(r#"{"keys":[],"source":"/nonexistent/channel/settings.json"}"#.into());
+            Some(r#"{"keys":[],"source":"/nonexistent/channel/settings.json","launch_source":{"explicit":"/nonexistent/channel"}}"#.into());
         assert!(super::super::provider::model_plan(&s).is_err());
     }
 

@@ -121,7 +121,18 @@ fn handle(event: &str) -> Result<()> {
         );
         return Ok(());
     }
-    registry.apply_with(&event, &ctx, &proc::is_alive)?;
+    let origin = if matches!(event, Event::Start { .. } | Event::End { .. }) {
+        ctx.pid
+            .zip(ctx.pid_start.as_deref())
+            .and_then(|(pid, start)| super::process_identity::hook_origin(pid, start))
+    } else {
+        None
+    };
+    if let Some(origin) = origin {
+        registry.apply_verified(&event, &ctx, &proc::is_alive, &origin)?;
+    } else {
+        registry.apply_with(&event, &ctx, &proc::is_alive)?;
+    }
     // Moss (started by the daemon) is recorded as such: only the session
     // the daemon started, by its id. Anything else that inherited the role
     // (a window opened in Moss's tmux, a tmux server Moss's shell started,
@@ -182,18 +193,23 @@ fn handle(event: &str) -> Result<()> {
 /// itself reads (`CLAUDE_CONFIG_DIR`, else `~/.claude`): key names, host and
 /// models only (T2.6).
 fn record_provider(registry: &Registry, session_id: &str, ctx: &Context) -> Result<()> {
+    // 先采集来源；坏 settings 和缺失 HOME 都不能抹去启动证据。
+    let launch_source =
+        moss_core::provider::LaunchSource::capture(std::env::var_os("CLAUDE_CONFIG_DIR"));
+    let argv = ctx.pid.and_then(super::process_identity::entry_arguments);
+    let unreplayable_args = moss_core::provider::unreplayable_args(argv.as_deref());
     let home = env("HOME").map(std::path::PathBuf::from);
-    let config_dir = env("CLAUDE_CONFIG_DIR").map(std::path::PathBuf::from);
-    let Some(path) =
-        moss_core::provider::settings_path(None, config_dir.as_deref(), home.as_deref())
-    else {
-        return Ok(());
-    };
-    let Some(mut now) = moss_core::provider::Snapshot::read(&path) else {
-        return Ok(());
-    };
-    // Which file: a switch has to reach this one to reach this session.
-    now.source = Some(path.to_string_lossy().into_owned());
+    let config_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(std::path::PathBuf::from);
+    let path = moss_core::provider::settings_path(None, config_dir.as_deref(), home.as_deref());
+    let read = path
+        .as_deref()
+        .and_then(moss_core::provider::Snapshot::read);
+    let valid = read.is_some();
+    let mut now = read.unwrap_or_default();
+    now.settings_valid = Some(valid);
+    now.source = path.map(|p| p.to_string_lossy().into_owned());
+    now.launch_source = launch_source;
+    now.unreplayable_args = unreplayable_args;
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };

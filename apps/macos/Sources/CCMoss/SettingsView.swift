@@ -566,7 +566,7 @@ struct GeneralSettings: View {
         }
         .task { await loadPermissionMode() }
         SettingsCard(title: L.t("Workspace", "工作区")) {
-            WorkspaceRow()
+            WorkspaceRow(model: model)
         }
         TerminalSettings(prefs: model.terminals)
     }

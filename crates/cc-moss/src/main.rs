@@ -43,6 +43,21 @@ enum Command {
         #[arg(long)]
         json: bool,
     },
+    /// Classify shell launch arguments without starting a process.
+    #[command(hide = true)]
+    LaunchMode {
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+    /// Check working directories without starting a session; success is silent unless --json.
+    CheckDirectory {
+        /// Return one structured result per path (up to 64 paths).
+        #[arg(long)]
+        json: bool,
+        /// Absolute working directories to check.
+        #[arg(required = true)]
+        paths: Vec<std::path::PathBuf>,
+    },
     /// What just happened to the sessions, oldest first (for apps and scripts).
     Events {
         /// Machine-readable output (schema 1).
@@ -66,7 +81,10 @@ enum Command {
         /// Do not attach to the new session.
         #[arg(long)]
         detach: bool,
-        /// If the name belongs to an interrupted session, restore it without asking.
+        /// Machine-readable receipt for this fresh session; requires --detach.
+        #[arg(long, requires = "detach")]
+        json: bool,
+        /// Accepted for compatibility; new sessions never restore an existing name.
         #[arg(long)]
         yes: bool,
         /// Normal mode this time: no bypass, not even one added in the config's default_args.
@@ -175,6 +193,21 @@ enum Command {
         /// Explicitly apply the current channel's model when restoring.
         #[arg(long)]
         provider_default: bool,
+        /// Use the default config source for this one restore (unset CLAUDE_CONFIG_DIR).
+        #[arg(long, value_parser = ["default"], conflicts_with_all = ["config_dir", "provider_default"], requires = "names", group = "restore_config_override")]
+        config_source: Option<String>,
+        /// Use this absolute, existing config directory for this one restore.
+        #[arg(long, conflicts_with_all = ["config_source", "provider_default"], requires = "names", group = "restore_config_override")]
+        config_dir: Option<String>,
+        /// Refuse this source choice if the recorded source is no longer unknown.
+        #[arg(long, requires = "restore_config_override")]
+        require_unknown_config: bool,
+        /// Replace a source only if this read-only source plan is still current.
+        #[arg(long, requires = "restore_config_override")]
+        expected_source_revision: Option<String>,
+        /// Internal exact current slot/session selection; never resolve by display name.
+        #[arg(long, hide = true, requires = "names")]
+        exact_slot_id: Option<String>,
         /// Only these sessions (Claude name, tmux name or id prefix).
         names: Vec<String>,
     },
@@ -608,17 +641,25 @@ fn main() -> std::process::ExitCode {
             name,
             dir,
             detach,
+            json,
             yes,
             safe,
             claude_args,
-        } => report(cmd::new::run(cmd::new::NewArgs {
-            name,
-            dir,
-            detach,
-            yes,
-            safe,
-            claude_args,
-        })),
+        } => {
+            let args = cmd::new::NewArgs {
+                name,
+                dir,
+                detach,
+                yes,
+                safe,
+                claude_args,
+            };
+            report(if json {
+                cmd::new::run_json(args)
+            } else {
+                cmd::new::run(args)
+            })
+        }
         Command::Ls {
             all,
             archived,
@@ -649,6 +690,11 @@ fn main() -> std::process::ExitCode {
             stale,
             json,
         })),
+        Command::LaunchMode { args } => {
+            println!("{}", moss_core::launch_args::shell_mode(&args).as_str());
+            std::process::ExitCode::SUCCESS
+        }
+        Command::CheckDirectory { json, paths } => report(cmd::working_directory::run(paths, json)),
         Command::Events { json, since, limit } => report(cmd::events::run(
             since,
             usize::try_from(limit).unwrap_or(usize::MAX),
@@ -697,17 +743,35 @@ fn main() -> std::process::ExitCode {
         })),
         Command::Restore {
             provider_default,
+            config_source,
+            config_dir,
+            require_unknown_config,
+            expected_source_revision,
+            exact_slot_id,
             yes,
             dry_run,
             json,
             names,
-        } => report(cmd::restore::run(cmd::restore::RestoreArgs {
-            provider_default,
-            yes,
-            dry_run,
-            json,
-            names,
-        })),
+        } => {
+            let args = cmd::restore::RestoreArgs {
+                config_source: match (config_source, config_dir) {
+                    (_, Some(path)) => cmd::restart::RestoreConfigSource::Directory(path),
+                    (Some(_), None) => cmd::restart::RestoreConfigSource::Default,
+                    (None, None) => cmd::restart::RestoreConfigSource::Recorded,
+                },
+                require_unknown_config,
+                expected_source_revision,
+                provider_default,
+                yes,
+                dry_run,
+                json,
+                names,
+            };
+            report(match exact_slot_id {
+                Some(slot_id) => cmd::restore::run_exact(args, &slot_id),
+                None => cmd::restore::run(args),
+            })
+        }
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),

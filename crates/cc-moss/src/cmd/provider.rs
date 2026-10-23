@@ -440,7 +440,18 @@ fn finish_terminal_failure(state: &Path, claim: &Queued) -> std::io::Result<bool
 fn terminal_failure(reason: Option<&str>) -> bool {
     matches!(
         reason,
-        Some("quit-timeout" | "signal-failed" | "process-unknown")
+        Some(
+            "quit-timeout"
+                | "signal-failed"
+                | "process-unknown"
+                | "cwd_forbidden"
+                | "cwd_missing"
+                | "cwd_not_directory"
+                | "cwd_unreadable"
+                | "cwd_unavailable"
+                | "cwd_invalid"
+                | "cwd_changed"
+        )
     )
 }
 
@@ -656,6 +667,20 @@ impl Watcher {
                 continue;
             }
             if in_turn(slot) || self.started.contains_key(&id) {
+                continue;
+            }
+            if let Err(error) = super::working_directory::for_slot(slot) {
+                log(&format!(
+                    "provider: refusing queued restart: {}",
+                    super::working_directory::code(&error)
+                ));
+                if let Err(error) =
+                    with_queue(&self.state, |all| all.retain(|current| current != &q))
+                {
+                    log(&format!(
+                        "provider: could not remove refused restart: {error}"
+                    ));
+                }
                 continue;
             }
             let Ok(Some(claimed)) = claim_queue(&self.state, &id) else {

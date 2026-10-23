@@ -1,0 +1,226 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Resume 持久身份绑定 · 拟议 / 实施中",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": ".sdd/004-moss-agent/diagrams/resume-process-identity.html"
+  },
+  "lanes": [
+    {
+      "id": "capture",
+      "label": "可信 hook · 与 slot 同事务"
+    },
+    {
+      "id": "storage",
+      "label": "持久身份 · 不依赖 events"
+    },
+    {
+      "id": "operation",
+      "label": "共享只读校验与操作门禁"
+    },
+    {
+      "id": "deny",
+      "label": "无证明即拒绝",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "request",
+    "resolver",
+    "claim",
+    "execute"
+  ],
+  "nodes": [
+    {
+      "id": "root",
+      "lane": "capture",
+      "col": 0,
+      "type": "security",
+      "label": "startup → root",
+      "sublabel": "真实 SessionStart + OS 采集",
+      "tag": "枚举 / 补登记不能签发"
+    },
+    {
+      "id": "pending",
+      "lane": "capture",
+      "col": 1,
+      "type": "backend",
+      "label": "End → pending_resume",
+      "sublabel": "A / resume 严格匹配 owner",
+      "tag": "重复不重置代次"
+    },
+    {
+      "id": "transferred",
+      "lane": "capture",
+      "col": 2,
+      "type": "backend",
+      "label": "Start → transferred",
+      "sublabel": "同进程 / pane 恢复到 B",
+      "tag": "仅消费一次；origin=A"
+    },
+    {
+      "id": "bindings",
+      "lane": "storage",
+      "col": 2,
+      "type": "database",
+      "label": "process_bindings",
+      "sublabel": "generation / owner / hop",
+      "tag": "唯一归属；独立持久表"
+    },
+    {
+      "id": "invalid",
+      "lane": "storage",
+      "col": 3,
+      "type": "security",
+      "label": "同事务置 invalid",
+      "sublabel": "保留 invalid / consumed 墓碑",
+      "tag": "Alive / Unknown 不删除"
+    },
+    {
+      "id": "request",
+      "lane": "operation",
+      "col": 0,
+      "type": "frontend",
+      "label": "三操作共用入口",
+      "sublabel": "archive / adopt / restart"
+    },
+    {
+      "id": "resolver",
+      "lane": "operation",
+      "col": 1,
+      "type": "security",
+      "label": "共享 resolver",
+      "sublabel": "binding + slots 一致快照",
+      "tag": "本 slot 快路不复活旧绑定"
+    },
+    {
+      "id": "claim",
+      "lane": "operation",
+      "col": 2,
+      "type": "security",
+      "label": "claim + 临用重核",
+      "sublabel": "代次 / owner / OS 身份",
+      "tag": "保留业务与二阶段守卫"
+    },
+    {
+      "id": "execute",
+      "lane": "operation",
+      "col": 3,
+      "type": "backend",
+      "label": "门禁通过再执行",
+      "sublabel": "信号 / 输入 / pane 重建"
+    },
+    {
+      "id": "reject",
+      "lane": "deny",
+      "col": 2,
+      "type": "security",
+      "label": "拒绝，不猜测",
+      "sublabel": "旧记录不回填 / Unknown 非 Dead"
+    }
+  ],
+  "edges": [
+    {
+      "id": "root-pending",
+      "from": "root",
+      "to": "pending",
+      "label": "匹配 End",
+      "variant": "emphasis"
+    },
+    {
+      "id": "pending-transfer",
+      "from": "pending",
+      "to": "transferred",
+      "label": "匹配 Start",
+      "variant": "emphasis"
+    },
+    {
+      "id": "transfer-store",
+      "from": "transferred",
+      "to": "bindings",
+      "label": "同事务绑定",
+      "variant": "emphasis"
+    },
+    {
+      "id": "store-invalidate",
+      "from": "bindings",
+      "to": "invalid",
+      "label": "身份变化",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "store-resolver",
+      "from": "bindings",
+      "to": "resolver",
+      "label": "读取有效绑定"
+    },
+    {
+      "id": "request-resolver",
+      "from": "request",
+      "to": "resolver"
+    },
+    {
+      "id": "resolver-claim",
+      "from": "resolver",
+      "to": "claim",
+      "label": "唯一且有效",
+      "variant": "emphasis"
+    },
+    {
+      "id": "claim-execute",
+      "from": "claim",
+      "to": "execute",
+      "label": "全部通过",
+      "variant": "emphasis"
+    },
+    {
+      "id": "resolver-reject",
+      "from": "resolver",
+      "to": "reject",
+      "label": "无证明",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "claim-reject",
+      "from": "claim",
+      "to": "reject",
+      "label": "变化或冲突",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "AMEND-1：前向绑定，而非历史推断",
+      "items": [
+        "root、pending_resume、transferred、invalid 均为持久绑定状态。",
+        "仅真实 SessionStart hook + OS 采集签 root；普通 source、reconcile/adopt 补登记不能签。",
+        "argv 仍为 A，owner 可为 B；两份聊天历史绝不合并。"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "存储与迁移边界",
+      "items": [
+        "events 超过 7 天或全部清理，仍不影响有效绑定。",
+        "旧数据库迁移仅建空表；旧记录、旧事件不追认。",
+        "schema 版本保护须验证旧 writer 拒写；真实迁移和安装尚未授权。"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "不扩大信任，也不夸大保证",
+      "items": [
+        "PID/start/session/pane 变化、无证明 repair、不支持的 clear/compact 都使绑定失效。",
+        "invalid/consumed 在同 PID/start 为 Alive/Unknown 时保留，防迟到 Startup 重签；精确 Dead 才清。",
+        "generation 是已观测绑定代次，不是 OS exec 代次。",
+        "精确校验程序入口；不能用 argv 含 claude 放行，也不能承诺消除 DB/OS 竞态。"
+      ]
+    }
+  ]
+}

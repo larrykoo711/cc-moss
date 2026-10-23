@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {"title": "MCP 来源恢复设计", "locale": "zh-CN", "output": ".sdd/004-moss-agent/diagrams/mcp-launch-source.html", "quality_profile": "showcase"},
+  "participants": [
+    {"id":"hook","type":"backend","label":"启动钩子"},
+    {"id":"store","type":"database","label":"会话记录"},
+    {"id":"resume","type":"security","label":"共同预检"},
+    {"id":"process","type":"external","label":"恢复进程"}
+  ],
+  "segments": [
+    {"from":150,"to":260,"label":"采集与持久化"},
+    {"from":275,"to":395,"label":"三入口共同预检"},
+    {"from":410,"to":545,"label":"通过后才能恢复"}
+  ],
+  "messages": [
+    {"id":"capture","from":"hook","to":"store","y":175,"label":"保存精确来源","note":"先采集，后解析 settings"},
+    {"id":"markers","from":"hook","to":"store","y":235,"label":"保存不可回放参数名"},
+    {"id":"read","from":"store","to":"resume","y":300,"label":"读取来源与标记"},
+    {"id":"refuse","from":"resume","to":"process","y":355,"label":"未知或不支持：拒绝","variant":"security","note":"不发送 TERM、不启动替代进程"},
+    {"id":"unset","from":"resume","to":"process","y":445,"label":"Unset：env -u","variant":"emphasis"},
+    {"id":"explicit","from":"resume","to":"process","y":490,"label":"Explicit：原路径赋值","variant":"emphasis"},
+    {"id":"model","from":"resume","to":"process","y":530,"label":"仅显式操作覆盖模型"}
+  ],
+  "cards": [
+    {"dot":"cyan","title":"来源独立","items":["T2.15 概念设计；当前实施尚未提交，不冒充 HEAD 源码证据。","同一 settings 路径不能区分 Unset 与 Explicit-default。","坏 settings 仍保存来源；旧记录保持 Unknown。"]},
+    {"dot":"rose","title":"拒绝优先","items":["restore、adopt、restart 共用 resume_argv。","adopt 在改名与 TERM 前检查；身份核验仍独立保留。","仅记录 CLI 参数名，不保存内联 JSON、凭据或完整环境。"]},
+    {"dot":"emerald","title":"保守边界","items":["provider_default 只改模型，不改变全局 MCP 配置来源。","不猜测旧来源，不自动修正已污染的显式记录。","不复制或合并配置，不连接生产 MCP。"]}
+  ]
+}

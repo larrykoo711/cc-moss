@@ -152,7 +152,7 @@ mod permission_mode {
     /// A world whose config is `config` and whose HOME is its own directory.
     fn world(test: &str, config: &str) -> World {
         let w = World::new(test);
-        std::fs::write(w.path("config.toml"), config).unwrap();
+        std::fs::write(w.config_path(), config).unwrap();
         std::fs::create_dir_all(w.path("home")).unwrap();
         w
     }
@@ -213,10 +213,7 @@ mod permission_mode {
         assert!(!cmd.contains("--permission-mode"), "{cmd}");
         assert!(cmd.contains("--model opus"), "{cmd}");
         // Only this run: the config is unchanged and the next session has it again.
-        assert_eq!(
-            std::fs::read_to_string(w.path("config.toml")).unwrap(),
-            config
-        );
+        assert_eq!(std::fs::read_to_string(w.config_path()).unwrap(), config);
         let cmd = started(&w, "job-b", &[]);
         assert_eq!(cmd.matches(BYPASS).count(), 1, "{cmd}");
     }
@@ -311,6 +308,6 @@ mod permission_mode {
         let err = String::from_utf8_lossy(&out.stderr);
         assert!(err.contains("claude.permission_mode"), "{err}");
         assert!(err.contains("bypass, default"), "{err}");
-        assert_eq!(std::fs::read_to_string(w.path("config.toml")).unwrap(), "");
+        assert_eq!(std::fs::read_to_string(w.config_path()).unwrap(), "");
     }
 }

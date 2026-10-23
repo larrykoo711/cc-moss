@@ -12,89 +12,170 @@ enum PanelForm: Equatable {
 
 /// The new-session form's fields and what it is doing.
 struct NewDraft: Equatable {
+    var id = UUID()
     var directory = ""
     var name = ""
     /// The user edited the name: picking another folder leaves it alone.
     var nameEdited = false
-    /// The name belongs to an interrupted session; asking "bring it back?".
-    var restoring: Session?
     var working = false
+    var directoryTouched = false
+    var loadingCandidates = false
+    var directorySelection = WorkingDirectorySelection()
+    var candidates: [String] = []
+    var workspaceDirectory: String?
+    var attempted = false
+    var receipt: NewSessionReceipt?
     var error: String?
+    var checkingDirectory: Bool { loadingCandidates || directorySelection.pending != nil }
+    var canSubmit: Bool { !working && !checkingDirectory && !attempted && !directory.isEmpty && NewSession.problem(with: name) == nil }
 }
 
 // MARK: - Model
 
 extension AppModel {
-    func startNewSession() {
-        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey)
-        let dir = NewSession.defaultDirectory(sessions, workspace: workspace) ?? NSHomeDirectory()
-        // A name no open session has, so the form doesn't start on a clash.
-        newDraft = NewDraft(directory: dir, name: NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions))
+    func startNewSession(workspaceOverride: String? = nil) {
+        let workspace = workspaceOverride ?? UserDefaults.standard.string(forKey: NewSession.workspaceKey)
+        newDraft = NewDraft()
         closeGate.cancel()
         endArchiveGate.cancel()
         form = .newSession
+        guard let client, cliCapabilities.checksWorkingDirectory, cliCapabilities.returnsNewReceipt else {
+            newDraft.error = L.t("Update cc-moss in Terminal before creating a session.", "请先更新终端里的 cc-moss，再新建会话。")
+            return
+        }
+        var paths = NewSession.recentProjects(sessions, limit: 63)
+        if let workspace, !workspace.isEmpty { paths = [workspace] + paths.filter { $0 != workspace } }
+        guard !paths.isEmpty else { return }
+        let draftID = newDraft.id
+        let capabilities = cliCapabilities
+        newDraft.loadingCandidates = true
+        Task {
+            do {
+                let checks = try await client.checkDirectories(paths, capabilities: capabilities)
+                guard form == .newSession, newDraft.id == draftID else { return }
+                var seen = Set<String>()
+                newDraft.candidates = checks.filter(\.approvedForNewSession).compactMap(\.canonical).filter { seen.insert($0).inserted }
+                newDraft.workspaceDirectory = checks.first(where: { $0.path == workspace && $0.approvedForNewSession })?.canonical
+                newDraft.loadingCandidates = false
+                if !newDraft.directoryTouched {
+                    if let first = newDraft.candidates.first {
+                        newDraft.directory = first
+                        if !newDraft.nameEdited { newDraft.name = NewSession.defaultName(for: first) }
+                    } else {
+                        newDraft.error = checks.first?.explanation ?? L.t("Choose a project folder to continue.", "请选择项目工作目录后再继续。")
+                    }
+                } else if !newDraft.directory.isEmpty, !newDraft.candidates.contains(newDraft.directory) {
+                    newDraft.candidates.insert(newDraft.directory, at: 0)
+                }
+            } catch {
+                guard form == .newSession, newDraft.id == draftID else { return }
+                newDraft.loadingCandidates = false
+                newDraft.error = Self.describe(error)
+            }
+        }
     }
 
     func pickDirectory(_ dir: String) {
-        newDraft.directory = dir
+        guard !newDraft.working, !newDraft.attempted else { return }
+        newDraft.directoryTouched = true
+        newDraft.directory = ""
         newDraft.error = nil
-        if !newDraft.nameEdited { newDraft.name = NewSession.freeName(NewSession.defaultName(for: dir), sessions: sessions) }
+        guard let client, cliCapabilities.checksWorkingDirectory, !dir.isEmpty else {
+            newDraft.error = WorkingDirectoryPolicy.updateRequired
+            return
+        }
+        let draftID = newDraft.id
+        let capabilities = cliCapabilities
+        let ticket = newDraft.directorySelection.begin(dir)
+        Task {
+            do {
+                let checks = try await client.checkDirectories([dir], capabilities: capabilities)
+                guard form == .newSession, newDraft.id == draftID, let check = checks.first,
+                      newDraft.directorySelection.complete(ticket, check: check) else { return }
+                newDraft.directory = newDraft.directorySelection.canonical ?? ""
+                newDraft.error = newDraft.directorySelection.error
+                if let path = newDraft.directorySelection.canonical {
+                    if !newDraft.candidates.contains(path) { newDraft.candidates.insert(path, at: 0) }
+                    if !newDraft.nameEdited { newDraft.name = NewSession.defaultName(for: path) }
+                }
+            } catch {
+                guard form == .newSession, newDraft.id == draftID else { return }
+                newDraft.directorySelection.fail(ticket, message: Self.describe(error))
+                newDraft.error = newDraft.directorySelection.error
+            }
+        }
+    }
+
+    func checkedTypedDirectory(_ query: String) async -> (option: DropdownOption<String>?, message: String?) {
+        guard let path = FolderChoice.typedPath(query, home: NSHomeDirectory(), isFolder: { _ in true }) else { return (nil, nil) }
+        guard let client, cliCapabilities.checksWorkingDirectory else { return (nil, WorkingDirectoryPolicy.updateRequired) }
+        do {
+            let checks = try await client.checkDirectories([path], capabilities: cliCapabilities)
+            guard let check = checks.first, check.approvedForNewSession, let canonical = check.canonical else {
+                return (nil, checks.first?.explanation ?? WorkingDirectoryReason.unavailable.explanation)
+            }
+            return (FolderChoice.option(canonical, symbol: Icons.project, badge: L.t("Checked", "已检查")), nil)
+        } catch { return (nil, Self.describe(error)) }
     }
 
     /// "Another folder…": the system folder picker over the panel, starting
     /// at the current folder; the panel and the form stay as they were.
     func chooseDirectory(from window: NSWindow?) {
+        let draftID = newDraft.id
         FilePicker.choose(.folder, from: window, startingAt: newDraft.directory,
                           message: L.t("Where should the new session work?", "新会话在哪个目录里干活？"),
-                          prompt: L.t("Choose", "选择")) { [weak self] path in self?.pickDirectory(path) }
+                          prompt: L.t("Choose", "选择")) { [weak self] path in
+            guard let self, self.form == .newSession, self.newDraft.id == draftID else { return }
+            self.pickDirectory(path)
+        }
     }
 
-    /// Create (or bring back) the session in the form. Returns the session
-    /// to open once cc-moss lists it; nil when there is nothing to open.
+    /// One fresh launch, then only read-side tracking by its returned UUID.
     func submitNewSession() async -> Session? {
-        guard let client, !newDraft.working else { return nil }
-        let name = newDraft.name.trimmingCharacters(in: .whitespaces)
-        let args: [String]
-        if let stopped = newDraft.restoring {
-            // The user said yes to "bring it back?".
-            args = NewSession.arguments(name: stopped.name ?? name, directory: newDraft.directory, restore: true)
-        } else {
-            switch NewSession.plan(name: name, directory: newDraft.directory, sessions: sessions) {
-            case .invalid(let why):
-                newDraft.error = why
-                return nil
-            case .open(let running):
-                form = nil
-                return running
-            case .askRestore(let stopped):
-                newDraft.restoring = stopped
-                return nil
-            case .create(let a):
-                args = a
-            }
-        }
-        newDraft.working = true
-        newDraft.error = nil
-        defer { newDraft.working = false }
-        do {
-            try await client.newSession(args)
-        } catch {
-            newDraft.error = Self.describe(error)
-            report(FailureNotice(action: .newSession, subject: name.isEmpty ? nil : .init(name: name, folder: newDraft.directory),
-                                 error: error))
+        guard !Task.isCancelled, form == .newSession, let client, newDraft.canSubmit else { return nil }
+        guard cliCapabilities.checksWorkingDirectory && cliCapabilities.returnsNewReceipt else {
+            newDraft.error = L.t("Update cc-moss in Terminal before creating a session.", "请先更新终端里的 cc-moss，再新建会话。")
             return nil
         }
-        form = nil
-        // The registry hears of it from Claude Code's first hook: wait a
-        // little for it to show up, then open it.
-        for _ in 0..<20 {
-            await loadNow()
-            if let s = sessions.first(where: { $0.name == name && $0.inTmux && $0.state != .closed && $0.state != .interrupted }) {
-                return s
+        let draftID = newDraft.id
+        let name = newDraft.name.trimmingCharacters(in: .whitespaces)
+        let directory = newDraft.directory
+        let capabilities = cliCapabilities
+        newDraft.working = true
+        newDraft.error = nil
+        defer { if newDraft.id == draftID { newDraft.working = false } }
+        do {
+            let checks = try await client.checkDirectories([directory], capabilities: capabilities)
+            guard !Task.isCancelled, form == .newSession, newDraft.id == draftID else { return nil }
+            guard let check = checks.first, check.approvedForNewSession, let canonical = check.canonical else {
+                newDraft.directory = ""
+                newDraft.error = checks.first?.explanation ?? WorkingDirectoryReason.unavailable.explanation
+                return nil
             }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            newDraft.directory = canonical
+            newDraft.attempted = true
+            let receipt = try await client.createNewSession(name: name, directory: canonical, capabilities: capabilities)
+            guard form == .newSession, newDraft.id == draftID else { return nil }
+            newDraft.receipt = receipt
+            newDraft.name = receipt.name
+            newDraft.working = false
+            for _ in 0..<20 {
+                guard form == .newSession, newDraft.id == draftID, !Task.isCancelled else { return nil }
+                await loadNow()
+                guard form == .newSession, newDraft.id == draftID else { return nil }
+                if let registered = receipt.registeredSession(in: sessions) {
+                    form = nil
+                    return registered
+                }
+                try? await Task.sleep(for: .milliseconds(300))
+            }
+        } catch {
+            guard form == .newSession, newDraft.id == draftID else { return nil }
+            let notice = FailureNotice(action: .newSession, subject: .init(name: name, folder: directory), error: error)
+            newDraft.error = notice.why
+            report(notice)
         }
-        say(L.t("Started \(name). It shows up here in a moment.", "已启动 \(name)，稍后就会出现在这里。"))
+        // A sent request is never made again from this draft, including ambiguous transport errors.
         return nil
     }
 
@@ -290,6 +371,7 @@ struct FormCard<Content: View>: View {
     /// A quiet fact about the form, at the right of the title (where a
     /// note goes, how a message arrives) instead of a sentence under it.
     var aside: (icon: String, text: String)?
+    var flexible = false
     @ViewBuilder let content: () -> Content
     @Environment(\.colorScheme) private var scheme
 
@@ -314,7 +396,8 @@ struct FormCard<Content: View>: View {
             content()
         }
         .padding(12)
-        .frame(width: Theme.pageWidth - 28)
+        .frame(width: flexible ? nil : Theme.pageWidth - 28)
+        .frame(maxWidth: flexible ? .infinity : nil)
         .background(Theme.raised(scheme), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Theme.hairline(scheme)))
         .shadow(color: .black.opacity(0.18), radius: 16, y: 6)
@@ -371,18 +454,22 @@ struct NewSessionForm: View {
     private var draft: NewDraft { model.newDraft }
 
     var body: some View {
-        FormCard(title: L.t("New Session", "新会话"), icon: Icons.newSession) {
+        let draftID = draft.id
+        FormCard(title: L.t("New Session", "新会话"), icon: Icons.newSession, flexible: true) {
             VStack(spacing: 0) {
                 FormRow(title: L.t("Folder", "目录")) {
                     Dropdown(options: folderOptions, selection: draft.directory, pick: { id in
+                        guard model.form == .newSession, model.newDraft.id == draftID else { return }
                         if id == Self.chooseID {
                             model.chooseDirectory(from: NSApp.keyWindow)
                         } else {
                             model.pickDirectory(id)
                         }
                     }, listWidth: 380, placeholder: L.t("Search, or type a path…", "搜索，或输入路径…"),
-                       typed: { FolderChoice.typedOption($0) }) {
-                        let label = FolderChoice.label(draft.directory, home: NSHomeDirectory())
+                       checkedTyped: { await model.checkedTypedDirectory($0) }, fixedLabel: false) {
+                        let label = draft.directory.isEmpty
+                            ? FolderChoice.Label(name: L.t("Choose working folder", "选择工作目录"), parent: nil)
+                            : FolderChoice.label(draft.directory, home: NSHomeDirectory())
                         HStack(spacing: 6) {
                             Image(systemName: Icons.project).font(.system(size: 11)).foregroundStyle(.secondary)
                             Text(label.name).layoutPriority(1)
@@ -403,13 +490,14 @@ struct NewSessionForm: View {
                                               set: { new in
                                                   guard new != model.newDraft.name else { return }
                                                   model.newDraft.name = new; model.newDraft.nameEdited = true
-                                                  model.newDraft.restoring = nil; model.newDraft.error = nil }),
+                                                  model.newDraft.error = nil }),
                                 autofocus: true,
                                 tint: nameClash,
                                 onSubmit: submit)
                 }
             }
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.025)))
+            .disabled(draft.working || draft.attempted)
             hint
             footer
         }
@@ -418,13 +506,8 @@ struct NewSessionForm: View {
     static let chooseID = "\u{0}choose"
 
     private func folderOptions() -> [DropdownOption<String>] {
-        let workspace = UserDefaults.standard.string(forKey: NewSession.workspaceKey).flatMap { $0.isEmpty ? nil : $0 }
-        // Your workspace first, then the folders sessions worked in.
-        var folders = NewSession.recentProjects(model.sessions)
-        if let workspace { folders = [workspace] + folders.filter { $0 != workspace } }
-        if !draft.directory.isEmpty, !folders.contains(draft.directory) { folders.insert(draft.directory, at: 0) }
-        var options = folders.map { dir in
-            dir == workspace
+        var options = draft.candidates.map { dir in
+            dir == draft.workspaceDirectory
                 ? FolderChoice.option(dir, symbol: "star", badge: L.t("Workspace", "工作区"))
                 : FolderChoice.option(dir, symbol: Icons.project)
         }
@@ -435,22 +518,16 @@ struct NewSessionForm: View {
     @ViewBuilder private var hint: some View {
         if let error = draft.error {
             FormHint(text: error, icon: Icons.warning, tint: Theme.amber)
-        } else if let stopped = draft.restoring {
-            FormHint(text: L.t("“\(stopped.title)” stopped earlier. Bring it back instead?",
-                               "「\(stopped.title)」之前断了，找回它？"),
-                     icon: Icons.restore, tint: Theme.red)
+        } else if let receipt = draft.receipt {
+            FormHint(text: receipt.statusMessage(in: model.sessions))
+        } else if draft.checkingDirectory {
+            FormHint(text: L.t("Checking working folders…", "正在检查工作目录…"))
         } else {
             switch NewSession.hint(name: draft.name, sessions: model.sessions) {
             case .free:
                 FormHint(text: L.t("Starts in tmux and opens in your terminal.", "在 tmux 里开起来，再在你的终端里打开。"))
-            case .running(let s):
-                clash(L.t("“\(s.title)” is already running, so Return opens it. For a new session, pick another name:",
-                          "「\(s.title)」已经在运行，回车会打开它。想新开一个，换个名字："),
-                      icon: Icons.open, tint: Theme.brand)
-            case .interrupted(let s):
-                clash(L.t("A stopped session is called “\(s.title)”, so Return offers to bring it back. For a new one, pick another name:",
-                          "有个断了的会话也叫「\(s.title)」，回车会问你要不要找回它。想新开一个，换个名字："),
-                      icon: Icons.restore, tint: Theme.red)
+            case .running, .interrupted:
+                FormHint(text: L.t("This name is in use. A new session gets its own numbered name.", "已有同名会话，新会话会自动加上编号，不会打开或找回旧会话。"))
             case .invalid(let why):
                 FormHint(text: why, icon: Icons.warning, tint: Theme.amber)
             }
@@ -472,7 +549,6 @@ struct NewSessionForm: View {
 
     /// The field's outline while the name belongs to another session.
     private var nameClash: Color? {
-        if draft.restoring != nil { return Theme.red }
         switch NewSession.hint(name: draft.name, sessions: model.sessions) {
         case .running: return Theme.brand
         case .interrupted: return Theme.red
@@ -487,25 +563,24 @@ struct NewSessionForm: View {
                 Text(L.t("Starting…", "正在开…")).font(.system(size: 12)).foregroundStyle(.secondary)
             }
             Spacer()
-            SoftButton(title: L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
+            SoftButton(title: draft.attempted ? L.t("Dismiss", "收起") : L.t("Cancel", "取消"), icon: "xmark", shortcut: "esc") { model.form = nil }
             SoftButton(title: primaryTitle, icon: primaryIcon, prominent: true, shortcut: "↵", action: submit)
-                .disabled(draft.working)
+                .disabled(!primaryEnabled)
+                .opacity(primaryEnabled ? 1 : 0.45)
         }
     }
 
+    private var registered: Session? { draft.receipt?.registeredSession(in: model.sessions) }
+    private var primaryEnabled: Bool { registered != nil || (draft.canSubmit && model.cliCapabilities.returnsNewReceipt && model.cliCapabilities.checksWorkingDirectory) }
     private var primaryTitle: String {
-        if draft.restoring != nil { return L.t("Bring Back", "找回") }
-        if case .running = NewSession.hint(name: draft.name, sessions: model.sessions) { return L.t("Open", "打开") }
+        if registered != nil { return L.t("Open", "打开") }
+        if draft.receipt != nil { return L.t("Waiting", "等待登记") }
         return L.t("Create", "新建")
     }
-
-    private var primaryIcon: String {
-        if draft.restoring != nil { return Icons.restore }
-        if case .running = NewSession.hint(name: draft.name, sessions: model.sessions) { return Icons.open }
-        return Icons.newSession
-    }
+    private var primaryIcon: String { registered == nil ? Icons.newSession : Icons.open }
 
     private func submit() {
+        if let registered { model.form = nil; open(registered); return }
         Task {
             if let s = await model.submitNewSession() { open(s) }
         }

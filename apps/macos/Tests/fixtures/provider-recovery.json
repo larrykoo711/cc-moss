@@ -2,6 +2,29 @@
   "schema": 1,
   "sessions": [
     {
+      "id": "NORMAL",
+      "name": "渠道信息 · 无待处理操作",
+      "status": "running",
+      "session_id": "demo-NORMAL",
+      "cwd": "/Users/demo/projects/example",
+      "last_active_at": "2026-10-21T12:00:00Z",
+      "notes": {},
+      "tmux": {
+        "socket": "/tmp/cc-moss-demo",
+        "session_id": "$1",
+        "session_name": "demo",
+        "pane_id": "%1"
+      },
+      "busy": false,
+      "provider_restart": null,
+      "provider_model": {
+        "model": "example-provider/very-long-model-family-name-2026-10-21-high-capacity-context-window-v2",
+        "source": "settings",
+        "revision": "demo-revision-1",
+        "uncertain": false
+      }
+    },
+    {
       "id": "PLAN",
       "name": "模型恢复演示 · 长名称不会挡住操作",
       "status": "running",

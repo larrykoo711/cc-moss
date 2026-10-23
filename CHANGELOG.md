@@ -6,6 +6,68 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-10-23
+
+### Fixed
+
+- **Recognize a session after an in-process resume.** Archive, move into tmux and restart share a persistent
+  process-identity check. For a newly verified startup followed by one matching resume transition in the same
+  process, the current conversation is no longer rejected just because the process still names the conversation
+  it started with. Conversation histories stay separate; missing evidence, ambiguous ownership and further
+  cross-conversation hops remain refused. These bindings survive event-log cleanup, without weakening operation
+  claims or the identity checks before signals and terminal input.
+- **Keep the original settings source when bringing a session back.** Restore, move into tmux and restart
+  preserve whether `CLAUDE_CONFIG_DIR` was unset or explicitly set, even when its value was the default directory.
+  An originally unset variable is removed from the new process's environment rather than inherited from tmux.
+  Applying a provider's model does not switch that source. This prevents a recovery from silently selecting a
+  different global MCP configuration; it does not guarantee that any MCP server can connect.
+- **Stop rather than silently drop settings.** Unknown launch sources and unsupported MCP/settings launch
+  options are refused before stopping the old session or launching a replacement. An unknown source is never
+  guessed from a settings file path or recovered from a running process's environment. Unsupported options are
+  recorded by name only, without inline configuration or credentials.
+  Sessions already restarted with the wrong source are not automatically rewritten or repaired.
+- **Bring a session back with the settings it started with.** When the original settings source is still
+  healthy, restore uses it directly and shows its path; you only choose when that source is missing or broken.
+  For older sessions whose source was never recorded, the restore card asks which settings to use this time
+  (default settings or a folder you pick), with no preselection and no change to your global settings. The error
+  now says the source is unknown instead of reporting a tmux failure.
+- **Restore exactly the session you clicked.** The app, the picker and "Restore all" name the session by its slot
+  and full ID, one at a time, so a different session whose name happens to match can no longer be restored in
+  its place. A session that changed in the meantime fails with "This session has changed. Refresh and try
+  again." rather than counting as restored. With an older terminal CLI the app asks you to update it and sends
+  no restore request.
+- **Moss answers `/status` and `/usage` again.** Moss's own Claude Code now always uses its inline screen, where
+  these commands print something the panel can read; your other sessions keep the screen you chose.
+- **The "Session restored" note goes away once you use the session.** It clears when the session starts working
+  or shows a new prompt.
+- **The session panel shows the current state after a restart.** With nothing to fix, a session's provider and
+  model are shown as plain information, and restarting with them is a quiet option, not an orange call to action.
+
+### Changed
+
+- **Sessions never start in system, home or configuration folders.** `/`, your home folder itself, system folders
+  and configuration folders such as `~/.claude` are refused as a session's working folder by `cc-moss new`,
+  restore, restart, the app (including its folder suggestions and history) and Moss. Container folders such as
+  `~/Documents`, `~/Desktop` and `~/Downloads` stay allowed. Reading settings from `~/.claude` is unaffected. New:
+  `cc-moss check-directory` checks folders without starting anything.
+- **`jarvis` always starts a new session.** A plain `jarvis` (and `cc-moss new`) gets its own tmux session; when the
+  name is taken, the next free number is added (`project-2`, `project-3`) instead of joining the existing session.
+  `attach`, `restore` and `--resume` keep their meaning.
+- **`claude` stays native, with a folder check.** The shell integration checks the working folder before `claude`
+  starts a session and otherwise runs Claude Code unchanged in the current terminal; `--help` and `--version` are
+  not checked. A custom `claude` or `jarvis` function or alias you already have is left alone, and
+  `CC_MOSS_LAUNCH_CLI` pins the wrapper to one cc-moss binary. This is a guard in the shell, not a sandbox.
+
+### Compatibility
+
+- The registry moves to schema 2 with an initially empty process-binding table; existing session records and
+  conversation history are preserved. Old events and running sessions are not backfilled with trusted bindings,
+  so an older affected session can still be refused when its startup link cannot be proved.
+- Back up the registry with SQLite's backup mechanism before upgrading. Older versions refuse to write schema 2:
+  rolling back only the binary does not restore write access. Restoring a pre-upgrade database snapshot is a
+  separate, explicit recovery step and loses registry changes made after that snapshot. Do not lower the schema
+  version or delete the binding table to bypass this protection.
+
 ## [0.3.4] - 2026-10-21
 
 ### Fixed
@@ -404,7 +466,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...HEAD
+[0.3.5]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...v0.3.3
 [0.3.2]: https://github.com/larrykoo711/cc-moss/compare/v0.3.1...v0.3.2

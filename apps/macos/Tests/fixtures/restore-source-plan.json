@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "sessions": [
+    {
+      "id": "READY", "name": "沿用原设置", "status": "interrupted", "session_id": "demo-ready-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "explicit", "status": "ready", "display_path": "/Users/demo/settings/team-profile", "default_path": "/Users/demo/.claude", "revision": "ready-r1", "issue": null}
+    },
+    {
+      "id": "UNSET", "name": "原默认设置", "status": "interrupted", "session_id": "demo-unset-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "unset", "status": "ready", "display_path": "/Users/demo/.claude", "default_path": "/Users/demo/.claude", "revision": "unset-r1", "issue": null}
+    },
+    {
+      "id": "UNKNOWN", "name": "旧会话", "status": "interrupted", "session_id": "demo-unknown-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "unknown", "status": "needs_location", "display_path": null, "default_path": "/Users/demo/.claude", "revision": "unknown-r1", "issue": "config_source_unknown"}
+    },
+    {
+      "id": "MISSING", "name": "原文件夹已移走", "status": "interrupted", "session_id": "demo-missing-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "explicit", "status": "needs_location", "display_path": "/Users/demo/settings/removed-profile", "default_path": "/Users/demo/.claude", "revision": "missing-r1", "issue": "config_directory_missing"}
+    },
+    {
+      "id": "DAMAGED", "name": "设置文件需要修正", "status": "interrupted", "session_id": "demo-damaged-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "explicit", "status": "needs_location", "display_path": "/Users/demo/settings/damaged-profile", "default_path": "/Users/demo/.claude", "revision": "damaged-r1", "issue": "config_settings_invalid"}
+    },
+    {
+      "id": "BLOCKED", "name": "原参数不能安全重放", "status": "interrupted", "session_id": "demo-blocked-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "explicit", "status": "blocked", "display_path": "/Users/demo/settings/team-profile", "default_path": "/Users/demo/.claude", "revision": "blocked-r1", "issue": "config_source_unsupported"}
+    },
+    {
+      "id": "UNAVAILABLE", "name": "设置检查暂不可用", "status": "interrupted", "session_id": "demo-unavailable-session",
+      "cwd": "/Users/demo/projects/example", "last_active_at": "2026-10-22T12:00:00Z", "notes": {}, "busy": false, "tmux": null,
+      "restore_source": {"kind": "unknown", "status": "blocked", "display_path": null, "default_path": null, "revision": "", "issue": "config_source_unavailable"}
+    }
+  ]
+}

@@ -17,6 +17,18 @@ impl Runner for Recorder {
 }
 
 #[test]
+fn new_client_switch_requires_same_socket_and_server_pid() {
+    let tmux = Tmux::new(Recorder {
+        reply: "/tmp/socket|:|42\n".into(),
+        ..Recorder::default()
+    });
+    assert!(tmux.matches_client("/tmp/socket,42,0"));
+    assert!(!tmux.matches_client("/tmp/other,42,0"));
+    assert!(!tmux.matches_client("/tmp/socket,99,0"));
+    assert!(!tmux.matches_client("/tmp/socket"));
+}
+
+#[test]
 fn new_session_passes_argv_without_a_shell() {
     let t = Tmux::new(Recorder {
         reply: "4242|:|$3|:|%7\n".into(),

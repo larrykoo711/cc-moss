@@ -95,6 +95,11 @@ public enum ProviderRecovery {
             || (session.providerRestart == nil && session.providerModel?.uncertain == true)
     }
 
+    /// Manual application stays available without making normal settings look pending.
+    public static func promotesApply(_ session: Session, confirmations: ProviderConfirmations = .init()) -> Bool {
+        canApply(session) && state(session, confirmations: confirmations) != nil
+    }
+
     public static func canApply(_ session: Session) -> Bool {
         Restart.allowed(session) && session.providerModel?.model?.isEmpty == false && !repeatsFailedModel(session)
     }
