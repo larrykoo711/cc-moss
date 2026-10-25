@@ -36,6 +36,7 @@ jobs:
           cache: pnpm
           cache-dependency-path: site/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
+      - run: pnpm run audit # every dependency, dev tools included: a known advisory stops the deploy
       - run: pnpm build
       - run: pnpm test
 

@@ -66,6 +66,8 @@ check((await get("/.well-known/mcp.json")).headers.get("x-robots-tag") === "noin
 const card = await get("/mcp");
 check(card.status === 200 && (await card.json()).remotes?.[0]?.url?.endsWith("/mcp"), "GET /mcp returns the server card");
 check((await get("/mcp", { accept: "text/event-stream" })).status === 405, "no SSE stream on GET /mcp");
+const oversized = await fetch(`${BASE}/mcp`, { method: "POST", headers: { "content-type": "application/json" }, body: " ".repeat(70 * 1024) });
+check(oversized.status === 413, "POST /mcp over 64 KB → 413", String(oversized.status));
 const init = await mcp({ jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "smoke", version: "1" } } });
 check(init.json?.result?.serverInfo?.name === "cc-moss-site", "MCP initialize");
 check((await mcp({ jsonrpc: "2.0", method: "notifications/initialized" })).status === 202, "MCP notification → 202");

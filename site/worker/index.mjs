@@ -1,5 +1,6 @@
 // The site's Worker. Static files come from the ASSETS binding; this decides what each request
 // gets: a page as HTML or Markdown, the MCP endpoint, the right headers on everything.
+import { MAX_BODY, readCapped } from "./body.mjs";
 import { handleMessage, twinFor } from "./mcp.mjs";
 import { acceptsNeither, wantsMarkdown } from "./negotiate.mjs";
 import { search } from "./search.mjs";
@@ -9,7 +10,6 @@ import { serverCard } from "./tools.mjs";
 const PAGES = new Set(["/", "/zh/", "/changelog/", "/zh/changelog/"]);
 // The full guide is for agents: Markdown to them, and people are sent to the FAQ instead.
 const AGENT_ONLY = new Map([["/guide/", "/#faq"], ["/zh/guide/", "/zh/#faq"]]);
-const MAX_BODY = 1 << 20;
 
 const SECURITY = {
   "x-content-type-options": "nosniff",
@@ -128,8 +128,8 @@ async function serveMcp(request, env, ctx) {
   }
   if (request.method !== "POST") return respond(null, 405, { ...CORS, allow: "POST, GET, OPTIONS" });
 
-  const body = await request.text();
-  if (body.length > MAX_BODY) return json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Request too large" } }, 413);
+  const body = await readCapped(request, MAX_BODY);
+  if (body === null) return json({ jsonrpc: "2.0", id: null, error: { code: -32600, message: "Request too large" } }, 413);
   let msg;
   try {
     msg = JSON.parse(body);
