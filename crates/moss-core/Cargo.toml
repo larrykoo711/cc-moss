@@ -10,6 +10,10 @@ homepage.workspace = true
 # "moss-core" is taken on crates.io; this crate only backs the cc-moss binary.
 publish = false
 
+[features]
+# Worker permits per thread instead of per process, for dependants' test builds only.
+test-permits = []
+
 [dependencies]
 anyhow.workspace = true
 libc = "0.2"

@@ -224,10 +224,8 @@ pub fn run(paths: Vec<PathBuf>, json: bool) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    static WORKER_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
     #[test]
     fn working_directory_batch_uses_context_path_cache_and_total_limit() {
-        let _guard = WORKER_TESTS.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
         let context = Context::new(home.path().to_path_buf(), vec![]).unwrap();
         let mut checks = Checks::new();
@@ -249,7 +247,6 @@ mod tests {
     }
     #[test]
     fn working_directory_batch_separates_unknown_scope_and_launch_context() {
-        let _guard = WORKER_TESTS.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
         let context = Context::new(home.path().to_path_buf(), vec![]).unwrap();
         let mut checks = Checks::new();
@@ -281,7 +278,6 @@ mod tests {
     }
     #[test]
     fn working_directory_planning_preserves_typed_errors_and_shared_deadline() {
-        let _guard = WORKER_TESTS.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let file = temp.path().join("file");
         std::fs::write(&file, "x").unwrap();
@@ -298,7 +294,6 @@ mod tests {
     }
     #[test]
     fn working_directory_batch_expired_deadline_does_not_probe() {
-        let _guard = WORKER_TESTS.lock().unwrap();
         let home = tempfile::tempdir().unwrap();
         let context = Context::new(home.path().to_path_buf(), vec![]).unwrap();
         let mut checks = Checks::new();

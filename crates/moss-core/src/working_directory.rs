@@ -2,13 +2,12 @@
 use std::ffi::{CStr, CString};
 use std::path::{Component, Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{mpsc, Arc, OnceLock};
+use std::sync::{mpsc, Arc};
 use std::time::Duration;
 use std::{fs, io};
 
 const TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_WORKERS: usize = 2;
-static ACTIVE: OnceLock<Arc<AtomicUsize>> = OnceLock::new();
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Error {
@@ -113,11 +112,20 @@ fn bounded<T: Send + 'static>(
     budget: Duration,
     run: impl FnOnce() -> Result<T, Error> + Send + 'static,
 ) -> Result<T, Error> {
-    bounded_in(
-        ACTIVE.get_or_init(|| Arc::new(AtomicUsize::new(0))).clone(),
-        budget,
-        run,
-    )
+    bounded_in(permits(), budget, run)
+}
+/// One pool for the whole process, so probes stuck on a hung filesystem cannot pile up.
+#[cfg(not(any(test, feature = "test-permits")))]
+fn permits() -> Arc<AtomicUsize> {
+    static ACTIVE: std::sync::OnceLock<Arc<AtomicUsize>> = std::sync::OnceLock::new();
+    ACTIVE.get_or_init(|| Arc::new(AtomicUsize::new(0))).clone()
+}
+/// Test builds count per calling thread: tests run in parallel threads of one process and
+/// would otherwise take each other's permits. Only dev-dependencies enable `test-permits`.
+#[cfg(any(test, feature = "test-permits"))]
+fn permits() -> Arc<AtomicUsize> {
+    thread_local!(static ACTIVE: Arc<AtomicUsize> = Arc::new(AtomicUsize::new(0)));
+    ACTIVE.with(Arc::clone)
 }
 fn bounded_in<T: Send + 'static>(
     active: Arc<AtomicUsize>,
@@ -498,12 +506,6 @@ fn trusted_home() -> Result<PathBuf, Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    /// Tests share the process-wide worker permits with each other; run them one at a time
-    /// so a busy neighbour reads as "unavailable" only where a test asks for that.
-    fn serial() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
     #[test]
     fn working_directory_budget_keeps_worker_permits_until_real_exit() {
         use std::time::Instant;
@@ -543,8 +545,32 @@ mod tests {
         assert_eq!(active.load(Ordering::Acquire), 0);
     }
     #[test]
+    fn working_directory_test_builds_count_permits_per_thread() {
+        // Another test's stuck probes must not make this thread's checks unavailable.
+        let (release, blocked) = mpsc::channel::<()>();
+        let blocked = Arc::new(std::sync::Mutex::new(blocked));
+        let holder = std::thread::spawn(move || {
+            for _ in 0..MAX_WORKERS {
+                let blocked = blocked.clone();
+                let held = bounded(Duration::from_millis(20), move || {
+                    let _ = blocked.lock().unwrap().recv();
+                    Ok(())
+                });
+                assert_eq!(held, Err(Error::Unavailable));
+            }
+            assert_eq!(
+                bounded(Duration::from_millis(20), || Ok(())),
+                Err(Error::Unavailable),
+                "the holder's own thread is still capped"
+            );
+        });
+        holder.join().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        assert_eq!(probe_directory(temp.path(), Duration::from_secs(2)), Ok(()));
+        drop(release);
+    }
+    #[test]
     fn working_directory_trusted_os_home_cannot_be_replaced_by_environment_context() {
-        let _serial = serial();
         let target = tempfile::tempdir().unwrap();
         let ctx = Context::new(target.path().to_path_buf(), vec![]).unwrap();
         assert!(matches!(
@@ -554,7 +580,6 @@ mod tests {
     }
     #[test]
     fn working_directory_missing_file_permissions_and_config_context() {
-        let _serial = serial();
         use std::os::unix::fs::PermissionsExt;
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
@@ -580,7 +605,6 @@ mod tests {
     }
     #[test]
     fn working_directory_config_file_and_config_symlink_are_checked_in_context() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
@@ -606,7 +630,6 @@ mod tests {
     }
     #[test]
     fn working_directory_claude_config_dir_follows_runtime_parsing() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let project = temp.path().join("project");
@@ -636,7 +659,6 @@ mod tests {
     }
     #[test]
     fn working_directory_claude_config_dir_matches_moss_resolve_table() {
-        let _serial = serial();
         let home = Path::new("/Users/me");
         let cases = [
             (Some("~/cc"), Some("/Users/me/cc")),
@@ -659,7 +681,6 @@ mod tests {
     }
     #[test]
     fn working_directory_config_parent_link_and_file_link_are_both_exact() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let real = temp.path().join("R");
@@ -687,7 +708,6 @@ mod tests {
     }
     #[test]
     fn working_directory_custom_config_parent_is_exact_not_subtree() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let documents = home.join("Documents");
@@ -707,7 +727,6 @@ mod tests {
     }
     #[test]
     fn working_directory_configuration_errors_never_become_empty_roots() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let file = temp.path().join("config.toml");
         assert!(bounded_config(&file).is_ok());
@@ -721,7 +740,6 @@ mod tests {
     }
     #[test]
     fn working_directory_policy_table_and_containers() {
-        let _serial = serial();
         let p = Policy::table(Path::new("/Users/test"), Path::new("/target"), true);
         for path in [
             "/",
@@ -755,7 +773,6 @@ mod tests {
     }
     #[test]
     fn working_directory_data_aliases_do_not_block_user_projects() {
-        let _serial = serial();
         let p = Policy::table(Path::new("/Users/test"), Path::new("/target"), true);
         assert!(p
             .allow(Path::new("/System/Volumes/Data/Users/test/Documents"))
@@ -771,7 +788,6 @@ mod tests {
     }
     #[test]
     fn working_directory_symlink_context_and_recheck() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let home = temp.path().join("home");
         let work = temp.path().join("work");
@@ -789,7 +805,6 @@ mod tests {
     }
     #[test]
     fn working_directory_runtime_allows_exact_ancestor_not_forbidden_tree() {
-        let _serial = serial();
         let temp = tempfile::tempdir().unwrap();
         let ctx = Context::new(temp.path().to_path_buf(), vec![]).unwrap();
         let target = temp.path().join("state/moss");
