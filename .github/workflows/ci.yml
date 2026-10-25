@@ -32,6 +32,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all --check
       - run: cargo clippy --all-targets --locked -- -D warnings
+      - name: Release builds keep one worker pool per process
+        run: |
+          cargo tree -p cc-moss -e normal,build,features -i moss-core --locked > tree.txt
+          if grep -q test-permits tree.txt; then cat tree.txt; exit 1; fi
+          cargo tree -p cc-moss -e features -i moss-core --locked | grep -q test-permits # the check can see it
       - name: Shell assets parse
         run: |
           sudo apt-get update -qq
