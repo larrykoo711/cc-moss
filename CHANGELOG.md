@@ -18,6 +18,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Don't show the settings folder as if it were the project path.** A session waiting to be brought back
   showed its settings folder, unlabeled, under its name, so the default `~/.claude` read like the session's folder.
   The row now names a settings folder only when it was set explicitly, labeled "Settings:".
+- **Folder checks no longer report "unavailable" by mistake.** A check handed back its answer before giving back
+  its worker slot, so on a busy machine the next checks in a row could find both slots taken and fail closed.
+  The slot now returns as soon as the check finishes; a check stuck on a hung filesystem still holds it.
 
 ### Security
 

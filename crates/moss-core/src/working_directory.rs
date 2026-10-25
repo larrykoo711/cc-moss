@@ -152,8 +152,11 @@ fn bounded_in<T: Send + 'static>(
     std::thread::Builder::new()
         .name("working-directory".into())
         .spawn(move || {
-            let _permit = permit;
-            let _ = tx.send(run());
+            // Held while the probe runs (a hung filesystem keeps it), returned before the
+            // answer: the caller's next probe must not find this finished worker counted.
+            let result = run();
+            drop(permit);
+            let _ = tx.send(result);
         })
         .map_err(|_| Error::Unavailable)?;
     rx.recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
@@ -543,6 +546,19 @@ mod tests {
             std::thread::yield_now();
         }
         assert_eq!(active.load(Ordering::Acquire), 0);
+    }
+    #[test]
+    fn working_directory_permit_is_back_before_the_result_arrives() {
+        // A batch checks one path after another; a worker still holding its permit after
+        // answering made the third check in a row read as unavailable on a busy machine.
+        let active = Arc::new(AtomicUsize::new(0));
+        for n in 0..2000 {
+            assert_eq!(
+                bounded_in(active.clone(), Duration::from_secs(2), move || Ok(n)),
+                Ok(n)
+            );
+            assert_eq!(active.load(Ordering::Acquire), 0, "check {n}");
+        }
     }
     #[test]
     fn working_directory_test_builds_count_permits_per_thread() {
