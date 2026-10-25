@@ -5,6 +5,7 @@
   "scripts": {
     "build": "node build.mjs",
     "test": "node --test test/*.test.mjs",
+    "audit": "node scripts/security-audit.mjs",
     "dev": "node build.mjs && wrangler dev",
     "deploy": "node build.mjs && wrangler deploy"
   },
@@ -17,6 +18,9 @@
     "wrangler": "4.151.1"
   },
   "pnpm": {
+    "overrides": {
+      "undici": "7.30.1"
+    },
     "onlyBuiltDependencies": [
       "esbuild",
       "workerd"

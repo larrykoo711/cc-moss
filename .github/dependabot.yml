@@ -11,6 +11,17 @@ updates:
     commit-message:
       prefix: chore
       include: scope
+  - package-ecosystem: npm
+    directory: /site
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      site-minor-patch:
+        update-types: [minor, patch]
+    commit-message:
+      prefix: chore
+      include: scope
   - package-ecosystem: github-actions
     directory: /
     schedule:
