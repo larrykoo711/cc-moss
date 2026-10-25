@@ -28,6 +28,7 @@ signal-hook = "0.3"
 uuid.workspace = true
 
 [dev-dependencies]
+moss-core = { path = "../moss-core", features = ["test-permits"] }
 rusqlite.workspace = true
 serde_json.workspace = true
 tempfile.workspace = true
