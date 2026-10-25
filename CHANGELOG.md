@@ -17,7 +17,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   already removed, is still refused.
 - **Don't show the settings folder as if it were the project path.** A session waiting to be brought back
   showed its settings folder, unlabeled, under its name, so the default `~/.claude` read like the session's folder.
-  The row now names a settings folder only when it is not the default, labeled "Settings:".
+  The row now names a settings folder only when it was set explicitly, labeled "Settings:".
 
 ### Security
 

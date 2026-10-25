@@ -423,9 +423,10 @@ public struct RestoreSourcePlan: Decodable, Equatable, Sendable {
     }
     public var isUnknown: Bool { kind == "unknown" && status == "needs_location" && issue == .configSourceUnknown && !revision.isEmpty }
     public var needsLocation: Bool { status == "needs_location" && issue?.isLocationProblem == true }
-    /// A ready settings folder other than the default: the only one worth naming in a session row.
+    /// A ready, explicitly set settings folder: the only one worth naming in a session row.
+    /// Set explicitly, even the default folder reads a different global MCP configuration.
     public var customLocation: String? {
-        guard isReady, let displayPath, displayPath != defaultPath else { return nil }
+        guard isReady, kind == "explicit" else { return nil }
         return displayPath
     }
 }

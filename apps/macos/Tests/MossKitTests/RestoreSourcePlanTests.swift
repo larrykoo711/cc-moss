@@ -18,7 +18,7 @@ import Testing
         #expect(unset?.customLocation == nil)
         var explicitDefault = planned(status: "ready", issue: nil).restoreSource
         explicitDefault?.displayPath = "/Users/demo/.claude"
-        #expect(explicitDefault?.customLocation == nil)
+        #expect(explicitDefault?.customLocation == "/Users/demo/.claude", "set explicitly, it is not the unset default")
         #expect(planned(status: "ready", issue: nil).restoreSource?.customLocation == "/tmp/original")
         #expect(planned().restoreSource?.customLocation == nil, "a broken source is shown by its own prompt")
     }

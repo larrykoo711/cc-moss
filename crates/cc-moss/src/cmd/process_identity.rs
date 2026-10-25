@@ -390,6 +390,25 @@ mod tests {
             EntryIdentity::NotClaude,
             "only Claude's own versions directory holds releases"
         );
+        assert_eq!(
+            classify_entry(
+                Some(Path::new("/home/u/.local/share/claude/versions/2.1.308")),
+                Some(Path::new("/home/u/.local/share/claude/versions/latest")),
+                false,
+                argv
+            ),
+            EntryIdentity::NotClaude,
+            "a configured binary not named for a release has no earlier releases"
+        );
+        let parents = std::collections::HashMap::from([(40, 30), (30, 20)]);
+        let earlier = Path::new("/home/u/.local/share/claude/versions/2.1.308");
+        assert!(
+            !hook_owner(40, 20, &parents, |pid| match pid {
+                30 => classify_entry(Some(earlier), Some(current), false, argv),
+                _ => EntryIdentity::TrustedClaude(vec![]),
+            }),
+            "a nearer Claude on an earlier release owns the hook, not the farther one"
+        );
     }
 
     #[test]
