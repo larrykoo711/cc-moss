@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the previous release. An earlier release in the same Claude Code `versions` directory now counts as the
   configured Claude; every other identity check is unchanged, and a binary anywhere else, or a release the updater
   already removed, is still refused.
+- **Don't show the settings folder as if it were the project path.** A session waiting to be brought back
+  showed its settings folder, unlabeled, under its name, so the default `~/.claude` read like the session's folder.
+  The row now names a settings folder only when it is not the default, labeled "Settings:".
 
 ## [0.3.5] - 2026-10-23
 

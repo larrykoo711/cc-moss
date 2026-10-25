@@ -423,6 +423,11 @@ public struct RestoreSourcePlan: Decodable, Equatable, Sendable {
     }
     public var isUnknown: Bool { kind == "unknown" && status == "needs_location" && issue == .configSourceUnknown && !revision.isEmpty }
     public var needsLocation: Bool { status == "needs_location" && issue?.isLocationProblem == true }
+    /// A ready settings folder other than the default: the only one worth naming in a session row.
+    public var customLocation: String? {
+        guard isReady, let displayPath, displayPath != defaultPath else { return nil }
+        return displayPath
+    }
 }
 
 /// An explicit choice for this launch only; never saved as the old session's source.
