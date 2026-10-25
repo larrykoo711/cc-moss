@@ -10,6 +10,19 @@ import Testing
         ] as [String: Any]])])[0]
     }
 
+    @Test func rowShowsOnlyACustomSettingsLocation() {
+        // The row's folder is the session's working directory; the default settings
+        // folder says nothing new there and reads as if it were the project path.
+        var unset = planned(kind: "unset", status: "ready", issue: nil).restoreSource
+        unset?.displayPath = "/Users/demo/.claude"
+        #expect(unset?.customLocation == nil)
+        var explicitDefault = planned(status: "ready", issue: nil).restoreSource
+        explicitDefault?.displayPath = "/Users/demo/.claude"
+        #expect(explicitDefault?.customLocation == "/Users/demo/.claude", "set explicitly, it is not the unset default")
+        #expect(planned(status: "ready", issue: nil).restoreSource?.customLocation == "/tmp/original")
+        #expect(planned().restoreSource?.customLocation == nil, "a broken source is shown by its own prompt")
+    }
+
     @Test func oldOrMalformedPlanStaysUnknownInsteadOfGuessing() {
         let old = sessions([sessionJSON(status: "interrupted")])[0]
         let malformed = sessions([with(sessionJSON(status: "interrupted"), ["restore_source": "invalid"])])[0]

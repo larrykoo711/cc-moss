@@ -126,13 +126,14 @@ fn classify_entry(
     let (Some(exe), Some(expected)) = (exe, expected) else {
         return EntryIdentity::Unknown;
     };
-    if exe != expected && !supported {
+    let release = exe == expected || earlier_release(exe, expected);
+    if !release && !supported {
         return EntryIdentity::NotClaude;
     }
     let Some(argv) = read_argv().filter(|args| !args.is_empty()) else {
         return EntryIdentity::Unknown;
     };
-    if exe == expected {
+    if release {
         return EntryIdentity::TrustedClaude(argv.into_iter().skip(1).collect());
     }
     let Some(script) = argv.get(1).filter(|arg| !arg.starts_with('-')) else {
@@ -141,10 +142,30 @@ fn classify_entry(
     let Some(script) = canonical(Path::new(script)) else {
         return EntryIdentity::Unknown;
     };
-    if script != expected {
+    if script != expected && !earlier_release(&script, expected) {
         return EntryIdentity::NotClaude;
     }
     EntryIdentity::TrustedClaude(argv.into_iter().skip(2).collect())
+}
+
+/// Claude's native updater installs each release beside the last
+/// (`…/versions/<version>`) and repoints the launcher, so a session started before
+/// an update keeps running an earlier sibling of the configured binary. A release
+/// already removed has no path to resolve and stays unknown.
+fn earlier_release(exe: &Path, expected: &Path) -> bool {
+    let version = |path: &Path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| {
+                name.split('.')
+                    .all(|part| !part.is_empty() && part.bytes().all(|b| b.is_ascii_digit()))
+            })
+    };
+    let versions = expected.parent();
+    versions.is_some_and(|dir| dir.file_name() == Some("versions".as_ref()))
+        && exe.parent() == versions
+        && version(exe)
+        && version(expected)
 }
 
 /// The hook must descend from the declared Claude, with no nearer Claude or
@@ -330,6 +351,64 @@ mod tests {
         let parents = std::collections::HashMap::from([(40, 20)]);
         assert!(!hook_owner(40, 20, &parents, |_| EntryIdentity::Unknown));
         assert!(!hook_owner(40, 20, &parents, |_| EntryIdentity::NotClaude));
+    }
+
+    #[test]
+    fn resume_identity_entry_trusts_an_earlier_release_after_an_update() {
+        let current = Path::new("/home/u/.local/share/claude/versions/2.1.310");
+        let argv = || Some(args(&["claude", "--resume", "A"]));
+        assert_eq!(
+            classify_entry(
+                Some(Path::new("/home/u/.local/share/claude/versions/2.1.308")),
+                Some(current),
+                false,
+                argv
+            ),
+            EntryIdentity::TrustedClaude(args(&["--resume", "A"])),
+            "a session started before the update still runs the previous release"
+        );
+        for exe in [
+            "/home/u/.local/share/claude/versions/evil",
+            "/home/u/.local/share/claude/versions/2.1.308/claude",
+            "/home/u/.local/share/claude/other/2.1.308",
+            "/tmp/versions/2.1.308",
+            "/home/u/.local/share/claude/versions/2..308",
+        ] {
+            assert_eq!(
+                classify_entry(Some(Path::new(exe)), Some(current), false, argv),
+                EntryIdentity::NotClaude,
+                "{exe} is not a release of the configured Claude"
+            );
+        }
+        assert_eq!(
+            classify_entry(
+                Some(Path::new("/opt/bin/2.1.308")),
+                Some(Path::new("/opt/bin/2.1.310")),
+                false,
+                argv
+            ),
+            EntryIdentity::NotClaude,
+            "only Claude's own versions directory holds releases"
+        );
+        assert_eq!(
+            classify_entry(
+                Some(Path::new("/home/u/.local/share/claude/versions/2.1.308")),
+                Some(Path::new("/home/u/.local/share/claude/versions/latest")),
+                false,
+                argv
+            ),
+            EntryIdentity::NotClaude,
+            "a configured binary not named for a release has no earlier releases"
+        );
+        let parents = std::collections::HashMap::from([(40, 30), (30, 20)]);
+        let earlier = Path::new("/home/u/.local/share/claude/versions/2.1.308");
+        assert!(
+            !hook_owner(40, 20, &parents, |pid| match pid {
+                30 => classify_entry(Some(earlier), Some(current), false, argv),
+                _ => EntryIdentity::TrustedClaude(vec![]),
+            }),
+            "a nearer Claude on an earlier release owns the hook, not the farther one"
+        );
     }
 
     #[test]

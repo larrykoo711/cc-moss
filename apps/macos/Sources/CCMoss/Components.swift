@@ -314,10 +314,18 @@ struct SessionRow: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .tip(problem)
-                } else if session.state == .interrupted, let plan = session.restoreSource, plan.isReady,
-                          let path = plan.displayPath {
-                    Text(path).font(.system(size: 11, design: .monospaced)).foregroundStyle(.secondary)
-                        .lineLimit(1).truncationMode(.middle).help(path)
+                } else if session.state == .interrupted, let path = session.restoreSource?.customLocation {
+                    // The group above names the working folder; this is where settings come from.
+                    HStack(spacing: 4) {
+                        Image(systemName: Icons.settings)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.tertiary)
+                        Text(L.t("Settings: ", "设置：") + Grouping.tilde(path, home: NSHomeDirectory()))
+                            .lineLimit(1).truncationMode(.middle)
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .help(L.t("Settings are read from \(path)", "设置读取位置：\(path)"))
                 } else if let sub = session.subtitle {
                     HStack(spacing: 4) {
                         Image(systemName: session.subtitleIsNote ? Icons.note : Icons.lastPrompt)
