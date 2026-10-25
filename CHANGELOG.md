@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **End a session that outlived a Claude Code update.** Archive with end, move into tmux and restart refused every
+  session started before Claude Code's updater installed a new release, because the running process still used
+  the previous release. An earlier release in the same Claude Code `versions` directory now counts as the
+  configured Claude; every other identity check is unchanged, and a binary anywhere else, or a release the updater
+  already removed, is still refused.
+
 ## [0.3.5] - 2026-10-23
 
 ### Fixed
