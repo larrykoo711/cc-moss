@@ -6,6 +6,32 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-10-25
+
+### Fixed
+
+- **End a session that outlived a Claude Code update.** Archive with end, move into tmux and restart refused every
+  session started before Claude Code's updater installed a new release, because the running process still used
+  the previous release. An earlier release in the same Claude Code `versions` directory now counts as the
+  configured Claude; every other identity check is unchanged, and a binary anywhere else, or a release the updater
+  already removed, is still refused.
+- **Don't show the settings folder as if it were the project path.** A session waiting to be brought back
+  showed its settings folder, unlabeled, under its name, so the default `~/.claude` read like the session's folder.
+  The row now names a settings folder only when it was set explicitly, labeled "Settings:".
+- **Folder checks no longer report "unavailable" by mistake.** A check handed back its answer before giving back
+  its worker slot, so on a busy machine the next checks in a row could find both slots taken and fail closed.
+  The slot now returns as soon as the check finishes; a check stuck on a hung filesystem still holds it.
+
+### Security
+
+- **Website:** `/mcp` rejects a request body over 64 KB before reading it (counted in bytes as it streams when no
+  length is declared), and the site's build stops on any known advisory in its dependencies. The site's
+  development tooling moves to undici 7.30.1. The cc-moss program itself is unaffected.
+
+### Changed
+
+- Dependency updates: toml_edit 0.25.17 and libc 0.2.191.
+
 ## [0.3.5] - 2026-10-23
 
 ### Fixed
@@ -466,7 +492,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...HEAD
+[0.3.6]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...v0.3.4
 [0.3.3]: https://github.com/larrykoo711/cc-moss/compare/v0.3.2...v0.3.3

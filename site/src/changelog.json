@@ -2,13 +2,36 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.6",
+      "date": "2026-10-25",
+      "icon": "archive",
+      "short": {
+        "zh": "升级后也能结束会话",
+        "en": "End sessions after an update"
+      },
+      "headline": {
+        "zh": "Claude Code 自动升级后，之前开着的会话照样能结束并归档。",
+        "en": "Sessions you started before Claude Code updated itself can still be ended and archived."
+      },
+      "highlights": [
+        {
+          "zh": "Claude Code 自动升级后，还在跑旧版本的会话以前没法「结束并归档」、在原窗格重开或移进 tmux。现在 cc-moss 认得出 Claude Code 自己装的旧版本，其他检查一条没少。",
+          "en": "After Claude Code updated itself, sessions still running the previous version couldn’t be ended and archived, restarted in place or moved into tmux. cc-moss now recognizes Claude Code’s own earlier versions, with every other check kept."
+        },
+        {
+          "zh": "等待找回的会话不再把默认的 ~/.claude 显示在名字下面，免得看起来像会话所在的文件夹；只有专门指定了设置文件夹，才会标成「设置：…」。",
+          "en": "A session waiting to be brought back no longer shows the default ~/.claude under its name, which looked like the session’s folder. Only a settings folder you set yourself is shown, labeled “Settings: …”."
+        },
+        {
+          "zh": "官网给 AI 助手用的搜索接口现在会拒绝过大的请求，网站的依赖一旦有已知漏洞就停止上线。cc-moss 程序本身不受影响。",
+          "en": "The website’s search endpoint for AI assistants now turns away oversized requests, and the site stops deploying if a dependency has a known vulnerability. The cc-moss program itself is not affected."
+        }
+      ]
+    },
+    {
       "version": "0.3.5",
       "date": "2026-10-23",
       "icon": "restore",
-      "short": {
-        "zh": "找回更准，启动更安全",
-        "en": "Safer starts, exact restores"
-      },
       "headline": {
         "zh": "找回的就是你点的那个会话，新会话也不会开在系统目录里。",
         "en": "Restore exactly the session you picked, and never start one in a system folder."

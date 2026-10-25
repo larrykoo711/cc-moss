@@ -115,6 +115,44 @@ fn archive_end_ends_an_idle_session() {
     assert!(kinds.contains(&"archived"), "{kinds:?}");
 }
 
+/// Claude Code's updater installs a new release beside the running one and
+/// repoints the launcher; a session started before that is still Claude.
+#[test]
+fn archive_end_ends_a_session_left_on_an_earlier_claude_release() {
+    let mut w = common::World::new("aeu");
+    let release = |dir: &str, version: &str| {
+        let path = w.path(dir).join(version);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::copy(&w.claude, &path).unwrap();
+        path
+    };
+    let first = release("claude/versions", "1.0.0");
+    let update = release("claude/versions", "1.0.1");
+    let elsewhere = release("claude/other", "1.0.1");
+    w.claude = first;
+    w.new_session("api");
+    w.session_id("api");
+    let pid = session_of(&w, "api")["pid"].as_u64().unwrap();
+
+    w.claude = elsewhere;
+    let (v, ok) = archive_end(&w, "api");
+    assert!(
+        !ok,
+        "a binary outside Claude's versions directory proves nothing: {v}"
+    );
+    assert!(alive(pid));
+
+    w.claude = update;
+    let (v, ok) = archive_end(&w, "api");
+    assert!(ok, "{v}");
+    assert_eq!(v["results"][0]["result"], "archived", "{v}");
+    let until = Instant::now() + Duration::from_secs(10);
+    while alive(pid) {
+        assert!(Instant::now() < until, "its process is still there");
+        std::thread::sleep(Duration::from_millis(100));
+    }
+}
+
 #[test]
 fn archive_end_refuses_a_busy_session() {
     let w = common::World::new("aeb");
