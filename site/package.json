@@ -10,12 +10,12 @@
     "deploy": "node build.mjs && wrangler deploy"
   },
   "devDependencies": {
-    "@tailwindcss/cli": "4.1.14",
-    "linkedom": "0.18.13",
-    "tailwindcss": "4.1.14",
+    "@tailwindcss/cli": "4.3.3",
+    "linkedom": "0.18.14",
+    "tailwindcss": "4.3.3",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2",
-    "wrangler": "4.151.1"
+    "wrangler": "4.151.3"
   },
   "pnpm": {
     "overrides": {
