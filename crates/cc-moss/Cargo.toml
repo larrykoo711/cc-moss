@@ -24,7 +24,7 @@ unicode-width = "0.2"
 serde_json.workspace = true
 serde.workspace = true
 libc = "0.2"
-signal-hook = "0.3"
+signal-hook = "0.4"
 uuid.workspace = true
 
 [dev-dependencies]
