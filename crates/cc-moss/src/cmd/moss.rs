@@ -282,7 +282,7 @@ fn socket() -> Option<String> {
 /// that would change how Moss lives and dies).
 pub(super) fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
     run_with_timeout(
-        Command::new("tmux")
+        moss_core::tmux::command()
             .arg("-L")
             .arg(socket)
             .arg("-f")

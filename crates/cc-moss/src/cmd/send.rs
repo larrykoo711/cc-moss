@@ -5,7 +5,6 @@
 
 use std::io::Write;
 use std::os::unix::fs::OpenOptionsExt;
-use std::process::Command;
 
 use anyhow::{bail, Context, Result};
 use moss_core::registry::Registry;
@@ -84,7 +83,7 @@ fn paste(socket: &Socket, pane: &str, text: &str) -> Result<()> {
 }
 
 fn tmux(socket: &Socket, args: &[&str]) -> Result<()> {
-    let out = Command::new("tmux")
+    let out = moss_core::tmux::command()
         .args(socket.args())
         .args(args)
         .output()

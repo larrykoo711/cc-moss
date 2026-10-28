@@ -3,7 +3,6 @@
 //! the session is not idle at an empty prompt, or shows no suggestion.
 
 use std::path::Path;
-use std::process::Command;
 use std::time::Duration;
 
 use anyhow::Result;
@@ -43,7 +42,7 @@ fn read(slot: &Slot) -> Option<String> {
     }
     let loc = slot.tmux.as_ref()?;
     let out = moss_core::command::run_with_timeout(
-        Command::new("tmux")
+        moss_core::tmux::command()
             .args(Socket::Path(loc.socket.clone()).args())
             .args(["capture-pane", "-p", "-J", "-e", "-t", &loc.pane_id]),
         Duration::from_secs(3),

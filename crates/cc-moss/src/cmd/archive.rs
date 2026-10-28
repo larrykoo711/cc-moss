@@ -222,7 +222,7 @@ fn is_busy(slot: &Slot) -> bool {
         return false;
     };
     let screen = moss_core::command::run_with_timeout(
-        std::process::Command::new("tmux")
+        moss_core::tmux::command()
             .args(moss_core::tmux::Socket::Path(loc.socket.clone()).args())
             .args(["capture-pane", "-p", "-J", "-e", "-t", &loc.pane_id]),
         Duration::from_secs(3),

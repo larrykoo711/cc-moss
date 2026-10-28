@@ -808,7 +808,9 @@ struct SessionPane {
 impl SessionPane {
     fn run(&self, args: &[&str]) -> Result<String, String> {
         let out = moss_core::command::run_with_timeout(
-            Command::new("tmux").args(self.socket.args()).args(args),
+            moss_core::tmux::command()
+                .args(self.socket.args())
+                .args(args),
             Duration::from_secs(5),
         )
         .map_err(|e| format!("{e:?}"))?;
