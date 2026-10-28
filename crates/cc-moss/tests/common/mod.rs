@@ -197,9 +197,11 @@ impl World {
         cmd
     }
 
+    /// `tmux -u`: a UTF-8 client whatever the locale, so CJK names read back
+    /// as written instead of `_` outside tmux without a UTF-8 locale.
     pub fn tmux(&self, args: &[&str]) -> String {
         let out = Command::new("tmux")
-            .args(["-L", &self.socket])
+            .args(["-u", "-L", &self.socket])
             .args(args)
             .output()
             .unwrap();

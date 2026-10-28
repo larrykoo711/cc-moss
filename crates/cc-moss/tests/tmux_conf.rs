@@ -19,13 +19,15 @@ fn rendered(w: &World) -> std::path::PathBuf {
     path
 }
 
-/// `tmux -L <socket> args`, with `path` as the PATH the server inherits.
+/// `tmux -u -L <socket> args`, with `path` as the PATH the server inherits.
+/// `-u` makes the client UTF-8 whatever locale the test runs under: outside
+/// tmux and without a UTF-8 locale, a client prints a CJK name as `_`.
 fn tmux(w: &World, path: &str, args: &[&str]) -> Output {
     Command::new("tmux")
         .env_remove("TMUX")
         .env_remove("TMUX_PANE")
         .env("PATH", path)
-        .args(["-L", &w.socket])
+        .args(["-u", "-L", &w.socket])
         .args(args)
         .output()
         .unwrap()
