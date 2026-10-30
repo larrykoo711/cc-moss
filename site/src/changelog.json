@@ -2,13 +2,36 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.7",
+      "date": "2026-10-30",
+      "icon": "rows",
+      "short": {
+        "zh": "后台会话也认得",
+        "en": "Background sessions, recognized"
+      },
+      "headline": {
+        "zh": "Claude Code 放到后台跑的会话，列表里只占一行，状态也对。",
+        "en": "Sessions Claude Code runs in the background take one row, with the right status."
+      },
+      "highlights": [
+        {
+          "zh": "新版 Claude Code 里，在会话中用 /resume 打开另一个会话时，两个会话都会交给 Claude Code 在后台继续跑。以前 cc-moss 不认得它们：同一段对话出现两行，名字和状态对不上，在一行上重命名改到了另一行。现在一段对话只占一行，显示为正在运行，点「打开」就能接上。",
+          "en": "In newer Claude Code, opening another session with /resume hands both sessions to Claude Code to keep running in the background. cc-moss didn’t recognize them: one conversation showed up as two rows with mismatched names and status, and renaming one row renamed the other. Now each conversation takes one row, shows as running, and Open takes you into it."
+        },
+        {
+          "zh": "一段对话只要还在某处运行，cc-moss 就不会再帮你多开一份，免得两边同时往一段对话里写。",
+          "en": "While a conversation is still running anywhere, cc-moss won’t start a second copy of it, so two copies never write to the same conversation."
+        },
+        {
+          "zh": "守护进程和状态栏 App 读中文会话名时不再变成下划线，体检不再误报名字对不上。",
+          "en": "The daemon and the menu bar app no longer read Chinese session names as underscores, so the checkup stops reporting names as out of sync."
+        }
+      ]
+    },
+    {
       "version": "0.3.6",
       "date": "2026-10-25",
       "icon": "archive",
-      "short": {
-        "zh": "升级后也能结束会话",
-        "en": "End sessions after an update"
-      },
       "headline": {
         "zh": "Claude Code 自动升级后，之前开着的会话照样能结束并归档。",
         "en": "Sessions you started before Claude Code updated itself can still be ended and archived."
