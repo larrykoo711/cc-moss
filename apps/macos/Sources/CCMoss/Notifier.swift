@@ -298,7 +298,7 @@ final class AlertCenter {
             return
         }
         let session = model.session(slot)
-        if action == .open, let session, session.inTmux, session.state != .interrupted {
+        if action == .open, let session, session.canOpen, session.state != .interrupted {
             // Opens off the main thread; if it can't, the panel shows why.
             model.open(session) { opened in if !opened { showPanel() } }
             return

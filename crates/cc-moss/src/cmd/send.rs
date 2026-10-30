@@ -35,6 +35,14 @@ pub fn run(name: &str, text: &str) -> Result<()> {
         ));
     }
     let Some(loc) = slot.tmux.as_ref() else {
+        if super::attach::background_job(slot).is_some() {
+            bail!(tr!(
+                format!(
+                    "`{name}` runs in Claude Code's background; open it with `cc-moss attach {name}` and type there"
+                ),
+                format!("`{name}` 在 Claude Code 后台运行，先用 `cc-moss attach {name}` 打开它，再在里面输入")
+            ));
+        }
         bail!(tr!(
             format!(
                 "`{name}` is not running in tmux, so there is no way to type into it from here"

@@ -33,6 +33,9 @@ pub enum Refusal {
     /// Its recorded process is not that Claude Code any more (or cannot be
     /// told).
     NotItsProcess,
+    /// Claude Code's supervisor runs it in the background: it carries on
+    /// without a terminal, and `cc-moss attach` opens it.
+    Background,
 }
 
 impl Refusal {
@@ -43,6 +46,7 @@ impl Refusal {
             Refusal::InTmux => "in-tmux",
             Refusal::Busy => "busy",
             Refusal::NotItsProcess => "not-its-process",
+            Refusal::Background => "background",
         }
     }
 
@@ -63,6 +67,11 @@ impl Refusal {
             Refusal::NotItsProcess => tr!(
                 "cc-moss can't be sure which process is this session, so it leaves it alone.",
                 "cc-moss 没法确认哪个进程是这个会话，所以不动它。"
+            )
+            .into(),
+            Refusal::Background => tr!(
+                "Claude Code runs it in the background, where it keeps going without a terminal; open it instead.",
+                "它在 Claude Code 后台运行，不需要终端也会接着跑；直接打开它就行。"
             )
             .into(),
         }
@@ -148,7 +157,15 @@ pub fn run(name: &str, json_out: bool, dry_run: bool) -> Result<bool> {
         proc::liveness(pid, slot.pid_start.as_deref())
     });
     let status = slot.effective_status(proc::is_alive);
-    if let Some(r) = refusal(&slot, status, turn, process) {
+    let background = status == Status::Running
+        && slot.tmux.is_none()
+        && super::attach::background_job(&slot).is_some();
+    let refused = if background && !slot.is_moss() {
+        Some(Refusal::Background)
+    } else {
+        refusal(&slot, status, turn, process)
+    };
+    if let Some(r) = refused {
         say(
             json!({"schema": 1, "result": "refused", "reason": r.code(), "message": r.message()}),
             r.message(),

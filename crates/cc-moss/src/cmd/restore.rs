@@ -259,9 +259,23 @@ fn run_selected(args: RestoreArgs, exact_slot_id: Option<&str>) -> Result<()> {
         }
     }
     // 旧plan只使用可恢复性；完整typed错误一直保留，返回时绝不由bool猜成missing。
-    let candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| {
+    let mut candidates = plan(&rows, pool.as_ref(), now_ms(), |p: &Path| {
         cwd_results.get(p).map_or_else(|| p.exists(), Result::is_ok)
     });
+    // The registry can be behind Claude Code (a session it never heard of
+    // carries on in the background): never start a second copy of one a
+    // live process runs.
+    let wanted = candidates
+        .iter()
+        .filter(|c| c.verdict == Verdict::Restore)
+        .map(|c| c.slot.session_id.as_str())
+        .collect();
+    let running_now = moss_core::agent::claude::running_among(&wanted);
+    for c in &mut candidates {
+        if c.verdict == Verdict::Restore && running_now.contains(&c.slot.session_id) {
+            c.verdict = Verdict::OpenElsewhere;
+        }
+    }
     if args.json {
         let running: Vec<_> = rows
             .iter()

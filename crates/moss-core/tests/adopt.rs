@@ -5,24 +5,30 @@ use moss_core::launch_args::is_headless;
 use moss_core::tmux::locate_in_panes;
 
 #[test]
-fn parses_interactive_sessions_and_drops_auto_names() {
+fn parses_running_sessions_and_drops_auto_names() {
     let json = r#"[
-      {"id":"0b47","pid":10,"cwd":"/w/a","kind":"background","sessionId":"bg","name":"x","state":"blocked"},
+      {"id":"0b47","cwd":"/w/a","kind":"background","sessionId":"done","name":"x","state":"blocked"},
+      {"pid":10,"id":"99a0","cwd":"/w/a","kind":"background","sessionId":"BG","name":"db-tools","status":"busy"},
       {"pid":11,"cwd":"/w/acme","kind":"interactive","sessionId":"S1","name":"acme-d9","status":"busy"},
       {"pid":12,"cwd":"/w/acme","kind":"interactive","sessionId":"S2","name":"job-api","status":"idle"},
-      {"cwd":"/w/acme","kind":"interactive","sessionId":"S3","name":"no-pid","status":"idle"}
+      {"cwd":"/w/acme","kind":"interactive","sessionId":"S3","name":"no-pid","status":"idle"},
+      {"pid":13,"cwd":"/w/acme","kind":"something-new","sessionId":"S4","status":"idle"}
     ]"#;
     let live = parse_agents(json);
     assert_eq!(
         live.len(),
-        2,
-        "background and pid-less entries skipped: {live:?}"
+        3,
+        "pid-less entries (a finished background job) and unknown kinds skipped: {live:?}"
     );
-    assert_eq!(live[0].session_id, "S1");
-    assert_eq!(live[0].name, None, "auto name dropped");
-    assert!(live[0].busy);
-    assert_eq!(live[1].name.as_deref(), Some("job-api"));
-    assert!(!live[1].busy);
+    assert_eq!(live[0].session_id, "BG");
+    assert!(live[0].background, "run by Claude Code's supervisor");
+    assert_eq!(live[0].name.as_deref(), Some("db-tools"));
+    assert_eq!(live[1].session_id, "S1");
+    assert!(!live[1].background);
+    assert_eq!(live[1].name, None, "auto name dropped");
+    assert!(live[1].busy);
+    assert_eq!(live[2].name.as_deref(), Some("job-api"));
+    assert!(!live[2].busy);
 }
 
 #[test]

@@ -284,7 +284,7 @@ impl Registry {
         // So check every process the event could be compared with first,
         // and answer from that inside the lock. Only a row that changed in
         // between is checked under the lock.
-        let known = self.prefetch_liveness(event_session_id(event), ctx, is_alive)?;
+        let known = self.prefetch_liveness(event.session_id(), ctx, is_alive)?;
         let cached = |pid: u32, start: Option<&str>| match known
             .iter()
             .find(|(p, s, _)| *p == pid && s.as_deref() == start)
@@ -1350,6 +1350,59 @@ impl Registry {
         Ok(())
     }
 
+    /// The terminal process `pid` handed this slot's conversation to a
+    /// background job that no longer runs (`/resume` in Claude Code 2.1.314
+    /// parks it there; an idle job retires). The terminal now shows another
+    /// session, so it no longer speaks for this one: the slot lets go of it.
+    /// One that never said a word is simply over; any other stopped and can
+    /// come back. Nothing when the slot runs another process by now.
+    pub fn release_process(&self, slot_id: &str, pid: u32, now_ms: i64) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let held: Option<(Option<u32>, Option<String>)> = tx
+            .query_row(
+                "SELECT pid, last_prompt FROM slots WHERE slot_id = ?1 AND status = 'running'",
+                [slot_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        let Some((Some(held), last_prompt)) = held else {
+            return Ok(false);
+        };
+        if held != pid {
+            return Ok(false);
+        }
+        tx.execute(
+            "UPDATE slots SET pid = NULL, pid_start = NULL, busy = 0 WHERE slot_id = ?1",
+            [slot_id],
+        )?;
+        set_tmux(&tx, slot_id, None)?;
+        clear_attention(&tx, slot_id)?;
+        let detail = serde_json::json!({ "reason": "moved" });
+        if last_prompt.is_none() {
+            tx.execute(
+                "UPDATE slots SET status = 'closed', end_reason = 'moved', ended_at = ?2
+                 WHERE slot_id = ?1",
+                params![slot_id, now_ms],
+            )?;
+            record_event(&tx, slot_id, "ended", &detail, now_ms)?;
+        } else {
+            tx.execute(
+                "UPDATE slots SET status = 'interrupted', end_reason = 'moved', ended_at = ?2
+                 WHERE slot_id = ?1",
+                params![slot_id, now_ms],
+            )?;
+            record_interrupted(&tx, slot_id, &detail, now_ms)?;
+        }
+        tx.commit()?;
+        Ok(true)
+    }
+
+    /// Forget where a slot ran in tmux: its session runs outside tmux now
+    /// (in Claude Code's background supervisor).
+    pub fn clear_tmux(&self, slot_id: &str) -> Result<()> {
+        set_tmux(self.write()?, slot_id, None)
+    }
+
     /// Record that a running slot's process is gone without a SessionEnd
     /// (SIGKILL, power loss). Once per interruption: nothing is recorded when
     /// the slot's latest event already is `interrupted`.
@@ -1846,17 +1899,6 @@ fn migrate(conn: &mut Connection) -> Result<()> {
 /// SQL predicate "this row belongs to the calling process". A process is its
 /// pid *and* its start time: if either side's start time is unknown we cannot
 /// tell a reused pid from the same process, so the answer is no.
-fn event_session_id(event: &Event) -> &str {
-    match event {
-        Event::Start { session_id, .. }
-        | Event::Prompt { session_id, .. }
-        | Event::Stop { session_id }
-        | Event::End { session_id, .. }
-        | Event::Attention { session_id, .. }
-        | Event::ToolDone { session_id } => session_id,
-    }
-}
-
 const SAME_PROCESS: &str =
     "(pid = :pid AND pid_start IS NOT NULL AND :pid_start IS NOT NULL AND pid_start = :pid_start)";
 

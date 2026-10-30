@@ -226,11 +226,27 @@ cc-moss adopt NAME             # end its process in the old terminal and carry o
   process is the session. If the process doesn't quit within 10 seconds, the session stays where it is and you're
   told to quit it in its own terminal and try again.
 - `--json` prints one line with `result` set to `moved`, `would-move`, `refused` or `failed`, and a `reason` when
-  refused (`busy`, `in-tmux`, `not-running`, `not-its-process`, `moss`). Every move is noted in `audit.jsonl` in the
+  refused (`busy`, `in-tmux`, `not-running`, `not-its-process`, `moss`, `background`). Every move is noted in `audit.jsonl` in the
   state directory.
 
 In the panel, a session outside tmux has a Move into tmux button at the end of its row (Tidy up and move into tmux
 when it has no name yet). It says what will happen first and acts only once you confirm.
+
+### Claude Code background sessions
+
+Since Claude Code 2.1.314, a session you `/resume` from inside another session, or send off with `claude agents`, is
+run by Claude Code's own background process: it isn't in any terminal and keeps working when you close one. cc-moss
+records these as usual:
+
+- It's listed as a running session, with `"background": true` in `ls --json`. `cc-moss attach NAME` (Open in the panel)
+  opens it with `claude attach`.
+- It isn't in a terminal, so nothing can type into it for you: `send`, the panel's reply line and Rename ask you to open
+  it first. It has no Move into tmux either, and `adopt` refuses it with `background`: closing a terminal can't stop it.
+- When you `/resume` inside a session, Claude Code first moves that session to the background and the window shows the
+  one you picked. cc-moss follows: the background process takes over the moved session, on the same row. Once the
+  background lets it go, one that never said a word is over, and any other shows as dropped, ready to bring back.
+- While any Claude Code process runs a conversation (in a terminal or in the background), `restore` won't start a
+  second copy, even before cc-moss has heard of it.
 
 ### Archive
 
