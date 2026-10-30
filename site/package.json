@@ -15,7 +15,7 @@
     "tailwindcss": "4.3.3",
     "turndown": "7.2.4",
     "turndown-plugin-gfm": "1.0.2",
-    "wrangler": "4.151.3"
+    "wrangler": "4.154.0"
   },
   "pnpm": {
     "overrides": {
