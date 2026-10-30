@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-10-30
+
 ### Fixed
 
 - **Sessions Claude Code runs in the background show up once, and right.** Since Claude Code 2.1.314, `/resume`
@@ -19,6 +21,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Chinese session names read right outside tmux.** The daemon and the menu bar app usually run with no UTF-8 locale,
   where tmux printed each Chinese letter of a session name as `_`. The checkup then reported the tmux name as out of
   sync and every refresh rewrote the tab title. cc-moss now always reads tmux as a UTF-8 client (`tmux -u`).
+
+### Changed
+
+- Dependency updates: signal-hook 0.4.5; the website's build tools move to Tailwind CSS 4.3.3, linkedom 0.18.14
+  and wrangler 4.151.3.
+- Tests read tmux as a UTF-8 client too, so the suite passes whatever the locale.
 
 ## [0.3.6] - 2026-10-25
 
@@ -506,7 +514,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.7...HEAD
+[0.3.7]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...v0.3.5
 [0.3.4]: https://github.com/larrykoo711/cc-moss/compare/v0.3.3...v0.3.4
