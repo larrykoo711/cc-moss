@@ -51,6 +51,32 @@ fn new_sessions_carry_their_own_name_for_the_tab_title() {
 }
 
 #[test]
+fn a_chinese_tmux_name_matches_without_a_utf8_locale() {
+    let w = World::new("new-locale");
+    w.new_session("接口 评审");
+    w.session_id("接口 评审");
+    // The daemon and the menu bar app run outside tmux, often with no
+    // locale at all: tmux must not hand them `_` for every Chinese letter.
+    let out = w
+        .cc_moss()
+        .env_remove("LANG")
+        .env_remove("LC_ALL")
+        .env_remove("LC_CTYPE")
+        .args(["doctor", "--sessions", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let session = v["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|s| s["name"] == "接口 评审")
+        .unwrap_or_else(|| panic!("{v}"));
+    assert_eq!(session["tmux_name_matches"], true, "{session}");
+}
+
+#[test]
 fn ls_labels_sessions_that_have_no_title_yet() {
     let w = World::new("ls-title");
     w.new_session("api");

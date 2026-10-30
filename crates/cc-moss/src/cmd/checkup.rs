@@ -7,7 +7,6 @@
 use std::collections::HashMap;
 use std::io;
 use std::path::Path;
-use std::process::Command;
 
 use anyhow::{Context, Result};
 use moss_core::registry::Registry;
@@ -146,7 +145,7 @@ pub fn session_facts(
 
 pub(super) fn live_names(socket: &str) -> TmuxNames {
     let out = moss_core::command::run_with_timeout(
-        Command::new("tmux")
+        moss_core::tmux::command()
             .args(Socket::Path(socket.to_string()).args())
             .args(["list-sessions", "-F", "#{session_id}|:|#{session_name}"]),
         std::time::Duration::from_secs(3),
