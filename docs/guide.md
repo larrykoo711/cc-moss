@@ -177,9 +177,18 @@ cc-moss adopt 名字             # 结束它在原终端里的进程，在 tmux 
 - 会话还没有自己的名字时（只有一串 id），先用它所在文件夹的名字（重名加 `-2`、`-3`）记在 cc-moss 里；最后一句话和活动时间也从对话记录里刷新一遍。
 - 然后请原来的进程退出（最多等 10 秒），再像找回一样在 tmux 里 `claude --resume` 接上。原来那个终端窗口留着，里面的 Claude 已经退出了。
 - 只搬闲着的会话：正在干活、或者正在问你问题时拒绝，等这一轮做完再来。已经在 tmux 里的、没在运行的（用 `restore`）、Moss，以及 cc-moss 认不准是哪个进程的，也都不搬。10 秒内没退出就留在原处，告诉你去原终端里自己退出再试。
-- `--json` 输出一行，`result` 是 `moved`、`would-move`、`refused` 或 `failed`，拒绝时带 `reason`（`busy`、`in-tmux`、`not-running`、`not-its-process`、`moss`）。每次搬动都记进状态目录的 `audit.jsonl`。
+- `--json` 输出一行，`result` 是 `moved`、`would-move`、`refused` 或 `failed`，拒绝时带 `reason`（`busy`、`in-tmux`、`not-running`、`not-its-process`、`moss`、`background`）。每次搬动都记进状态目录的 `audit.jsonl`。
 
 面板里不在 tmux 里的会话，行末多一个「移进 tmux」按钮（会话还没名字时是「整理并移进 tmux」），点了先说清会发生什么，你确认后才动手。
+
+### Claude Code 后台会话
+
+Claude Code 2.1.314 起，在会话里 `/resume` 另一个会话、或者用 `claude agents` 派出去的会话，会交给 Claude Code 自己的后台进程去跑，不在任何终端里，关掉终端它也接着干活。cc-moss 照常记下它们：
+
+- 它在列表里是一个正在运行的会话，`ls --json` 里带 `"background": true`。`cc-moss attach 名字`（面板里是「打开」）用 `claude attach` 把它打开。
+- 它不在终端里，没法替你往里打字：`send`、面板里的回一句和重命名会请你先打开它。也不提供「移进 tmux」，`adopt` 以 `background` 拒绝：它本来就不怕终端被关。
+- 在一个会话里 `/resume` 时，Claude Code 把这个会话先挪到后台，窗口改为显示你选的那个会话。cc-moss 跟着走：被挪走的会话由后台进程接手，还是同一行；后台把它收掉之后，一句话没说过的就结束，说过话的显示为断开，可以找回。
+- 一段对话只要还有 Claude Code 的进程在跑（终端里或后台），`restore` 就不会再开一份，哪怕 cc-moss 还没来得及记下它。
 
 ### 归档
 

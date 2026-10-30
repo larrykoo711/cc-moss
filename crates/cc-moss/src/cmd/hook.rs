@@ -48,7 +48,8 @@ fn handle(event: &str) -> Result<()> {
     let kind = HookKind::from_cli_name(event).ok_or_else(|| anyhow!("unknown hook event"))?;
     let mut payload = String::new();
     std::io::stdin().read_to_string(&mut payload)?;
-    if !is_interactive() {
+    let caller = caller();
+    if caller == Caller::Headless {
         // `claude -p` and SDK sessions fire the same hooks (F10) but are not
         // something a person would want restored. PostToolUse runs after
         // every tool call: logging those would flood the log.
@@ -85,6 +86,10 @@ fn handle(event: &str) -> Result<()> {
         );
     }
     let is_start = kind == HookKind::SessionStart;
+    // A background session runs in Claude Code's supervisor, outside tmux
+    // (whatever TMUX it inherited), and with the supervisor's arguments,
+    // not the ones to bring it back with.
+    let background = caller == Caller::Background;
     // PostToolUse runs after every tool call and only clears a mark by
     // session id: it skips the process lookup (a `ps` on macOS).
     let fast = kind == HookKind::PostToolUse;
@@ -96,12 +101,12 @@ fn handle(event: &str) -> Result<()> {
         } else {
             pid.and_then(proc::start_time)
         },
-        tmux: if is_start {
+        tmux: if is_start && !background {
             tmux::locate(env("TMUX").as_deref(), env("TMUX_PANE").as_deref())
         } else {
             None
         },
-        launch_args: if is_start {
+        launch_args: if is_start && !background {
             pid.map(launch_args::capture)
         } else {
             None
@@ -121,17 +126,29 @@ fn handle(event: &str) -> Result<()> {
         );
         return Ok(());
     }
-    let origin = if matches!(event, Event::Start { .. } | Event::End { .. }) {
+    let origin = if !background && matches!(event, Event::Start { .. } | Event::End { .. }) {
         ctx.pid
             .zip(ctx.pid_start.as_deref())
             .and_then(|(pid, start)| super::process_identity::hook_origin(pid, start))
     } else {
         None
     };
+    // A terminal that handed its conversation to a background job is alive
+    // but no longer holds it: the job takes the slot over.
+    let runs = &moss_core::agent::claude::runs_a_session;
     if let Some(origin) = origin {
-        registry.apply_verified(&event, &ctx, &proc::is_alive, &origin)?;
+        registry.apply_verified(&event, &ctx, runs, &origin)?;
     } else {
-        registry.apply_with(&event, &ctx, &proc::is_alive)?;
+        registry.apply_with(&event, &ctx, runs)?;
+    }
+    if background {
+        // Taken over from a terminal without a SessionStart: its old tmux
+        // place belongs to someone else now.
+        if let Some(slot) = registry.slot_for_event(event.session_id(), &ctx)? {
+            if slot.tmux.is_some() && slot.pid == ctx.pid {
+                registry.clear_tmux(&slot.slot_id)?;
+            }
+        }
     }
     // Moss (started by the daemon) is recorded as such: only the session
     // the daemon started, by its id. Anything else that inherited the role
@@ -165,12 +182,12 @@ fn handle(event: &str) -> Result<()> {
                 log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
             let fresh = matches!(source, StartSource::Startup | StartSource::Resume);
-            if fresh {
+            if fresh && !background {
                 if let Err(e) = record_provider(&registry, session_id, &ctx) {
                     log(kind.cli_name(), &format!("provider: {e:#}"));
                 }
             }
-            if fresh && ctx.tmux.is_none() {
+            if fresh && !background && ctx.tmux.is_none() {
                 warn_outside_tmux();
             }
         }
@@ -339,17 +356,50 @@ fn warn_outside_tmux() {
     println!("{msg}");
 }
 
+/// Who fired a hook.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Caller {
+    /// A session someone works in, in a terminal.
+    Person,
+    /// A session Claude Code's supervisor runs in the background (`/resume`
+    /// and `claude agents` start them there, 2.1.314): unattended, yet a
+    /// person's conversation, and it carries on there.
+    Background,
+    /// `claude -p` and SDK sessions: nothing anyone restores.
+    Headless,
+}
+
 /// Interactive sessions have `CLAUDE_CODE_SESSION_ATTENDED=1`; `claude -p`
-/// and SDK sessions have `0` (F10). Claude Code recomputes this variable for
-/// every process, whereas `CLAUDE_CODE_ENTRYPOINT` is inherited when already
-/// set (e.g. from a tmux server first started by an agent), so the entry point
-/// is only consulted when ATTENDED is missing. Unknown counts as interactive
-/// so a real session is never dropped.
-fn is_interactive() -> bool {
+/// and SDK sessions have `0` (F10), and so do background sessions, told
+/// apart by Claude Code's own record of the process (the hook's environment
+/// does not say). Claude Code recomputes ATTENDED for every process, whereas
+/// `CLAUDE_CODE_ENTRYPOINT` is inherited when already set (e.g. from a tmux
+/// server first started by an agent), so the entry point is only consulted
+/// when ATTENDED is missing. Unknown counts as interactive so a real session
+/// is never dropped.
+fn caller() -> Caller {
     match env("CLAUDE_CODE_SESSION_ATTENDED") {
-        Some(attended) => attended != "0",
-        None => env("CLAUDE_CODE_ENTRYPOINT").is_none_or(|e| e == "cli"),
+        Some(attended) if attended == "0" => {
+            if background_process() {
+                Caller::Background
+            } else {
+                Caller::Headless
+            }
+        }
+        Some(_) => Caller::Person,
+        None if env("CLAUDE_CODE_ENTRYPOINT").is_none_or(|e| e == "cli") => Caller::Person,
+        None => Caller::Headless,
     }
+}
+
+/// `CLAUDE_PID` is a process Claude Code records as a background session.
+fn background_process() -> bool {
+    let Some(pid) = env("CLAUDE_PID").and_then(|p| p.parse::<u32>().ok()) else {
+        return false;
+    };
+    let start = proc::start_time(pid);
+    moss_core::agent::claude::process_entry(pid, start.as_deref())
+        .is_some_and(|e| e.is_background())
 }
 
 fn env(key: &str) -> Option<String> {

@@ -8,6 +8,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **Sessions Claude Code runs in the background show up once, and right.** Since Claude Code 2.1.314, `/resume`
+  inside a session hands that session to Claude Code's background process and shows the one you picked, which also
+  runs there. cc-moss took the background process for a `claude -p` run and ignored it. So the resumed session showed
+  as dropped while it kept working, and the window that resumed it kept its old name, where Rename then renamed the
+  other session. Background sessions are now recorded as running outside tmux. `attach` opens them with
+  `claude attach`, and `send` and `adopt` say why they don't apply. A window's own session follows it into the
+  background, and is let go once the background drops it. `restore` never starts a second copy of a conversation a
+  Claude Code process still runs, even one cc-moss hasn't heard of.
 - **Chinese session names read right outside tmux.** The daemon and the menu bar app usually run with no UTF-8 locale,
   where tmux printed each Chinese letter of a session name as `_`. The checkup then reported the tmux name as out of
   sync and every refresh rewrote the tab title. cc-moss now always reads tmux as a UTF-8 client (`tmux -u`).

@@ -257,7 +257,7 @@ struct SessionRow: View {
                     if let pin, pinned || hovered {
                         PinButton(pinned: pinned, action: pin)
                     }
-                    if !session.inTmux {
+                    if !session.canOpen {
                         Image(systemName: Icons.outsideTmux)
                             .font(.system(size: 10, weight: .semibold))
                             .foregroundStyle(.tertiary)

@@ -204,7 +204,7 @@ struct ProviderRecoveryView: View {
                 }
                 .focusable().focused($actionFocused)
             }
-        } else if !session.inTmux {
+        } else if !session.inTmux && !session.background {
             SoftButton(title: L.t("Move into tmux", "移进 tmux"), icon: Icons.adopt, prominent: true) {
                 model.providerPlanID = nil
                 model.askToAdopt(session)
