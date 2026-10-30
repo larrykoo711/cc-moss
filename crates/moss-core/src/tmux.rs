@@ -30,6 +30,15 @@ impl std::fmt::Display for NewSessionFailure {
 }
 impl std::error::Error for NewSessionFailure {}
 
+/// `tmux -u`, for every tmux cc-moss reads. Outside tmux and without a UTF-8
+/// locale (the daemon, the menu bar app) tmux otherwise prints each non-ASCII
+/// letter of a name or format as `_`. Interactive attaching keeps plain tmux.
+pub fn command() -> Command {
+    let mut cmd = Command::new("tmux");
+    cmd.arg("-u");
+    cmd
+}
+
 pub trait Runner {
     /// Run `tmux <args>` and return stdout.
     fn run(&self, args: &[String]) -> Result<String>;
@@ -80,7 +89,7 @@ impl Runner for ProcessRunner {
     fn run(&self, args: &[String]) -> Result<String> {
         let mut all = self.socket.args();
         all.extend_from_slice(args);
-        let Some(out) = output_with_timeout(Command::new("tmux").args(&all), self.timeout) else {
+        let Some(out) = output_with_timeout(command().args(&all), self.timeout) else {
             if args.first().is_some_and(|arg| arg == "new-session") {
                 return Err(NewSessionFailure::Unconfirmed.into());
             }

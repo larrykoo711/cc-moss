@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Chinese session names read right outside tmux.** The daemon and the menu bar app usually run with no UTF-8 locale,
+  where tmux printed each Chinese letter of a session name as `_`. The checkup then reported the tmux name as out of
+  sync and every refresh rewrote the tab title. cc-moss now always reads tmux as a UTF-8 client (`tmux -u`).
+
 ## [0.3.6] - 2026-10-25
 
 ### Fixed
