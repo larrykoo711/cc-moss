@@ -251,7 +251,7 @@ private struct WaitingRowView: View {
     /// Into the session: its terminal when it lives in tmux, else its row.
     private func openSession() {
         guard let s = row.session else { return }
-        if s.inTmux { model.open(s) } else { model.goToSession(s.id) }
+        if s.canOpen { model.open(s) } else { model.goToSession(s.id) }
     }
 }
 

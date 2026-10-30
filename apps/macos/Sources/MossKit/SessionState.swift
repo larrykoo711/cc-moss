@@ -69,6 +69,10 @@ extension Session {
         [notes.note, notes.state, notes.goal].contains { $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false }
     }
 
-    /// Only sessions living in tmux can be opened from the menubar.
+    /// Only sessions living in tmux can be typed into from the menubar.
     public var inTmux: Bool { tmux?.sessionId != nil || tmux?.sessionName != nil }
+
+    /// It opens in a terminal from here: in tmux, or run by Claude Code in
+    /// the background (`cc-moss attach` opens both).
+    public var canOpen: Bool { inTmux || background }
 }

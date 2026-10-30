@@ -223,6 +223,11 @@ fn to_json(st: Status, s: &Slot) -> Value {
             "pane_id": t.pane_id,
         })),
         "pid": s.pid,
+        // Claude Code runs it in the background, outside any terminal:
+        // `cc-moss attach` opens it, nothing types into it.
+        "background": st == Status::Running
+            && s.tmux.is_none()
+            && super::attach::background_job(s).is_some(),
         "end_reason": s.end_reason,
         "busy": s.busy,
         // Only a live session can be waiting for you.

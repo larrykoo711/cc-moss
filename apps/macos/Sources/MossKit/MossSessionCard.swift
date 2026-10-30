@@ -88,7 +88,7 @@ public struct MossSessionCard: Equatable, Identifiable, Sendable {
         case .interrupted: return s.isMoss ? nil : .bringBack
         case .closed: return nil
         case .working, .waiting:
-            if s.inTmux { return .open }
+            if s.canOpen { return .open }
             return Adopt.availability(s) == .none ? nil : .moveIntoTmux
         }
     }

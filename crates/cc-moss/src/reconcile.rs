@@ -35,9 +35,9 @@ pub fn run() -> Result<Registry> {
     // ms); the app refreshes far more often than sessions appear unseen.
     if adoption_due() {
         let claude_bin = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
-        let live = claude::live_sessions(&claude_bin);
-        if !live.is_empty() {
+        if let Some(live) = claude::live_sessions(&claude_bin) {
             adopt(&mut registry, &live)?;
+            release_parked(&registry, &live)?;
         }
     }
     crate::cmd::api_failure::refresh(&registry, &store_dir::state_dir())?;
@@ -207,15 +207,21 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                 let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
                 // A plugin's or script's `claude -p` (summarizers run one
                 // every few minutes): the hooks skip those, so must this.
-                if launch_args::is_headless(&argv) {
+                if !s.background && launch_args::is_headless(&argv) {
                     continue;
                 }
                 let transcript = claude::transcript_path(&s.session_id);
                 let ctx = Context {
                     pid: Some(s.pid),
                     pid_start: proc::start_time(s.pid),
-                    tmux: locate_in_panes(s.pid, &parents, &panes, &socket_path),
-                    launch_args: Some(launch_args::whitelist(&argv)),
+                    // A background session runs outside tmux, with the
+                    // supervisor's arguments rather than its own.
+                    tmux: if s.background {
+                        None
+                    } else {
+                        locate_in_panes(s.pid, &parents, &panes, &socket_path)
+                    },
+                    launch_args: (!s.background).then(|| launch_args::whitelist(&argv)),
                     // Last activity is when Claude last wrote the
                     // transcript, not when cc-moss noticed the session.
                     now_ms: transcript
@@ -230,12 +236,35 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                     title: s.name.clone(),
                     transcript_path: transcript.clone(),
                 };
-                registry.apply_with(&event, &ctx, &proc::is_alive)?;
+                registry.apply_with(&event, &ctx, &claude::runs_a_session)?;
                 if let Some(slot) = registry.slot_for_event(&s.session_id, &ctx)? {
                     let busy = still_working(s, transcript.as_deref(), 0);
                     registry.set_busy(&slot.slot_id, busy)?;
                 }
             }
+        }
+    }
+    Ok(())
+}
+
+/// A terminal whose `/resume` handed its conversation to a background job
+/// (Claude Code 2.1.314) is alive but no longer runs it. While the job runs
+/// it, adoption above moved the slot there; a conversation no job runs any
+/// more stopped with its job.
+fn release_parked(registry: &Registry, live: &[LiveSession]) -> Result<()> {
+    let now = now_ms();
+    for slot in registry.slots()? {
+        let (Status::Running, Some(pid)) = (slot.status, slot.pid) else {
+            continue;
+        };
+        if live.iter().any(|l| l.session_id == slot.session_id) {
+            continue;
+        }
+        let start = slot.pid_start.as_deref();
+        if claude::process_entry(pid, start).is_some_and(|e| e.parked())
+            && proc::is_alive(pid, start)
+        {
+            registry.release_process(&slot.slot_id, pid, now)?;
         }
     }
     Ok(())

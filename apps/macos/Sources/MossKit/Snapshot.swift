@@ -54,6 +54,9 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     public var apiFailure: APIFailure?
     public var restoreSource: RestoreSourcePlan?
     public var workingDirectory: WorkingDirectoryCheck?
+    /// Claude Code runs it in the background, outside any terminal: it opens
+    /// with `claude attach`, takes no typing, and never moves into tmux.
+    public var background: Bool
 
     /// Moss, the session cc-moss keeps running itself.
     public var isMoss: Bool { role == "moss" }
@@ -64,6 +67,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
     enum CodingKeys: String, CodingKey {
         case id, name, status, sessionId, cwd, tmux, busy, lastPrompt, notes, lastActiveAt, worktree, attention, role
         case archivedAt, providerRestart, restartQueued, providerModel, apiFailure, restoreSource, workingDirectory
+        case background
     }
 
     public init(from decoder: Decoder) throws {
@@ -90,6 +94,7 @@ public struct Session: Decodable, Equatable, Identifiable, Sendable {
         apiFailure = try? c.decodeIfPresent(APIFailure.self, forKey: .apiFailure)
         restoreSource = try? c.decodeIfPresent(RestoreSourcePlan.self, forKey: .restoreSource)
         workingDirectory = try? c.decodeIfPresent(WorkingDirectoryCheck.self, forKey: .workingDirectory)
+        background = (try? c.decodeIfPresent(Bool.self, forKey: .background)) ?? false
     }
 }
 

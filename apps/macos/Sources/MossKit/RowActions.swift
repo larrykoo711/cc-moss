@@ -58,7 +58,7 @@ public struct RowActions: Equatable, Sendable {
             s.inTmux ? .open : .copyPath
         } else if s.state == .interrupted {
             hopeless ? .stopReminding : .bringBack
-        } else if !s.inTmux {
+        } else if !s.canOpen {
             .copyPath
         } else {
             .open
@@ -68,7 +68,7 @@ public struct RowActions: Equatable, Sendable {
         let talk: [RowAction] = !Message.allowed(s) ? [] : s.isMoss ? [.message] : [.rename, .message]
         let copies: [RowAction] = if s.state == .interrupted {
             [.copyRestoreCommand, .copyPath]
-        } else if s.inTmux {
+        } else if s.canOpen {
             [.copyCommand, .copyPath]
         } else {
             [.copyPath]

@@ -67,6 +67,20 @@ pub enum Event {
     },
 }
 
+impl Event {
+    /// The session the event is about.
+    pub fn session_id(&self) -> &str {
+        match self {
+            Event::Start { session_id, .. }
+            | Event::Prompt { session_id, .. }
+            | Event::Stop { session_id }
+            | Event::End { session_id, .. }
+            | Event::Attention { session_id, .. }
+            | Event::ToolDone { session_id } => session_id,
+        }
+    }
+}
+
 /// Why a session waits for the user. Stored as `slots.attention` and shown
 /// as `ls --json`'s `attention`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

@@ -28,6 +28,23 @@ import Testing
         #expect(Adopt.availability(one(sessionJSON(tmux: false), role: "moss")) == .none)
     }
 
+    @Test func aBackgroundSessionOpensInsteadOfMovingIn() {
+        let s = one(with(sessionJSON(tmux: false), ["background": true]))
+        #expect(s.canOpen)
+        #expect(Adopt.availability(s) == .none, "it runs without a terminal")
+        let actions = RowActions(s, hopeless: false)
+        #expect(actions.primary == .open)
+        #expect(!actions.all.joined().contains(.adopt))
+        #expect(actions.all.joined().contains(.copyCommand))
+        #expect(Message.allowed(s) == false, "nothing types into it")
+    }
+
+    @Test func anOlderCliSaysNothingAboutTheBackground() {
+        let s = one(sessionJSON(tmux: false))
+        #expect(!s.background)
+        #expect(!s.canOpen)
+    }
+
     @Test func theRowOffersItFirstAndInItsMenu() {
         let actions = RowActions(one(sessionJSON(tmux: false)), hopeless: false)
         #expect(actions.inline.first == .adopt)

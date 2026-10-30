@@ -624,7 +624,7 @@ struct PanelView: View {
             }
         case .copyPath:
             // Outside tmux an attach command is no use; its folder is (user 2026-10-16).
-            let main = !s.inTmux && s.state != .interrupted
+            let main = !s.canOpen && s.state != .interrupted
             return PanelAction(title: L.t("Copy Folder Path", "复制目录路径"), icon: Icons.copyPath, shortcut: main ? "↵" : "",
                                help: main ? L.t("Not in tmux, so it can't be opened from here. It lives in the terminal tab it was started in.",
                                                 "它不在 tmux 里，没法从这里打开；它还在当初启动它的那个终端标签页里。") : nil) {

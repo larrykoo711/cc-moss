@@ -104,7 +104,7 @@ public enum ReplyLine {
     public static func blocked(_ s: Session) -> Blocked? {
         guard !s.isMoss else { return nil }
         if s.state == .interrupted { return .dropped }
-        if !s.inTmux && s.state != .closed { return .notInTmux }
+        if !s.canOpen && s.state != .closed { return .notInTmux }
         return nil
     }
 

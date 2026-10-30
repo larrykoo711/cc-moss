@@ -24,6 +24,12 @@ pub fn run(name: &str) -> Result<()> {
         ));
     }
     let Some(loc) = slot.tmux.as_ref() else {
+        if let Some(job) = background_job(slot) {
+            // Claude Code's own way into a background session.
+            let claude = std::env::var("CC_MOSS_CLAUDE_BIN").unwrap_or_else(|_| "claude".into());
+            let err = Command::new(claude).args(["attach", &job]).exec();
+            return Err(err).context("claude attach");
+        }
         bail!(tr!(
             format!("`{name}` is not running in tmux"),
             format!("`{name}` 不在 tmux 里运行")
@@ -36,6 +42,17 @@ pub fn run(name: &str) -> Result<()> {
         ));
     };
     attach_tmux(&Socket::Path(loc.socket.clone()), target)
+}
+
+/// The background job a running slot is, when Claude Code's supervisor runs
+/// it rather than a terminal (`/resume`, `claude agents`; 2.1.314).
+pub fn background_job(slot: &moss_core::slot::Slot) -> Option<String> {
+    let entry = moss_core::agent::claude::process_entry(slot.pid?, slot.pid_start.as_deref())?;
+    if entry.is_background() {
+        entry.job_id.filter(|j| !j.is_empty())
+    } else {
+        None
+    }
 }
 
 /// Switch to `target` when already inside tmux, otherwise replace this

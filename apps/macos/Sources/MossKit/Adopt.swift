@@ -17,7 +17,7 @@ public enum Adopt {
     }
 
     public static func availability(_ s: Session) -> Availability {
-        guard !s.isMoss, !s.inTmux, s.status == "running" else { return .none }
+        guard !s.isMoss, !s.inTmux, !s.background, s.status == "running" else { return .none }
         if s.busy { return .working }
         if s.attention != nil { return .waitingOnYou }
         return .ready

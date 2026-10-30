@@ -182,7 +182,7 @@ struct MossSessionCardView: View {
                         Text(session.title)
                             .font(.system(size: 12.5, weight: .medium))
                             .lineLimit(1)
-                        if !session.inTmux {
+                        if !session.canOpen {
                             Image(systemName: Icons.outsideTmux)
                                 .font(.system(size: 9.5, weight: .semibold))
                                 .foregroundStyle(.tertiary)
