@@ -86,9 +86,11 @@ fn process_tree(pid: u64) -> String {
         .join("\n")
 }
 
+/// Whether `pid` still runs, as cc-moss itself judges it: an exited process
+/// its parent has not reaped yet (a zombie) has exited. `kill(pid, 0)` alone
+/// counts zombies, which CI saw outlive a 30 s wait on ubuntu.
 fn alive(pid: u64) -> bool {
-    // SAFETY: signal 0 only checks.
-    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+    moss_core::proc::is_alive(pid as u32, None)
 }
 
 /// The new process once the session runs again under another pid.
