@@ -224,6 +224,7 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                     launch_args: (!s.background).then(|| launch_args::whitelist(&argv)),
                     // Last activity is when Claude last wrote the
                     // transcript, not when cc-moss noticed the session.
+                    provider: None,
                     now_ms: transcript
                         .as_deref()
                         .and_then(modified_ms)

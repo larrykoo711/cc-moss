@@ -9,6 +9,7 @@ fn ctx() -> Context {
         pid_start: Some("start-4242".into()),
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: 1_000,
     }
 }

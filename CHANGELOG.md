@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A session that just started can be restarted or restored right away.** cc-moss recorded a session as running
+  first and where its settings come from a moment later, so a restart or restore in between refused with "the
+  session's config source is unknown". Both are now recorded together.
+
 ### Changed
 
 - Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave

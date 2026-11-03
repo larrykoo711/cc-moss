@@ -111,6 +111,14 @@ fn handle(event: &str) -> Result<()> {
         } else {
             None
         },
+        provider: match &event {
+            Event::Start { source, .. }
+                if !background && matches!(source, StartSource::Startup | StartSource::Resume) =>
+            {
+                Some(started_provider(pid))
+            }
+            _ => None,
+        },
         now_ms: now_ms(),
     };
     let mut registry = Registry::open(&store_dir::registry_path())?;
@@ -182,11 +190,6 @@ fn handle(event: &str) -> Result<()> {
                 log(kind.cli_name(), &format!("tmux rename failed: {e:#}"));
             }
             let fresh = matches!(source, StartSource::Startup | StartSource::Resume);
-            if fresh && !background {
-                if let Err(e) = record_provider(&registry, session_id, &ctx) {
-                    log(kind.cli_name(), &format!("provider: {e:#}"));
-                }
-            }
             if fresh && !background && ctx.tmux.is_none() {
                 warn_outside_tmux();
             }
@@ -209,11 +212,11 @@ fn handle(event: &str) -> Result<()> {
 /// The API provider this process starts with, from the settings Claude Code
 /// itself reads (`CLAUDE_CONFIG_DIR`, else `~/.claude`): key names, host and
 /// models only (T2.6).
-fn record_provider(registry: &Registry, session_id: &str, ctx: &Context) -> Result<()> {
+fn started_provider(pid: Option<u32>) -> moss_core::event::StartedProvider {
     // 先采集来源；坏 settings 和缺失 HOME 都不能抹去启动证据。
     let launch_source =
         moss_core::provider::LaunchSource::capture(std::env::var_os("CLAUDE_CONFIG_DIR"));
-    let argv = ctx.pid.and_then(super::process_identity::entry_arguments);
+    let argv = pid.and_then(super::process_identity::entry_arguments);
     let unreplayable_args = moss_core::provider::unreplayable_args(argv.as_deref());
     let home = env("HOME").map(std::path::PathBuf::from);
     let config_dir = std::env::var_os("CLAUDE_CONFIG_DIR").map(std::path::PathBuf::from);
@@ -227,14 +230,10 @@ fn record_provider(registry: &Registry, session_id: &str, ctx: &Context) -> Resu
     now.source = path.map(|p| p.to_string_lossy().into_owned());
     now.launch_source = launch_source;
     now.unreplayable_args = unreplayable_args;
-    let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
-        return Ok(());
-    };
-    registry.set_provider(
-        &slot.slot_id,
-        &now.to_json(),
-        &moss_core::provider::keys_json(&now.keys),
-    )
+    moss_core::event::StartedProvider {
+        started: now.to_json(),
+        seen_keys: moss_core::provider::keys_json(&now.keys),
+    }
 }
 
 /// A SessionStart from the Moss the daemon started: the role it was given,

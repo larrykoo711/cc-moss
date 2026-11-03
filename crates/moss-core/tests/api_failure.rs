@@ -20,6 +20,7 @@ fn setup() -> (Registry, tempfile::NamedTempFile, String) {
                 pid_start: None,
                 tmux: None,
                 launch_args: None,
+                provider: None,
                 now_ms: 100,
             },
         )
@@ -139,6 +140,7 @@ fn api_failure_new_session_and_clear_do_not_inherit_failure() {
         pid_start: None,
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: 200,
     };
     reg.apply(
@@ -234,6 +236,7 @@ fn api_failure_concurrent_connections_cannot_commit_stale_error() {
             pid_start: None,
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: 100,
         },
     )
@@ -295,6 +298,7 @@ fn api_failure_clear_before_first_scan_blocks_other_connection() {
         pid_start: None,
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: 100,
     };
     reg.apply(
@@ -404,6 +408,7 @@ fn model_evidence_clear_new_session_and_failure_revoke_success() {
             pid_start: None,
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: 200,
         },
     )
