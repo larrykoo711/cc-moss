@@ -46,7 +46,7 @@ import Testing
     }
 
     @Test func theyRoundTrip() throws {
-        let defaults = try #require(UserDefaults(suiteName: "pin-tests-\(UUID().uuidString)"))
+        let defaults = scratchDefaults("PinTests")
         Pins(["C", "A"]).save(defaults)
         #expect(Pins.load(defaults).ids == ["C", "A"])
     }

@@ -68,6 +68,24 @@ fn args_of(pid: u64) -> String {
     String::from_utf8_lossy(&out.stdout).trim().to_string()
 }
 
+/// `pid` and its children as `ps` sees them: state, parent, where it waits.
+fn process_tree(pid: u64) -> String {
+    let out = Command::new("ps")
+        .args(["-A", "-o", "pid=,ppid=,stat=,wchan=,args="])
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
+        .unwrap_or_default();
+    let pid = pid.to_string();
+    out.lines()
+        .filter(|l| {
+            let mut f = l.split_whitespace();
+            let (me, parent) = (f.next(), f.next());
+            me == Some(pid.as_str()) || parent == Some(pid.as_str())
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 fn alive(pid: u64) -> bool {
     // SAFETY: signal 0 only checks.
     unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
@@ -2010,9 +2028,17 @@ start "$source""#,
     assert_eq!(hops, 1);
     // The refusal can return while the transferred process is still exiting; wait for it,
     // then check that nothing relaunched it.
-    wait_until("the transferred process to exit", || {
-        (!alive(pid)).then_some(())
-    });
+    let until = Instant::now() + Duration::from_secs(30);
+    while alive(pid) {
+        // CI has seen it outlive the wait; say what it is doing then.
+        assert!(
+            Instant::now() < until,
+            "the transferred process {pid} did not exit:\n{}\nhook.log:\n{}",
+            process_tree(pid),
+            std::fs::read_to_string(w.state().join("hook.log")).unwrap_or_default()
+        );
+        std::thread::sleep(Duration::from_millis(100));
+    }
     let launches = std::fs::read_to_string(w.path("fifos/launches")).unwrap();
     assert_eq!(
         launches.lines().count(),

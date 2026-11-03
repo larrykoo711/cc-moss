@@ -4,12 +4,7 @@ import Testing
 @testable import MossKit
 
 @Suite struct AppearanceChoiceTests {
-    private func defaults() -> UserDefaults {
-        let name = "cc-moss-appearance-tests-\(UUID().uuidString)"
-        let d = UserDefaults(suiteName: name)!
-        d.removePersistentDomain(forName: name)
-        return d
-    }
+    private func defaults() -> UserDefaults { scratchDefaults("AppearanceChoiceTests") }
 
     @Test func nothingStoredFollowsTheMac() {
         #expect(AppearanceChoice.load(defaults()) == .system)

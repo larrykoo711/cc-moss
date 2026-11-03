@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave
+  empty plist files there, since removing a preferences domain empties its file but never deletes it.
+
 ## [0.3.7] - 2026-10-30
 
 ### Fixed

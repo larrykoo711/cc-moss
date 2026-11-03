@@ -146,9 +146,7 @@ import Testing
     }
 
     @Test func persistenceUsesOnlyTheInjectedDefaults() throws {
-        let suite = "cc-moss-test-provider-\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
+        let defaults = scratchDefaults("ProviderRecoveryTests")
         var confirmations = ProviderConfirmations()
         confirmations.confirm(planned())
         confirmations.save(defaults)
