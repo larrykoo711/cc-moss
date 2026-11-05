@@ -7,6 +7,7 @@ fn context(pid: u32, at: i64) -> Context {
         pid_start: Some(format!("start-{pid}")),
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: at,
     }
 }

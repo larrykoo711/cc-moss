@@ -17,6 +17,7 @@ fn start(reg: &mut Registry, id: &str, socket: &str, pid: u32) {
             pane_id: format!("%{pid}"),
         }),
         launch_args: None,
+        provider: None,
         now_ms: 1_000,
     };
     let event = Event::Start {

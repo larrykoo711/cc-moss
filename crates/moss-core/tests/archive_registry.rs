@@ -107,6 +107,7 @@ fn archive_leaves_a_session_that_came_back_meanwhile() {
         pid_start: None,
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms,
     };
     r.apply(

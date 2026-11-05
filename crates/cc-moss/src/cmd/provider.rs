@@ -847,6 +847,7 @@ mod tests {
                 pid_start: proc::start_time(pid),
                 tmux: None,
                 launch_args: None,
+                provider: None,
                 now_ms: now_ms(),
             };
             r.apply(
@@ -907,6 +908,7 @@ mod tests {
             pid_start: None,
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: 1,
         };
         r.apply(

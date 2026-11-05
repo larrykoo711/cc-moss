@@ -14,6 +14,7 @@ fn ctx(pid: u32) -> Context {
         pid_start: Some(format!("start-{pid}")),
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: 1_000,
     }
 }

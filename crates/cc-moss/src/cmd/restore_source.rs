@@ -553,6 +553,7 @@ mod tests {
                     pid_start: None,
                     tmux: None,
                     launch_args: None,
+                    provider: None,
                     now_ms: 1000,
                 },
             )

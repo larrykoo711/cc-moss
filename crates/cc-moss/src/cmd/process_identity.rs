@@ -448,6 +448,7 @@ mod tests {
             pid_start: Some("start".into()),
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: 1,
         };
         for (id, source) in [

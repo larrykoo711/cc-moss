@@ -424,6 +424,12 @@ impl Registry {
                         params![slot_id, serde_json::to_string(args)?],
                     )?;
                 }
+                if let Some(p) = &ctx.provider {
+                    tx.execute(
+                        "UPDATE slots SET provider_started = ?2, provider_seen_keys = ?3 WHERE slot_id = ?1",
+                        params![slot_id, p.started, p.seen_keys],
+                    )?;
+                }
                 // One process runs one conversation: any other slot still marked
                 // running for this exact process was switched away from (F11).
                 close_other_slots_of_process(&tx, &slot_id, ctx)?;
