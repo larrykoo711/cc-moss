@@ -206,7 +206,7 @@ private let entry = ChangelogEntry(
 
 @Suite struct UpdateTipsMemoryTests {
     @Test func remembersEachVersionApart() {
-        let defaults = UserDefaults(suiteName: "UpdateTipsMemoryTests-\(UUID().uuidString)")!
+        let defaults = scratchDefaults("UpdateTipsMemoryTests")
         let memory = UpdateTipsMemory(defaults: defaults)
         #expect(memory.lastSeen == nil && memory.dismissed == nil && memory.bubbled == nil)
         memory.lastSeen = "0.3.1"

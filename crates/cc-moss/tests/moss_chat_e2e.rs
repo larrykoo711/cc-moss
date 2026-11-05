@@ -359,8 +359,10 @@ fn moss_status_json_activity() {
     let next = say(&w, "the next one");
     std::thread::sleep(Duration::from_millis(700));
     let st = status(&w);
-    assert_eq!(st["queued"], 1, "{st}");
-    assert_eq!(st["activity"], "thinking", "{st}");
+    // CI has seen the slow one back in the queue (queued 2, idle): say why then.
+    let why = || format!("{st}\nheard:\n{}\ndaemon.log:\n{}", heard(&w), log(&w));
+    assert_eq!(st["queued"], 1, "{}", why());
+    assert_eq!(st["activity"], "thinking", "{}", why());
     release(&w);
     reply_to(&w, &slow);
     reply_to(&w, &next);

@@ -46,7 +46,7 @@ import Testing
     }
 
     @Test func defaultIsDoubleControlAndRoundTrips() {
-        let d = UserDefaults(suiteName: "PanelShortcutTests-\(UUID().uuidString)")!
+        let d = scratchDefaults("PanelShortcutTests")
         #expect(PanelShortcut.load(d) == .doubleTap(.control))
         let k = HotKey(keyCode: 46, key: "m", modifiers: [.control, .option])
         PanelShortcut.save(.combo(k), d)

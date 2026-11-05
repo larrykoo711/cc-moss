@@ -53,7 +53,7 @@ private func event(_ seq: Int, _ kind: String, slot: String = "A", at: TimeInter
     }
 
     @Test func togglesReadFromDefaults() {
-        let store = UserDefaults(suiteName: "NotificationPlanTests.\(UUID().uuidString)")!
+        let store = scratchDefaults("NotificationPlanTests")
         #expect(AlertToggles(defaults: store) == AlertToggles())
         store.set(true, forKey: AlertToggles.key(.finished))
         store.set(false, forKey: AlertToggles.key(.restored))

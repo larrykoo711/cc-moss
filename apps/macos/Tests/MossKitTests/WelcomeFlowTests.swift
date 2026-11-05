@@ -3,7 +3,7 @@ import Testing
 @testable import MossKit
 
 @Suite struct WelcomeFlowTests {
-    private func defaults() -> UserDefaults { UserDefaults(suiteName: "WelcomeFlowTests-\(UUID().uuidString)")! }
+    private func defaults() -> UserDefaults { scratchDefaults("WelcomeFlowTests") }
 
     @Test func startsAtWelcome() {
         let flow = WelcomeFlow()

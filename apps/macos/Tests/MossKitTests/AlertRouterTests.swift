@@ -92,7 +92,7 @@ import Testing
     }
 
     @Test func modeReadsFromDefaults() {
-        let defaults = UserDefaults(suiteName: "AlertRouterTests.\(UUID().uuidString)")!
+        let defaults = scratchDefaults("AlertRouterTests")
         #expect(AlertMode(defaults: defaults) == .auto)
         defaults.set("pet", forKey: AlertMode.key)
         #expect(AlertMode(defaults: defaults) == .petOnly)

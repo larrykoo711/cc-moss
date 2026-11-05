@@ -20,7 +20,7 @@ import Testing
     }
 
     @Test func defaultIsOff() {
-        let defaults = UserDefaults(suiteName: "voice-policy-tests-\(UUID().uuidString)")!
+        let defaults = scratchDefaults("VoicePolicyTests")
         #expect(VoiceMode(defaults: defaults) == .off)
     }
 
