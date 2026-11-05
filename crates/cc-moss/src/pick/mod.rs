@@ -684,6 +684,7 @@ mod launch_tests {
                         pane_id: "%7".into(),
                     }),
                     launch_args: None,
+                    provider: None,
                     now_ms: 1,
                 },
                 &|_, _| true,

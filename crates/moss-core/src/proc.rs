@@ -160,6 +160,49 @@ pub fn is_alive(pid: u32, recorded_start: Option<&str>) -> bool {
     liveness(pid, recorded_start) != Liveness::Dead
 }
 
+/// A cheap first look, for checks that run often: `false` when `pid` is
+/// surely gone or has exited but is not reaped yet (a zombie), so callers ask
+/// [`is_alive`] only then. `kill(pid, 0)` alone counts zombies as running, and
+/// a session killed under a parent that doesn't reap it was never reported as
+/// dropped. Linux reads `/proc`; macOS asks the kernel for the process state.
+pub fn may_be_running(pid: u32) -> bool {
+    let Ok(raw) = libc::pid_t::try_from(pid) else {
+        return false;
+    };
+    match proc_start_time(pid) {
+        ProcFs::Start(_) => return true,
+        ProcFs::Gone => return false,
+        ProcFs::Unavailable => {}
+    }
+    // SAFETY: signal 0 only checks that the process exists.
+    let r = unsafe { libc::kill(raw, 0) };
+    let exists = r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM);
+    exists && !kernel_says_zombie(raw)
+}
+
+#[cfg(target_os = "macos")]
+fn kernel_says_zombie(pid: libc::pid_t) -> bool {
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    // SAFETY: the buffer is a zeroed proc_bsdinfo of exactly `size` bytes.
+    let got = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            (&mut info as *mut libc::proc_bsdinfo).cast(),
+            size,
+        )
+    };
+    // No answer (a zombie has no task to describe): let the closer look decide.
+    got != size || info.pbi_status == libc::SZOMB
+}
+
+#[cfg(not(target_os = "macos"))]
+fn kernel_says_zombie(_pid: libc::pid_t) -> bool {
+    false
+}
+
 /// When the machine booted, in Unix milliseconds; cached. `None` if unknown.
 pub fn boot_time_ms() -> Option<i64> {
     static BOOT: std::sync::OnceLock<Option<i64>> = std::sync::OnceLock::new();
@@ -305,6 +348,24 @@ mod tests {
             "truncated"
         );
         assert_eq!(parse_proc_stat("garbage"), ProcFs::Unavailable);
+    }
+
+    #[test]
+    fn a_zombie_may_not_be_running() {
+        assert!(may_be_running(std::process::id()));
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = child.id();
+        // Not waited for: it exits and stays a zombie until reaped below.
+        let until = std::time::Instant::now() + Duration::from_secs(10);
+        while liveness(pid, None) != Liveness::Dead {
+            assert!(std::time::Instant::now() < until, "no zombie");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        // SAFETY: signal 0 only checks; the zombie still holds its pid.
+        assert_eq!(unsafe { libc::kill(pid as libc::pid_t, 0) }, 0, "a zombie");
+        assert!(!may_be_running(pid));
+        child.wait().unwrap();
+        assert!(!may_be_running(pid));
     }
 
     #[test]

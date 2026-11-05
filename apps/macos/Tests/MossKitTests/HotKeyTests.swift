@@ -17,7 +17,7 @@ import Testing
     }
 
     @Test func roundTripsThroughDefaults() {
-        let d = UserDefaults(suiteName: "HotKeyTests-\(UUID().uuidString)")!
+        let d = scratchDefaults("HotKeyTests")
         #expect(HotKey.load(d) == HotKey.default, "unset → the default")
         let k = HotKey(keyCode: 49, key: " ", modifiers: [.control, .option])
         HotKey.save(k, d)

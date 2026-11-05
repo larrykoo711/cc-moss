@@ -913,11 +913,12 @@ impl Talk {
             now_ms,
         )?;
         for s in slots.iter().filter(|s| !superseded.contains(&s.slot_id)) {
-            // `kill(pid, 0)` first: only a process that seems gone costs a
-            // closer look (a `ps` on macOS).
+            // A cheap look first: only a process that seems gone (or a
+            // zombie) costs a closer one (a `ps` on macOS).
             let gone = s.status == Status::Running
                 && !s.is_moss()
-                && s.pid.is_some_and(|pid| !process_exists(pid))
+                && s.pid
+                    .is_some_and(|pid| !moss_core::proc::may_be_running(pid))
                 && s.effective_status(moss_core::proc::is_alive) == Status::Interrupted;
             if gone {
                 registry.record_lost_of(&s.slot_id, s.pid, now_ms)?;
@@ -958,16 +959,6 @@ impl Talk {
 /// over.
 fn ready_to_send(transcript: Option<&Path>, turn: Option<bool>) -> bool {
     transcript.is_some() && turn != Some(true)
-}
-
-/// Whether a process with this pid exists (it may not be the one recorded).
-fn process_exists(pid: u32) -> bool {
-    let Ok(pid) = libc::pid_t::try_from(pid) else {
-        return false;
-    };
-    // SAFETY: signal 0 only checks that the process exists.
-    let r = unsafe { libc::kill(pid, 0) };
-    r == 0 || std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
 }
 
 #[cfg(test)]
@@ -1024,6 +1015,7 @@ mod tests {
                 pid_start: None,
                 tmux: None,
                 launch_args: None,
+                provider: None,
                 now_ms: 1,
             };
             reg.apply(&start, &ctx).unwrap();

@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **A session that just started can be restarted or restored right away.** cc-moss recorded a session as running
+  first and where its settings come from a moment later, so a restart or restore in between refused with "the
+  session's config source is unknown". Both are now recorded together.
+- **Moss hears about a session that was killed even when it lingers as a zombie.** The daemon's quick check for a
+  gone session counted a process that had exited but wasn't reaped yet as still running, so a session killed under
+  a parent that didn't reap it was never reported as dropped. The quick check now sees zombies (`/proc` on Linux,
+  the process state on macOS).
+
+### Changed
+
+- Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave
+  empty plist files there, since removing a preferences domain empties its file but never deletes it.
+
 ## [0.3.7] - 2026-10-30
 
 ### Fixed

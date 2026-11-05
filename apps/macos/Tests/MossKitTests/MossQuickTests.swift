@@ -138,7 +138,7 @@ import Testing
     }
 
     @Test func theLogRoundTrips() throws {
-        let defaults = try #require(UserDefaults(suiteName: "moss-quick-tests-\(UUID().uuidString)"))
+        let defaults = scratchDefaults("MossQuickTests")
         let uses = [MossQuickUse(id: "cmd:/usage", at: now)]
         MossQuickLog.save(uses, defaults)
         #expect(MossQuickLog.load(defaults) == uses)
