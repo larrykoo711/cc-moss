@@ -514,6 +514,7 @@ mod tests {
             pid_start: None,
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: at,
         };
         r.apply(
@@ -560,6 +561,7 @@ mod tests {
                 pid_start: None,
                 tmux: None,
                 launch_args: None,
+                provider: None,
                 now_ms: 1_500,
             };
             r.apply(
@@ -599,6 +601,7 @@ mod tests {
                 pid_start: Some(format!("t{pid}")),
                 tmux: None,
                 launch_args: None,
+                provider: None,
                 now_ms: 1_000,
             };
             r.apply_with(

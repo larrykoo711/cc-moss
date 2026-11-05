@@ -142,6 +142,7 @@ fn the_registry_records_clean_names() {
         pid_start: None,
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms: 1,
     };
     r.apply(

@@ -115,5 +115,16 @@ pub struct Context {
     pub tmux: Option<TmuxLoc>,
     /// Whitelisted command-line flags, captured on SessionStart only.
     pub launch_args: Option<Vec<String>>,
+    /// The provider a session starts with, captured on a fresh SessionStart
+    /// and written in the same transaction that records the session running:
+    /// a restart or restore never sees it running with no config source yet.
+    pub provider: Option<StartedProvider>,
     pub now_ms: i64,
+}
+
+/// What a session's provider looked like when it started (JSON, as stored).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StartedProvider {
+    pub started: String,
+    pub seen_keys: String,
 }

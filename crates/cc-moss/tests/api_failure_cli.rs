@@ -25,6 +25,7 @@ fn setup() -> (World, std::path::PathBuf) {
             pid_start: None,
             tmux: None,
             launch_args: None,
+            provider: None,
             now_ms: moss_core::slot::now_ms(),
         },
     )

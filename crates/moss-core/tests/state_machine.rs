@@ -19,6 +19,7 @@ fn ctx(pid: u32, now_ms: i64) -> Context {
             pane_id: "%0".into(),
         }),
         launch_args: None,
+        provider: None,
         now_ms,
     }
 }
@@ -62,6 +63,28 @@ fn activity_refreshes_from_a_later_prompt_only() {
     // Older than what the registry has: left alone.
     assert!(!reg.refresh_activity(&id, "old", 2_000).unwrap());
     assert_eq!(only_slot(&reg).last_active_at_ms, 5_000);
+}
+
+#[test]
+fn start_records_its_provider_with_the_running_slot() {
+    // One write: whoever sees the session running also sees where its config
+    // came from (a restart in between used to read "unknown" and refuse).
+    let mut reg = Registry::open_in_memory().unwrap();
+    let started = r#"{"keys":["ANTHROPIC_BASE_URL"],"launch_source":"unset"}"#;
+    let mut c = ctx(100, 1_000);
+    c.provider = Some(moss_core::event::StartedProvider {
+        started: started.into(),
+        seen_keys: r#"["ANTHROPIC_BASE_URL"]"#.into(),
+    });
+    reg.apply(&start(StartSource::Startup, "U1", Some("job-a")), &c)
+        .unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(s.status, Status::Running);
+    assert_eq!(s.provider_started.as_deref(), Some(started));
+    // Later events carry no provider and keep the one recorded.
+    reg.apply(&start(StartSource::Compact, "U1", None), &ctx(100, 2_000))
+        .unwrap();
+    assert_eq!(only_slot(&reg).provider_started.as_deref(), Some(started));
 }
 
 #[test]
@@ -543,6 +566,7 @@ fn proc_ctx(pid: u32, pid_start: Option<&str>, now_ms: i64) -> Context {
         pid_start: pid_start.map(String::from),
         tmux: None,
         launch_args: None,
+        provider: None,
         now_ms,
     }
 }
