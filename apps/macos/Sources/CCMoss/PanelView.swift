@@ -359,6 +359,10 @@ struct PanelView: View {
                         case .archivedResultsHeader: ArchivedResultsHeader()
                         case let .noMatch(q): AskMossCard(query: q) { model.askMossToFind(q) }
                         case let .askMoss(q): AskMossLine(query: q) { model.askMossToFind(q) }
+                        case .saidHeader: SaidHeader()
+                        case let .said(h):
+                            row(h.session, pinned: model.pins.contains(h.session.id), hit: h,
+                                closed: h.session.state == .closed && !h.session.isArchived)
                         }
                     }
                 }
@@ -587,6 +591,7 @@ struct PanelView: View {
         case let .path(q): L.t("in path: \(q)", "路径里有 \(q)")
         case let .note(text): L.t("note: \(text)", "便条：\(text)")
         case let .prompt(text): L.t("last said: \(text)", "最后说：\(text)")
+        case let .said(text): L.t("said: \(text)", "说过：\(text)")
         }
     }
 
@@ -1047,6 +1052,26 @@ struct ReplyLineView: View {
 }
 
 /// Above the closed sessions a search found.
+/// Above the sessions found in what was said in them (F44).
+struct SaidHeader: View {
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "text.magnifyingglass")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(.tertiary)
+            Text(L.t("In what was said", "在对话内容里找到"))
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.secondary)
+            Text(L.t("on this Mac", "只在本机"))
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 12)
+        .padding(.bottom, 4)
+    }
+}
+
 struct ClosedHeader: View {
     var body: some View {
         HStack(spacing: 6) {

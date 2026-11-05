@@ -128,6 +128,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss note 名字 [文字] [--goal 目标] [--state 进度] [--clear]` | 查看或设置会话备注（给某一项空字符串就只清掉那一项；文字以 `-` 开头时写在 `--` 后面） |
 | `cc-moss ask list [--json]` / `ask answer id (--choice 选项… \| --text 文字… \| --allow \| --deny [--message 理由]) [--json]` / `ask take --name 名字` | 看、答会话正在等你回答的问题（见[替会话接住问题](#替会话接住问题)） |
 | `cc-moss send 名字 -- 文字` | 替你在一个正在运行的会话里输入一段话，就像在它的终端里打字；多行会原样整段送达 |
+| `cc-moss find 文字… [--limit N] [--json]` | 按会话里说过的话找会话，见[按说过的话找会话](#按说过的话找会话) |
 | `cc-moss suggest 名字 [--json]` | Claude Code 在这个会话输入框里给的下一句建议（那行灰字）；会话在忙或没有建议时什么都不输出（`--json` 输出 `{"schema":1,"suggestion":…}`，没有时是 `null`） |
 | `cc-moss adopt 名字 [--dry-run] [--json]` | 把一个不在 tmux 里跑的会话移进 tmux，对话接着（见[移进 tmux](#移进-tmux)） |
 | `cc-moss close 名字…` | 不再提示恢复这些会话 |
@@ -135,7 +136,7 @@ cc-moss restore                      # 崩溃之后：全部找回来
 | `cc-moss restart 名字… [--now] [--yes] [--json]` / `restart --stale` | 换了 API 供应商后在原窗格里重开会话（见[换 API 供应商](#换-api-供应商)） |
 | `cc-moss install [--with aliases] [--skip 部分] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | 安装（或移除）钩子、tmux、starship 与 shell 区块，以及它们需要的工具（`--dry-run --json` 列出每一部分是 `ready`、`changes`、`skipped` 还是 `unsupported`，不做任何改动） |
 | `cc-moss alias ls [--json]` / `alias add 名字 命令…` / `alias rm 名字` | 管理别名（见[别名](#别名)） |
-| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`（都是 `true`、`false`）；`update.check` 只能查看（改它请编辑配置文件）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
+| `cc-moss config get 键 [--json]` / `config set 键 值 [--json]` | 查看或修改设置，目前有 `ui.language`（`auto`、`zh`、`en`）、`claude.permission_mode`（`bypass`、`default`），以及 `ask.enabled`、`moss.enabled`、`moss.digest`、`moss.actions`、`moss.daily_checkup`、`moss.daily_brief`、`moss.search_history`（都是 `true`、`false`）；`update.check` 只能查看（改它请编辑配置文件）；`set` 只改这一项，注释和其他内容原样保留（见[配置](#配置)） |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | 常驻后台的守护进程：看状态、启动、停掉（macOS，见[守护进程](#守护进程)） |
 | `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- 文字` / `moss chat [--limit N] [--json]` | Moss 的开关和状态，以及和它说话、看对话（macOS，见 [Moss](#moss)） |
 | `cc-moss doctor [--fix]` / `doctor --sessions --json` | 逐项体检，并告诉你怎么修（`--fix` 重建失效的别名链接）；`--sessions --json` 列出每个会话的事实，给 Moss 体检用（见[体检](#体检)） |
@@ -614,6 +615,21 @@ cc-moss events --json --since 42
 
 两者也能一起用：cc-moss 本身跑在 tmux 里，resurrect 照看其他面板，cc-moss 照看 Claude。
 
+## 按说过的话找会话
+
+会话名和备注想不起来时，按里面说过的话找：
+
+```sh
+cc-moss find 退款逻辑
+cc-moss find login page --json
+```
+
+- 搜的是你打的字和回复的正文，不搜工具的输入输出。不分大小写，中文、英文都能按任意片段找；1 个字太宽，至少打 2 个字。
+- 只在本机进行，不联网，也不经过模型。守护进程在后台维护一份索引（`search.db`，见[隐私](#隐私)），新说的话几秒内就能搜到；第一次建索引要读完所有对话记录，大约几秒到一分钟。
+- 每个会话给一个结果：最近一次提到它的那一小段（约 160 字，密钥一类已遮掉），最新的在前，默认 10 个。没在 1 秒内搜完或索引还没建完，会照实说「没搜完」，不当成没找到。
+- 状态栏 App 的会话搜索里，名字和备注没对上时，下面会多出「在对话内容里找到」一组，就是这个。
+- 让 Moss 帮你找时，它默认只看会话名、目录和备注。在设置 ›「Moss」里打开「允许 Moss 搜索对话内容」后，它会经守护进程用同样的方式去搜，并告诉你结果来自你的对话记录；它找到的几小段原话会随你的问题发给模型。Moss 自己读不到索引。
+
 ## 隐私
 
 cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保存：
@@ -625,13 +641,14 @@ cc-moss 只在本机运行，不往任何地方发送关于你的数据。它保
 - `~/.local/state/cc-moss/audit.jsonl`：Moss 替你做过的事和 `cc-moss adopt` 的记录：时间、动作、对象、结果，只有你自己能读。
 - `~/.local/state/cc-moss/asks/`：会话正在等你回答的题目（题目原文和选项，或要批准的操作的前 300 个字符）和答案；过期一小时后删掉。
 - `~/.local/state/cc-moss/update.json`：上次检查新版本的时间和结果。
+- `~/.local/state/cc-moss/search.db`：按内容找会话用的索引（[`cc-moss find`](#按说过的话找会话)）：只收你打的字和回复的正文，不收工具的输入输出、思考过程和附件；存进去之前先把密钥、令牌一类遮掉；会话被清理时一起删掉。
 
 状态目录只有你自己能读。它会读取 Claude Code 自己的会话文件，并在本机运行 `claude agents`、`ps` 和 `tmux`。只有两处会联网：
 
 - **检查新版本**：打开选择器或运行 `doctor` 时，每天最多一次，用 `curl` 向`https://github.com/larrykoo711/cc-moss/releases/latest` 问一下它指向哪个版本。就是一个普通的 HTTPS 请求，不带任何关于你、你的会话或你这台机器的信息；在后台进行，3 秒没回应就放弃。状态栏 App 通过 `cc-moss update --check` 问同一个问题，每 6 小时最多一次（启动后不久、打开面板时、以及每 6 小时一次）。钩子和 `ls --json` 从不联网。在配置文件里写 `[update] check = false`（App 也照做）或设置 `CC_MOSS_NO_UPDATE_CHECK=1`（只管终端）即可关闭；关闭后你自己运行`cc-moss update` 照样能用。
 - **安装你同意的东西**：`cc-moss install` 里的工具，以及 `cc-moss update` 下载的新版本。
 
-[Moss](#moss) 是一个 Claude Code 会话，它用你的 Claude Code 登录跟 Anthropic 通信，和你自己开的会话一样；闲着的时候不发请求。不想要它，运行 `cc-moss moss stop`。
+[Moss](#moss) 是一个 Claude Code 会话，它用你的 Claude Code 登录跟 Anthropic 通信，和你自己开的会话一样；闲着的时候不发请求。它读不到别的会话的对话，除非你在设置 ›「Moss」里打开「允许 Moss 搜索对话内容」（`[moss] search_history = true`，默认关）：那时它按你的问题去搜，找到的每个结果的一小段原话会随你的问题发给模型。不想要它，运行 `cc-moss moss stop`。
 
 ## 配置
 
@@ -667,6 +684,7 @@ digest = true             # 把会话动态（断了、做完了）告诉 Moss�
 actions = true            # Moss 可以请守护进程代办体检里的事；false 只说不做
 daily_checkup = true      # 每天自动体检一次
 daily_brief = true        # 每天的体检简报提醒你；false 只在要你拿主意时提醒
+search_history = false    # 让 Moss 按说过的话搜你的会话（找到的片段会发给模型）
 
 [sessions]
 archive_after_days = 30   # 结束了多少天没动静的会话自动归档；0 关掉

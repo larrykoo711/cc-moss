@@ -150,6 +150,7 @@ Directory reasons are `cwd_forbidden`, `cwd_missing`, `cwd_not_directory`, `cwd_
 | `cc-moss note NAME [TEXT] [--goal G] [--state S] [--clear]` | Show or set a session's notes (an empty value clears just that one; put text starting with `-` after `--`) |
 | `cc-moss ask list [--json]` / `ask answer ID (--choice LABEL… \| --text TEXT… \| --allow \| --deny [--message WHY]) [--json]` / `ask take --name NAME` | See and answer the questions sessions are waiting on (see [Answering a session's questions from elsewhere](#answering-a-sessions-questions-from-elsewhere)) |
 | `cc-moss send NAME -- TEXT` | Type a message into a running session, as if you typed it in its terminal; several lines arrive whole |
+| `cc-moss find WORDS… [--limit N] [--json]` | Find sessions by what was said in them; see [Find sessions by what was said](#find-sessions-by-what-was-said) |
 | `cc-moss suggest NAME [--json]` | The next prompt Claude Code suggests in a session's input (the dim text); nothing while the session is busy or has no suggestion (`--json` prints `{"schema":1,"suggestion":…}`, `null` when there's none) |
 | `cc-moss adopt NAME [--dry-run] [--json]` | Move a session running outside tmux into tmux, conversation and all (see [Moving a session into tmux](#moving-a-session-into-tmux)) |
 | `cc-moss close NAMES` | Stop offering sessions for restore |
@@ -157,7 +158,7 @@ Directory reasons are `cwd_forbidden`, `cwd_missing`, `cwd_not_directory`, `cwd_
 | `cc-moss restart NAMES [--now] [--yes] [--json]` / `restart --stale` | Restart sessions in their own pane after switching API providers (see [Switching API providers](#switching-api-providers)) |
 | `cc-moss install [--with aliases] [--skip PART] [--replace-starship] [--uninstall] [--dry-run [--json]] [--yes]` | Set up (or remove) hooks, tmux, starship and shell blocks, and the tools they need (`--dry-run --json` lists each part as `ready`, `changes`, `skipped` or `unsupported`, changing nothing) |
 | `cc-moss alias ls [--json]` / `alias add NAME COMMAND…` / `alias rm NAME` | Manage aliases (see [Aliases](#aliases)) |
-| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief` (each `true` or `false`); `update.check` can only be read (edit the config file to change it). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
+| `cc-moss config get KEY [--json]` / `config set KEY VALUE [--json]` | Read or change a setting: `ui.language` (`auto`, `zh`, `en`), `claude.permission_mode` (`bypass`, `default`), and `ask.enabled`, `moss.enabled`, `moss.digest`, `moss.actions`, `moss.daily_checkup`, `moss.daily_brief`, `moss.search_history` (each `true` or `false`); `update.check` can only be read (edit the config file to change it). `set` changes just that line and keeps comments and everything else (see [Configuration](#configuration)) |
 | `cc-moss daemon status [--json]` / `daemon start` / `daemon stop` | The daemon that stays in the background: its status, start it, stop it (macOS; see [The daemon](#the-daemon)) |
 | `cc-moss moss status [--json]` / `moss start` / `moss stop` / `moss say [--json] -- TEXT` / `moss chat [--limit N] [--json]` | Moss's switch and status, and talking to it (macOS; see [Moss](#moss)) |
 | `cc-moss doctor [--fix]` / `doctor --sessions --json` | Check every piece and say how to fix what is off (`--fix` relinks broken aliases); `--sessions --json` lists the facts about each session that Moss's checkup reads (see [Checkup](#checkup)) |
@@ -958,6 +959,29 @@ The configuration source must be known and safe to replay. Newly captured `--mcp
 
 They also combine: cc-moss runs inside tmux, so resurrect can keep your other panes while cc-moss looks after Claude.
 
+## Find sessions by what was said
+
+When a session's name and notes don't ring a bell, find it by something said in it:
+
+```sh
+cc-moss find refund logic
+cc-moss find 退款 --json
+```
+
+- It looks in what you typed and in the replies' text, not in tool input or output. Case doesn't matter, and any
+  piece of a word works, Chinese included; type at least two characters.
+- It runs on your Mac only: offline, and no model sees it. The daemon keeps an index (`search.db`, see
+  [Privacy](#privacy)) so something said a moment ago is found within seconds; building it the first time reads
+  every transcript, which takes from a few seconds to a minute.
+- One result per session: the latest short piece that mentions it (about 160 characters, keys masked), newest first,
+  10 by default. When the search doesn't finish within a second, or the index is still being built, it says so
+  rather than reporting nothing.
+- In the menubar app's session search, when no name or note matches, an "In what was said" group shows these.
+- Asked to find a session, Moss looks at names, folders and notes only. Turn on "Let Moss search conversations" in
+  Settings › Moss (`[moss] search_history = true`, off by default) and it searches the same way through the daemon,
+  and tells you the matches come from your conversations; the few words it finds go to the model with your
+  question. Moss can't read the index itself.
+
 ## Privacy
 
 cc-moss runs locally and sends nothing about you anywhere. It keeps:
@@ -974,6 +998,10 @@ cc-moss runs locally and sends nothing about you anywhere. It keeps:
 - `~/.local/state/cc-moss/asks/`: questions sessions are waiting on (the questions and options, or the first 300
   characters of what a tool wants to do) and their answers; deleted an hour after they expire.
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
+- `~/.local/state/cc-moss/search.db`: the index for finding sessions by what was said in them
+  ([`cc-moss find`](#find-sessions-by-what-was-said)): only what you typed and the replies' text, never tool input or
+  output, thinking or attachments; keys and tokens are masked before they are stored; a session's words go when the
+  session is deleted.
 
 The state folder is readable only by you. It reads Claude Code's own session files and runs `claude agents`, `ps` and
 `tmux` on your machine. It goes online in two places:
@@ -988,7 +1016,9 @@ The state folder is readable only by you. It reads Claude Code's own session fil
 - **Installing things you agreed to:** the tools in `cc-moss install`, and a new version in `cc-moss update`.
 
 [Moss](#moss) is a Claude Code session: it talks to Anthropic with your Claude Code sign-in, like any session you start,
-and sends nothing while it waits. If you don't want it, run `cc-moss moss stop`.
+and sends nothing while it waits. It can't read other sessions' conversations unless you turn on "Let Moss search
+conversations" in Settings › Moss (`[moss] search_history = true`, off by default): then it searches for what you ask,
+and a short piece of each match goes to the model with your question. If you don't want it, run `cc-moss moss stop`.
 
 ## Configuration
 
@@ -1024,6 +1054,7 @@ digest = true             # tell Moss when sessions drop or finish; false keeps 
 actions = true            # Moss may ask the daemon to do what a checkup finds; false: it only says what to do
 daily_checkup = true      # a checkup once a day
 daily_brief = true        # the daily brief alerts you; false: only when you need to decide
+search_history = false    # let Moss search what was said in your sessions (what it finds goes to the model)
 
 [sessions]
 archive_after_days = 30   # archive sessions that ended and saw no activity for this many days; 0: off
