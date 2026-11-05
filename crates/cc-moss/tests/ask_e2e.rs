@@ -376,7 +376,7 @@ fn answer_before_permission_request_reaches_session() {
         .unwrap();
     wait_for(|| exists(&env.state().join(format!("asks/{id}.answer.json"))));
     let (out, took) = env.hook("permission-request", &permission_request("S"));
-    assert!(took < Duration::from_secs(1), "waited {took:?}");
+    assert!(took < FAST, "waited {took:?}");
     let v: Value = serde_json::from_slice(&out.stdout).unwrap();
     assert_eq!(
         v["hookSpecificOutput"]["decision"]["updatedInput"]["answers"][QUESTION],
@@ -709,10 +709,7 @@ fn answered_in_session_closes_ask() {
     w.send(&sid, "answered");
     wait_for(|| exists(&done));
     let took = t.elapsed();
-    assert!(
-        took < Duration::from_secs(1),
-        "the hook took {took:?} to let go"
-    );
+    assert!(took < FAST, "the hook took {took:?} to let go");
     assert!(
         std::fs::read(out).unwrap().is_empty(),
         "no answer handed over"

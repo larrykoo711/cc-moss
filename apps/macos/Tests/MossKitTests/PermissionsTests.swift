@@ -54,8 +54,7 @@ import Testing
 
 @Suite struct AccessibilityMemoryTests {
     private func fresh() -> AccessibilityMemory {
-        let name = "perm-test-\(UUID().uuidString)"
-        return AccessibilityMemory(defaults: UserDefaults(suiteName: name)!)
+        AccessibilityMemory(defaults: scratchDefaults("AccessibilityMemoryTests"))
     }
 
     @Test func neverAllowedIsNotLost() {
