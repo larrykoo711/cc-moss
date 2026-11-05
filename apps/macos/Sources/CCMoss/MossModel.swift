@@ -45,6 +45,10 @@ extension AppModel {
     func showMoss() {
         page = .moss
         if panelShown { mossDesk.markRead() }
+        if !mossGuideSeen {
+            mossGuideSeen = true
+            if quickPersist { MossGuide.markSeen() }
+        }
     }
 
     /// Send something to Moss; the conversation is read again once cc-moss

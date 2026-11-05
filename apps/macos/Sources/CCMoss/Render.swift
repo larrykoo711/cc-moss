@@ -17,7 +17,7 @@ import SwiftUI
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
-///          [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
+///          [--moss-guide] [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -106,6 +106,12 @@ enum Render {
                 exit(0)
             }
             if value("--page") == "queue" { model.showQueue() }
+            // `--moss-guide`: Moss's status read on another page, its page never
+            // opened, so the rail points at it (F3).
+            if args.contains("--moss-guide") {
+                model.mossGuideSeen = false
+                await model.loadMoss()
+            }
             if value("--page") == "moss" {
                 model.showMoss()
                 // `--moss-limit 100`: as if "Load earlier" had been clicked up to there;
@@ -475,8 +481,8 @@ enum Render {
                 // `--moss running|restarted|off|failing|nodaemon`: the Moss card with that status.
                 let since = Date().addingTimeInterval(-2 * 3600 - 300)
                 let mossDemo: MossCheck? = switch value("--moss") {
-                case "running": .known(MossStatus(enabled: true, running: true, since: since))
-                case "restarted": .known(MossStatus(enabled: true, running: true, since: since, restarts: 1))
+                case "running": .known(MossStatus(enabled: true, running: true, since: since, home: "/Users/demo/.local/state/cc-moss/moss"))
+                case "restarted": .known(MossStatus(enabled: true, running: true, since: since, restarts: 1, home: "/Users/demo/.local/state/cc-moss/moss"))
                 case "off": .known(MossStatus(enabled: false, running: false))
                 case "failing": .known(MossStatus(enabled: true, running: false,
                                                   lastError: "Claude Code exited right after it started"))

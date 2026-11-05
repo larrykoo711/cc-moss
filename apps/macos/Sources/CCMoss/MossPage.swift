@@ -1288,6 +1288,13 @@ private struct MossInputBar: View {
             if model.mossTyping && blocked == nil {
                 typing
             } else {
+                if blocked == nil && MossGuide.explainsQuickBar(uses: model.quickUses) {
+                    // F3: what the row below is for, until it's used once.
+                    Text(L.t("Tap one to ask Moss, or type your own question.",
+                             "点一个试试，Moss 会接着办；也可以直接打字问它。"))
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
                 actions
             }
         }

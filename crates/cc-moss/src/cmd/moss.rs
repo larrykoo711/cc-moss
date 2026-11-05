@@ -473,6 +473,7 @@ pub fn report() -> moss::Report {
     r.queued = inbox::count_yours(&home);
     r.input_busy = home.join(inbox::INPUT_BUSY).exists();
     r.last_reply_at = chat::last_reply_at(&home);
+    r.home = Some(home.to_string_lossy().into_owned());
     let turn = if running {
         transcript_of_moss(&state).and_then(|t| moss_core::transcript::turn_open(&t))
     } else {

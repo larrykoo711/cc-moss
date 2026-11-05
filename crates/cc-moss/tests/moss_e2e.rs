@@ -484,3 +484,11 @@ fn a_restarted_daemon_adopts_the_running_moss() {
         .collect();
     assert_eq!(ids, [first]);
 }
+
+#[test]
+fn status_says_where_moss_lives() {
+    // Settings › Moss shows this folder in Finder; no daemon needed.
+    let w = World::new("moss-home");
+    let home = status(&w)["home"].as_str().map(std::path::PathBuf::from);
+    assert_eq!(home, Some(w.state().join("moss")));
+}

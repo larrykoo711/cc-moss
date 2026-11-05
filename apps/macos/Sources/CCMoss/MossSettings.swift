@@ -1,3 +1,4 @@
+import AppKit
 import MossKit
 import SwiftUI
 
@@ -24,15 +25,15 @@ struct MossSettings: View {
     var body: some View {
         MossCard(model: model, demo: mossDemo)
         MossCheckupCard(model: model, demo: demo != nil || mossDemo != nil)
-        SettingsCard(title: L.t("In the Background", "后台")) {
+        SettingsCard(title: L.t("Background service", "后台服务")) {
             CardRow(title: shown.line(),
                     detail: detail,
                     divider: false) {
                 control
             }
         }
-        Text(L.t("To stop it, and Moss with it, run cc-moss daemon stop in Terminal; it stays off until you start it again.",
-                 "要停掉它（Moss 也会一起停下），在终端运行 cc-moss daemon stop；之后会一直停着，直到你再启动。"))
+        Text(L.t("You rarely need to touch it. To stop it, and Moss with it, run cc-moss daemon stop in Terminal; it stays off until you start it again.",
+                 "一般不用管它。真要停掉（Moss 也会一起停），在终端运行 cc-moss daemon stop；之后会一直停着，直到你再启动。"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)
@@ -107,9 +108,8 @@ private struct MossCard: View {
     var body: some View {
         SettingsCard(title: "Moss") {
             CardRow(title: shown.line(),
-                    detail: problem ?? shown.status?.problem() ?? L.t("A Claude Code session cc-moss keeps running for you. It uses your Claude Code sign-in, and while it waits it uses none of your plan.",
-                                           "cc-moss 替你一直开着的一个 Claude Code 会话。它用你的 Claude Code 登录；闲着等的时候，不耗你的额度。"),
-                    divider: false) {
+                    detail: problem ?? shown.status?.problem() ?? L.t("An always-on helper that looks after your sessions and answers your questions. It uses your own Claude Code account, and costs nothing while it waits.",
+                                           "一直在线的小助手，帮你照看会话、回答问题。它用你自己的 Claude Code 账号，没事做时不花额度。")) {
                 if busy {
                     ProgressView().controlSize(.small)
                 } else {
@@ -124,9 +124,25 @@ private struct MossCard: View {
                         }
                 }
             }
+            CardRow(title: L.t("Talk to Moss", "和 Moss 聊聊"),
+                    detail: L.t("Ask it something, or try a quick action.", "问它点什么，或者试试快捷动作。")) {
+                SoftButton(title: L.t("Open", "打开"), icon: "bubble.left.and.text.bubble.right") {
+                    if demo == nil { AppDelegate.show(.moss) }
+                }
+            }
+            CardRow(title: L.t("Moss's folder", "Moss 的文件夹"),
+                    detail: L.t("Its memory, skills and settings live here.", "它的记忆、技能和设置都在这里。"),
+                    divider: false) {
+                SoftButton(title: L.t("Show in Finder", "在 Finder 中显示"), icon: "folder") {
+                    if demo == nil, let home = shown.status?.home {
+                        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: home)])
+                    }
+                }
+                .disabled(shown.status?.home == nil)
+            }
         }
-        Text(L.t("Moss can't be ended from the session list. Turn it off here; it stays off until you turn it back on.",
-                 "会话列表里结束不了 Moss。在这里关掉；之后会一直关着，直到你再打开。"))
+        Text(L.t("To give Moss a rest, turn it off here. It stays off until you turn it back on.",
+                 "想让 Moss 休息就在这里关掉，它会一直关着，直到你再打开。"))
             .font(.system(size: 11))
             .foregroundStyle(.tertiary)
             .fixedSize(horizontal: false, vertical: true)

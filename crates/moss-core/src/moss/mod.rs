@@ -159,6 +159,9 @@ pub struct Report {
     /// When its last reply came in.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_reply_at: Option<String>,
+    /// Moss's folder (its memory, skills and settings), for "Show in Finder".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub home: Option<String>,
     /// `since` in Unix milliseconds.
     #[serde(skip)]
     pub since_ms: Option<i64>,
@@ -208,6 +211,7 @@ impl Report {
             input_busy: false,
             account: "unknown".into(),
             last_reply_at: None,
+            home: None,
         }
     }
 }

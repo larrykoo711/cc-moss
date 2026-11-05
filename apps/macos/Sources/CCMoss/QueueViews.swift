@@ -42,6 +42,10 @@ struct NavRail: View {
     private var mossDot: RailDot? {
         guard model.page != .moss else { return nil }
         if model.mossDesk.unread { return .unread }
+        // Never opened: point at it once (F3).
+        if MossGuide.hints(mossOn: model.mossDesk.status?.enabled ?? false, seen: model.mossGuideSeen) {
+            return .unread
+        }
         // Moss isn't in the session list any more: a broken or switched-off
         // Moss still shows, quietly, here.
         switch model.mossDesk.activity {
