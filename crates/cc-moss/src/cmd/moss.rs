@@ -1754,6 +1754,25 @@ mod tests {
     }
 
     #[test]
+    fn the_search_index_is_out_of_moss_reach() {
+        // F44: what was said in other sessions reaches Moss only through
+        // `moss act find`, with the user's switch on. The index sits in the
+        // state folder the sandbox denies, outside the home it allows.
+        let state = Path::new("/s");
+        let v: serde_json::Value =
+            serde_json::from_str(&settings_json("/bin/cc-moss", state, None)).unwrap();
+        let deny = v["sandbox"]["filesystem"]["denyRead"].as_array().unwrap();
+        assert!(deny.contains(&serde_json::json!("/s")), "{deny:?}");
+        let index = moss_core::search::index_path(state);
+        assert!(index.starts_with(state));
+        assert!(
+            !index.starts_with(moss::home_dir(state)),
+            "{}",
+            index.display()
+        );
+    }
+
+    #[test]
     fn moss_settings_turn_the_strict_sandbox_on() {
         let v: serde_json::Value =
             serde_json::from_str(&settings_json("/bin/cc-moss", Path::new("/s"), None)).unwrap();

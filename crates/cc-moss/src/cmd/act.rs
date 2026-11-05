@@ -48,6 +48,8 @@ pub enum Action {
     ArchiveIdle,
     Purge(String),
     PurgeArchived,
+    /// Sessions by what was said in them (F44); only with `[moss] search_history` on.
+    Find(String),
 }
 
 impl Action {
@@ -75,6 +77,21 @@ impl Action {
                 "purge-archived takes nothing: it covers the archived sessions the user agreed to"
                     .into(),
             ),
+            "find" => {
+                let words = args.join(" ");
+                let words = words.trim();
+                if words.is_empty()
+                    || words.chars().count() > 200
+                    || words.chars().any(char::is_control)
+                {
+                    Err(
+                        "find takes the words to look for, one line of at most 200 characters"
+                            .into(),
+                    )
+                } else {
+                    Ok(Action::Find(words.to_string()))
+                }
+            }
             "name" => match args {
                 [s, given] => {
                     let name = given.trim();
@@ -112,9 +129,11 @@ impl Action {
 
     fn session(&self) -> Option<&str> {
         match self {
-            Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => {
-                None
-            }
+            Action::SetupFix
+            | Action::SyncNames
+            | Action::ArchiveIdle
+            | Action::PurgeArchived
+            | Action::Find(_) => None,
             Action::Archive(s) | Action::Purge(s) => Some(s),
             Action::SyncName(s)
             | Action::Name(s, _)
@@ -210,7 +229,11 @@ pub fn check(
     }
     let now = status(slot);
     let fits = match action {
-        Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => true,
+        Action::SetupFix
+        | Action::SyncNames
+        | Action::ArchiveIdle
+        | Action::PurgeArchived
+        | Action::Find(_) => true,
         Action::Archive(_) => now != Status::Running && !slot.is_archived(),
         Action::Purge(_) => now != Status::Running && slot.is_archived(),
         Action::SyncName(_) => now != Status::Closed,
@@ -449,6 +472,9 @@ impl Hands {
         if action == Action::PurgeArchived {
             return self.purge_archived(&registry, &slots, r);
         }
+        if let Action::Find(words) = &action {
+            return self.find(&slots, words);
+        }
         let gone = |s: &Slot| {
             super::checkup::folder_fact(&std::fs::metadata(&s.cwd)) == super::checkup::Fact::No
         };
@@ -495,9 +521,11 @@ impl Hands {
                     true => Err(anyhow::anyhow!("it could not be archived")),
                 }),
             Action::Purge(_) => self.purge_one(&registry, &slot),
-            Action::SetupFix | Action::SyncNames | Action::ArchiveIdle | Action::PurgeArchived => {
-                unreachable!()
-            }
+            Action::SetupFix
+            | Action::SyncNames
+            | Action::ArchiveIdle
+            | Action::PurgeArchived
+            | Action::Find(_) => unreachable!(),
         };
         settle(result, || {
             if action.needs_consent() {
@@ -508,6 +536,46 @@ impl Hands {
                 ));
             }
         })
+    }
+
+    /// Search what was said in the sessions, if the user lets Moss (F44).
+    /// What it finds goes to the model; the message says where it came from.
+    fn find(&self, slots: &[Slot], words: &str) -> (&'static str, String) {
+        // A config that can't be read is no go-ahead.
+        if !Config::load().is_ok_and(|c| c.moss.search_history) {
+            return (
+                "refused",
+                "searching what was said in sessions is off; the user can turn on \
+                 \"Let Moss search conversations\" in Settings › Moss, or search the panel themselves"
+                    .into(),
+            );
+        }
+        let (found, indexing) = match super::find::search(&self.state, slots, words, 10) {
+            Ok(r) => r,
+            Err(e) => return ("failed", format!("{e:#}")),
+        };
+        let now = now_ms();
+        let mut lines = vec![format!(
+            "from the user's conversation records, {} session(s) mention \"{words}\":",
+            found.hits.len()
+        )];
+        for h in &found.hits {
+            let Some(slot) = slots.iter().find(|s| s.slot_id == h.slot_id) else {
+                continue;
+            };
+            lines.push(format!(
+                "- {} | {} | {} | {} ago | {}",
+                slot.name.as_deref().unwrap_or("(no name)"),
+                slot.slot_id,
+                slot.effective_status(moss_core::proc::is_alive).as_str(),
+                super::ls::ago(now - h.at_ms),
+                h.snippet
+            ));
+        }
+        if found.partial || indexing {
+            lines.push("(the search didn't finish; there may be more)".into());
+        }
+        ("done", lines.join("\n"))
     }
 
     /// Delete one archived session the user agreed to.

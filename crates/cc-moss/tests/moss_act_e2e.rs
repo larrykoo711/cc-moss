@@ -452,3 +452,58 @@ fn act_restores_with_your_reply() {
         .unwrap();
     assert_eq!(line["because"], "y1");
 }
+
+#[test]
+fn act_find_needs_the_switch_and_says_where_it_looked() {
+    let w = World::new("act-find");
+    let _d = daemon(&w);
+    moss_up(&w);
+    w.new_session("refunds");
+    let sid = w.session_id("refunds");
+    w.send(&sid, "prompt refunds");
+    let line = serde_json::json!({"type":"user","timestamp":"2026-11-05T08:00:00Z",
+        "message":{"role":"user","content":"split refunds per order, key sk-proj-abcdefghijklmnop1234"}});
+    let path = w.path("fifos").join(format!("{sid}.jsonl"));
+    let mut f = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .unwrap();
+    use std::io::Write;
+    writeln!(f, "{line}").unwrap();
+
+    // Off by default: what it finds would go to the model.
+    let (out, ok) = act(&w, &["find", "refunds", "per", "order"]);
+    assert!(!ok, "{out}");
+    assert_eq!(out["outcome"], "refused", "{out}");
+    assert!(
+        out["message"].as_str().unwrap().contains("Settings › Moss"),
+        "{out}"
+    );
+
+    let set = w
+        .cc_moss()
+        .args(["config", "set", "moss.search_history", "true"])
+        .output()
+        .unwrap();
+    assert!(set.status.success(), "{set:?}");
+    let (out, ok) = act(&w, &["find", "refunds", "per", "order"]);
+    assert!(ok, "{out}");
+    assert_eq!(out["outcome"], "done", "{out}");
+    let message = out["message"].as_str().unwrap();
+    assert!(
+        message.starts_with("from the user's conversation records"),
+        "{message}"
+    );
+    assert!(
+        message.contains("refunds |") && message.contains("sk-***"),
+        "{message}"
+    );
+    assert!(!message.contains("abcdefghijklmnop"), "{message}");
+    let line = audit(&w)
+        .into_iter()
+        .rev()
+        .find(|l| l["action"] == "find")
+        .expect("audited");
+    assert_eq!(line["outcome"], "done");
+}

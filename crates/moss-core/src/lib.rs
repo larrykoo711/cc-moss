@@ -21,6 +21,7 @@ pub mod process_binding;
 pub mod provider;
 pub mod registry;
 pub mod restore;
+pub mod search;
 pub mod settings_json;
 pub mod slot;
 pub mod store_dir;
