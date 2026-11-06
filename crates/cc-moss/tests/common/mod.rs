@@ -240,6 +240,21 @@ impl World {
         std::fs::write(fifo, format!("{line}\n")).unwrap();
     }
 
+    /// Wait until the session's SessionStart recorded where its transcript
+    /// is: `cc-moss new` registers the session (and its id) before that.
+    #[allow(dead_code)]
+    pub fn transcript_recorded(&self, session_id: &str) {
+        let registry = self.state().join("registry.db");
+        wait_for(|| {
+            let reg = moss_core::registry::Registry::open(&registry).ok()?;
+            reg.slots()
+                .ok()?
+                .into_iter()
+                .any(|s| s.session_id == session_id && s.transcript_path.is_some())
+                .then_some(())
+        });
+    }
+
     /// Send the first prompt and wait until the fake claude has written its
     /// transcript: a session killed before that has nothing to restore.
     pub fn first_prompt(&self, session_id: &str, name: &str) {

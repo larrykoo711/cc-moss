@@ -25,15 +25,23 @@ pub fn search(
     query: &str,
     limit: usize,
 ) -> Result<(search::Found, bool)> {
-    let mut index = Index::open(&search::index_path(state))?;
+    // The daemon may be writing (a first build writes for a while): wait
+    // no longer than the catch-up may take, and search what is there if
+    // it can't be caught up now; the answer then says it isn't complete.
+    let mut index = match Index::open_waiting(&search::index_path(state), CATCH_UP) {
+        Ok(index) => index,
+        // Being built afresh by another process (an upgrade) right now.
+        Err(e) if search::is_busy(&e) => return Ok((search::Found::default(), true)),
+        Err(e) => return Err(e),
+    };
     let sources: Vec<search::Source> = slots
         .iter()
         .filter(|s| !s.is_moss())
         .flat_map(search::sources_of)
         .collect();
     let indexing = index
-        .update(&sources, Instant::now() + CATCH_UP)?
-        .unfinished;
+        .update(&sources, Instant::now() + CATCH_UP)
+        .map_or(true, |p| p.unfinished);
     let mut found = index.find(query, limit.max(1), Instant::now() + SEARCH)?;
     found
         .hits
@@ -128,7 +136,9 @@ pub fn worker(stop: std::sync::Arc<std::sync::atomic::AtomicBool>) -> std::threa
         while !stop.load(std::sync::atomic::Ordering::Relaxed) {
             let pass = (|| -> Result<search::Progress> {
                 if index.is_none() {
-                    index = Some(Index::open(&search::index_path(&store_dir::state_dir()))?);
+                    index = Some(Index::open_for_daemon(&search::index_path(
+                        &store_dir::state_dir(),
+                    ))?);
                 }
                 let slots = Registry::open(&store_dir::registry_path())?.slots()?;
                 let sources: Vec<search::Source> = slots
