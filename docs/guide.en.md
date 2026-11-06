@@ -386,8 +386,9 @@ permission requests alone and keep questions; if you don't want permissions allo
 thing off with `cc-moss config set ask.enabled false`.
 
 **Previews hide keys.** In a permission request's `preview`, anything that looks like a key or token (`sk-…`,
-`xoxb-…`, `ghp_…`, `github_pat_…`, `AKIA…`, `Bearer …` and the like) becomes `***`, with only its prefix left. This
-catches the common formats, not every secret; the question files themselves are readable only by you.
+`sk_live_…`, `xoxb-…`, `ghp_…`, `github_pat_…`, `AKIA…`, `Bearer …`, JWTs and the like) becomes `***`, with only its
+prefix left. So do the values of passwords and keys (`DB_PASSWORD=…`, `"api_key": "…"`), the password in a URL
+(`postgres://user:***@…`) and the body of a private key block. This catches the common formats, not every secret; the question files themselves are readable only by you.
 
 **Going back to an older version.** `cc-moss setup --uninstall` from 0.2.2 or earlier doesn't know the two new hooks
 and can't take them out. To downgrade, run `cc-moss setup --uninstall` with the newer version first, or afterwards
@@ -968,7 +969,8 @@ cc-moss find refund logic
 cc-moss find 退款 --json
 ```
 
-- It looks in what you typed and in the replies' text, not in tool input or output. Case doesn't matter, and any
+- It looks in what you typed and in the replies' text, not in tool input or output, nor in `!` commands and their
+  output. Case doesn't matter, and any
   piece of a word works, Chinese included; type at least two characters.
 - It runs on your Mac only: offline, and no model sees it. The daemon keeps an index (`search.db`, see
   [Privacy](#privacy)) so something said a moment ago is found within seconds; building it the first time reads
@@ -1000,8 +1002,9 @@ cc-moss runs locally and sends nothing about you anywhere. It keeps:
 - `~/.local/state/cc-moss/update.json`: when cc-moss last looked for a new version, and what it found.
 - `~/.local/state/cc-moss/search.db`: the index for finding sessions by what was said in them
   ([`cc-moss find`](#find-sessions-by-what-was-said)): only what you typed and the replies' text, never tool input or
-  output, thinking or attachments; keys and tokens are masked before they are stored; a session's words go when the
-  session is deleted.
+  output, `!` commands and their output, thinking or attachments; keys, tokens and passwords in the common formats are
+  masked before they are stored (the same rules as [previews](#answering-a-sessions-questions-from-elsewhere), which can't catch every secret);
+  a session's words go when the session is deleted, and are overwritten in the file.
 
 The state folder is readable only by you. It reads Claude Code's own session files and runs `claude agents`, `ps` and
 `tmux` on your machine. It goes online in two places:

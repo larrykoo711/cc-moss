@@ -26,14 +26,18 @@ pub fn search(
     limit: usize,
 ) -> Result<(search::Found, bool)> {
     let mut index = Index::open(&search::index_path(state))?;
+    // The daemon may be writing (a first build writes for a while): wait
+    // no longer than the catch-up may take, and search what is there if
+    // it can't be caught up now; the answer then says it isn't complete.
+    index.wait_for_writers(CATCH_UP)?;
     let sources: Vec<search::Source> = slots
         .iter()
         .filter(|s| !s.is_moss())
         .flat_map(search::sources_of)
         .collect();
     let indexing = index
-        .update(&sources, Instant::now() + CATCH_UP)?
-        .unfinished;
+        .update(&sources, Instant::now() + CATCH_UP)
+        .map_or(true, |p| p.unfinished);
     let mut found = index.find(query, limit.max(1), Instant::now() + SEARCH)?;
     found
         .hits

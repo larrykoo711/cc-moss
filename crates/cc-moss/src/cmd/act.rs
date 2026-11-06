@@ -381,9 +381,15 @@ impl Hands {
                 &format!("{id}.result.json"),
                 &serde_json::to_string(&out).unwrap_or_default(),
             );
-            self.audit(&id, request.as_ref(), outcome, &message);
+            // What a search found is words from the user's conversations:
+            // the records keep how many, not the words.
+            let recorded = match &request {
+                Some(r) if r.action == "find" => message.lines().next().unwrap_or_default(),
+                _ => message.as_str(),
+            };
+            self.audit(&id, request.as_ref(), outcome, recorded);
             log(&format!(
-                "moss: act {}: {outcome}: {message}",
+                "moss: act {}: {outcome}: {recorded}",
                 request.as_ref().map_or("?", |r| r.action.as_str())
             ));
         }

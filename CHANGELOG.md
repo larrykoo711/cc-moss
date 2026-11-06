@@ -6,6 +6,28 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Finding a session by what was said works while the index is being built.** While the daemon was writing the
+  index, which it does most of the time during a first build, `cc-moss find` failed with "database is locked", so the
+  panel's "In what was said" stayed empty and Moss's search failed. It now searches what is indexed so far and says
+  the search didn't finish. Two searches catching the index up at once no longer store the same lines twice.
+- **`!` shell commands and their output stay out of the index.** Claude Code records them as if you had typed them,
+  so `! cat .env` put that file's contents in the index, where a search (Moss's too) could show them. The index is
+  built again on first start, which also leaves out what was stored before.
+- **More kinds of keys and passwords are masked**, in the index and in permission previews: `sk_live_`-style keys,
+  JWTs, `Basic` credentials, the value of names like `DB_PASSWORD=` or `"api_key":`, the password in a URL, and the
+  body of a private key block.
+- **Turning "Let Moss search conversations" on and straight off leaves it off.** The second change was skipped while
+  the first was still being saved, so the setting stayed on while the switch showed off. Changes are now saved in
+  order, and the switch shows what was saved.
+
+### Changed
+
+- What Moss finds in conversations is no longer written to its action log or the daemon's log, only how many
+  sessions matched. Words deleted from the index are overwritten in its file, a transcript path that isn't a plain
+  file is passed over instead of holding up the rest, and a snippet of a very long message is made in one quick pass.
+
 ## [0.3.8] - 2026-11-06
 
 ### Fixed

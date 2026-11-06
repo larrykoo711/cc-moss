@@ -77,7 +77,17 @@ fn turn_state(line: &[u8]) -> Option<bool> {
     }
 }
 
-const LOCAL_COMMAND: [&str; 3] = ["<command-name>", "<command-message>", "<local-command-"];
+/// Records Claude Code writes as the user's for things that never reach the
+/// model as words: local slash commands, and `!` shell commands with their
+/// output (which can hold anything a command printed, keys included).
+const LOCAL_COMMAND: [&str; 6] = [
+    "<command-name>",
+    "<command-message>",
+    "<local-command-",
+    "<bash-input>",
+    "<bash-stdout>",
+    "<bash-stderr>",
+];
 
 fn first_text(content: &serde_json::Value) -> Option<&str> {
     match content {

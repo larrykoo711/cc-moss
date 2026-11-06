@@ -28,7 +28,9 @@ fn say(w: &World, sid: &str, line: Value) {
         .append(true)
         .open(path)
         .unwrap();
-    writeln!(f, "{line}").unwrap();
+    // One write: the fake claude appends to the same file, and a line
+    // written in pieces could get its line in the middle.
+    f.write_all(format!("{line}\n").as_bytes()).unwrap();
 }
 
 fn typed(text: &str) -> Value {
@@ -41,7 +43,8 @@ fn finds_sessions_by_what_was_said() {
     let w = World::new("find-said");
     w.new_session("refunds");
     let sid = w.session_id("refunds");
-    w.send(&sid, "prompt refunds");
+    w.first_prompt(&sid, "refunds");
+    w.transcript_recorded(&sid);
     say(
         &w,
         &sid,
@@ -140,4 +143,37 @@ fn plain_output_says_when_nothing_matches() {
         String::from_utf8_lossy(&out.stdout).trim(),
         "No session mentions that."
     );
+}
+
+/// While the daemon writes the index (a first build writes for a while),
+/// `find` still answers from what is there and says it isn't complete,
+/// instead of failing.
+#[test]
+fn finds_while_the_index_is_being_written() {
+    let w = World::new("find-busy");
+    w.new_session("busy");
+    let sid = w.session_id("busy");
+    w.first_prompt(&sid, "busy");
+    w.transcript_recorded(&sid);
+    say(&w, &sid, typed("indexed before the writer came"));
+    assert_eq!(
+        find(&w, &["indexed", "before"])["matches"]
+            .as_array()
+            .unwrap()
+            .len(),
+        1
+    );
+    say(&w, &sid, typed("said while the daemon writes"));
+
+    let mut other = rusqlite::Connection::open(w.state().join("search.db")).unwrap();
+    let tx = other
+        .transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)
+        .unwrap();
+    let t = std::time::Instant::now();
+    let v = find(&w, &["indexed", "before"]);
+    let took = t.elapsed();
+    drop(tx);
+    assert_eq!(v["matches"].as_array().unwrap().len(), 1, "{v}");
+    assert_eq!(v["indexing"], true, "{v}");
+    assert!(took < std::time::Duration::from_secs(2), "took {took:?}");
 }

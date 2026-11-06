@@ -919,14 +919,158 @@ const SECRETS: &[(&str, usize)] = &[
     ("glpat-", 20),
     ("AKIA", 16),
     ("AIza", 30),
+    ("sk_live_", 16),
+    ("sk_test_", 16),
+    ("rk_live_", 16),
+    ("rk_test_", 16),
+    ("hf_", 30),
+    ("npm_", 30),
+    ("xapp-", 8),
+    ("ya29.", 20),
+    // A JSON Web Token: base64 of `{"`, then its dotted parts.
+    ("eyJ", 30),
     ("Bearer ", 8),
     ("bearer ", 8),
+    ("BEARER ", 8),
+    ("Basic ", 16),
 ];
 const MASK: &str = "***";
+/// Names whose value is a secret wherever it is set (`DB_PASSWORD=…`,
+/// `"api_key": "…"`), compared in lower case.
+const SECRET_NAMES: &[&str] = &[
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_key",
+    "private_key",
+];
+/// The shortest value of a secret name that is masked.
+const SECRET_VALUE_MIN: usize = 6;
 
-/// `text` with whatever looks like a key or token after a known prefix
-/// replaced by `***` (the prefix stays, so people can tell what it was).
+/// `text` with what looks like a key, token or password replaced by `***`:
+/// after a known prefix (the prefix stays, so people can tell what it
+/// was), the value of a secret-sounding name, the password in a URL, and
+/// the body of a private key block.
 pub fn redact(text: &str) -> String {
+    mask_private_keys(&mask_url_passwords(&mask_secret_values(&mask_prefixed(
+        text,
+    ))))
+}
+
+/// `NAME=value`, `name: value`, `"name": "value"`, where NAME ends in one
+/// of [`SECRET_NAMES`].
+fn mask_secret_values(text: &str) -> String {
+    let lower = text.to_ascii_lowercase();
+    let (bytes, low) = (text.as_bytes(), lower.as_bytes());
+    let ident = |b: u8| b.is_ascii_alphanumeric() || b == b'_' || b == b'-';
+    let delim = |b: u8| {
+        b.is_ascii_whitespace() || matches!(b, b'"' | b'\'' | b',' | b';' | b'&' | b')' | b'}')
+    };
+    let mut out = String::with_capacity(text.len());
+    let (mut i, mut kept) = (0, 0);
+    while i < bytes.len() {
+        let Some(name) = SECRET_NAMES
+            .iter()
+            .find(|n| low[i..].starts_with(n.as_bytes()))
+        else {
+            i += 1;
+            continue;
+        };
+        let mut j = i + name.len();
+        if j < bytes.len() && ident(bytes[j]) {
+            i += 1;
+            continue;
+        }
+        if j < bytes.len() && matches!(bytes[j], b'"' | b'\'') {
+            j += 1;
+        }
+        while j < bytes.len() && bytes[j] == b' ' {
+            j += 1;
+        }
+        if j >= bytes.len() || !matches!(bytes[j], b'=' | b':') {
+            i += 1;
+            continue;
+        }
+        j += 1;
+        while j < bytes.len() && matches!(bytes[j], b' ' | b'"' | b'\'') {
+            j += 1;
+        }
+        let end = (j..bytes.len())
+            .find(|&k| delim(bytes[k]))
+            .unwrap_or(bytes.len());
+        // Already masked after its prefix (`KEY=sk-***`): left as it is.
+        if text[j..end].chars().count() >= SECRET_VALUE_MIN && !text[j..end].contains(MASK) {
+            out.push_str(&text[kept..j]);
+            out.push_str(MASK);
+            kept = end;
+        }
+        i = end.max(i + 1);
+    }
+    out.push_str(&text[kept..]);
+    out
+}
+
+/// `scheme://user:password@host`: the password.
+fn mask_url_passwords(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(at) = rest.find("://") {
+        let (head, tail) = rest.split_at(at + 3);
+        out.push_str(head);
+        let authority = tail
+            .find(|c: char| c == '/' || c == '?' || c == '#' || c.is_whitespace())
+            .unwrap_or(tail.len());
+        match tail[..authority].rfind('@').and_then(|a| {
+            let colon = tail[..a].find(':')?;
+            (colon + 1 < a).then_some((colon, a))
+        }) {
+            Some((colon, a)) => {
+                out.push_str(&tail[..=colon]);
+                out.push_str(MASK);
+                rest = &tail[a..];
+            }
+            None => rest = tail,
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// `-----BEGIN … PRIVATE KEY-----` blocks: their body.
+fn mask_private_keys(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(begin) = rest.find("-----BEGIN ") {
+        let Some(head) = rest[begin..]
+            .find("-----\n")
+            .or_else(|| rest[begin + 11..].find("-----").map(|e| e + 11))
+        else {
+            break;
+        };
+        let head_end = begin + head + 5;
+        if !rest[begin..head_end].contains("PRIVATE KEY") {
+            out.push_str(&rest[..head_end]);
+            rest = &rest[head_end..];
+            continue;
+        }
+        out.push_str(&rest[..head_end]);
+        out.push_str(MASK);
+        match rest[head_end..].find("-----END") {
+            Some(end) => rest = &rest[head_end + end..],
+            None => {
+                rest = "";
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Whatever follows a known prefix ([`SECRETS`]) and looks like a key.
+fn mask_prefixed(text: &str) -> String {
     let key_char =
         |c: char| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | '/' | '+' | '=');
     let mut out = String::with_capacity(text.len());
@@ -1989,6 +2133,34 @@ mod tests {
             ("risk-free task", "risk-free task"),
             ("sk-short", "sk-short"),
             ("中文 sk-abcdefghijklmnopqrst 完", "中文 sk-*** 完"),
+            (
+                "STRIPE=sk_live_abcdefghijklmnop1234",
+                "STRIPE=sk_live_***",
+            ),
+            (
+                "jwt eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc-def_123 ok",
+                "jwt eyJ*** ok",
+            ),
+            ("Authorization: Basic dXNlcjpodW50ZXIyLXBhc3M=", "Authorization: Basic ***"),
+            ("BEARER abcdef0123456789xyz", "BEARER ***"),
+            (
+                "psql postgres://app:hunter2secret@db.example:5432/app",
+                "psql postgres://app:***@db.example:5432/app",
+            ),
+            ("see https://example.com/a@b", "see https://example.com/a@b"),
+            ("DB_PASSWORD=hunter2-in-env make", "DB_PASSWORD=*** make"),
+            (r#"{"api_key": "abcdef123456", "n": 1}"#, r#"{"api_key": "***", "n": 1}"#),
+            ("password: hunter2", "password: ***"),
+            ("the token: it's fine", "the token: it's fine"),
+            ("tokens=abcdefghij", "tokens=abcdefghij"),
+            (
+                "-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAA\n-----END OPENSSH PRIVATE KEY-----",
+                "-----BEGIN OPENSSH PRIVATE KEY-----***-----END OPENSSH PRIVATE KEY-----",
+            ),
+            (
+                "-----BEGIN CERTIFICATE-----\nMIIBpublic\n-----END CERTIFICATE-----",
+                "-----BEGIN CERTIFICATE-----\nMIIBpublic\n-----END CERTIFICATE-----",
+            ),
         ];
         for (input, want) in cases {
             assert_eq!(redact(input), want, "{input}");

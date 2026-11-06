@@ -2,9 +2,10 @@
 //!
 //! A local index, `<state>/search.db` (owner-only), of the words people typed
 //! and the text of replies: never tool input or output, thinking or
-//! attachments. Text is redacted ([`crate::ask::redact`]) before it is
-//! stored, so the index holds no recognisable keys. The daemon keeps it up
-//! to date from where it last read each transcript; `cc-moss find` reads it.
+//! attachments, nor the output of `!` shell commands. Text is redacted
+//! ([`crate::ask::redact`]) before it is stored, so keys and passwords in
+//! the shapes cc-moss knows never reach it. The daemon keeps it up to date
+//! from where it last read each transcript; `cc-moss find` reads it.
 
 use std::collections::HashSet;
 use std::fs::File;
@@ -13,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, TransactionBehavior};
 
 use crate::transcript::{said, Speaker};
 
@@ -24,6 +25,13 @@ pub fn index_path(state: &Path) -> PathBuf {
 
 /// Lines longer than this hold tool output, not words: skipped unread.
 const MAX_LINE: u64 = 8 << 20;
+/// The index's shape, and what goes into it: an index written by another
+/// version is built again from the transcripts (it is only a cache).
+/// 1: v0.3.8. 2: `!` command output left out, more keys redacted.
+const SCHEMA: i64 = 2;
+/// The longest a write holds the index, so a search catching it up gets
+/// its turn while the daemon builds a large history.
+const SLICE: Duration = Duration::from_millis(250);
 /// Characters of context kept around a match.
 const BEFORE: usize = 60;
 const AFTER: usize = 100;
@@ -49,12 +57,14 @@ pub fn sources_of(slot: &crate::slot::Slot) -> Vec<Source> {
         ids.push(&slot.session_id);
     }
     ids.into_iter()
+        // A session id names a file in that folder, nothing else.
+        .filter(|sid| !sid.is_empty() && sid.chars().all(|c| c.is_ascii_alphanumeric() || c == '-'))
         .map(|sid| Source {
             slot_id: slot.slot_id.clone(),
             session_id: sid.to_string(),
             path: dir.join(format!("{sid}.jsonl")),
         })
-        .filter(|s| s.path.exists())
+        .filter(|s| s.path.is_file())
         .collect()
 }
 
@@ -116,9 +126,24 @@ impl Index {
         Self::with(Connection::open_in_memory()?)
     }
 
-    fn with(conn: Connection) -> Result<Index> {
-        conn.execute_batch(
-            "CREATE TABLE IF NOT EXISTS files (
+    fn with(mut conn: Connection) -> Result<Index> {
+        // What is deleted (a purged session's words) is overwritten, not
+        // left behind in the file.
+        conn.pragma_update(None, "secure_delete", "ON")?;
+        // Reading the version needs no lock: a search while the daemon
+        // writes must not wait here.
+        if schema_version(&conn)? != SCHEMA {
+            let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+            if schema_version(&tx)? != SCHEMA {
+                tx.execute_batch(
+                    "DROP TRIGGER IF EXISTS lines_ai;
+                     DROP TRIGGER IF EXISTS lines_ad;
+                     DROP TABLE IF EXISTS lines_fts;
+                     DROP TABLE IF EXISTS lines;
+                     DROP TABLE IF EXISTS files;",
+                )?;
+                tx.execute_batch(
+                    "CREATE TABLE IF NOT EXISTS files (
                  path TEXT PRIMARY KEY,
                  slot_id TEXT NOT NULL,
                  session_id TEXT NOT NULL,
@@ -143,8 +168,18 @@ impl Index {
              CREATE TRIGGER IF NOT EXISTS lines_ad AFTER DELETE ON lines BEGIN
                  INSERT INTO lines_fts(lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
              END;",
-        )?;
+                )?;
+                tx.pragma_update(None, "user_version", SCHEMA)?;
+            }
+            tx.commit()?;
+        }
         Ok(Index { conn })
+    }
+
+    /// How long to wait for another process writing the index.
+    pub fn wait_for_writers(&self, wait: Duration) -> Result<()> {
+        self.conn.busy_timeout(wait)?;
+        Ok(())
     }
 
     /// Bring the index up to date with `sources` (all of them: a transcript
@@ -165,23 +200,33 @@ impl Index {
         {
             progress.removed += self.drop_file(path)?;
         }
-        for source in sources {
-            if Instant::now() >= deadline {
-                progress.unfinished = true;
-                break;
+        'sources: for source in sources {
+            loop {
+                if Instant::now() >= deadline {
+                    progress.unfinished = true;
+                    break 'sources;
+                }
+                let slice = deadline.min(Instant::now() + SLICE);
+                let (added, done) = self.read_file(source, slice)?;
+                progress.added += added;
+                if done {
+                    break;
+                }
             }
-            let (added, done) = self.read_file(source, deadline)?;
-            progress.added += added;
-            if !done {
-                progress.unfinished = true;
-                break;
-            }
+        }
+        if progress.removed > 0 {
+            // Out of the write-ahead log too, best effort.
+            let _ = self
+                .conn
+                .query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()));
         }
         Ok(progress)
     }
 
     fn drop_file(&mut self, path: &str) -> Result<usize> {
-        let tx = self.conn.transaction()?;
+        let tx = self
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
         let n = tx.execute("DELETE FROM lines WHERE path = ?1", [path])?;
         tx.execute("DELETE FROM files WHERE path = ?1", [path])?;
         tx.commit()?;
@@ -191,12 +236,21 @@ impl Index {
     /// Index what was added to one transcript; `(lines added, reached its end)`.
     fn read_file(&mut self, source: &Source, deadline: Instant) -> Result<(usize, bool)> {
         let path = source.path.to_string_lossy().into_owned();
+        // Only a plain file: a folder can't be read, and opening a pipe
+        // would wait for a writer forever.
+        if !std::fs::metadata(&source.path).is_ok_and(|m| m.is_file()) {
+            return Ok((0, true));
+        }
         let Ok(file) = File::open(&source.path) else {
             return Ok((0, true));
         };
-        let size = file.metadata()?.len();
-        let mut from: u64 = self
+        // Where the last pass stopped is read inside the write, so two
+        // processes catching up at once never both add the same lines.
+        let tx = self
             .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let size = file.metadata()?.len();
+        let mut from: u64 = tx
             .query_row("SELECT read_to FROM files WHERE path = ?1", [&path], |r| {
                 r.get::<_, i64>(0)
             })
@@ -204,15 +258,15 @@ impl Index {
             .map_or(0, |n| u64::try_from(n).unwrap_or(0));
         if size < from {
             // Rewritten: start over.
-            self.drop_file(&path)?;
+            tx.execute("DELETE FROM lines WHERE path = ?1", [&path])?;
             from = 0;
         }
         if size == from {
+            tx.commit()?;
             return Ok((0, true));
         }
         let mut reader = BufReader::with_capacity(256 << 10, file);
         reader.seek(SeekFrom::Start(from))?;
-        let tx = self.conn.transaction()?;
         let mut added = 0;
         let mut at = from;
         let mut done = true;
@@ -363,6 +417,10 @@ impl Index {
     }
 }
 
+fn schema_version(conn: &Connection) -> rusqlite::Result<i64> {
+    conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+}
+
 fn escape_like(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -392,13 +450,13 @@ pub fn snippet(text: &str, query: &str) -> Option<String> {
     if needle.is_empty() || needle.len() > flat.len() {
         return None;
     }
-    let lower = |c: &char| c.to_lowercase().collect::<String>();
-    let start = (0..=flat.len() - needle.len()).find(|&i| {
-        flat[i..i + needle.len()]
-            .iter()
-            .zip(&needle)
-            .all(|(a, b)| lower(a) == lower(b))
-    })?;
+    // One lower-case character for each, so positions line up with `flat`;
+    // then one linear search, however long the text.
+    let lower = |c: &char| c.to_lowercase().next().unwrap_or(*c);
+    let hay: String = flat.iter().map(lower).collect();
+    let pin: String = needle.iter().map(lower).collect();
+    let byte = hay.find(&pin)?;
+    let start = hay[..byte].chars().count();
     let from = start.saturating_sub(BEFORE);
     let to = (start + needle.len() + AFTER).min(flat.len());
     let mut out = String::new();
@@ -499,6 +557,162 @@ mod tests {
             .unwrap()
             .hits
             .is_empty());
+    }
+
+    #[test]
+    fn shell_commands_and_their_output_are_left_out() {
+        let fx = Fixture::new(&[
+            user("<bash-input>cat .env</bash-input>", "2026-11-01T10:00:00Z"),
+            user(
+                "<bash-stdout>DB_PASSWORD=hunter2-in-env</bash-stdout><bash-stderr></bash-stderr>",
+                "2026-11-01T10:00:01Z",
+            ),
+            user("what does the env hold", "2026-11-01T10:01:00Z"),
+        ]);
+        let mut idx = Index::open_in_memory().unwrap();
+        assert_eq!(idx.update(&[fx.source()], far()).unwrap().added, 1);
+        for q in ["hunter2", "cat .env", "bash-stdout"] {
+            assert!(idx.find(q, 10, far()).unwrap().hits.is_empty(), "{q}");
+        }
+    }
+
+    #[test]
+    fn writers_at_once_add_each_line_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let lines: Vec<String> = (0..20_000)
+            .map(|i| user(&format!("line number {i} of many"), "2026-11-01T10:00:00Z"))
+            .collect();
+        let fx = Fixture::new(&lines);
+        let db = dir.path().join("search.db");
+        Index::open(&db).unwrap();
+        let workers: Vec<_> = (0..4)
+            .map(|_| {
+                let (db, source) = (db.clone(), fx.source());
+                std::thread::spawn(move || {
+                    let mut idx = Index::open(&db).unwrap();
+                    // A busy machine may make one give up waiting: it just
+                    // tries again, as the daemon does.
+                    loop {
+                        let deadline = Instant::now() + Duration::from_millis(300);
+                        if let Ok(p) = idx.update(std::slice::from_ref(&source), deadline) {
+                            if !p.unfinished {
+                                break;
+                            }
+                        }
+                    }
+                })
+            })
+            .collect();
+        for w in workers {
+            w.join().unwrap();
+        }
+        let idx = Index::open(&db).unwrap();
+        let (rows, distinct): (i64, i64) = idx
+            .conn
+            .query_row(
+                "SELECT count(*), count(DISTINCT text) FROM lines",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((rows, distinct), (20_000, 20_000));
+    }
+
+    #[test]
+    fn catching_up_waits_while_another_process_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let fx = Fixture::new(&[user("said while it was busy", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open(&db).unwrap();
+        // The daemon, mid-write: it holds the index for a moment.
+        let mut other = Connection::open(&db).unwrap();
+        let (held, release) = std::sync::mpsc::channel::<()>();
+        let writer = std::thread::spawn(move || {
+            let tx = other
+                .transaction_with_behavior(TransactionBehavior::Immediate)
+                .unwrap();
+            tx.execute(
+                "INSERT INTO files (path, slot_id, session_id, read_to) VALUES ('x', 's', 's', 0)",
+                [],
+            )
+            .unwrap();
+            held.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(300));
+            tx.commit().unwrap();
+        });
+        release.recv().unwrap();
+        let p = idx.update(&[fx.source()], far()).unwrap();
+        writer.join().unwrap();
+        assert_eq!(p.added, 1);
+    }
+
+    #[test]
+    fn an_index_from_another_version_is_built_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let fx = Fixture::new(&[user("words from before", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open(&db).unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        idx.conn.pragma_update(None, "user_version", 1).unwrap();
+        drop(idx);
+        let mut idx = Index::open(&db).unwrap();
+        assert!(idx.find("from before", 10, far()).unwrap().hits.is_empty());
+        let version: i64 = idx
+            .conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(version, SCHEMA);
+        assert_eq!(
+            idx.update(&[fx.source()], far()).unwrap().added,
+            1,
+            "read again"
+        );
+    }
+
+    #[test]
+    fn what_a_dropped_session_said_is_gone_from_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let fx = Fixture::new(&[user("UNIQUEPURGEMARKER please", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open(&db).unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        assert_eq!(idx.update(&[], far()).unwrap().removed, 1);
+        drop(idx);
+        for f in ["search.db", "search.db-wal"] {
+            let bytes = std::fs::read(dir.path().join(f)).unwrap_or_default();
+            assert!(
+                !bytes.windows(17).any(|w| w == b"UNIQUEPURGEMARKER"),
+                "{f} still holds it"
+            );
+        }
+    }
+
+    #[test]
+    fn a_source_that_is_not_a_file_is_passed_over() {
+        let dir = tempfile::tempdir().unwrap();
+        let folder = dir.path().join("s0.jsonl");
+        std::fs::create_dir(&folder).unwrap();
+        let fx = Fixture::new(&[user("still found", "2026-11-01T10:00:00Z")]);
+        let bad = Source {
+            slot_id: "slot-0".into(),
+            session_id: "s0".into(),
+            path: folder,
+        };
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.update(&[bad, fx.source()], far()).unwrap();
+        assert_eq!(idx.find("still found", 10, far()).unwrap().hits.len(), 1);
+    }
+
+    #[test]
+    fn a_snippet_of_a_long_text_is_quick() {
+        let text = format!("{}needle at the end", "ab".repeat(500_000));
+        let near = format!("{}c", "ab".repeat(100));
+        let t = Instant::now();
+        assert!(snippet(&text, &near).is_none());
+        assert!(snippet(&text, "NEEDLE")
+            .unwrap()
+            .contains("needle at the end"));
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
     }
 
     #[test]
