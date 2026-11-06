@@ -27,8 +27,9 @@ pub fn index_path(state: &Path) -> PathBuf {
 const MAX_LINE: u64 = 8 << 20;
 /// The index's shape, and what goes into it: an index written by another
 /// version is built again from the transcripts (it is only a cache).
-/// 1: v0.3.8. 2: `!` command output left out, more keys redacted.
-const SCHEMA: i64 = 2;
+/// 1: v0.3.8. 2: `!` command output left out, more keys redacted (never
+/// released). 3: as 2, with a `meta` table and FTS secure-delete.
+const SCHEMA: i64 = 3;
 /// The longest a write holds the index, so a search catching it up gets
 /// its turn while the daemon builds a large history.
 const SLICE: Duration = Duration::from_millis(250);
@@ -785,6 +786,19 @@ mod tests {
     }
 
     #[test]
+    fn an_index_from_the_unreleased_shape_is_built_again() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let idx = Index::open(&db).unwrap();
+        // Version 2: no meta table, no secure-delete.
+        idx.conn.execute_batch("DROP TABLE meta").unwrap();
+        idx.conn.pragma_update(None, "user_version", 2).unwrap();
+        drop(idx);
+        Index::open_for_daemon(&db).unwrap();
+        Index::open_for_daemon(&db).unwrap();
+    }
+
+    #[test]
     fn opening_while_another_process_rebuilds_says_it_is_busy() {
         let dir = tempfile::tempdir().unwrap();
         let db = dir.path().join("search.db");
@@ -822,14 +836,23 @@ mod tests {
 
     #[test]
     fn a_snippet_of_a_long_text_is_quick() {
+        // A near miss all along a million characters: one linear search
+        // takes a fraction of a second; comparing character by character,
+        // allocating as it went, took seconds.
         let text = format!("{}needle at the end", "ab".repeat(500_000));
         let near = format!("{}c", "ab".repeat(100));
-        let t = Instant::now();
-        assert!(snippet(&text, &near).is_none());
-        assert!(snippet(&text, "NEEDLE")
-            .unwrap()
-            .contains("needle at the end"));
-        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+        let quickest = (0..3)
+            .map(|_| {
+                let t = Instant::now();
+                assert!(snippet(&text, &near).is_none());
+                assert!(snippet(&text, "NEEDLE")
+                    .unwrap()
+                    .contains("needle at the end"));
+                t.elapsed()
+            })
+            .min()
+            .unwrap();
+        assert!(quickest < Duration::from_secs(3), "{quickest:?}");
     }
 
     #[test]

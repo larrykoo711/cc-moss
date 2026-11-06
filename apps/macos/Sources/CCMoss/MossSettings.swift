@@ -200,6 +200,8 @@ private struct MossSearchCard: View {
     @State private var known = false
     /// Writes the switch to the config, last value wins (nil until loaded).
     @State private var writer: SwitchWriter?
+    /// A reload skipped while a write was under way, to run once it's done.
+    @State private var reloadAfterWrite = false
     @State private var problem: String?
 
     var body: some View {
@@ -228,9 +230,18 @@ private struct MossSearchCard: View {
 
     private func load() async {
         guard !demo, let client = model.client else { return }
-        // A write under way reads the setting back itself when it's done.
-        if writer?.isWriting == true { return }
-        guard let value = try? await client.config(MossSearch.key) else {
+        // A write under way reads the setting back when it's done; the
+        // reload (a new cc-moss, say) follows then.
+        if writer?.isWriting == true {
+            reloadAfterWrite = true
+            return
+        }
+        let read = try? await client.config(MossSearch.key)
+        if writer?.isWriting == true {
+            reloadAfterWrite = true
+            return
+        }
+        guard let value = read else {
             // This cc-moss doesn't know the setting (an older one): off, greyed.
             known = false
             writer = nil
@@ -258,6 +269,10 @@ private struct MossSearchCard: View {
             case .done(let holds, let failed):
                 if let holds { on = holds }
                 problem = failed.map { L.t("Didn't save: \($0)", "没能保存：\($0)") }
+                if reloadAfterWrite, !writer.isWriting {
+                    reloadAfterWrite = false
+                    await load()
+                }
             }
         }
     }
