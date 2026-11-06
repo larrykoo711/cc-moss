@@ -18,6 +18,10 @@ public final class SwitchWriter {
 
     /// The last value asked for (or loaded).
     public private(set) var requested: Bool
+    /// Writes asked for and not yet finished: reading the config afresh
+    /// now would show a value about to change.
+    public private(set) var pending = 0
+    public var isWriting: Bool { pending > 0 }
     private var last: Task<Void, Never>?
     private let write: (Bool) async throws -> Void
     private let read: () async throws -> Bool
@@ -33,14 +37,11 @@ public final class SwitchWriter {
         self.describe = describe
     }
 
-    /// The config was read afresh: the switch shows `holds`, no write.
-    public func loaded(_ holds: Bool) {
-        requested = holds
-    }
-
     public func set(_ value: Bool) async -> Outcome {
         guard value != requested else { return .unchanged }
         requested = value
+        pending += 1
+        defer { pending -= 1 }
         // Writes queue up behind each other, oldest first.
         let before = last
         let task = Task<Outcome, Never> { @MainActor in

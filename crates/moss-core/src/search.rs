@@ -3,7 +3,7 @@
 //! A local index, `<state>/search.db` (owner-only), of the words people typed
 //! and the text of replies: never tool input or output, thinking or
 //! attachments, nor the output of `!` shell commands. Text is redacted
-//! ([`crate::ask::redact`]) before it is stored, so keys and passwords in
+//! ([`crate::ask::redact_kept`]) before it is stored, so keys and passwords in
 //! the shapes cc-moss knows never reach it. The daemon keeps it up to date
 //! from where it last read each transcript; `cc-moss find` reads it.
 
@@ -102,6 +102,12 @@ pub struct Index {
 impl Index {
     /// Open (or create, owner-only) the index at `path`.
     pub fn open(path: &Path) -> Result<Index> {
+        Self::open_waiting(path, Duration::from_secs(2))
+    }
+
+    /// [`Index::open`], waiting at most `wait` for another process writing
+    /// the index (a search waits no longer than its catch-up may take).
+    pub fn open_waiting(path: &Path, wait: Duration) -> Result<Index> {
         if let Some(dir) = path.parent() {
             crate::store_dir::ensure_private_dir(dir)?;
         }
@@ -116,7 +122,7 @@ impl Index {
                 .with_context(|| format!("{}", path.display()))?;
         }
         let conn = Connection::open(path)?;
-        conn.busy_timeout(Duration::from_secs(2))?;
+        conn.busy_timeout(wait)?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         Self::with(conn)
     }
@@ -135,51 +141,37 @@ impl Index {
         if schema_version(&conn)? != SCHEMA {
             let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
             if schema_version(&tx)? != SCHEMA {
-                tx.execute_batch(
-                    "DROP TRIGGER IF EXISTS lines_ai;
-                     DROP TRIGGER IF EXISTS lines_ad;
-                     DROP TABLE IF EXISTS lines_fts;
-                     DROP TABLE IF EXISTS lines;
-                     DROP TABLE IF EXISTS files;",
-                )?;
-                tx.execute_batch(
-                    "CREATE TABLE IF NOT EXISTS files (
-                 path TEXT PRIMARY KEY,
-                 slot_id TEXT NOT NULL,
-                 session_id TEXT NOT NULL,
-                 read_to INTEGER NOT NULL
-             );
-             CREATE TABLE IF NOT EXISTS lines (
-                 id INTEGER PRIMARY KEY,
-                 path TEXT NOT NULL,
-                 slot_id TEXT NOT NULL,
-                 session_id TEXT NOT NULL,
-                 at INTEGER NOT NULL,
-                 speaker TEXT NOT NULL,
-                 text TEXT NOT NULL
-             );
-             CREATE INDEX IF NOT EXISTS lines_path ON lines(path);
-             CREATE INDEX IF NOT EXISTS lines_at ON lines(at);
-             CREATE VIRTUAL TABLE IF NOT EXISTS lines_fts USING fts5(
-                 text, content='lines', content_rowid='id', tokenize='trigram');
-             CREATE TRIGGER IF NOT EXISTS lines_ai AFTER INSERT ON lines BEGIN
-                 INSERT INTO lines_fts(rowid, text) VALUES (new.id, new.text);
-             END;
-             CREATE TRIGGER IF NOT EXISTS lines_ad AFTER DELETE ON lines BEGIN
-                 INSERT INTO lines_fts(lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
-             END;",
-                )?;
-                tx.pragma_update(None, "user_version", SCHEMA)?;
+                build(&tx)?;
             }
             tx.commit()?;
         }
         Ok(Index { conn })
     }
 
-    /// How long to wait for another process writing the index.
-    pub fn wait_for_writers(&self, wait: Duration) -> Result<()> {
-        self.conn.busy_timeout(wait)?;
-        Ok(())
+    /// The daemon's index. Built again, once, the first time a daemon of
+    /// this version opens it: one of the previous version may have gone on
+    /// writing its way into it while an upgrade was under way.
+    pub fn open_for_daemon(path: &Path) -> Result<Index> {
+        let mut index = Self::open(path)?;
+        let tx = index
+            .conn
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        let ours: Option<i64> = tx
+            .query_row(
+                "SELECT value FROM meta WHERE key = 'daemon_schema'",
+                [],
+                |r| r.get(0),
+            )
+            .optional()?;
+        if ours != Some(SCHEMA) {
+            build(&tx)?;
+            tx.execute(
+                "INSERT INTO meta (key, value) VALUES ('daemon_schema', ?1)",
+                [SCHEMA],
+            )?;
+        }
+        tx.commit()?;
+        Ok(index)
     }
 
     /// Bring the index up to date with `sources` (all of them: a transcript
@@ -259,6 +251,7 @@ impl Index {
         if size < from {
             // Rewritten: start over.
             tx.execute("DELETE FROM lines WHERE path = ?1", [&path])?;
+            tx.execute("UPDATE files SET read_to = 0 WHERE path = ?1", [&path])?;
             from = 0;
         }
         if size == from {
@@ -308,7 +301,7 @@ impl Index {
                 }
                 at += n as u64;
                 if let Some((speaker, text, at_ms)) = said(&line) {
-                    let text = crate::ask::redact(&text);
+                    let text = crate::ask::redact_kept(&text);
                     insert.execute(params![
                         path,
                         source.slot_id,
@@ -415,6 +408,58 @@ impl Index {
         }
         Ok(found)
     }
+}
+
+/// The index from scratch: what was in it goes.
+fn build(tx: &rusqlite::Transaction<'_>) -> rusqlite::Result<()> {
+    tx.execute_batch(
+        "DROP TRIGGER IF EXISTS lines_ai;
+         DROP TRIGGER IF EXISTS lines_ad;
+         DROP TABLE IF EXISTS lines_fts;
+         DROP TABLE IF EXISTS lines;
+         DROP TABLE IF EXISTS files;
+         DROP TABLE IF EXISTS meta;
+         CREATE TABLE files (
+             path TEXT PRIMARY KEY,
+             slot_id TEXT NOT NULL,
+             session_id TEXT NOT NULL,
+             read_to INTEGER NOT NULL
+         );
+         CREATE TABLE lines (
+             id INTEGER PRIMARY KEY,
+             path TEXT NOT NULL,
+             slot_id TEXT NOT NULL,
+             session_id TEXT NOT NULL,
+             at INTEGER NOT NULL,
+             speaker TEXT NOT NULL,
+             text TEXT NOT NULL
+         );
+         CREATE INDEX lines_path ON lines(path);
+         CREATE INDEX lines_at ON lines(at);
+         CREATE TABLE meta (key TEXT PRIMARY KEY, value NOT NULL);
+         CREATE VIRTUAL TABLE lines_fts USING fts5(
+             text, content='lines', content_rowid='id', tokenize='trigram');
+         -- A deleted line's words leave the full-text index itself, not
+         -- only the table: otherwise they stay there until it is merged.
+         INSERT INTO lines_fts(lines_fts, rank) VALUES ('secure-delete', 1);
+         CREATE TRIGGER lines_ai AFTER INSERT ON lines BEGIN
+             INSERT INTO lines_fts(rowid, text) VALUES (new.id, new.text);
+         END;
+         CREATE TRIGGER lines_ad AFTER DELETE ON lines BEGIN
+             INSERT INTO lines_fts(lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
+         END;",
+    )?;
+    tx.pragma_update(None, "user_version", SCHEMA)
+}
+
+/// The error says another process holds the index for a write.
+pub fn is_busy(e: &anyhow::Error) -> bool {
+    e.downcast_ref::<rusqlite::Error>().is_some_and(|e| {
+        matches!(
+            e.sqlite_error_code(),
+            Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+        )
+    })
 }
 
 fn schema_version(conn: &Connection) -> rusqlite::Result<i64> {
@@ -684,7 +729,79 @@ mod tests {
                 !bytes.windows(17).any(|w| w == b"UNIQUEPURGEMARKER"),
                 "{f} still holds it"
             );
+            // Nor its pieces in the full-text index ("uniquepurgemarker"'s
+            // three-letter grams that are stored whole).
+            for gram in [&b"iqu"[..], b"niq", b"gem", b"rge"] {
+                assert!(
+                    !bytes.windows(3).any(|w| w == gram),
+                    "{f} still holds {}",
+                    String::from_utf8_lossy(gram)
+                );
+            }
         }
+    }
+
+    #[test]
+    fn a_transcript_emptied_then_written_again_is_read_from_the_start() {
+        let fx = Fixture::new(&[user("before it was emptied", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        std::fs::write(&fx.path, "").unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        let longer = (0..5)
+            .map(|i| user(&format!("written again, part {i}"), "2026-11-02T10:00:00Z") + "\n")
+            .collect::<String>();
+        std::fs::write(&fx.path, longer).unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        assert!(idx
+            .find("before it was", 10, far())
+            .unwrap()
+            .hits
+            .is_empty());
+        assert_eq!(idx.find("part 0", 10, far()).unwrap().hits.len(), 1);
+    }
+
+    #[test]
+    fn a_new_daemon_builds_the_index_again_once() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let fx = Fixture::new(&[user("written by someone else", "2026-11-01T10:00:00Z")]);
+        // A search (or an older daemon) filled it.
+        Index::open(&db)
+            .unwrap()
+            .update(&[fx.source()], far())
+            .unwrap();
+        let idx = Index::open_for_daemon(&db).unwrap();
+        assert!(
+            idx.find("someone else", 10, far()).unwrap().hits.is_empty(),
+            "built again"
+        );
+        let mut idx = idx;
+        idx.update(&[fx.source()], far()).unwrap();
+        drop(idx);
+        // The next start of the same daemon keeps what it built.
+        let idx = Index::open_for_daemon(&db).unwrap();
+        assert_eq!(idx.find("someone else", 10, far()).unwrap().hits.len(), 1);
+    }
+
+    #[test]
+    fn opening_while_another_process_rebuilds_says_it_is_busy() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("search.db");
+        let idx = Index::open(&db).unwrap();
+        idx.conn.pragma_update(None, "user_version", 1).unwrap();
+        drop(idx);
+        let mut other = Connection::open(&db).unwrap();
+        let tx = other
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .unwrap();
+        let t = Instant::now();
+        let err = Index::open_waiting(&db, Duration::from_millis(200))
+            .err()
+            .expect("busy");
+        assert!(is_busy(&err), "{err:#}");
+        assert!(t.elapsed() < Duration::from_secs(2), "{:?}", t.elapsed());
+        drop(tx);
     }
 
     #[test]

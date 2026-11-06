@@ -36,10 +36,21 @@ import Testing
         #expect(w.requested == false)
     }
 
-    @Test func loadingTheSwitchWritesNothing() async {
+    @Test func itSaysWhileAWriteIsUnderWay() async {
         let c = SlowConfig()
         let w = writer(c)
-        w.loaded(true)
+        #expect(!w.isWriting)
+        let t = Task { await w.set(true) }
+        while c.writes.isEmpty { await Task.yield() }
+        #expect(w.isWriting)
+        _ = await t.value
+        #expect(!w.isWriting)
+    }
+
+    @Test func loadingTheSwitchWritesNothing() async {
+        let c = SlowConfig()
+        c.value = true
+        let w = writer(c)
         #expect(await w.set(true) == .unchanged)
         #expect(c.writes.isEmpty)
     }

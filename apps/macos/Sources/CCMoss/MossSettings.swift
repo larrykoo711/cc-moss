@@ -228,24 +228,25 @@ private struct MossSearchCard: View {
 
     private func load() async {
         guard !demo, let client = model.client else { return }
+        // A write under way reads the setting back itself when it's done.
+        if writer?.isWriting == true { return }
         guard let value = try? await client.config(MossSearch.key) else {
-            // This cc-moss doesn't know the setting (an older one).
+            // This cc-moss doesn't know the setting (an older one): off, greyed.
             known = false
             writer = nil
+            on = false
             return
         }
         let holds = MossSearch.isOn(value)
-        if let writer {
-            writer.loaded(holds)
-        } else {
-            writer = SwitchWriter(
-                holds: holds,
-                write: { try await client.setConfig(MossSearch.key, $0 ? "true" : "false") },
-                read: { MossSearch.isOn(try await client.config(MossSearch.key)) },
-                describe: { AppModel.describe($0) })
-        }
+        // Made afresh each time: the cc-moss in use may have changed.
+        writer = SwitchWriter(
+            holds: holds,
+            write: { try await client.setConfig(MossSearch.key, $0 ? "true" : "false") },
+            read: { MossSearch.isOn(try await client.config(MossSearch.key)) },
+            describe: { AppModel.describe($0) })
         on = holds
         known = true
+        problem = nil
     }
 
     private func save(_ value: Bool) {
