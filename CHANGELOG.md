@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   gone session counted a process that had exited but wasn't reaped yet as still running, so a session killed under
   a parent that didn't reap it was never reported as dropped. The quick check now sees zombies (`/proc` on Linux,
   the process state on macOS).
+- **A question you answer in the terminal right away no longer shows up again.** Claude Code starts the hook that
+  lets the menu bar app or Moss answer in the background, so you can answer in the terminal before it begins. That
+  hook then asked the question afresh, showed it in the app though nobody needed to answer it, and waited until it
+  timed out. It now sees that the question was already answered, and lets go.
 
 ### Added
 
