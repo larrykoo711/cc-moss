@@ -1,0 +1,621 @@
+//! Finding sessions by what was said in them (F44).
+//!
+//! A local index, `<state>/search.db` (owner-only), of the words people typed
+//! and the text of replies: never tool input or output, thinking or
+//! attachments. Text is redacted ([`crate::ask::redact`]) before it is
+//! stored, so the index holds no recognisable keys. The daemon keeps it up
+//! to date from where it last read each transcript; `cc-moss find` reads it.
+
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::{BufRead, BufReader, Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, Result};
+use rusqlite::{params, Connection, OptionalExtension};
+
+use crate::transcript::{said, Speaker};
+
+/// `<state>/search.db`.
+pub fn index_path(state: &Path) -> PathBuf {
+    state.join("search.db")
+}
+
+/// Lines longer than this hold tool output, not words: skipped unread.
+const MAX_LINE: u64 = 8 << 20;
+/// Characters of context kept around a match.
+const BEFORE: usize = 60;
+const AFTER: usize = 100;
+
+/// One transcript to index: the session it belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Source {
+    pub slot_id: String,
+    pub session_id: String,
+    pub path: PathBuf,
+}
+
+/// The transcripts of every session id a slot used, next to its current one.
+pub fn sources_of(slot: &crate::slot::Slot) -> Vec<Source> {
+    let Some(current) = slot.transcript_path.as_deref().map(Path::new) else {
+        return Vec::new();
+    };
+    let Some(dir) = current.parent() else {
+        return Vec::new();
+    };
+    let mut ids: Vec<&str> = slot.session_ids.iter().map(String::as_str).collect();
+    if !ids.contains(&slot.session_id.as_str()) {
+        ids.push(&slot.session_id);
+    }
+    ids.into_iter()
+        .map(|sid| Source {
+            slot_id: slot.slot_id.clone(),
+            session_id: sid.to_string(),
+            path: dir.join(format!("{sid}.jsonl")),
+        })
+        .filter(|s| s.path.exists())
+        .collect()
+}
+
+/// What one pass of [`Index::update`] did.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Progress {
+    pub added: usize,
+    pub removed: usize,
+    /// The pass ran out of time; the next one carries on.
+    pub unfinished: bool,
+}
+
+/// One session that matched: its newest matching line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hit {
+    pub slot_id: String,
+    pub session_id: String,
+    pub at_ms: i64,
+    pub speaker: Speaker,
+    pub snippet: String,
+}
+
+/// What a search found.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct Found {
+    pub hits: Vec<Hit>,
+    /// It ran out of time: there may be more.
+    pub partial: bool,
+}
+
+pub struct Index {
+    conn: Connection,
+}
+
+impl Index {
+    /// Open (or create, owner-only) the index at `path`.
+    pub fn open(path: &Path) -> Result<Index> {
+        if let Some(dir) = path.parent() {
+            crate::store_dir::ensure_private_dir(dir)?;
+        }
+        if !path.exists() {
+            use std::os::unix::fs::OpenOptionsExt;
+            std::fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(false)
+                .mode(0o600)
+                .open(path)
+                .with_context(|| format!("{}", path.display()))?;
+        }
+        let conn = Connection::open(path)?;
+        conn.busy_timeout(Duration::from_secs(2))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        Self::with(conn)
+    }
+
+    /// An index in memory (tests).
+    pub fn open_in_memory() -> Result<Index> {
+        Self::with(Connection::open_in_memory()?)
+    }
+
+    fn with(conn: Connection) -> Result<Index> {
+        conn.execute_batch(
+            "CREATE TABLE IF NOT EXISTS files (
+                 path TEXT PRIMARY KEY,
+                 slot_id TEXT NOT NULL,
+                 session_id TEXT NOT NULL,
+                 read_to INTEGER NOT NULL
+             );
+             CREATE TABLE IF NOT EXISTS lines (
+                 id INTEGER PRIMARY KEY,
+                 path TEXT NOT NULL,
+                 slot_id TEXT NOT NULL,
+                 session_id TEXT NOT NULL,
+                 at INTEGER NOT NULL,
+                 speaker TEXT NOT NULL,
+                 text TEXT NOT NULL
+             );
+             CREATE INDEX IF NOT EXISTS lines_path ON lines(path);
+             CREATE INDEX IF NOT EXISTS lines_at ON lines(at);
+             CREATE VIRTUAL TABLE IF NOT EXISTS lines_fts USING fts5(
+                 text, content='lines', content_rowid='id', tokenize='trigram');
+             CREATE TRIGGER IF NOT EXISTS lines_ai AFTER INSERT ON lines BEGIN
+                 INSERT INTO lines_fts(rowid, text) VALUES (new.id, new.text);
+             END;
+             CREATE TRIGGER IF NOT EXISTS lines_ad AFTER DELETE ON lines BEGIN
+                 INSERT INTO lines_fts(lines_fts, rowid, text) VALUES ('delete', old.id, old.text);
+             END;",
+        )?;
+        Ok(Index { conn })
+    }
+
+    /// Bring the index up to date with `sources` (all of them: a transcript
+    /// not listed any more, its session purged or forgotten, is dropped).
+    /// Reads from where the last pass stopped, whole lines only; a file
+    /// that got shorter is read again from the start. Stops at `deadline`.
+    pub fn update(&mut self, sources: &[Source], deadline: Instant) -> Result<Progress> {
+        let mut progress = Progress::default();
+        let listed: HashSet<&Path> = sources.iter().map(|s| s.path.as_path()).collect();
+        let known: Vec<String> = self
+            .conn
+            .prepare("SELECT path FROM files")?
+            .query_map([], |r| r.get(0))?
+            .collect::<rusqlite::Result<_>>()?;
+        for path in known
+            .iter()
+            .filter(|p| !listed.contains(Path::new(p.as_str())))
+        {
+            progress.removed += self.drop_file(path)?;
+        }
+        for source in sources {
+            if Instant::now() >= deadline {
+                progress.unfinished = true;
+                break;
+            }
+            let (added, done) = self.read_file(source, deadline)?;
+            progress.added += added;
+            if !done {
+                progress.unfinished = true;
+                break;
+            }
+        }
+        Ok(progress)
+    }
+
+    fn drop_file(&mut self, path: &str) -> Result<usize> {
+        let tx = self.conn.transaction()?;
+        let n = tx.execute("DELETE FROM lines WHERE path = ?1", [path])?;
+        tx.execute("DELETE FROM files WHERE path = ?1", [path])?;
+        tx.commit()?;
+        Ok(n)
+    }
+
+    /// Index what was added to one transcript; `(lines added, reached its end)`.
+    fn read_file(&mut self, source: &Source, deadline: Instant) -> Result<(usize, bool)> {
+        let path = source.path.to_string_lossy().into_owned();
+        let Ok(file) = File::open(&source.path) else {
+            return Ok((0, true));
+        };
+        let size = file.metadata()?.len();
+        let mut from: u64 = self
+            .conn
+            .query_row("SELECT read_to FROM files WHERE path = ?1", [&path], |r| {
+                r.get::<_, i64>(0)
+            })
+            .optional()?
+            .map_or(0, |n| u64::try_from(n).unwrap_or(0));
+        if size < from {
+            // Rewritten: start over.
+            self.drop_file(&path)?;
+            from = 0;
+        }
+        if size == from {
+            return Ok((0, true));
+        }
+        let mut reader = BufReader::with_capacity(256 << 10, file);
+        reader.seek(SeekFrom::Start(from))?;
+        let tx = self.conn.transaction()?;
+        let mut added = 0;
+        let mut at = from;
+        let mut done = true;
+        let mut line = Vec::new();
+        {
+            let mut insert = tx.prepare_cached(
+                "INSERT INTO lines (path, slot_id, session_id, at, speaker, text)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )?;
+            loop {
+                if Instant::now() >= deadline {
+                    done = false;
+                    break;
+                }
+                line.clear();
+                let n = (&mut reader)
+                    .take(MAX_LINE + 1)
+                    .read_until(b'\n', &mut line)?;
+                if n == 0 || line.last() != Some(&b'\n') {
+                    if n as u64 > MAX_LINE {
+                        // A huge line: skip to its end without keeping it.
+                        let mut rest = 0u64;
+                        let mut sink = Vec::new();
+                        loop {
+                            sink.clear();
+                            let m = (&mut reader).take(MAX_LINE).read_until(b'\n', &mut sink)?;
+                            rest += m as u64;
+                            if m == 0 || sink.last() == Some(&b'\n') {
+                                break;
+                            }
+                        }
+                        if sink.last() == Some(&b'\n') {
+                            at += n as u64 + rest;
+                            continue;
+                        }
+                    }
+                    // A line still being written: read it next time.
+                    break;
+                }
+                at += n as u64;
+                if let Some((speaker, text, at_ms)) = said(&line) {
+                    let text = crate::ask::redact(&text);
+                    insert.execute(params![
+                        path,
+                        source.slot_id,
+                        source.session_id,
+                        at_ms,
+                        speaker.as_str(),
+                        text
+                    ])?;
+                    added += 1;
+                }
+            }
+        }
+        tx.execute(
+            "INSERT INTO files (path, slot_id, session_id, read_to) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(path) DO UPDATE SET slot_id = ?2, session_id = ?3, read_to = ?4",
+            params![path, source.slot_id, source.session_id, i64::try_from(at)?],
+        )?;
+        tx.commit()?;
+        Ok((added, done))
+    }
+
+    /// Sessions whose words contain `query` (case-insensitive), newest
+    /// first, one hit each, at most `limit`. Stops at `deadline` and says so.
+    pub fn find(&self, query: &str, limit: usize, deadline: Instant) -> Result<Found> {
+        let query = query.trim();
+        if query.is_empty() || limit == 0 {
+            return Ok(Found::default());
+        }
+        // Three characters and more: the trigram index. Fewer: a scan of
+        // the words alone (the index has no shorter grams).
+        let (sql, arg) = if query.chars().count() >= 3 {
+            (
+                "SELECT l.slot_id, l.session_id, l.at, l.speaker, l.text
+                 FROM lines_fts f JOIN lines l ON l.id = f.rowid
+                 WHERE lines_fts MATCH ?1 ORDER BY l.at DESC",
+                format!("\"{}\"", query.replace('"', "\"\"")),
+            )
+        } else {
+            (
+                "SELECT slot_id, session_id, at, speaker, text FROM lines
+                 WHERE text LIKE ?1 ESCAPE '\\' ORDER BY at DESC",
+                format!("%{}%", escape_like(query)),
+            )
+        };
+        let mut found = Found::default();
+        if Instant::now() >= deadline {
+            found.partial = true;
+            return Ok(found);
+        }
+        // Past the deadline the running query is interrupted.
+        let interrupt = self.conn.get_interrupt_handle();
+        let (finished, wait) = std::sync::mpsc::channel::<()>();
+        let left = deadline.saturating_duration_since(Instant::now());
+        let timer = std::thread::spawn(move || {
+            if wait.recv_timeout(left) == Err(std::sync::mpsc::RecvTimeoutError::Timeout) {
+                interrupt.interrupt();
+            }
+        });
+        let mut seen: HashSet<String> = HashSet::new();
+        let result = (|| -> rusqlite::Result<()> {
+            let mut stmt = self.conn.prepare(sql)?;
+            let mut rows = stmt.query([&arg])?;
+            while let Some(r) = rows.next()? {
+                if Instant::now() >= deadline {
+                    found.partial = true;
+                    break;
+                }
+                let slot_id: String = r.get(0)?;
+                if seen.contains(&slot_id) {
+                    continue;
+                }
+                let text: String = r.get(4)?;
+                let Some(snippet) = snippet(&text, query) else {
+                    continue;
+                };
+                let speaker = match r.get::<_, String>(3)?.as_str() {
+                    "you" => Speaker::You,
+                    _ => Speaker::Reply,
+                };
+                seen.insert(slot_id.clone());
+                found.hits.push(Hit {
+                    slot_id,
+                    session_id: r.get(1)?,
+                    at_ms: r.get(2)?,
+                    speaker,
+                    snippet,
+                });
+                if found.hits.len() >= limit {
+                    break;
+                }
+            }
+            Ok(())
+        })();
+        drop(finished);
+        let _ = timer.join();
+        match result {
+            Ok(()) => {}
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::OperationInterrupted =>
+            {
+                found.partial = true;
+            }
+            Err(e) => return Err(e.into()),
+        }
+        Ok(found)
+    }
+}
+
+fn escape_like(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(c, '%' | '_' | '\\') {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// About 160 characters of `text` around the first case-insensitive
+/// match of `query`, on one line; `None` if it isn't there.
+pub fn snippet(text: &str, query: &str) -> Option<String> {
+    let flat: Vec<char> = text
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .collect();
+    let needle: Vec<char> = query
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .chars()
+        .collect();
+    if needle.is_empty() || needle.len() > flat.len() {
+        return None;
+    }
+    let lower = |c: &char| c.to_lowercase().collect::<String>();
+    let start = (0..=flat.len() - needle.len()).find(|&i| {
+        flat[i..i + needle.len()]
+            .iter()
+            .zip(&needle)
+            .all(|(a, b)| lower(a) == lower(b))
+    })?;
+    let from = start.saturating_sub(BEFORE);
+    let to = (start + needle.len() + AFTER).min(flat.len());
+    let mut out = String::new();
+    if from > 0 {
+        out.push('…');
+    }
+    out.extend(&flat[from..to]);
+    if to < flat.len() {
+        out.push('…');
+    }
+    Some(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn far() -> Instant {
+        Instant::now() + Duration::from_secs(30)
+    }
+
+    fn user(text: &str, at: &str) -> String {
+        serde_json::json!({"type":"user","timestamp":at,
+            "message":{"role":"user","content":text}})
+        .to_string()
+    }
+
+    fn reply(text: &str, at: &str) -> String {
+        serde_json::json!({"type":"assistant","timestamp":at,
+            "message":{"role":"assistant","content":[
+                {"type":"text","text":text},
+                {"type":"tool_use","name":"Bash","input":{"command":"grep needle-in-tool-input"}}]}})
+        .to_string()
+    }
+
+    fn tool_result(text: &str, at: &str) -> String {
+        serde_json::json!({"type":"user","timestamp":at,
+            "message":{"role":"user","content":[{"type":"tool_result","content":text}]}})
+        .to_string()
+    }
+
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        path: PathBuf,
+    }
+
+    impl Fixture {
+        fn new(lines: &[String]) -> Fixture {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("s1.jsonl");
+            let mut f = File::create(&path).unwrap();
+            for l in lines {
+                writeln!(f, "{l}").unwrap();
+            }
+            Fixture { _dir: dir, path }
+        }
+
+        fn source(&self) -> Source {
+            Source {
+                slot_id: "slot-1".into(),
+                session_id: "s1".into(),
+                path: self.path.clone(),
+            }
+        }
+
+        fn append(&self, line: &str) {
+            let mut f = std::fs::OpenOptions::new()
+                .append(true)
+                .open(&self.path)
+                .unwrap();
+            writeln!(f, "{line}").unwrap();
+        }
+    }
+
+    #[test]
+    fn finds_what_was_typed_and_replied_not_tool_output() {
+        let fx = Fixture::new(&[
+            user("把退款逻辑改成按订单分摊", "2026-11-01T10:00:00Z"),
+            reply("Refund logic now splits per order.", "2026-11-01T10:01:00Z"),
+            tool_result("secret-tool-output-words", "2026-11-01T10:02:00Z"),
+        ]);
+        let mut idx = Index::open_in_memory().unwrap();
+        let p = idx.update(&[fx.source()], far()).unwrap();
+        assert_eq!(p.added, 2);
+        for q in ["退款逻辑", "退款", "splits per", "REFUND"] {
+            let f = idx.find(q, 10, far()).unwrap();
+            assert_eq!(f.hits.len(), 1, "{q}");
+            assert_eq!(f.hits[0].slot_id, "slot-1");
+        }
+        assert!(idx
+            .find("secret-tool-output", 10, far())
+            .unwrap()
+            .hits
+            .is_empty());
+        assert!(idx
+            .find("needle-in-tool-input", 10, far())
+            .unwrap()
+            .hits
+            .is_empty());
+    }
+
+    #[test]
+    fn newest_match_per_session_with_its_snippet() {
+        let fx = Fixture::new(&[
+            user("first look at the login page", "2026-11-01T10:00:00Z"),
+            user(
+                "again the login page, with the remembered email",
+                "2026-11-02T10:00:00Z",
+            ),
+        ]);
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        let f = idx.find("login page", 10, far()).unwrap();
+        assert_eq!(f.hits.len(), 1);
+        assert!(
+            f.hits[0].snippet.contains("remembered email"),
+            "{:?}",
+            f.hits[0]
+        );
+        assert_eq!(f.hits[0].speaker, Speaker::You);
+    }
+
+    #[test]
+    fn keys_never_reach_the_index() {
+        let fx = Fixture::new(&[user(
+            "deploy with export OPENAI_API_KEY=sk-proj-abcdefghijklmnop1234 please",
+            "2026-11-01T10:00:00Z",
+        )]);
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        let f = idx.find("deploy with", 10, far()).unwrap();
+        assert!(f.hits[0].snippet.contains("sk-***"), "{:?}", f.hits[0]);
+        assert!(idx
+            .find("abcdefghijklmnop1234", 10, far())
+            .unwrap()
+            .hits
+            .is_empty());
+        let stored: String = idx
+            .conn
+            .query_row("SELECT text FROM lines", [], |r| r.get(0))
+            .unwrap();
+        assert!(!stored.contains("abcdefghijklmnop1234"));
+    }
+
+    #[test]
+    fn reads_on_from_where_it_stopped_and_drops_what_went() {
+        let fx = Fixture::new(&[user("one apple", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open_in_memory().unwrap();
+        assert_eq!(idx.update(&[fx.source()], far()).unwrap().added, 1);
+        assert_eq!(
+            idx.update(&[fx.source()], far()).unwrap().added,
+            0,
+            "nothing new"
+        );
+        fx.append(&user("two bananas", "2026-11-01T11:00:00Z"));
+        assert_eq!(idx.update(&[fx.source()], far()).unwrap().added, 1);
+        assert_eq!(idx.find("banana", 10, far()).unwrap().hits.len(), 1);
+        // A line still being written is left for the next pass.
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&fx.path)
+            .unwrap();
+        write!(
+            f,
+            "{}",
+            &user("three cherries", "2026-11-01T12:00:00Z")[..20]
+        )
+        .unwrap();
+        assert_eq!(idx.update(&[fx.source()], far()).unwrap().added, 0);
+        // Rewritten shorter: read again from the start.
+        std::fs::write(
+            &fx.path,
+            format!("{}\n", user("only grapes", "2026-11-01T13:00:00Z")),
+        )
+        .unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        assert!(idx.find("apple", 10, far()).unwrap().hits.is_empty());
+        assert_eq!(idx.find("grapes", 10, far()).unwrap().hits.len(), 1);
+        // The session went (purged): its words go too.
+        let p = idx.update(&[], far()).unwrap();
+        assert_eq!(p.removed, 1);
+        assert!(idx.find("grapes", 10, far()).unwrap().hits.is_empty());
+    }
+
+    #[test]
+    fn out_of_time_says_partial_not_nothing() {
+        let fx = Fixture::new(&[user("some words", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open_in_memory().unwrap();
+        let past = Instant::now() - Duration::from_millis(1);
+        let p = idx.update(&[fx.source()], past).unwrap();
+        assert!(p.unfinished);
+        idx.update(&[fx.source()], far()).unwrap();
+        let f = idx.find("some words", 10, past).unwrap();
+        assert!(f.partial, "{f:?}");
+    }
+
+    #[test]
+    fn like_wildcards_are_literal() {
+        let fx = Fixture::new(&[user("100% done", "2026-11-01T10:00:00Z")]);
+        let mut idx = Index::open_in_memory().unwrap();
+        idx.update(&[fx.source()], far()).unwrap();
+        assert_eq!(idx.find("0%", 10, far()).unwrap().hits.len(), 1);
+        assert!(idx.find("_x", 10, far()).unwrap().hits.is_empty());
+    }
+
+    #[test]
+    fn snippet_is_short_and_on_one_line() {
+        let long = format!("{} needle {}", "a ".repeat(200), "b ".repeat(200));
+        let s = snippet(&long, "NEEDLE").unwrap();
+        assert!(s.starts_with('…') && s.ends_with('…'), "{s}");
+        assert!(
+            s.chars().count() <= BEFORE + AFTER + 8,
+            "{}",
+            s.chars().count()
+        );
+        assert!(!s.contains('\n'));
+        assert_eq!(snippet("short", "missing"), None);
+    }
+}

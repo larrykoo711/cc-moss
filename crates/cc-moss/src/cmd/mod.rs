@@ -15,6 +15,7 @@ pub mod daemon;
 pub mod doctor;
 pub mod events;
 pub mod files;
+pub mod find;
 pub mod hook;
 pub mod install;
 pub mod launch;

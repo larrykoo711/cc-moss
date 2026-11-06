@@ -48,12 +48,21 @@ final class AppModel {
             // A search starts: read the closed sessions once, for its last section.
             if !searching {
                 closedPool = nil
+                searchPool = nil
                 closedRead += 1 // a read still on its way is for a search that ended
             } else if closedPool == nil {
                 loadClosed()
             }
+            lookInWhatWasSaid()
         }
     }
+    /// What `cc-moss find` found for the query (F44); nil until it answers.
+    var saidResult: SaidResult?
+    /// Bumped per query: an answer for an older one is dropped.
+    @ObservationIgnored var saidRead = 0
+    /// Every session `ls --all` knows (archived too), read when a search
+    /// starts: where the sessions found in what was said come from.
+    var searchPool: [Session]?
     /// A query is typed: the Sessions page is one ranked list.
     var searching: Bool { !query.trimmingCharacters(in: .whitespaces).isEmpty }
     /// Sessions closed in the last 30 days, read when a search starts.
@@ -124,7 +133,10 @@ final class AppModel {
     /// The Sessions page, flat: headings and rows, each row once, its pin
     /// taken from the section it's in.
     var listItems: [SessionListItem] {
-        if searching { return SessionList.searchItems(query: query, live: searchHits, archived: archivedHits, closed: closedHits) }
+        if searching {
+            return SessionList.searchItems(query: query, live: searchHits, archived: archivedHits, closed: closedHits,
+                                           said: saidHits)
+        }
         return SessionList.items(pinned: pinnedShown, projects: projects, older: olderShown, olderExpanded: olderExpanded,
                                  archived: archivedShown, archivedExpanded: archivedExpanded)
     }
@@ -398,7 +410,7 @@ final class AppModel {
     /// folders, the folded group only while it is open. Never Moss: it has
     /// its own page (user 2026-10-19).
     var visible: [Session] {
-        if searching { return (searchHits + archivedHits).map(\.session) }
+        if searching { return (searchHits + archivedHits + saidHits).map(\.session) }
         return pinnedShown + projects.flatMap(\.sessions) + (olderExpanded ? olderShown : [])
             + (archivedExpanded ? archivedShown : [])
     }
@@ -417,6 +429,30 @@ final class AppModel {
         return searchIndexes.closed(closedPool).search(query)
     }
 
+    /// Sessions found in what was said, and not listed above already.
+    var saidHits: [SearchHit] {
+        guard stateFilter == nil, searching, let saidResult else { return [] }
+        let shown = Set((searchHits + archivedHits + closedHits).map(\.session.id))
+        return SaidSearch.hits(saidResult, pool: sessions + archived + (searchPool ?? []), shown: shown)
+    }
+
+    /// Ask cc-moss what was said, a moment after typing stops (F44): on this
+    /// Mac only, from the index the daemon keeps.
+    func lookInWhatWasSaid() {
+        saidRead += 1
+        let read = saidRead
+        saidResult = nil
+        let q = query.trimmingCharacters(in: .whitespaces)
+        guard SaidSearch.asks(q), let client else { return }
+        Task {
+            try? await Task.sleep(for: .milliseconds(250))
+            guard read == saidRead else { return }
+            let found = await client.find(q)
+            guard read == saidRead else { return }
+            saidResult = found
+        }
+    }
+
     func loadClosed() {
         guard let client else { return }
         closedPool = []
@@ -426,6 +462,7 @@ final class AppModel {
             guard let snap = try? await client.snapshotAll(), read == closedRead else { return }
             let since = Date().addingTimeInterval(-30 * 86_400)
             closedPool = snap.sessions.filter { $0.state == .closed && !$0.isMoss && !$0.isArchived && $0.lastActiveAt > since }
+            searchPool = snap.sessions.filter { !$0.isMoss }
         }
     }
 

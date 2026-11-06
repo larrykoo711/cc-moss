@@ -251,6 +251,10 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("adopt", "name", "会话名（Claude 名、tmux 名或 id 前缀）"),
     ("adopt", "json", "机器可读的输出（schema 1）"),
     ("adopt", "dry_run", "只说会做什么，什么都不改"),
+    ("find", "", "按会话里说过的话找会话：你打的字和回复的正文，不含工具输出。只在本机、只读"),
+    ("find", "words", "要找的字（不分大小写）"),
+    ("find", "limit", "最多列出几个会话"),
+    ("find", "json", "机器可读的输出（schema 1）"),
     ("suggest", "", "Claude Code 在会话输入框里给的下一句建议（那行淡色字）"),
     ("suggest", "name", "会话名（Claude 名、tmux 名或 id 前缀）"),
     ("suggest", "json", "机器可读的输出（schema 1）"),
@@ -308,7 +312,7 @@ const ALIAS_ADD_LONG: &str = "添加别名，或者修改它要运行的命令�
 const CONFIG_SET_LONG: &str = "修改一项设置；文件里的注释和其他内容原样保留。\n\n\
 `cc-moss config set ui.language zh` 把 cc-moss 换成中文；设回 `auto` 就重新跟随系统。\
 能用的键：ui.language（auto、zh、en）、claude.permission_mode（bypass、default），\
-以及 true/false 开关：ask.enabled、moss.enabled、moss.digest、moss.actions、moss.daily_checkup、moss.daily_brief。";
+以及 true/false 开关：ask.enabled、moss.enabled、moss.digest、moss.actions、moss.daily_checkup、moss.daily_brief、moss.search_history。";
 
 const SETUP_LONG: &str = "安装 Claude Code 钩子，让会话自动登记到 cc-moss。\n\n\
 写入前会用 diff 展示对 settings.json 的改动并征求同意；原文件旁会留一份带时间戳的备份。";

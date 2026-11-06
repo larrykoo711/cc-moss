@@ -311,11 +311,11 @@ fn print_lines(lines: Vec<[String; 6]>) {
     }
 }
 
-fn short_id(id: &str) -> String {
+pub(crate) fn short_id(id: &str) -> String {
     id.chars().take(8).collect()
 }
 
-fn ago(ms: i64) -> String {
+pub(crate) fn ago(ms: i64) -> String {
     let s = ms.max(0) / 1000;
     match s {
         0..=59 => format!("{s}s"),
@@ -325,7 +325,7 @@ fn ago(ms: i64) -> String {
     }
 }
 
-fn status_word(st: Status) -> &'static str {
+pub(crate) fn status_word(st: Status) -> &'static str {
     match st {
         Status::Running => tr!("running", "运行中"),
         Status::Interrupted => tr!("interrupted", "已中断"),

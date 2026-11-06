@@ -25,6 +25,7 @@ struct MossSettings: View {
     var body: some View {
         MossCard(model: model, demo: mossDemo)
         MossCheckupCard(model: model, demo: demo != nil || mossDemo != nil)
+        MossSearchCard(model: model, demo: demo != nil || mossDemo != nil)
         SettingsCard(title: L.t("Background service", "后台服务")) {
             CardRow(title: shown.line(),
                     detail: detail,
@@ -185,6 +186,64 @@ private struct MossCard: View {
             }
             await refresh()
             busy = false
+        }
+    }
+}
+
+/// Settings › Moss › Conversations (F44): whether Moss may search what was
+/// said in your sessions. Off by default: what it finds goes to the model.
+/// Off and greyed when cc-moss doesn't know the setting (an older one).
+private struct MossSearchCard: View {
+    let model: AppModel
+    var demo = false
+    @State private var on = false
+    @State private var known = false
+    /// What the config holds: loading it into the switch is no change.
+    @State private var saved = false
+    @State private var problem: String?
+
+    var body: some View {
+        SettingsCard(title: L.t("Conversations", "对话内容")) {
+            CardRow(title: L.t("Let Moss search conversations", "允许 Moss 搜索对话内容"),
+                    detail: L.t("So it can find a session by what you said in it.",
+                                "让它能按你说过的话帮你找会话。"),
+                    divider: false) {
+                Toggle("", isOn: $on)
+                    .toggleStyle(.switch)
+                    .cursor(.pointingHand)
+                    .labelsHidden()
+                    .controlSize(.small)
+                    .disabled(!known && !demo)
+                    .onChange(of: on) { _, value in save(value) }
+            }
+        }
+        Text(problem ?? L.t("What it finds, a few words from each match, goes to the model with your question. Searching from the panel stays on this Mac and needs no switch.",
+                            "它找到的内容（每个结果的一小段原话）会随你的问题发给模型。在面板里自己搜索只在本机进行，不需要打开这个开关。"))
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 12)
+            .task(id: model.cliPath) { await load() }
+    }
+
+    private func load() async {
+        guard !demo, let client = model.client else { return }
+        guard let value = try? await client.config(MossSearch.key) else { return }
+        saved = MossSearch.isOn(value)
+        on = saved
+        known = true
+    }
+
+    private func save(_ value: Bool) {
+        guard known, !demo, value != saved, let client = model.client else { return }
+        Task {
+            do {
+                try await client.setConfig(MossSearch.key, value ? "true" : "false")
+                saved = value
+                problem = nil
+            } catch {
+                problem = L.t("Didn't save: \(AppModel.describe(error))", "没能保存：\(AppModel.describe(error))")
+            }
         }
     }
 }

@@ -7,6 +7,8 @@ fn missing_file_defaults() {
     assert!(c.claude.default_args.is_empty());
     assert!(c.naming.host_prefix);
     assert_eq!(c.tmux.socket, None);
+    // F44: what Moss finds in conversations goes to the model; off until the user says.
+    assert!(!c.moss.search_history);
 }
 
 #[test]
@@ -115,6 +117,7 @@ mod setting {
                 "moss.actions",
                 "moss.daily_checkup",
                 "moss.daily_brief",
+                "moss.search_history",
                 "sessions.archive_after_days",
                 "update.check"
             ]

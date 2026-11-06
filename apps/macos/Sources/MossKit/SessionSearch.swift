@@ -22,6 +22,8 @@ public struct SearchHit: Equatable, Identifiable, Sendable {
         case note(String)
         /// The last thing said does.
         case prompt(String)
+        /// Something said in it (F44): a short, redacted piece.
+        case said(String)
     }
 }
 
@@ -33,6 +35,8 @@ public enum SearchRank {
     public static let folder = 3
     public static let note = 4
     public static let prompt = 5
+    /// Found in what was said, not in anything the list shows.
+    public static let said = 9
 }
 
 /// What a search looks at for one session, worked out once per refresh

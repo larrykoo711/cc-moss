@@ -253,6 +253,60 @@ fn prompt(line: &[u8]) -> Option<(String, i64)> {
     Some((text.to_string(), ms))
 }
 
+/// Who said something in a transcript, for the history index (F44).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Speaker {
+    /// What the person typed.
+    You,
+    /// The text of a reply (never its tool calls or thinking).
+    Reply,
+}
+
+impl Speaker {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Speaker::You => "you",
+            Speaker::Reply => "reply",
+        }
+    }
+}
+
+/// The words in one transcript line worth finding a session by: what the
+/// person typed (as [`last_prompt`] reads it) or a reply's text parts.
+/// Tool input and output, thinking, meta records and API errors are left out.
+pub fn said(line: &[u8]) -> Option<(Speaker, String, i64)> {
+    if let Some((text, at)) = prompt(line) {
+        return Some((Speaker::You, text, at));
+    }
+    let needle = b"\"assistant\"";
+    if !line.windows(needle.len()).any(|w| w == needle) {
+        return None;
+    }
+    let v: serde_json::Value = serde_json::from_slice(line).ok()?;
+    let flag = |k: &str| v.get(k).and_then(|m| m.as_bool()) == Some(true);
+    if v.get("type")?.as_str()? != "assistant" || flag("isMeta") || flag("isApiErrorMessage") {
+        return None;
+    }
+    let parts = v.get("message")?.get("content")?.as_array()?;
+    let text: Vec<&str> = parts
+        .iter()
+        .filter(|p| p.get("type").and_then(|t| t.as_str()) == Some("text"))
+        .filter_map(|p| p.get("text").and_then(|t| t.as_str()))
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect();
+    if text.is_empty() {
+        return None;
+    }
+    let at = time::OffsetDateTime::parse(
+        v.get("timestamp")?.as_str()?,
+        &time::format_description::well_known::Rfc3339,
+    )
+    .ok()?;
+    let ms = i64::try_from(at.unix_timestamp_nanos() / 1_000_000).ok()?;
+    Some((Speaker::Reply, text.join("\n"), ms))
+}
+
 /// 最近一条可信主会话响应使用的模型，仅在恢复时读取。
 pub fn last_assistant_model(path: &Path) -> Option<String> {
     let mut file = File::open(path).ok()?;
