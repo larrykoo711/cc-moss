@@ -340,6 +340,8 @@ final class AppModel {
     var quickUses: [MossQuickUse] = MossQuickLog.load()
     /// Off for screenshots: their made-up uses are never saved.
     @ObservationIgnored var quickPersist = true
+    /// The Moss page was opened at least once (F3: the rail stops pointing at it).
+    var mossGuideSeen = MossGuide.seen()
     /// Bumped after every send: the quick bar re-ranks then (never while you hover).
     var quickSends = 0
     /// Moss answered something sent from the panel (for the alerts).

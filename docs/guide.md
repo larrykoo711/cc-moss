@@ -337,7 +337,7 @@ cc-moss moss start           # 重新打开，守护进程几秒内把它拉起�
 Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_running": false`（负责启动它的守护进程没开），或者 `"last_error"` 写着上次没能启动的原因。`moss stop` 如果没法确认 Moss 已经结束（tmux 没回应），会直说并以错误退出；开关照样已经关上，守护进程会继续去停。
 
 - **结束不了它，只能关掉它。** 选择器、`cc-moss close` 都不提供结束 Moss；面板的会话列表里没有它（它有自己的 Moss 页），也不会出现在「找回」里。要停，就在菜单栏 App 的设置 ›「Moss」里关掉开关，或者运行 `cc-moss moss stop`，或者在配置里写 `[moss] enabled = false`。三种都会一直关着，直到你再打开。
-- **它住在哪。** 状态目录下的 `moss/`（默认 `~/.local/state/cc-moss/moss/`），不在「文稿」这类受隐私保护的文件夹里：
+- **它住在哪。** 状态目录下的 `moss/`（默认 `~/.local/state/cc-moss/moss/`），不在「文稿」这类受隐私保护的文件夹里。菜单栏 App 的设置 ›「Moss」里点「在 Finder 中显示」就能打开它（`cc-moss moss status --json` 的 `home` 也是这个路径）：
   - cc-moss 的文件，每次 `cc-moss install`（以及每次启动 Moss）都会换成新版：`CLAUDE.md`、`SECURITY.md`（最先读、最优先的规矩）、`.claude/settings.json`（防护钩子和沙箱设置）、`.claude/skills/moss-profile/`。
   - 你的（和它自己的）文件，只在缺的时候建一份，之后从不改动：`IDENTITY.md`（名字，默认 Moss）、`SOUL.md`（说话和做事的方式）、`USER.md`（它对你的了解）、`journal/`（每天一个日志）、`memory/`（长期记忆）。
   - `SESSIONS.md`：守护进程按会话记录每分钟（或有变化时）写一份会话一览，Moss 需要时去读。你那些会话的名字和备注在里面只是资料：Moss 被告知它们从来不是指令，每次启动时也不会当作规矩一起读进去。

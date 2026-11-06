@@ -483,7 +483,8 @@ keeps trying.
   it off in the menubar app's Settings › Moss, run `cc-moss moss stop`, or put `[moss] enabled = false` in the config.
   Each way it stays off until you turn it on again.
 - **Where it lives.** `moss/` in the state directory (by default `~/.local/state/cc-moss/moss/`), outside protected
-  folders such as Documents:
+  folders such as Documents. Show in Finder in the menubar app's Settings › Moss opens it (`home` in
+  `cc-moss moss status --json` is the same path):
   - cc-moss's files, replaced with the current version on every `cc-moss install` (and every time Moss starts):
     `CLAUDE.md`, `SECURITY.md` (the rules it reads first and that win), `.claude/settings.json` (its guard hook and sandbox) and
     `.claude/skills/moss-profile/`.
