@@ -2,13 +2,40 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
-      "version": "0.3.8",
+      "version": "0.3.9",
       "date": "2026-11-06",
       "icon": "picker",
       "short": {
-        "zh": "按说过的话找会话",
-        "en": "Find sessions by what was said"
+        "zh": "按内容找会话，更稳也更私密",
+        "en": "Finding by what was said, steadier and more private"
       },
+      "headline": {
+        "zh": "按说过的话找会话：第一次建索引时也能搜，收进去的内容更少、遮得更多。",
+        "en": "Finding sessions by what was said works while the index is first built, and it keeps less and masks more."
+      },
+      "highlights": [
+        {
+          "zh": "第一次建索引的那段时间里，搜索以前会直接失败，面板里什么也不显示。现在会先给出已经建好的那部分结果，并说明还没搜完。",
+          "en": "While the index was first being built, a search used to fail and the panel showed nothing. Now it shows what’s indexed so far and says the search didn’t finish."
+        },
+        {
+          "zh": "在会话里用 ! 跑的命令和它的输出不再收进索引。升级后会自动重建一次索引，以前收进去的这部分也会清掉。",
+          "en": "Commands you run with ! in a session, and what they print, are no longer kept in the index. It’s built again once after the update, which clears what was kept before."
+        },
+        {
+          "zh": "更多样式的密钥、令牌和密码会在存进去之前遮掉；会话被清理后，它的内容在索引文件里也会被覆盖。",
+          "en": "More kinds of keys, tokens and passwords are masked before anything is stored, and a deleted session’s words are overwritten in the index file."
+        },
+        {
+          "zh": "「允许 Moss 搜索对话内容」快速打开又关上时，不会再出现界面显示关、实际还开着的情况。",
+          "en": "Turning “Let Moss search conversations” on and straight back off now really leaves it off."
+        }
+      ]
+    },
+    {
+      "version": "0.3.8",
+      "date": "2026-11-06",
+      "icon": "picker",
       "headline": {
         "zh": "记不清会话名也没关系：搜一句当时说过的话，就能找到那个会话。",
         "en": "Can’t remember a session’s name? Search for something said in it and find it."
