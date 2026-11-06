@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-11-06
+
 ### Fixed
 
 - **Finding a session by what was said works while the index is being built.** While the daemon was writing the
@@ -574,7 +576,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.8...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.9...HEAD
+[0.3.9]: https://github.com/larrykoo711/cc-moss/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/larrykoo711/cc-moss/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...v0.3.6
