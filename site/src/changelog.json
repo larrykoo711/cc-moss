@@ -2,13 +2,40 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.8",
+      "date": "2026-11-06",
+      "icon": "picker",
+      "short": {
+        "zh": "按说过的话找会话",
+        "en": "Find sessions by what was said"
+      },
+      "headline": {
+        "zh": "记不清会话名也没关系：搜一句当时说过的话，就能找到那个会话。",
+        "en": "Can’t remember a session’s name? Search for something said in it and find it."
+      },
+      "highlights": [
+        {
+          "zh": "面板里搜索时，名字和备注都没对上，会在「在对话内容里找到」下面列出说过这句话的会话，并附上一小段原话，已归档的也算。搜索只在你的 Mac 上进行，密钥一类的内容存下来之前就已遮掉。",
+          "en": "When nothing in a name or note matches your search, the panel lists the sessions where it was said, under “In what was said”, each with a short piece of the conversation. Archived sessions count too. It all happens on your Mac, and keys are masked before anything is stored."
+        },
+        {
+          "zh": "想让 Moss 帮你找，在「设置 › Moss」里打开「允许 Moss 搜索对话内容」。默认是关的，因为它找到的几句原话会发给模型。",
+          "en": "To have Moss find sessions this way, turn on “Let Moss search conversations” in Settings › Moss. It’s off unless you turn it on, since the bits Moss finds go to the model."
+        },
+        {
+          "zh": "「设置 › Moss」可以直接打开 Moss，也能在 Finder 里看 Moss 的文件夹；第一次用时有小圆点和一句提示，告诉你 Moss 能做什么。",
+          "en": "Settings › Moss now opens Moss for you and shows Moss’s folder in Finder. The first time, a small dot and a short tip tell you what Moss can do."
+        },
+        {
+          "zh": "刚开的会话马上重开或找回也不会再被拒；被强行结束的会话，Moss 也能及时知道；在终端里刚答完的问题，不会再在状态栏 App 里冒出来一遍。",
+          "en": "A session you just started can be restarted or restored right away, Moss hears about a session that was killed, and a question you just answered in the terminal no longer pops up again in the menu bar app."
+        }
+      ]
+    },
+    {
       "version": "0.3.7",
       "date": "2026-10-30",
       "icon": "rows",
-      "short": {
-        "zh": "后台会话也认得",
-        "en": "Background sessions, recognized"
-      },
       "headline": {
         "zh": "Claude Code 放到后台跑的会话，列表里只占一行，状态也对。",
         "en": "Sessions Claude Code runs in the background take one row, with the right status."
