@@ -16,6 +16,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   a parent that didn't reap it was never reported as dropped. The quick check now sees zombies (`/proc` on Linux,
   the process state on macOS).
 
+### Added
+
+- **Settings › Moss leads you to Moss.** Talk to Moss opens its page, and Show in Finder opens Moss's folder, where
+  its memory, skills and settings live. Until you first open the Moss page, its icon in the panel carries a dot, and
+  the page says what the quick actions are for until you use one. The page's words are plainer too.
+
 ### Changed
 
 - Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave

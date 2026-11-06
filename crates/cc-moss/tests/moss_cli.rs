@@ -400,7 +400,8 @@ fn moss_status_reports_off_after_stop_without_a_daemon() {
         st,
         serde_json::json!({"schema":1,"enabled":true,"running":false,"restarts":0,
             "daemon_running":false,"activity":"offline","queued":0,
-            "account":st["account"].clone()})
+            "account":st["account"].clone(),
+            "home":state.join("moss").to_string_lossy()})
     );
     // The account kind comes along (this test's HOME has no Claude Code).
     let account = st["account"].as_str().unwrap_or_default().to_string();

@@ -418,6 +418,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         open(link)
     }
 
+    /// The panel on `link`'s page, from inside the app (Settings › Moss).
+    static func show(_ link: PanelLink) {
+        (NSApp.delegate as? AppDelegate)?.open(link)
+    }
+
     private func open(_ link: PanelLink) {
         switch link {
         case .panel: break

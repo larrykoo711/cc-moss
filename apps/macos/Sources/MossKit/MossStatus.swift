@@ -24,10 +24,13 @@ public struct MossStatus: Equatable, Sendable {
     public var inputBusy: Bool
     /// How Claude Code is paid for: some commands only make sense for one kind.
     public var account: MossAccount
+    /// Moss's folder (its memory, skills and settings); nil from an older cc-moss.
+    public var home: String?
 
     public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
                 daemonRunning: Bool = true, lastError: String? = nil, activity: MossActivity? = nil,
-                queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false, account: MossAccount = .unknown) {
+                queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false, account: MossAccount = .unknown,
+                home: String? = nil) {
         self.enabled = enabled
         self.running = running
         self.since = since
@@ -40,6 +43,7 @@ public struct MossStatus: Equatable, Sendable {
         self.lastReplyAt = lastReplyAt
         self.inputBusy = inputBusy
         self.account = account
+        self.home = home
     }
 
     private struct Wire: Decodable {
@@ -56,6 +60,7 @@ public struct MossStatus: Equatable, Sendable {
         var last_reply_at: String?
         var input_busy: Bool?
         var account: String?
+        var home: String?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -75,7 +80,8 @@ public struct MossStatus: Equatable, Sendable {
                           queued: max(0, wire.queued ?? 0),
                           lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp),
                           inputBusy: wire.input_busy ?? false,
-                          account: wire.account.flatMap(MossAccount.init(rawValue:)) ?? .unknown)
+                          account: wire.account.flatMap(MossAccount.init(rawValue:)) ?? .unknown,
+                          home: wire.home.flatMap { $0.isEmpty ? nil : $0 })
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the
