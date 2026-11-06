@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-11-06
+
 ### Fixed
 
 - **A session that just started can be restarted or restored right away.** cc-moss recorded a session as running
@@ -34,6 +36,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Changed
 
+- Dependency updates: uuid 1.29.0, rusqlite 0.41.1; the website's build tool moves to wrangler 4.154.0, which no
+  longer needs the undici override.
 - Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave
   empty plist files there, since removing a preferences domain empties its file but never deletes it.
 
@@ -545,7 +549,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.7...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.8...HEAD
+[0.3.8]: https://github.com/larrykoo711/cc-moss/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...v0.3.7
 [0.3.6]: https://github.com/larrykoo711/cc-moss/compare/v0.3.5...v0.3.6
 [0.3.5]: https://github.com/larrykoo711/cc-moss/compare/v0.3.4...v0.3.5
