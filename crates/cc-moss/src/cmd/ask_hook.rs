@@ -118,6 +118,9 @@ pub fn handle(kind: HookKind, payload: &str) -> Result<()> {
                         }
                         seen
                     }
+                    None if store.settled_question(&p.session_id, &p.prompt_id, questions, now) => {
+                        return Ok(());
+                    }
                     None => {
                         let Some(ask) = fresh(name).question(&p.tool_input) else {
                             return Ok(());

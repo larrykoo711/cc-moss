@@ -252,6 +252,24 @@ pub fn parse_time(s: &str) -> Option<i64> {
     i64::try_from(t.unix_timestamp_nanos() / 1_000_000).ok()
 }
 
+/// `ask` is the question `session_id` wrote from PreToolUse for these
+/// `questions` in this prompt, at most [`ADOPT_WITHIN_MS`] ago.
+fn same_question(
+    ask: &Ask,
+    session_id: &str,
+    prompt_id: &str,
+    questions: &[Value],
+    now_ms: i64,
+) -> bool {
+    ask.kind == Kind::Question
+        && ask.session_id == session_id
+        && ask.prompt_id == prompt_id
+        && ask.questions.as_deref() == Some(questions)
+        && ask
+            .created_ms()
+            .is_some_and(|c| now_ms - c <= ADOPT_WITHIN_MS)
+}
+
 impl Ask {
     pub fn expires_ms(&self) -> Option<i64> {
         parse_time(&self.expires_at)
@@ -656,14 +674,29 @@ impl Store {
         now_ms: i64,
     ) -> Option<Ask> {
         self.standing().into_iter().rev().find(|a| {
-            a.kind == Kind::Question
-                && a.session_id == session_id
-                && a.prompt_id == prompt_id
-                && a.questions.as_deref() == Some(questions)
-                && a.created_ms()
-                    .is_some_and(|c| now_ms - c <= ADOPT_WITHIN_MS)
+            same_question(a, session_id, prompt_id, questions, now_ms)
                 && !a.expired(now_ms)
                 && !self.is_closed(&a.id)
+        })
+    }
+
+    /// Whether the session already moved past the question it wrote from
+    /// PreToolUse for these `questions` moments ago: answered in its
+    /// terminal, or ended, before PermissionRequest (which Claude Code runs
+    /// in the background) started. Then there is nothing to ask again.
+    pub fn settled_question(
+        &self,
+        session_id: &str,
+        prompt_id: &str,
+        questions: &[Value],
+        now_ms: i64,
+    ) -> bool {
+        self.all().iter().any(|a| {
+            same_question(a, session_id, prompt_id, questions, now_ms)
+                && matches!(
+                    self.closed(&a.id).map(|c| c.reason),
+                    Some(Reason::AnsweredInSession | Reason::SessionEnded)
+                )
         })
     }
 
@@ -1382,6 +1415,39 @@ mod tests {
         assert!(store
             .recent_question("S", "p1", &qs, NOW + ADOPT_WITHIN_MS + 1)
             .is_none());
+    }
+
+    #[test]
+    fn a_question_settled_in_the_session_is_not_asked_again() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = Store::new(tmp.path());
+        let qs = [pick()];
+        question(&store, "a1", "S");
+        assert!(
+            !store.settled_question("S", "p1", &qs, NOW + 500),
+            "still open"
+        );
+        store.close("a1", Reason::AnsweredInSession).unwrap();
+        assert!(store.recent_question("S", "p1", &qs, NOW + 500).is_none());
+        assert!(store.settled_question("S", "p1", &qs, NOW + 500));
+        assert!(
+            !store.settled_question("S", "p2", &qs, NOW + 500),
+            "another prompt"
+        );
+        assert!(
+            !store.settled_question("T", "p1", &qs, NOW + 500),
+            "another session"
+        );
+        assert!(
+            !store.settled_question("S", "p1", &qs, NOW + ADOPT_WITHIN_MS + 1),
+            "long ago"
+        );
+        question(&store, "a2", "U");
+        store.close("a2", Reason::Timeout).unwrap();
+        assert!(
+            !store.settled_question("U", "p1", &qs, NOW + 500),
+            "timed out, not settled"
+        );
     }
 
     #[test]
