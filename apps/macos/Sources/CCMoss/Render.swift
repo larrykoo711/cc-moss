@@ -10,7 +10,7 @@ import SwiftUI
 ///          [--now 2026-10-16T12:00:00Z]
 ///          [--terminals terminal,ghostty] [--problem denied|failed]
 ///          [--update <version> [--changelog <file> --whats-new <version>]] [--update-bubble <version>]
-///          [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--provider-plan SLOT] [--provider-card-width N] [--restart-result starting|queued|refused|restarted] [--restore working|done|partial] [--failure <id>:<reason>]
+///          [--said <find --json file>] [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--provider-plan SLOT] [--provider-card-width N] [--restart-result starting|queued|refused|restarted] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
@@ -61,7 +61,8 @@ enum Render {
                                 queueReason: value("--queue-reason"), cancelReason: value("--cancel-reason"),
                                 restartDelay: value("--restart-delay").flatMap(Double.init) ?? 0,
                                 rebuildDelay: value("--rebuild-delay").flatMap(Double.init) ?? 0,
-                                restoreReason: value("--restore-reason"))
+                                restoreReason: value("--restore-reason"),
+                                said: value("--said").flatMap { FileManager.default.contents(atPath: $0) })
         ClickTargets.shared.enabled = args.contains("--click")
         let model = AppModel(client: MossClient(executable: "/demo/cc-moss", runner: runner), terminals: terminals(args), providerDefaults: nil)
         let done = DispatchSemaphore(value: 0)
@@ -140,6 +141,10 @@ enum Render {
             model.query = value("--query") ?? ""
             // The closed sessions a search reads come in a moment later: wait for them.
             for _ in 0..<20 where model.searching && (model.closedPool ?? []).isEmpty {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+            }
+            // And what was said (F44), asked a moment after typing stops.
+            for _ in 0..<40 where SaidSearch.asks(model.query) && model.saidResult == nil {
                 try? await Task.sleep(nanoseconds: 50_000_000)
             }
             switch value("--filter") {
@@ -936,12 +941,15 @@ actor DemoRunner: CommandRunner {
     private(set) var directoryCalls: [[String]] = []
     private(set) var launchCalls: [[String]] = []
     var restoreReason: String?
+    /// `--said <file>`: what `find --json` answers (F44); none: nothing found.
+    var said: Data?
 
     init(sessions: Data, asks: Data? = nil, answer: String? = nil, mossChat: Data? = nil,
          moss: String? = nil, restartResult: String? = nil, rebuildResult: String? = nil,
          queueReason: String? = nil, cancelReason: String? = nil,
-         restartDelay: Double = 0, rebuildDelay: Double = 0, restoreReason: String? = nil) {
+         restartDelay: Double = 0, rebuildDelay: Double = 0, restoreReason: String? = nil, said: Data? = nil) {
         self.sessions = sessions
+        self.said = said
         self.asks = asks
         self.answer = answer
         self.mossChat = mossChat
@@ -958,6 +966,10 @@ actor DemoRunner: CommandRunner {
     func run(_ executable: String, _ arguments: [String], timeout: Double) async throws -> CommandResult {
         func ok(_ text: String) -> CommandResult { CommandResult(status: 0, stdout: Data(text.utf8), stderr: "") }
         if let command = arguments.first, ["new", "restore", "restart", "adopt"].contains(command) { launchCalls.append(arguments) }
+        if arguments.first == "find" {
+            return ok(said.map { String(decoding: $0, as: UTF8.self) }
+                ?? #"{"schema":1,"query":"","partial":false,"indexing":false,"matches":[]}"#)
+        }
         if arguments.first == "check-directory" {
             directoryCalls.append(arguments)
             let top = try JSONSerialization.jsonObject(with: sessions) as? [String: Any] ?? [:]

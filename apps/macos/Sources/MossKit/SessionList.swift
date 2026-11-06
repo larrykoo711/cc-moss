@@ -21,6 +21,10 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
     case noMatch(String)
     /// Results, but maybe not the one: a quiet "ask Moss" line above them.
     case askMoss(String)
+    /// While searching: above the sessions found in what was said in them (F44).
+    case saidHeader
+    /// One of those.
+    case said(SearchHit)
 
     public var id: String {
         switch self {
@@ -35,6 +39,8 @@ public enum SessionListItem: Identifiable, Equatable, Sendable {
         case .archivedResultsHeader: "header:archived-results"
         case .noMatch: "no-match"
         case .askMoss: "ask-moss"
+        case .saidHeader: "header:said"
+        case let .said(h): "said:\(h.session.id)"
         }
     }
 }
@@ -44,9 +50,9 @@ public enum SessionList {
     /// folders, no Pinned), then the archived ones that match in their own
     /// group, then the closed ones; nothing at all → the "ask Moss" card instead.
     public static func searchItems(query: String, live: [SearchHit], archived: [SearchHit] = [],
-                                   closed: [SearchHit]) -> [SessionListItem] {
+                                   closed: [SearchHit], said: [SearchHit] = []) -> [SessionListItem] {
         let q = query.trimmingCharacters(in: .whitespaces)
-        if live.isEmpty && archived.isEmpty && closed.isEmpty { return [.noMatch(q)] }
+        if live.isEmpty && archived.isEmpty && closed.isEmpty && said.isEmpty { return [.noMatch(q)] }
         var out: [SessionListItem] = [.askMoss(q)]
         out += live.map { SessionListItem.hit($0, closed: false) }
         if !archived.isEmpty {
@@ -56,6 +62,10 @@ public enum SessionList {
         if !closed.isEmpty {
             out.append(.closedHeader)
             out += closed.map { .hit($0, closed: true) }
+        }
+        if !said.isEmpty {
+            out.append(.saidHeader)
+            out += said.map { .said($0) }
         }
         return out
     }

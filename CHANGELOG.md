@@ -22,6 +22,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   its memory, skills and settings live. Until you first open the Moss page, its icon in the panel carries a dot, and
   the page says what the quick actions are for until you use one. The page's words are plainer too.
 
+- **Find a session by what was said in it.** `cc-moss find refund logic` looks in what you typed and in the replies'
+  text (never tool output) across every session on this Mac, archived ones too, and shows a short piece of each match.
+  The panel's search shows these under "In what was said" when no name or note matches. It all stays on your Mac:
+  the daemon keeps a local index, with keys masked before they are stored. Moss can search the same way only when
+  you turn on "Let Moss search conversations" in Settings › Moss, since what it finds goes to the model.
+
 ### Changed
 
 - Tests keep their preferences out of `~/Library/Preferences`: every run of the menu bar app's tests used to leave

@@ -135,6 +135,9 @@ pub struct MossConfig {
     /// The daily checkup's brief is shown (off: kept quiet unless something
     /// needs a decision).
     pub daily_brief: bool,
+    /// Let Moss search what was said in your sessions (`moss act find`, F44):
+    /// off by default, since what it finds goes to the model.
+    pub search_history: bool,
 }
 
 impl Default for MossConfig {
@@ -145,6 +148,7 @@ impl Default for MossConfig {
             actions: true,
             daily_checkup: true,
             daily_brief: true,
+            search_history: false,
         }
     }
 }
@@ -236,6 +240,7 @@ pub const KEYS: &[&str] = &[
     "moss.actions",
     "moss.daily_checkup",
     "moss.daily_brief",
+    "moss.search_history",
     "sessions.archive_after_days",
     "update.check",
 ];
@@ -270,6 +275,7 @@ const BOOL_KEYS: &[&str] = &[
     "moss.actions",
     "moss.daily_checkup",
     "moss.daily_brief",
+    "moss.search_history",
 ];
 
 /// Why a key or value is refused.
@@ -297,8 +303,13 @@ pub fn check_setting(key: &str, value: &str) -> Result<String, SettingError> {
     let allowed = match key {
         "ui.language" => LANGUAGES,
         "claude.permission_mode" => PERMISSION_MODES,
-        "ask.enabled" | "moss.enabled" | "moss.digest" | "moss.actions" | "moss.daily_checkup"
-        | "moss.daily_brief" => BOOLS,
+        "ask.enabled"
+        | "moss.enabled"
+        | "moss.digest"
+        | "moss.actions"
+        | "moss.daily_checkup"
+        | "moss.daily_brief"
+        | "moss.search_history" => BOOLS,
         _ => return Err(SettingError::UnknownKey),
     };
     let value = value.trim().to_ascii_lowercase();
@@ -326,6 +337,7 @@ pub fn get_setting(config: &Config, key: &str) -> Result<String, SettingError> {
         "moss.actions" => Ok(config.moss.actions.to_string()),
         "moss.daily_checkup" => Ok(config.moss.daily_checkup.to_string()),
         "moss.daily_brief" => Ok(config.moss.daily_brief.to_string()),
+        "moss.search_history" => Ok(config.moss.search_history.to_string()),
         "sessions.archive_after_days" => Ok(config.sessions.archive_after_days.to_string()),
         "update.check" => Ok(config.update.check.to_string()),
         _ => Err(SettingError::UnknownKey),

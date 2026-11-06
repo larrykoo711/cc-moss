@@ -94,6 +94,7 @@ pub fn run() -> Result<bool> {
     log(&paths, &format!("started: pid {pid}, version {VERSION}"));
 
     let request_worker = super::api_failure::worker(Arc::clone(&stop));
+    let search_worker = super::find::worker(Arc::clone(&stop));
     let beat = heartbeat();
     let mut next = Instant::now() + beat;
     let say = |line: &str| log(&paths, line);
@@ -114,6 +115,10 @@ pub fn run() -> Result<bool> {
             }
             next = Instant::now() + beat;
         }
+    }
+    search_worker.thread().unpark();
+    if search_worker.join().is_err() {
+        log(&paths, "error: search index worker stopped unexpectedly");
     }
     request_worker.thread().unpark();
     if request_worker.join().is_err() {

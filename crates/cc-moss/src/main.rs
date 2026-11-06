@@ -312,6 +312,19 @@ enum Command {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Find sessions by what was said in them: what you typed and the replies' text,
+    /// never tool output. Local and read-only.
+    Find {
+        /// Words to look for (case doesn't matter).
+        #[arg(required = true, num_args = 1..)]
+        words: Vec<String>,
+        /// At most this many sessions.
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Machine-readable output (schema 1).
+        #[arg(long)]
+        json: bool,
+    },
     /// The next prompt Claude Code suggests in a session's input (the dim text).
     Suggest {
         /// Session name (Claude name, tmux name or id prefix).
@@ -537,7 +550,7 @@ enum ConfigCommand {
     /// `auto` follows the system again. Known keys: ui.language (auto, zh,
     /// en), claude.permission_mode (bypass, default), and true/false ones:
     /// ask.enabled, moss.enabled, moss.digest, moss.actions,
-    /// moss.daily_checkup, moss.daily_brief.
+    /// moss.daily_checkup, moss.daily_brief, moss.search_history.
     Set {
         /// Machine-readable output (schema 1).
         #[arg(long)]
@@ -775,6 +788,7 @@ fn main() -> std::process::ExitCode {
         Command::Attach { name } => report(cmd::attach::run(&name)),
         Command::Close { names } => report(cmd::close::run(&names)),
         Command::Send { name, text } => report(cmd::send::run(&name, &text.join(" "))),
+        Command::Find { words, limit, json } => report(cmd::find::run(&words, limit, json)),
         Command::Suggest { name, json } => report(cmd::suggest::run(&name, json)),
         Command::Adopt {
             name,
