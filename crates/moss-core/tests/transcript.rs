@@ -42,6 +42,12 @@ fn last_prompt_is_the_last_thing_typed() {
         .to_string(),
         said("<command-name>/rename</command-name>", "2026-10-19T09:03:00.000Z"),
         said("[Request interrupted by user]", "2026-10-19T09:04:00.000Z"),
+        // A `!` shell command and its output: Claude Code's records, not words to the model.
+        said("<bash-input>ls</bash-input>", "2026-10-19T09:04:10.000Z"),
+        said(
+            "<bash-stdout>a.txt</bash-stdout><bash-stderr></bash-stderr>",
+            "2026-10-19T09:04:11.000Z",
+        ),
         serde_json::json!({"type": "user", "isCompactSummary": true, "timestamp": "2026-10-19T09:02:30.000Z",
             "message": {"content": "This session is being continued from a previous conversation"}})
         .to_string(),

@@ -460,7 +460,8 @@ fn act_find_needs_the_switch_and_says_where_it_looked() {
     moss_up(&w);
     w.new_session("refunds");
     let sid = w.session_id("refunds");
-    w.send(&sid, "prompt refunds");
+    w.first_prompt(&sid, "refunds");
+    w.transcript_recorded(&sid);
     let line = serde_json::json!({"type":"user","timestamp":"2026-11-05T08:00:00Z",
         "message":{"role":"user","content":"split refunds per order, key sk-proj-abcdefghijklmnop1234"}});
     let path = w.path("fifos").join(format!("{sid}.jsonl"));
@@ -470,7 +471,8 @@ fn act_find_needs_the_switch_and_says_where_it_looked() {
         .open(path)
         .unwrap();
     use std::io::Write;
-    writeln!(f, "{line}").unwrap();
+    // One write, so the fake claude's own lines can't land inside it.
+    f.write_all(format!("{line}\n").as_bytes()).unwrap();
 
     // Off by default: what it finds would go to the model.
     let (out, ok) = act(&w, &["find", "refunds", "per", "order"]);
@@ -506,4 +508,11 @@ fn act_find_needs_the_switch_and_says_where_it_looked() {
         .find(|l| l["action"] == "find")
         .expect("audited");
     assert_eq!(line["outcome"], "done");
+    // The records say how many were found, never the words.
+    let recorded = line["message"].as_str().unwrap();
+    assert!(recorded.contains("1 session(s)"), "{recorded}");
+    assert!(!recorded.contains("split refunds"), "{recorded}");
+    let log = std::fs::read_to_string(w.state().join("daemon/daemon.log")).unwrap_or_default();
+    assert!(log.contains("act find: done"), "{log}");
+    assert!(!log.contains("split refunds"), "{log}");
 }

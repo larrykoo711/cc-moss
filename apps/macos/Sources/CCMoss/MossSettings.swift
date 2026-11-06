@@ -198,8 +198,10 @@ private struct MossSearchCard: View {
     var demo = false
     @State private var on = false
     @State private var known = false
-    /// What the config holds: loading it into the switch is no change.
-    @State private var saved = false
+    /// Writes the switch to the config, last value wins (nil until loaded).
+    @State private var writer: SwitchWriter?
+    /// A reload skipped while a write was under way, to run once it's done.
+    @State private var reloadAfterWrite = false
     @State private var problem: String?
 
     var body: some View {
@@ -228,21 +230,49 @@ private struct MossSearchCard: View {
 
     private func load() async {
         guard !demo, let client = model.client else { return }
-        guard let value = try? await client.config(MossSearch.key) else { return }
-        saved = MossSearch.isOn(value)
-        on = saved
+        // A write under way reads the setting back when it's done; the
+        // reload (a new cc-moss, say) follows then.
+        if writer?.isWriting == true {
+            reloadAfterWrite = true
+            return
+        }
+        let read = try? await client.config(MossSearch.key)
+        if writer?.isWriting == true {
+            reloadAfterWrite = true
+            return
+        }
+        guard let value = read else {
+            // This cc-moss doesn't know the setting (an older one): off, greyed.
+            known = false
+            writer = nil
+            on = false
+            return
+        }
+        let holds = MossSearch.isOn(value)
+        // Made afresh each time: the cc-moss in use may have changed.
+        writer = SwitchWriter(
+            holds: holds,
+            write: { try await client.setConfig(MossSearch.key, $0 ? "true" : "false") },
+            read: { MossSearch.isOn(try await client.config(MossSearch.key)) },
+            describe: { AppModel.describe($0) })
+        on = holds
         known = true
+        problem = nil
     }
 
     private func save(_ value: Bool) {
-        guard known, !demo, value != saved, let client = model.client else { return }
+        guard known, !demo, let writer else { return }
         Task {
-            do {
-                try await client.setConfig(MossSearch.key, value ? "true" : "false")
-                saved = value
-                problem = nil
-            } catch {
-                problem = L.t("Didn't save: \(AppModel.describe(error))", "没能保存：\(AppModel.describe(error))")
+            switch await writer.set(value) {
+            case .unchanged, .superseded:
+                return
+            case .done(let holds, let failed):
+                if let holds { on = holds }
+                problem = failed.map { L.t("Didn't save: \($0)", "没能保存：\($0)") }
+                if reloadAfterWrite, !writer.isWriting {
+                    reloadAfterWrite = false
+                    await load()
+                }
             }
         }
     }
