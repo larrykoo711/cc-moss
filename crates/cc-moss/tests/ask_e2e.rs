@@ -391,6 +391,25 @@ fn answer_before_permission_request_reaches_session() {
 }
 
 #[test]
+fn answered_in_session_before_permission_request_lets_go() {
+    // The terminal answers what PreToolUse noted before PermissionRequest
+    // has started (it runs in the background): PermissionRequest must not
+    // ask again and wait for a question nobody needs answered.
+    let env = Env::new(SHORT_WAIT);
+    env.take();
+    env.hook("pre-tool-use", &pre_tool_use("S"));
+    wait_for(|| env.asks().into_iter().next());
+    let done = json!({ "session_id": "S", "hook_event_name": "PostToolUse",
+        "tool_name": "AskUserQuestion", "tool_input": tool_input(), "tool_use_id": "toolu_1" })
+    .to_string();
+    env.hook("post-tool-use", &done);
+    assert!(env.asks().is_empty(), "withdrawn");
+    let (out, took) = env.hook("permission-request", &permission_request("S"));
+    assert_quiet(&out, took, Some(FAST));
+    assert!(env.asks().is_empty(), "nothing asked again");
+}
+
+#[test]
 fn answer_tells_when_no_session_is_waiting() {
     let env = Env::new(SHORT_WAIT);
     env.take();
