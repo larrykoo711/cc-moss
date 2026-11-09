@@ -81,7 +81,7 @@ test("FAQPage structured data is the FAQ the page shows", () => {
     const graph = JSON.parse(html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)[1])["@graph"];
     const faq = graph.find((n) => n["@type"] === "FAQPage");
     const shown = [...html.matchAll(/<h3 class="faq-q[^"]*">([\s\S]*?)<\/h3>/g)].map((m) => m[1].replace(/<[^>]+>/g, "").trim());
-    assert.equal(shown.length, 13);
+    assert.equal(shown.length, 14);
     assert.deepEqual(faq.mainEntity.map((q) => q.name), shown);
     assert.ok(graph.some((n) => n["@type"] === "SoftwareApplication" && n.offers.price === "0"));
     assert.ok(!JSON.stringify(graph).includes("aggregateRating"), "no ratings we don't have");

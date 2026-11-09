@@ -1,0 +1,327 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-09T11:10:00+00:00",
+  "title": "Design System: cc-moss",
+  "extensions": {
+    "colorMeta": {
+      "lamp-coral": {
+        "role": "primary",
+        "displayName": "Lamp Coral",
+        "tonalRamp": [
+          "#3d120a",
+          "#6b1f11",
+          "#9c2d18",
+          "#cc3b20",
+          "#ff5a3c",
+          "#ff8a6e",
+          "#ffb7a5",
+          "#ffe3db"
+        ]
+      },
+      "lamp-coral-deep": {
+        "role": "primary",
+        "displayName": "Lamp Coral Deep"
+      },
+      "lamp-coral-ink": {
+        "role": "primary",
+        "displayName": "Lamp Coral Ink"
+      },
+      "lamp-coral-on-tint": {
+        "role": "primary",
+        "displayName": "Lamp Coral on Tint"
+      },
+      "ember-glow": {
+        "role": "primary",
+        "displayName": "Ember Glow"
+      },
+      "comet-coral": {
+        "role": "primary",
+        "displayName": "Comet Coral"
+      },
+      "waiting-amber": {
+        "role": "secondary",
+        "displayName": "Waiting Amber",
+        "tonalRamp": [
+          "#3a2a0e",
+          "#5e4517",
+          "#866323",
+          "#b38534",
+          "#e6ad4d",
+          "#eec47e",
+          "#f5dcae",
+          "#fbf1de"
+        ]
+      },
+      "night-soot": {
+        "role": "neutral",
+        "displayName": "Night Soot"
+      },
+      "banked-ash": {
+        "role": "neutral",
+        "displayName": "Banked Ash"
+      },
+      "raised-ember": {
+        "role": "neutral",
+        "displayName": "Raised Ember"
+      },
+      "lamplit-paper": {
+        "role": "neutral",
+        "displayName": "Lamplit Paper"
+      },
+      "morning-linen": {
+        "role": "neutral",
+        "displayName": "Morning Linen (light skin page)"
+      },
+      "linen-plate": {
+        "role": "neutral",
+        "displayName": "Linen Plate (light skin plate)"
+      },
+      "linen-raise": {
+        "role": "neutral",
+        "displayName": "Linen Raise (light skin raised)"
+      },
+      "ink-umber": {
+        "role": "neutral",
+        "displayName": "Ink Umber (light skin text)"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The hero line only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Section titles under a coral eyebrow."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Feature card titles."
+      },
+      "title-small": {
+        "displayName": "Title Small",
+        "purpose": "FAQ questions and list headings."
+      },
+      "lead": {
+        "displayName": "Lead",
+        "purpose": "Hero subtitle at 60% opacity."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Answers and descriptions at 50-60% opacity."
+      },
+      "label": {
+        "displayName": "Eyebrow / Label",
+        "purpose": "Coral section label; nav links."
+      },
+      "mono": {
+        "displayName": "Mono",
+        "purpose": "Install commands and terminal mockups."
+      }
+    },
+    "shadows": [
+      {
+        "name": "tray",
+        "value": "inset 0 0 0 1px var(--hair), 0 40px 100px -30px var(--drop)",
+        "purpose": "Outer layer of every card."
+      },
+      {
+        "name": "plate",
+        "value": "inset 0 1px 0 var(--hair), inset 0 0 0 1px var(--hair)",
+        "purpose": "Inner layer of every card."
+      },
+      {
+        "name": "nav-island",
+        "value": "inset 0 0 0 1px var(--hair), 0 20px 50px -20px var(--drop)",
+        "purpose": "Floating navigation, with backdrop blur."
+      },
+      {
+        "name": "lamp-glow",
+        "value": "0 10px 40px -10px rgba(255,90,60,.7)",
+        "purpose": "Primary button only."
+      },
+      {
+        "name": "keycap",
+        "value": "inset 0 1px 0 var(--hair), 0 6px 0 var(--key-base), 0 12px 28px var(--drop)",
+        "purpose": "Physical key at rest."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-spring",
+        "value": "cubic-bezier(0.32, 0.72, 0, 1)",
+        "purpose": "State changes, reveals, presses."
+      },
+      {
+        "name": "reveal",
+        "value": "opacity/translateY(28px)/blur(8px) 0.9s ease-spring, staggered by --d",
+        "purpose": "Sections rising into view."
+      },
+      {
+        "name": "float",
+        "value": "translateY(-8px) 4.5s ease-in-out infinite",
+        "purpose": "Mo floating."
+      },
+      {
+        "name": "comet",
+        "value": "stroke-dashoffset 11s linear infinite",
+        "purpose": "Comet around the hero loop."
+      },
+      {
+        "name": "press",
+        "value": "scale(0.97-0.98)",
+        "purpose": "Buttons under the finger."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "sm",
+        "value": "640px"
+      },
+      {
+        "name": "md",
+        "value": "768px"
+      },
+      {
+        "name": "lg",
+        "value": "1024px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one coral call to action, with an arrow in a dark inner circle.",
+      "html": "<a class=\"ds-btn-primary\" href=\"#\">Get cc-moss<span class=\"ds-btn-primary-arrow\"><svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.6\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 8h10M9 4l4 4-4 4\"/></svg></span></a>",
+      "css": ".ds-btn-primary{display:inline-flex;align-items:center;gap:12px;border-radius:9999px;background:#d33c1d;color:#fff;font:600 1rem/1.5 Geist,system-ui,sans-serif;padding:6px 6px 6px 24px;text-decoration:none;box-shadow:0 10px 40px -10px rgba(255,90,60,.7);transition:filter .3s,transform .3s cubic-bezier(.32,.72,0,1)}.ds-btn-primary:hover{filter:brightness(1.1)}.ds-btn-primary:active{transform:scale(.98)}.ds-btn-primary:focus-visible{outline:2px solid #ff5a3c;outline-offset:3px}.ds-btn-primary-arrow{display:grid;place-items:center;width:36px;height:36px;border-radius:9999px;background:rgba(0,0,0,.15);transition:transform .5s cubic-bezier(.32,.72,0,1)}.ds-btn-primary:hover .ds-btn-primary-arrow{transform:translate(2px,-1px) scale(1.05)}"
+    },
+    {
+      "name": "Copy Command",
+      "kind": "button",
+      "refersTo": "button-copy",
+      "description": "Ghost pill with a mono install command and a quiet Copy label.",
+      "html": "<button class=\"ds-btn-copy\"><span class=\"ds-btn-copy-dollar\">$</span><span>brew install larrykoo711/tap/cc-moss</span><span class=\"ds-btn-copy-label\">Copy</span></button>",
+      "css": ".ds-btn-copy{display:inline-flex;align-items:center;gap:10px;border:0;border-radius:9999px;background:rgba(245,240,234,.05);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08);color:rgba(245,240,234,.8);font:400 13px/1.5 'Geist Mono',ui-monospace,monospace;padding:12px 20px;cursor:pointer;transition:background .2s,transform .2s}.ds-btn-copy:hover{background:rgba(245,240,234,.08)}.ds-btn-copy:active{transform:scale(.98)}.ds-btn-copy:focus-visible{outline:2px solid #ff5a3c;outline-offset:3px}.ds-btn-copy-dollar{color:#ff5a3c}.ds-btn-copy-label{font:400 12px Geist,system-ui,sans-serif;color:rgba(245,240,234,.4)}.ds-btn-copy:hover .ds-btn-copy-label{color:rgba(245,240,234,.7)}"
+    },
+    {
+      "name": "Nav Install",
+      "kind": "button",
+      "refersTo": "button-nav-install",
+      "description": "Inverted pill at the end of the nav.",
+      "html": "<a class=\"ds-btn-install\" href=\"#\">Install</a>",
+      "css": ".ds-btn-install{display:inline-block;border-radius:9999px;background:#f5f0ea;color:#0c0b0a;font:500 .875rem/1.43 Geist,system-ui,sans-serif;padding:8px 16px;text-decoration:none;transition:opacity .2s,transform .2s}.ds-btn-install:hover{opacity:.9}.ds-btn-install:active{transform:scale(.97)}.ds-btn-install:focus-visible{outline:2px solid #ff5a3c;outline-offset:3px}"
+    },
+    {
+      "name": "Nav Island",
+      "kind": "nav",
+      "refersTo": "nav-island",
+      "description": "Floating glass pill with section links, language switch and Install.",
+      "html": "<nav class=\"ds-nav\"><a class=\"ds-nav-brand\" href=\"#\">cc-moss</a><a class=\"ds-nav-link is-on\" href=\"#\">Tour</a><a class=\"ds-nav-link\" href=\"#\">Moss</a><a class=\"ds-nav-link\" href=\"#\">FAQ</a><span class=\"ds-seg\"><a class=\"ds-seg-item\" href=\"#\">中</a><a class=\"ds-seg-item is-on\" href=\"#\">EN</a></span></nav>",
+      "css": ".ds-nav{display:flex;align-items:center;gap:4px;height:56px;max-width:880px;padding:0 8px;border-radius:9999px;background:rgba(12,11,10,.7);backdrop-filter:blur(24px) saturate(1.5);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 20px 50px -20px rgba(20,6,2,.9);font:400 .875rem Geist,system-ui,sans-serif;color:#f5f0ea}.ds-nav-brand{font-weight:600;padding:0 12px;color:inherit;text-decoration:none}.ds-nav-link{border-radius:9999px;padding:8px 14px;color:rgba(245,240,234,.55);text-decoration:none;transition:color .2s}.ds-nav-link:hover,.ds-nav-link.is-on{color:#f5f0ea}.ds-nav-link.is-on{background:rgba(245,240,234,.06)}.ds-nav-link:focus-visible{outline:2px solid #ff5a3c;outline-offset:2px}.ds-seg{margin-left:auto;display:flex;border-radius:9999px;background:rgba(245,240,234,.06);padding:4px;font-size:12px}.ds-seg-item{border-radius:9999px;padding:4px 10px;color:rgba(245,240,234,.55);text-decoration:none}.ds-seg-item.is-on{background:#f5f0ea;color:#0c0b0a}"
+    },
+    {
+      "name": "Machined Card",
+      "kind": "card",
+      "refersTo": "card-shell",
+      "description": "Tray + plate with concentric corners, coral eyebrow and title.",
+      "html": "<article class=\"ds-shell\"><div class=\"ds-core\"><p class=\"ds-eyebrow\">Always at hand</p><h3 class=\"ds-card-title\">Double-tap Control.</h3><p class=\"ds-card-body\">From any app, anytime.</p></div></article>",
+      "css": ".ds-shell{padding:6px;border-radius:2rem;background:rgba(255,255,255,.035);box-shadow:inset 0 0 0 1px rgba(255,255,255,.08),0 40px 100px -30px rgba(20,6,2,.9);max-width:420px}.ds-core{border-radius:26px;background:#141311;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),inset 0 0 0 1px rgba(255,255,255,.08);padding:40px;color:#f5f0ea;font-family:Geist,system-ui,sans-serif}.ds-eyebrow{margin:0;color:#ff5a3c;font-size:.875rem;font-weight:500}.ds-card-title{margin:8px 0 0;font-size:1.875rem;font-weight:600;letter-spacing:-.03em;line-height:1.2}.ds-card-body{margin:8px 0 0;color:rgba(245,240,234,.5)}"
+    },
+    {
+      "name": "FAQ Item",
+      "kind": "custom",
+      "refersTo": "faq-item",
+      "description": "Disclosure row; one open at a time; plus turns into a close mark.",
+      "html": "<details class=\"ds-faq\" open><summary class=\"ds-faq-q\">What is cc-moss?<svg viewBox=\"0 0 16 16\" width=\"16\" height=\"16\" aria-hidden=\"true\"><path d=\"M8 3v10M3 8h10\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" fill=\"none\"/></svg></summary><p class=\"ds-faq-a\">A small, free and open source app that looks after your Claude Code sessions.</p></details>",
+      "css": ".ds-faq{border-top:1px solid rgba(245,240,234,.07);border-bottom:1px solid rgba(245,240,234,.07);color:#f5f0ea;font-family:Geist,system-ui,sans-serif;max-width:640px}.ds-faq-q{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:24px 0;cursor:pointer;list-style:none;font-size:1.125rem;font-weight:600;letter-spacing:-.01em}.ds-faq-q::-webkit-details-marker{display:none}.ds-faq-q svg{color:rgba(245,240,234,.4);transition:transform .3s cubic-bezier(.32,.72,0,1)}.ds-faq[open] .ds-faq-q svg{transform:rotate(45deg)}.ds-faq-q:hover svg{color:rgba(245,240,234,.7)}.ds-faq-q:focus-visible{outline:2px solid #ff5a3c;outline-offset:3px;border-radius:6px}.ds-faq-a{margin:0;padding:0 32px 24px 0;color:rgba(245,240,234,.6);line-height:1.625}"
+    },
+    {
+      "name": "Keycap",
+      "kind": "custom",
+      "refersTo": "keycap",
+      "description": "Physical key; pressed it sinks and lights coral.",
+      "html": "<div class=\"ds-keycap\"><span>⌃</span><small>control</small></div>",
+      "css": ".ds-keycap{display:grid;place-items:center;align-content:center;width:96px;height:96px;border-radius:1rem;background:linear-gradient(#2a2826,#1b1a18);box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 6px 0 #0a0908,0 12px 28px rgba(20,6,2,.9);color:#f5f0ea;font-family:Geist,system-ui,sans-serif;transition:transform .12s cubic-bezier(.32,.72,0,1),box-shadow .12s,color .12s;cursor:pointer}.ds-keycap span{font-size:1.875rem}.ds-keycap small{font-size:10px;color:rgba(245,240,234,.4)}.ds-keycap:active{transform:translateY(5px);color:#ff5a3c;box-shadow:inset 0 1px 0 rgba(255,255,255,.08),0 1px 0 #0a0908,0 0 0 1px rgba(255,90,60,.6),0 6px 24px rgba(255,90,60,.25)}"
+    },
+    {
+      "name": "Status Dots",
+      "kind": "chip",
+      "refersTo": "status-dot",
+      "description": "Coral = busy, amber = waiting; the only meanings colour carries.",
+      "html": "<p class=\"ds-status\"><span class=\"ds-dot ds-dot-busy\"></span>login-page</p><p class=\"ds-status\"><span class=\"ds-dot ds-dot-wait\"></span>api-review</p>",
+      "css": ".ds-status{display:flex;align-items:center;gap:8px;margin:6px 0;color:#f5f0ea;font:400 12px Geist,system-ui,sans-serif}.ds-dot{width:6px;height:6px;border-radius:9999px}.ds-dot-busy{background:#ff5a3c}.ds-dot-wait{background:#e6ad4d}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night-Shift Lamp",
+    "overview": "**Creative North Star: \"The Night-Shift Lamp\"**\n\ncc-moss is a lamp left on over a dark desk while the work runs through the night. The page is mostly dark and\nquiet, the colour of soot and banked ash, and a single warm coral light keeps watch: it glows behind the hero,\nruns the loop as a comet, marks the button you came to press, and dots the session that is waiting for you.\nNothing shouts. The light is always on, and it is the only thing that is bright.\n\nSurfaces feel made rather than drawn: a thin tray holds an inner plate with concentric corners, keycaps press down,\nbuttons give under the finger with a spring. A fine film grain lies over everything so the dark reads as material,\nnot as an empty screen. Mockups of the real app sit on the page as physical screens and stay dark in both skins.\nA light skin exists (linen and umber, the same coral) and follows the visitor's system, but the world is\nconceived at night.\n\nRejected on purpose: the cold blue-violet gradients of generic AI products, coral spread across large surfaces,\nthe green-on-black developer-tool look, and fabricated social proof.",
+    "keyCharacteristics": [
+      "Dark, warm neutrals with one coral light; amber appears only as \"waiting\".",
+      "Large, tightly tracked Geist headlines with balanced wrapping; calm grey body text.",
+      "Machined two-layer cards (tray + plate) with hairline borders instead of heavy outlines.",
+      "Pill-shaped controls that press in with a spring easing.",
+      "Slow, ambient motion (float, breathe, comet) that stops for reduced-motion visitors.",
+      "Bilingual by construction: every string exists in Chinese and English at the same weight."
+    ],
+    "rules": [
+      {
+        "name": "The One Lamp Rule",
+        "body": "Lamp Coral is a light source, not a paint. It fills at most one control per view (the",
+        "section": "colors"
+      },
+      {
+        "name": "The Amber Means Waiting Rule",
+        "body": "Waiting Amber is a status, not an accent. If it is on screen, something is",
+        "section": "colors"
+      },
+      {
+        "name": "The Real Screens Stay Dark Rule",
+        "body": "Device mockups use `.dark-scope` and keep the dark palette in both skins,",
+        "section": "colors"
+      },
+      {
+        "name": "The Balanced Headline Rule",
+        "body": "Headings use `text-wrap: balance` and explicit `<br>` only where the line break",
+        "section": "typography"
+      },
+      {
+        "name": "The Eyebrow Rule",
+        "body": "Every section headline is introduced by a short coral label in sentence case. The label",
+        "section": "typography"
+      },
+      {
+        "name": "The Hairline, Not Border Rule",
+        "body": "Edges are 1px inset shadows in the skin's hairline colour, never solid",
+        "section": "elevation"
+      },
+      {
+        "name": "The Grain Rule",
+        "body": "A fixed film grain (4.5% dark, 3% light) covers the whole page above content. Keep it; it is",
+        "section": "elevation"
+      },
+      {
+        "name": "The Concentric Corners Rule",
+        "body": "A nested surface's radius equals its parent's radius minus the gap between them.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "**Do** keep one coral-filled control per view and use Lamp Coral elsewhere as light: text, dots, glows, strokes.",
+      "**Do** build cards as tray + plate with concentric corners and hairline insets.",
+      "**Do** introduce each section with a coral eyebrow and a tightly tracked Geist headline.",
+      "**Do** use the spring easing `cubic-bezier(0.32, 0.72, 0, 1)` for state changes and reveals, and stop all",
+      "**Do** show the real app (screenshots per language and skin) inside dark device mockups.",
+      "**Do** give every string both languages at equal weight, and check both skins."
+    ],
+    "donts": [
+      "**Don't** use cold blue-violet gradients or the generic \"AI product\" look.",
+      "**Don't** paint large areas in coral or use it as a section background.",
+      "**Don't** make the page look like a developer tool: no green-on-black terminals as the main visual, no dense",
+      "**Don't** add logo walls, star ratings, user counts or other social proof that does not exist.",
+      "**Don't** use amber for anything other than \"waiting\".",
+      "**Don't** draw solid grey borders; use hairline insets."
+    ]
+  }
+}

@@ -40,7 +40,7 @@ export function changelogIndex(versions) {
   const items = versions
     .map(
       (v, i) =>
-        `<li><a href="#${anchorOf(v.version)}" data-v="${anchorOf(v.version)}" class="cl-jump flex items-center gap-3 rounded-full px-3 py-1.5 font-mono text-[13px] text-fg/50 hover:text-fg hover:bg-fg/[.05] transition-colors"><span class="w-1.5 h-1.5 rounded-full ${i === 0 ? "bg-coral" : "bg-fg/25"}"></span>${esc(v.version)}</a></li>`,
+        `<li><a href="#${anchorOf(v.version)}" data-v="${anchorOf(v.version)}" class="cl-jump flex items-center gap-3 rounded-full px-3 py-1.5 font-mono text-[13px] text-faint hover:text-fg hover:bg-fg/[.05] transition-colors"><span class="w-1.5 h-1.5 rounded-full ${i === 0 ? "bg-coral" : "bg-fg/25"}"></span>${esc(v.version)}</a></li>`,
     )
     .join("\n          ");
   return items;
@@ -67,8 +67,8 @@ export function changelogTimeline(versions) {
                 <h2 id="${id}" class="mt-4 max-w-[34rem] text-[1.5rem] sm:text-[1.875rem] font-semibold tracking-[-0.03em] leading-[1.15] scroll-mt-52"><span class="visually-hidden">${esc(v.version)} · </span>${both(esc(v.headline.zh), esc(v.headline.en))}</h2>
                 <p class="order-first flex flex-wrap items-center gap-x-3 gap-y-2 text-sm">
                   <span class="rounded-full px-2.5 py-0.5 font-mono text-[13px] font-medium ${latest ? "bg-coral text-white" : "bg-fg/[.07] text-fg/80"}" aria-hidden="true">${esc(v.version)}</span>
-                  <time datetime="${v.date}" class="text-fg/45">${dateText(v.date)}</time>
-                  ${latest ? `<span class="rounded-full bg-coral/15 text-coral px-2 py-0.5 text-xs font-medium">${both("最新", "Latest")}</span>` : ""}
+                  <time datetime="${v.date}" class="text-faint">${dateText(v.date)}</time>
+                  ${latest ? `<span class="rounded-full bg-coral/10 text-coral-on-tint px-2 py-0.5 text-xs font-medium">${both("最新", "Latest")}</span>` : ""}
                 </p>
               </div>
               <ul class="relative mt-5 space-y-2.5 text-fg/65 leading-relaxed max-w-[38rem]">
