@@ -59,3 +59,28 @@
 - O1 动态超过 6 小时不再送；超过 15 分钟的带上发生时间。
 - O2 `blocked` 时 Moss 页给「打开 Moss 的窗口」按钮，在用户常用的终端里接上 Moss 的 tmux 窗格。
 - A3–A5 照上文。
+
+## 截图渲染命令
+
+官网 Moss 页截图 `site/assets/moss.{zh,en}.{light,dark}.webp`（952×1080）：体检简报带三个按钮，下面是实时的「等你处理」卡（接口评审 / api-review 的问题 + 草稿 / scratch 的权限）。2026-11-09（F65）按下面的命令重出，和旧图逐张对过构图；唯一差别是 scratch 的命令现在折成两行（当前 App 的画法，旧图是一行加省略号）。
+
+在 `apps/macos` 下，先 `scripts/swift.sh build --build-system native -j 2`，再：
+
+```sh
+OUT=/path/to/out   # 任意临时目录
+for lang in zh en; do for mode in light dark; do
+  flag=""; [ "$mode" = dark ] && flag="--dark"
+  TZ=Asia/Shanghai CC_MOSS_LANG=$lang .build/debug/CCMoss --render "$OUT/moss.$lang.$mode.png" \
+    --demo demo/sessions.$lang.json --page moss \
+    --moss-chat demo/moss-checkup.$lang.json \
+    --asks demo/asks.$lang.json --ask 3f2a9c4e81d07b55,e9a51b7c3d2f8064 \
+    --moss-quick-uses waiting:1 \
+    --now 2026-10-16T10:05:00Z $flag
+  cwebp -quiet -q 80 "$OUT/moss.$lang.$mode.png" -o "../../site/assets/moss.$lang.$mode.webp"
+done; done
+```
+
+- `TZ=Asia/Shanghai`：气泡上方的时间显示为 18:00 / 6:00 PM，和旧图一致。
+- `--ask` 接受用逗号分开的多个 id（F65 加的），只留这两条问题；不加会是 5 条，卡片会把对话顶上去。
+- `--moss-quick-uses waiting:1`：有用过的记录，快捷栏上方不出「点一个试试」的提示，排序也和旧图一样。
+- `cwebp -q 80`：文件约 50 KB，和旧图相当。

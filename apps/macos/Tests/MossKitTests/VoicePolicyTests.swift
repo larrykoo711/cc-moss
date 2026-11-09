@@ -88,7 +88,7 @@ import Testing
             #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a 断了")
         }
         L.$override.withValue(.en) {
-            #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a dropped")
+            #expect(VoicePolicy.phrase(PetMessage(alert), names: ["job-a"]) == "job-a stopped")
         }
     }
 }

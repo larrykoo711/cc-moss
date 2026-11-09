@@ -14,7 +14,7 @@ import SwiftUI
 ///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
 ///          [--access-lost] [--folders [query]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
-///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
+///          [--asks <ask list --json file> [--ask <id>[,<id>…]] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
 ///          [--moss-guide] [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|blocked|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
@@ -1162,10 +1162,12 @@ actor DemoRunner: CommandRunner {
     }
 
     /// Only question `id` of an `ask list --json` file.
-    static func keep(_ id: String, in data: Data) -> Data {
+    /// `--ask a,b`: only those questions (one id, or several).
+    static func keep(_ ids: String, in data: Data) -> Data {
         guard var top = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let list = top["asks"] as? [[String: Any]] else { return data }
-        top["asks"] = list.filter { ($0["id"] as? String) == id }
+        let wanted = Set(ids.split(separator: ",").map(String.init))
+        top["asks"] = list.filter { ($0["id"] as? String).map(wanted.contains) ?? false }
         return (try? JSONSerialization.data(withJSONObject: top)) ?? data
     }
 

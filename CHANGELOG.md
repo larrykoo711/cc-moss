@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A session that went away is called "stopped" in English everywhere**, as in the rest of the app, instead of
+  "dropped".
+
 ### Fixed
 
 - **Moss no longer stops on Claude Code's bypass warning.** The answer to the warning was in Moss's project settings,

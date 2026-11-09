@@ -22,7 +22,7 @@
    "id": "1792143758000-51be0d",
    "at": "2026-10-16T09:42:38Z",
    "from": "moss",
-   "text": "Two things are waiting on you:\n\n1. **api-review** wants to run a test command and has been waiting for your OK for 6 minutes.\n2. **fix-invoice** dropped. Nothing's lost; bring it back to carry on.",
+   "text": "Two things are waiting on you:\n\n1. **api-review** wants to run a test command and has been waiting for your OK for 6 minutes.\n2. **fix-invoice** stopped. Nothing's lost; bring it back to carry on.",
    "fallback": false,
    "buttons": [],
    "reply_to": "1792143730000-a7c204"

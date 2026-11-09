@@ -390,7 +390,7 @@ pub fn table(facts: &Value, zh: bool) -> String {
         });
         let state = match (s["status"].as_str(), zh) {
             (Some("interrupted"), true) => "断了",
-            (Some("interrupted"), false) => "dropped",
+            (Some("interrupted"), false) => "stopped",
             (_, true) => "运行中",
             (_, false) => "running",
         };
@@ -413,7 +413,7 @@ pub fn table(facts: &Value, zh: bool) -> String {
             notes.push(if zh {
                 format!("断了 {d}")
             } else {
-                format!("dropped {d} ago")
+                format!("stopped {d} ago")
             });
         }
         if let Some(secs) = s["idle_for_secs"].as_i64().filter(|s| *s >= 86_400) {
@@ -725,7 +725,7 @@ mod tests {
         let en = table(&facts, false);
         assert!(
             en.contains("no name")
-                && en.contains("dropped 3 days")
+                && en.contains("stopped 3 days")
                 && en.contains("folder is gone"),
             "{en}"
         );

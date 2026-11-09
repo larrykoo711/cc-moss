@@ -18,7 +18,7 @@
    "id": "1792141240000-x00001",
    "at": "2026-10-16T09:56:00Z",
    "from": "moss",
-   "text": "**fix-invoice** dropped; it can be brought back.",
+   "text": "**fix-invoice** stopped; it can be brought back.",
    "buttons": [],
    "sessions": [
     "01C"

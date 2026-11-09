@@ -74,11 +74,11 @@ public struct PetMessage: Equatable, Sendable {
             return PetMessageText(title: title, body: body, primary: L.t("Open", "去看看"), secondary: L.t("Later", "稍后"))
         case .interrupted:
             if n > 1 {
-                return PetMessageText(title: L.t("\(n) sessions dropped", "有 \(n) 个会话断了"),
+                return PetMessageText(title: L.t("\(n) sessions stopped", "有 \(n) 个会话断了"),
                                       body: L.t("Nothing is lost. Bring them back from the panel.", "进度都在，去面板里把它们找回来。"),
                                       primary: L.t("Show", "看看"), secondary: L.t("Not now", "先不"))
             }
-            return PetMessageText(title: L.t("\(name) dropped", "\(name) 断了"),
+            return PetMessageText(title: L.t("\(name) stopped", "\(name) 断了"),
                                   body: L.t("Nothing is lost. One click brings it back.", "别慌，进度都在。点一下就找回来。"),
                                   primary: L.t("Bring Back", "找回"), secondary: L.t("Not now", "先不"))
         case .restored:

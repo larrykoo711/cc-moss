@@ -245,7 +245,7 @@ records these as usual:
   it first. It has no Move into tmux either, and `adopt` refuses it with `background`: closing a terminal can't stop it.
 - When you `/resume` inside a session, Claude Code first moves that session to the background and the window shows the
   one you picked. cc-moss follows: the background process takes over the moved session, on the same row. Once the
-  background lets it go, one that never said a word is over, and any other shows as dropped, ready to bring back.
+  background lets it go, one that never said a word is over, and any other shows as stopped, ready to bring back.
 - While any Claude Code process runs a conversation (in a terminal or in the background), `restore` won't start a
   second copy, even before cc-moss has heard of it.
 
@@ -568,7 +568,7 @@ a dot in the brand color when there's a reply you haven't seen.
   today and Tidy up, plus the Claude Code commands that suit your account (see below). What doesn't fit on one row
   goes under ⋯ at the end. The order follows how much you use each one on this Mac, recent uses counting more, and
   what's going on moves the matching one forward: Who's waiting on me when To Do has something, What's stuck when a
-  session dropped, Usage when your last `/usage` showed something at 80%. Moss can suggest a few too; they go first
+  session stopped, Usage when your last `/usage` showed something at 80%. Moss can suggest a few too; they go first
   for 24 hours, with a small sparkle. The order is set when you open the page, so it holds still while you click.
 - **Your own words.** The keyboard icon at the end of the bar swaps in a text box (Return sends, ⇧Return for a new
   line); click it again to go back. When Claude Code has a suggestion waiting in Moss's input, a faint "↳ …" floats
@@ -630,16 +630,16 @@ cc-moss moss chat --json                                 # the last 200 messages
 Click Checkup or Tidy up on the Moss page. Moss fixes what doesn't need you, then sends a brief of a few lines: what
 it fixed and what's left for you to decide. What needs you comes as buttons, and Moss acts only once you click; if
 nothing's wrong, it says so in one line. Tidy up is about sessions only: names for the ones without, and choices for
-ones dropped or idle for a long time.
+ones stopped or idle for a long time.
 
 | What it finds | What Moss does |
 |---|---|
 | A tmux name that doesn't match the session's name | Matches them up |
 | Hooks or alias links broken or missing | Fixes them (like `cc-moss setup` plus `doctor --fix`) |
 | A session with no name (just an id) | Names it after its folder, with `-2` when taken; a name with spaces, punctuation tmux can't take, or too long, is tidied into a standard one (24 characters at most). Renaming types `/rename` into the session, only while it's idle with nothing typed |
-| Dropped, and its folder is gone | Stops offering it back (it can't come back), and tells you afterwards |
-| Dropped, and it could carry on | Asks whether to bring them back, with one button naming which (bringing back starts sessions and uses your plan) |
-| Dropped more than 7 days ago | Asks: stop reminding, or keep it |
+| Stopped, and its folder is gone | Stops offering it back (it can't come back), and tells you afterwards |
+| Stopped, and it could carry on | Asks whether to bring them back, with one button naming which (bringing back starts sessions and uses your plan) |
+| Stopped more than 7 days ago | Asks: stop reminding, or keep it |
 | Open but untouched for 3 days | Asks: close it, or keep it (closing ends it) |
 | Waiting on your answer or reply | Leaves it, and tells you how many are in To Do |
 
@@ -655,7 +655,7 @@ works too.
 
 **How Moss acts.** Moss's sandbox can't reach your sessions, so it asks the daemon to act for it
 (`cc-moss moss act`, which is for Moss and isn't listed in the help). That covers only these: matching tmux names,
-fixing the install, renaming a session, and no longer offering back a dropped session whose folder is gone. Those
+fixing the install, renaming a session, and no longer offering back a stopped session whose folder is gone. Those
 it does without asking. Bringing back, no longer offering back, ending, archiving and deleting archived sessions need your go-ahead: Moss asks
 first, and cc-moss itself puts the yes button under the question, saying what it agrees to, with each session's
 folder ("End work · ~/code/work"). When two open sessions share a name, Moss can't ask about either by that name
@@ -666,7 +666,7 @@ on which session, on the strength of which message, and how it went). For a Moss
 `[moss] actions = false` (or `cc-moss config set moss.actions false`).
 
 The checkup reads the facts `cc-moss doctor --sessions --json` gives: for each session, whether its name was made up
-automatically, whether its folder is there, how long it has been dropped or idle, whether it's working or waiting on
+automatically, whether its folder is there, how long it has been stopped or idle, whether it's working or waiting on
 you, whether its tmux name matches, and a suggested name; plus whether the hooks and alias links are in order. What
 can't be told is `"unknown"`, never taken as broken. None of it is from your conversations.
 
@@ -784,7 +784,7 @@ starts a new line, Esc closes it, and ↑ ↓ jump to the previous or next sessi
 may have moved as its state changed; the list follows it). A busy session gets the line too, saying "It's busy; this
 waits until it's done", without a suggestion. The line is locked while it sends; if sending fails, your text stays
 and the reason shows under it. When the line can't open, it says why: the session isn't in tmux (with Move into
-tmux → when it can move), or it dropped (bring it back first). Sessions asking for your OK or a choice are answered
+tmux → when it can move), or it stopped (bring it back first). Sessions asking for your OK or a choice are answered
 in To Do.
 
 **Search.** Typing searches, and the results are one ranked list: names that start with what you typed first, then
