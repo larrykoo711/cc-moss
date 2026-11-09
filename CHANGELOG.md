@@ -15,6 +15,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   warning, a sign-in), `cc-moss moss status` and `cc-moss doctor` say what it is, and the Moss page shows a note with
   an Open Moss's window button instead of "Sending…". cc-moss never answers it for you. `cc-moss moss attach` opens
   Moss's window from a terminal.
+- **Your messages to Moss go before its session updates.** When updates piled up, Moss read every one of them before
+  your message. Now yours go first, a newer update about a session replaces the older one, updates older than 6
+  hours are dropped, and an update older than 15 minutes says how long ago it happened, so Moss no longer takes
+  last week's "finished" for today's. The daily checkup is no longer asked for twice while one is still waiting.
 
 ## [0.3.9] - 2026-11-06
 

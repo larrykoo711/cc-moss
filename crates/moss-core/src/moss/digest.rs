@@ -27,6 +27,13 @@ pub enum Kind {
 }
 
 impl Kind {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Kind::Disconnected => "disconnected",
+            Kind::Done => "done",
+        }
+    }
+
     /// From the registry's event stream (`cc-moss events`): `interrupted`
     /// and `finished`; other events, `needs_you` among them, are not news
     /// for Moss.
@@ -162,6 +169,23 @@ impl Digest {
 /// `[动态] api 做完了；login 断了` / `[Update] api finished; login dropped`.
 pub fn line(changes: &[Change], zh: bool) -> String {
     let parts: Vec<String> = changes.iter().map(|c| part(c, zh)).collect();
+    join(&parts, zh)
+}
+
+/// What a line of `changes` tells, change by change, for the inbox to
+/// take older news over ([`super::inbox::put_news`]). `zh` as in [`line`].
+pub fn told(changes: &[Change], zh: bool) -> Vec<super::inbox::Told> {
+    changes
+        .iter()
+        .map(|c| super::inbox::Told {
+            key: format!("{}/{}", c.slot_id, c.kind.as_str()),
+            words: part(c, zh),
+        })
+        .collect()
+}
+
+/// A line from the words of its changes.
+pub fn join(parts: &[String], zh: bool) -> String {
     if zh {
         format!("[动态] {}", parts.join("；"))
     } else {

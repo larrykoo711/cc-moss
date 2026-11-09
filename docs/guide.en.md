@@ -609,7 +609,9 @@ cc-moss moss chat --json                                 # the last 200 messages
 - **What your sessions are doing.** The daemon tells Moss when a session drops or finishes (sessions waiting on you aren't sent: they're all in the Waiting on you card at the foot of the Moss page): changes within
   20 seconds go as one note, and the same thing about the same session isn't repeated within 10 minutes. Each change
   is checked again just before it goes: a session that's back is left out, and if
-  nothing is left, nothing is sent. In the conversation it's a small grey line in the middle. When a note only says
+  nothing is left, nothing is sent. When Moss is busy or stuck and notes pile up, your messages go first; a newer
+  note about a session replaces the older one about the same change, notes older than 6 hours are dropped, and a
+  note older than 15 minutes says how long ago it happened (`[Update] (3 hours ago) proj-a finished`). In the conversation it's a small grey line in the middle. When a note only says
   turns finished, Moss's answer to it isn't shown and doesn't alert you. To keep Moss out of it, put
   `[moss] digest = false` in the config.
 - **Reply alerts.** None while you're on the Moss page; otherwise Mo shows a "Moss replied" bubble if Mo is on
@@ -640,7 +642,8 @@ ones dropped or idle for a long time.
 
 **Daily checkup.** Settings › Moss › Checkup has two switches, both on by default:
 - **Daily checkup**: the first time you open the panel each day, cc-moss sends Moss the same request as the
-  Checkup button (it doesn't show as something you said).
+  Checkup button (it doesn't show as something you said). If the last one is still waiting for Moss (say it was
+  stuck for a few days), no second one is added.
 - **Daily brief**: off, the daily checkup still runs, but its brief is kept quietly in the conversation; you hear
   about it only when you need to decide something.
 

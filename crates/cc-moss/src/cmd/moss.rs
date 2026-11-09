@@ -560,6 +560,7 @@ pub fn say(json: bool, text: &str) -> Result<()> {
         at: rfc3339(now),
         from: chat::FROM_YOU.to_string(),
         text: text.to_string(),
+        ..inbox::Message::default()
     };
     store_dir::ensure_private_dir(&home).with_context(|| format!("{}", home.display()))?;
     // The chat first: the daemon's "sent" for it never comes before it.
@@ -1321,7 +1322,7 @@ impl Looker {
         // Marked done only once it went in; else the next look tries again.
         if !self
             .talk
-            .ask(&super::checkup::daily_request(zh, brief), now_ms(), log)
+            .ask_checkup(&super::checkup::daily_request(zh, brief), now_ms(), log)
         {
             return;
         }
