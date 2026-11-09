@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, dead_pid, end_json, hook, ls_json, start_json, FakeProcess};
+use common::{bin, dead_pid, end_json, hook, ls_json, said, start_json, FakeProcess};
 
 #[test]
 fn dead_pid_shows_interrupted() {
@@ -537,13 +537,16 @@ fn superseded_duplicates_are_closed() {
 #[test]
 fn json_results_name_ambiguous_names() {
     let dir = tempfile::tempdir().unwrap();
-    for sid in ["aaaaaaaa-0001", "bbbbbbbb-0002"] {
+    // The second is renamed to `api` by hand: a name the hooks report at
+    // start is numbered, a `/rename` is taken as is.
+    for (sid, first) in [("aaaaaaaa-0001", "api"), ("bbbbbbbb-0002", "web")] {
         hook(
             dir.path(),
             "session-start",
-            &start_json(sid, "startup", Some("api")),
+            &start_json(sid, "startup", Some(first)),
             Some(dead_pid()),
         );
+        said(dir.path(), sid, Some("api"), Some(dead_pid()));
     }
     let run = |args: &[&str]| -> serde_json::Value {
         let out = bin()

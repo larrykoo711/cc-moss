@@ -415,7 +415,7 @@ impl Registry {
                 }
                 if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
                     // The name a new slot is born with is part of `started`.
-                    rename(&tx, &slot_id, t, !created, ctx.now_ms)?;
+                    take_title(&tx, &slot_id, t, !created, ctx.now_ms)?;
                 }
                 record_session(&tx, &slot_id, session_id, transcript_path.as_deref())?;
                 if let Some(args) = &ctx.launch_args {
@@ -456,7 +456,7 @@ impl Registry {
                         )?;
                     }
                     if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
-                        rename(&tx, &id, t, true, ctx.now_ms)?;
+                        take_title(&tx, &id, t, true, ctx.now_ms)?;
                     }
                 }
             }
@@ -672,22 +672,38 @@ impl Registry {
         Ok(first.as_deref() == Some(slot.slot_id.as_str()))
     }
 
-    /// Whether a slot other than `slot_id` that is not closed is named `name`.
+    /// Whether an open slot (not closed, not archived) of another
+    /// conversation than `slot_id`'s is named `name`.
     pub fn name_taken_by_other(&self, slot_id: &str, name: &str) -> Result<bool> {
         Ok(self
             .conn
             .prepare(
-                "SELECT 1 FROM slots WHERE slot_id <> ?1 AND name = ?2 AND status <> 'closed' LIMIT 1",
+                "SELECT 1 FROM slots o, slots me
+                 WHERE me.slot_id = ?1 AND o.slot_id <> me.slot_id
+                   AND o.session_id <> me.session_id AND o.name = ?2
+                   AND o.status <> 'closed' AND o.archived_at_ms IS NULL LIMIT 1",
             )?
             .exists(params![slot_id, name])?)
     }
 
-    /// Set a slot's name (found outside the hook payload, e.g. in its transcript).
+    /// Set a name the user chose here (`cc-moss` typed `/rename` for them, or
+    /// adopt named it), as is.
     pub fn set_name(&self, slot_id: &str, name: &str) -> Result<()> {
         let tx = self.write_tx()?;
         rename(&tx, slot_id, name, true, crate::slot::now_ms())?;
         tx.commit()?;
         Ok(())
+    }
+
+    /// Take a name Claude Code reports (a hook payload or the transcript's
+    /// last `/rename`) rather than one chosen here: see [`take_title`].
+    /// Returns the name the slot has afterwards.
+    pub fn take_name(&self, slot_id: &str, name: &str) -> Result<Option<String>> {
+        let tx = self.write_tx()?;
+        take_title(&tx, slot_id, name, true, crate::slot::now_ms())?;
+        let now = slot_name(&tx, slot_id)?;
+        tx.commit()?;
+        Ok(now)
     }
 
     /// Take each open slot's name from its transcript's last `/rename`,
@@ -728,11 +744,8 @@ impl Registry {
             };
             let (title, to) = crate::transcript::custom_title_since(Path::new(path), from);
             scanned.insert(slot.slot_id.clone(), to);
-            let title = title.map(|t| crate::naming::clean_name(&t));
-            if let Some(name) =
-                title.filter(|t| !t.is_empty() && slot.name.as_deref() != Some(t.as_str()))
-            {
-                self.set_name(&slot.slot_id, &name)?;
+            let Some(title) = title else { continue };
+            if self.take_name(&slot.slot_id, &title)? != slot.name {
                 renamed.push(slot.slot_id);
             }
         }
@@ -1632,6 +1645,66 @@ fn record_interrupted(
     }
     record_event(conn, slot_id, "interrupted", detail, at_ms)?;
     Ok(true)
+}
+
+fn slot_name(conn: &Connection, slot_id: &str) -> Result<Option<String>> {
+    Ok(conn
+        .query_row(
+            "SELECT name FROM slots WHERE slot_id = ?1",
+            [slot_id],
+            |r| r.get::<_, Option<String>>(0),
+        )
+        .optional()?
+        .flatten()
+        .filter(|n| !n.is_empty()))
+}
+
+/// A name Claude Code reports for a slot (hook payload, transcript). A forked
+/// or background session reports its parent's name, written into its own
+/// transcript under its own id (Claude Code 2.1.319), so the name is made
+/// one of a kind the first time a slot gets one: `name-2`, `name-3`, as
+/// `cc-moss new` does, against every other open slot (not closed, not
+/// archived) of another conversation. A slot already named after `title`
+/// (`title` itself or `title-N`) keeps its name, so later reports never undo
+/// the number. Any other title is a rename by the user and is taken as is
+/// (the hook warns when it is taken).
+fn take_title(
+    conn: &Connection,
+    slot_id: &str,
+    title: &str,
+    announce: bool,
+    at_ms: i64,
+) -> Result<()> {
+    let title = crate::naming::clean_name(title);
+    if title.is_empty() {
+        return Ok(());
+    }
+    let name = match slot_name(conn, slot_id)? {
+        None => {
+            let mut stmt = conn.prepare(
+                "SELECT o.name FROM slots o, slots me
+                 WHERE me.slot_id = ?1 AND o.slot_id <> me.slot_id
+                   AND o.session_id <> me.session_id AND o.name IS NOT NULL
+                   AND o.status <> 'closed' AND o.archived_at_ms IS NULL",
+            )?;
+            let taken = stmt
+                .query_map([slot_id], |r| r.get::<_, String>(0))?
+                .collect::<rusqlite::Result<Vec<_>>>()?;
+            crate::naming::unique(&title, &taken, None)
+        }
+        Some(now) if named_after(&now, &title) => return Ok(()),
+        Some(_) => title,
+    };
+    rename(conn, slot_id, &name, announce, at_ms)
+}
+
+/// `name` is `title` or `title-N` (N ≥ 2), as [`crate::naming::unique`] makes it.
+fn named_after(name: &str, title: &str) -> bool {
+    name == title
+        || name
+            .strip_prefix(title)
+            .and_then(|rest| rest.strip_prefix('-'))
+            .is_some_and(|n| n.parse::<u32>().is_ok_and(|i| i >= 2 && i.to_string() == n))
 }
 
 /// Set a slot's name; a change is recorded as `renamed` when `announce`.

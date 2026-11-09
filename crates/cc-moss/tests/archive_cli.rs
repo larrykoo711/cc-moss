@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{bin, dead_pid, end_json, hook, start_json, FakeProcess};
+use common::{bin, dead_pid, end_json, hook, said, start_json, FakeProcess};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -464,14 +464,17 @@ fn archive_by_conversation_id_when_two_share_a_name() {
     // What the app sends: the row's conversation id, not its name.
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path();
-    for sid in ["aaaa1111-twin", "bbbb2222-twin"] {
+    // The second is renamed to `twin` by hand: a name the hooks report at
+    // start is numbered, a `/rename` is taken as is.
+    for (sid, first) in [("aaaa1111-twin", "twin"), ("bbbb2222-twin", "other")] {
         let p = FakeProcess::spawn();
         hook(
             state,
             "session-start",
-            &start_json(sid, "startup", Some("twin")),
+            &start_json(sid, "startup", Some(first)),
             p.pid(),
         );
+        said(state, sid, Some("twin"), p.pid());
         drop(p);
     }
     let by_name = cc_moss(state, &["archive", "--json", "--", "twin"]);

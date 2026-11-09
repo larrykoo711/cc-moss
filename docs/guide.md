@@ -162,6 +162,8 @@ Claude Code 第一次用 bypass 时会弹一个警告，在后台的 tmux 窗格
 
 cc-moss 用会话自己的名字（`cc-moss new` 时起的，或者在 Claude Code 里 `/rename` 改的）给它的 tmux 会话起名，中文、大小写、emoji 都原样保留。只有 tmux 和 shell 用不了的字符会换成 `-`：空白、`.`、`:`，以及 `` ' " $ ` \ ! # ; & | < > ( ) { } [ ] * ? ~ ^ , = / ``；连着的 `-` 并成一个，最长 40 个字符。`[naming] host_prefix` 开着（默认）时前面再加 `<主机名>_`。比如「接口 评审 v1.2」在 tmux 里叫 `<主机名>_接口-评审-v1-2`。
 
+还开着（没关、没归档）的会话名字不重复：Claude Code 在后台分出来的会话会带着原会话的名字出现，cc-moss 给它记成 `原名-2`、`原名-3`，和 `cc-moss new` 一样；之后对话记录里再出现原名也不会改回去，原会话不动。你自己用 `/rename` 起了一个已被占用的名字，cc-moss 不替你改，只提醒你换一个。
+
 终端标签页显示的是会话自己的名字，不是 tmux 名：cc-moss 的 tmux 配置打开了 `set-titles`，标题取 tmux 选项 `@cc-moss-name`（cc-moss 在新建、找回、改名时写进去），没有就用 tmux 会话名。从旧版本升级上来，运行一次 `cc-moss install` 换上新的 tmux 配置。
 
 在会话里 `/rename` 不会触发钩子，所以 cc-moss 在每次列会话（`cc-moss ls`、选择器、面板刷新）时从对话记录里读最近一次 `/rename`，名字和 tmux 名都跟着改；会话闲着也一样。

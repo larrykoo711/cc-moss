@@ -199,6 +199,11 @@ take become `-`: white space, `.`, `:` and `` ' " $ ` \ ! # ; & | < > ( ) { } [ 
 become one, and the name stops at 40 characters. With `[naming] host_prefix` on (the default), `<host>_` goes in
 front. So "api review v1.2" is `<host>_api-review-v1-2` in tmux.
 
+No two open sessions (not closed, not archived) share a name. A session Claude Code forks in the background
+shows up with the original's name; cc-moss records it as `name-2`, `name-3`, as `cc-moss new` does, and keeps that
+number even when the original name turns up in its conversation again. The original session keeps its name. If you
+`/rename` a session to a name that's taken, cc-moss leaves your choice alone and reminds you to pick another.
+
 Terminal tabs show the session's own name, not the tmux name: cc-moss's tmux config turns on `set-titles` and takes
 the title from the tmux option `@cc-moss-name` (cc-moss sets it when it starts, restores or renames a session), or
 the tmux session name when there's none. Coming from an older version, run `cc-moss install` once for the new tmux

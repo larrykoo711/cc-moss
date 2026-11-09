@@ -1177,6 +1177,12 @@ mod tests {
                 now_ms: 1,
             };
             reg.apply(&start, &ctx).unwrap();
+            // A name already taken comes in numbered; only a rename (as
+            // Moss's) gives two open sessions the same one.
+            let slot = reg.slot_for_event(&format!("a1b2c3d{i}-0000"), &ctx);
+            if let Some(slot) = slot.unwrap().filter(|s| s.name.as_deref() != Some(*name)) {
+                reg.set_name(&slot.slot_id, name).unwrap();
+            }
         }
         let slots = reg.slots().unwrap();
         let ids = names

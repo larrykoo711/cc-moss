@@ -95,6 +95,20 @@ pub fn start_json(session_id: &str, source: &str, title: Option<&str>) -> String
     .to_string()
 }
 
+/// You say something in `session_id` (UserPromptSubmit with what you typed,
+/// then the reply's Stop), with `title` as the session's name when given.
+pub fn said(state: &Path, session_id: &str, title: Option<&str>, pid: Option<u32>) {
+    let prompt = serde_json::json!({
+        "session_id": session_id,
+        "hook_event_name": "UserPromptSubmit",
+        "prompt": "fix the login page",
+        "session_title": title,
+    });
+    hook(state, "user-prompt-submit", &prompt.to_string(), pid);
+    let stop = serde_json::json!({ "session_id": session_id, "hook_event_name": "Stop" });
+    hook(state, "stop", &stop.to_string(), pid);
+}
+
 pub fn end_json(session_id: &str, reason: &str) -> String {
     serde_json::json!({
         "session_id": session_id,
