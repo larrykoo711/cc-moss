@@ -527,7 +527,9 @@ keeps trying.
 - **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only the settings in its own
   home (`--setting-sources project,local`), so the MCP servers, hooks and settings you set up for Claude Code don't
   come along. Only the API provider's address and models are copied into its `.claude/settings.local.json` (see
-  [Switching API providers](#switching-api-providers)), a file its command line can't read. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
+  [Switching API providers](#switching-api-providers)), a file its command line can't read. The same file always
+  says yes to Claude Code's bypass warning (`skipDangerousModePermissionPrompt`), whatever your own settings say, so
+  Moss never waits on it in a pane nobody sees. Its context is capped at 500k tokens (`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`, or the
   model's window when that's smaller); at the cap Claude Code compacts it, so the conversation doesn't keep growing.
 - **Privacy and your plan.** It's a Claude Code session, signed in with your Claude Code account, and it talks to
   Anthropic like any session you start, or to the API provider you switched to. While it waits it sends nothing and uses none of your plan; each start begins

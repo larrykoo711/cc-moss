@@ -47,6 +47,11 @@ const TMUX_TIMEOUT: Duration = Duration::from_secs(5);
 /// Every file of Moss's home; `exe` is the cc-moss its guard hook runs and
 /// `state` the state directory the home is in.
 pub fn files(exe: &str, state: &Path) -> Vec<File> {
+    files_in(exe, state, config_dir().as_deref())
+}
+
+/// [`files`] with Claude Code's folder given (`config_dir`).
+fn files_in(exe: &str, state: &Path, config_dir: Option<&Path>) -> Vec<File> {
     let managed = |path, text: &str| File {
         path,
         text: text.to_string(),
@@ -62,7 +67,7 @@ pub fn files(exe: &str, state: &Path) -> Vec<File> {
         managed("SECURITY.md", SECURITY_MD),
         managed(
             ".claude/settings.json",
-            &settings_json(exe, state, config_dir().as_deref()),
+            &settings_json(exe, state, config_dir),
         ),
         managed(".claude/skills/moss-profile/SKILL.md", PROFILE_SKILL),
         managed(".claude/skills/moss-sessions/SKILL.md", SESSIONS_SKILL),
@@ -242,12 +247,11 @@ fn settings_json(exe: &str, state: &Path, config_dir: Option<&Path>) -> String {
             }
         }
     });
-    // Moss starts with project settings only (`--setting-sources project`):
-    // cc-moss's own hooks, which record it, go here too, and the bypass
-    // warning is answered as in the user's settings.
-    let value = moss_core::settings_json::install(&value, exe)
-        .and_then(|v| moss_core::settings_json::accept_bypass_prompt(&v))
-        .unwrap_or(value);
+    // Moss starts without the user's settings (`--setting-sources
+    // project,local`): cc-moss's own hooks, which record it, go here too.
+    // The bypass warning is answered in the local settings
+    // ([`PROVIDER_FILE`]): Claude Code ignores that key in a project's.
+    let value = moss_core::settings_json::install(&value, exe).unwrap_or(value);
     let mut text = serde_json::to_string_pretty(&value).unwrap_or_default();
     text.push('\n');
     text
@@ -1030,17 +1034,29 @@ enum Synced {
     Restart,
 }
 
-/// Write Moss's copy of the user's provider ([`PROVIDER_FILE`]) when it
-/// differs. A user settings file that can't be read or parsed changes
-/// nothing (the last good copy stays).
+/// Write Moss's local settings ([`PROVIDER_FILE`]: the bypass answer and
+/// its copy of the user's provider) when they differ. A user settings file
+/// that can't be read or parsed changes nothing (the last good copy stays).
 fn sync_provider(
     state: &Path,
     exe: &str,
     url_told: &mut bool,
     log: &dyn Fn(&str),
 ) -> Result<Synced> {
-    let user = match super::provider::settings_path() {
-        Some(path) => match std::fs::read_to_string(&path) {
+    let user = super::provider::settings_path();
+    sync_provider_from(user.as_deref(), state, exe, url_told, log)
+}
+
+/// [`sync_provider`] from the user's settings at `user`.
+fn sync_provider_from(
+    user: Option<&Path>,
+    state: &Path,
+    exe: &str,
+    url_told: &mut bool,
+    log: &dyn Fn(&str),
+) -> Result<Synced> {
+    let user = match user {
+        Some(path) => match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
             Err(_) => return Ok(Synced::Same),
@@ -1598,11 +1614,6 @@ enum Launch {
     Failed(anyhow::Error),
 }
 
-/// Claude Code's arguments for Moss. Bypass mode (the guard and the sandbox
-/// fence it), its own session id, the boot prompt, and no MCP servers: the
-/// user's would load for minutes at every start and fill its context, and
-/// the guard refuses their tools anyway. User settings still load, so
-/// cc-moss's own hooks record Moss.
 /// The environment Moss's Claude Code starts with (`new-session -e`): its
 /// role and session id, for cc-moss's hooks, and room to keep a long
 /// conversation before compacting: 500k tokens (a plain number; Claude Code
@@ -1689,6 +1700,12 @@ pub fn provider_key() -> ExitCode {
 const AUTO_COMPACT_ENV: &str = "CLAUDE_CODE_AUTO_COMPACT_WINDOW";
 const AUTO_COMPACT_WINDOW: u32 = 500_000;
 
+/// Claude Code's arguments for Moss. Bypass mode (the guard and the sandbox
+/// fence it), its own session id, the boot prompt, and no MCP servers: the
+/// user's would load for minutes at every start and fill its context, and
+/// the guard refuses their tools anyway. The user's settings don't load:
+/// cc-moss's hooks that record Moss are in its project settings, the bypass
+/// answer and the provider in its local ones.
 fn claude_args(session_id: &str) -> Vec<String> {
     [
         "--dangerously-skip-permissions",
@@ -1735,6 +1752,31 @@ fn test_millis_list(var: &str) -> Vec<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn moss_home_bypass_key_in_local_settings() {
+        // F59: Claude Code takes `skipDangerousModePermissionPrompt` from
+        // user, local or managed settings only, never from the project's.
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let home = moss::home_dir(&state);
+        let exe = "/bin/cc-moss";
+        let key = moss_core::settings_json::BYPASS_PROMPT_KEY;
+        let files = files_in(exe, &state, None);
+        home::lay_out(&home, &files).unwrap();
+        // No user settings at all: the key is written anyway.
+        let user = dir.path().join("claude/settings.json");
+        sync_provider_from(Some(&user), &state, exe, &mut false, &|_| {}).unwrap();
+        let read = |name: &str| -> serde_json::Value {
+            let text = std::fs::read_to_string(home.join(".claude").join(name)).unwrap();
+            serde_json::from_str(&text).unwrap()
+        };
+        assert_eq!(read("settings.local.json")[key], serde_json::json!(true));
+        assert!(read("settings.json").get(key).is_none());
+        // A fresh layout (every start) keeps it.
+        home::lay_out(&home, &files).unwrap();
+        assert_eq!(read("settings.local.json")[key], serde_json::json!(true));
+    }
 
     #[test]
     fn guard_settings_run_this_cc_moss_and_fail_closed() {

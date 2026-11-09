@@ -383,8 +383,11 @@ pub fn settings_path(
 /// settings `env` into its shell commands' environment too, so a token or
 /// key never goes there: when the user's settings have one (or a key
 /// helper of their own), Moss's `apiKeyHelper` is `helper` (`cc-moss moss
-/// provider-key`), which Claude Code runs outside Moss's sandbox. `None`
-/// when `user` (the text of the user's `settings.json`) is not JSON.
+/// provider-key`), which Claude Code runs outside Moss's sandbox. It also
+/// always says yes to the bypass warning (F59): Claude Code takes that key
+/// from local settings, never from the project's, and a Moss in a detached
+/// pane would wait on the warning for good. `None` when `user` (the text of
+/// the user's `settings.json`) is not JSON.
 pub fn moss_settings(user: &str, helper: &str) -> Option<MossSettings> {
     let value: serde_json::Value = serde_json::from_str(user).ok()?;
     let mut env = serde_json::Map::new();
@@ -412,6 +415,10 @@ pub fn moss_settings(user: &str, helper: &str) -> Option<MossSettings> {
     if secret {
         out.insert(TOP_HELPER.into(), helper.into());
     }
+    out.insert(
+        crate::settings_json::BYPASS_PROMPT_KEY.into(),
+        serde_json::Value::Bool(true),
+    );
     let mut text = serde_json::to_string_pretty(&serde_json::Value::Object(out)).ok()?;
     text.push('\n');
     Some(MossSettings { text, dropped_url })
@@ -675,6 +682,34 @@ mod tests {
     }
 
     #[test]
+    fn moss_settings_skips_bypass_prompt() {
+        let helper = "/bin/cc-moss moss provider-key";
+        for (user, env, has_helper) in [
+            (r#"{"theme":"dark"}"#, None, false),
+            (
+                r#"{"env":{"ANTHROPIC_BASE_URL":"https://a.io","ANTHROPIC_AUTH_TOKEN":"t"}}"#,
+                Some(serde_json::json!({"ANTHROPIC_BASE_URL": "https://a.io"})),
+                true,
+            ),
+            (r#"{"apiKeyHelper":"echo k"}"#, None, true),
+        ] {
+            let made = moss_settings(user, helper).unwrap();
+            let v: serde_json::Value = serde_json::from_str(&made.text).unwrap();
+            assert_eq!(
+                v[crate::settings_json::BYPASS_PROMPT_KEY],
+                serde_json::Value::Bool(true),
+                "{user}: {v}"
+            );
+            assert_eq!(v.get("env").cloned(), env, "{user}");
+            assert_eq!(
+                v.get(TOP_HELPER).and_then(|h| h.as_str()),
+                has_helper.then_some(helper),
+                "{user}"
+            );
+        }
+    }
+
+    #[test]
     fn moss_settings_carry_no_secret() {
         let helper = "/bin/cc-moss moss provider-key";
         let made = moss_settings(
@@ -697,7 +732,8 @@ mod tests {
                     "ANTHROPIC_DEFAULT_OPUS_MODEL": "glm",
                     "CLAUDE_CODE_MAX_CONTEXT_TOKENS": "200000"
                 },
-                "apiKeyHelper": helper
+                "apiKeyHelper": helper,
+                "skipDangerousModePermissionPrompt": true
             })
         );
         // A password in the URL: the URL stays out.
@@ -708,12 +744,12 @@ mod tests {
         .unwrap();
         assert!(made.dropped_url);
         assert!(!made.text.contains("pw"), "{}", made.text);
-        // The subscription: nothing at all.
+        // The subscription: no provider, only the bypass answer.
         assert_eq!(
             moss_settings(r#"{"theme":"dark","model":"opus"}"#, helper)
                 .unwrap()
                 .text,
-            "{}\n"
+            "{\n  \"skipDangerousModePermissionPrompt\": true\n}\n"
         );
         assert_eq!(moss_settings("nope", helper), None);
         // What the helper hands over: the token, else the key.

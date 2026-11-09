@@ -6,6 +6,12 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Moss no longer stops on Claude Code's bypass warning.** The answer to the warning was in Moss's project settings,
+  where Claude Code ignores it, so a fresh Moss could wait on the warning for days. It is now in Moss's local
+  settings, every time.
+
 ## [0.3.9] - 2026-11-06
 
 ### Fixed

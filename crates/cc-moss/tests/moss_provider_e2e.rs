@@ -110,10 +110,16 @@ fn moss_file(w: &World) -> PathBuf {
     w.state().join("moss/.claude/settings.local.json")
 }
 
+/// Moss's local settings without the bypass answer, which is always
+/// there (F59).
 fn moss_env(w: &World) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(moss_file(w)).ok()?;
-    serde_json::from_str(&text).ok()
+    let mut v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let answer = v.as_object_mut()?.remove(BYPASS_KEY);
+    (answer == Some(serde_json::Value::Bool(true))).then_some(v)
 }
+
+const BYPASS_KEY: &str = "skipDangerousModePermissionPrompt";
 
 /// Every file under `dir`, with its bytes.
 fn all_files(dir: &Path, out: &mut Vec<(PathBuf, Vec<u8>)>) {
