@@ -124,6 +124,12 @@
     hint.append(go, close);
     document.body.append(hint);
     setTimeout(() => hint.classList.remove("off"), 900);
+    // It steps aside on its own after a while or once you scroll a screen, without
+    // remembering anything: the next visit offers it again.
+    const fade = () => { hint.classList.add("off"); hint.inert = true; removeEventListener("scroll", onScroll); };
+    const onScroll = () => { if (scrollY > innerHeight) fade(); };
+    addEventListener("scroll", onScroll, { passive: true });
+    setTimeout(fade, 9000);
   }
   // Fetch the other skin's pictures once the page is idle, so switching never shows a blank.
   addEventListener("load", () => setTimeout(() => {
@@ -341,8 +347,8 @@
   };
   let mode = "everyday";
   const pokes = {
-    zh: ["嗨，我是小莫", "别戳啦，痒～", "账单修复断了，点我就能找回", "找回来啦，从刚才的地方接着来", "官网改版正在忙，我盯着呢"],
-    en: ["Hi, I'm Mo.", "Hey, that tickles.", "billing-fix stopped. Want it back?", "Back where you left off.", "acme-web is busy. I've got it."],
+    zh: ["嗨，我是小莫", "别戳啦，痒～", "修发票断了，点我就能找回", "找回来啦，从刚才的地方接着来", "登录页正在忙，我盯着呢"],
+    en: ["Hi, I'm Mo.", "Hey, that tickles.", "fix-invoice stopped. Want it back?", "Back where you left off.", "login-page is busy. I've got it."],
   };
   let poke = 0;
   const card = document.getElementById("mo-card");

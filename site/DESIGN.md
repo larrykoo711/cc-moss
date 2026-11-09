@@ -193,8 +193,9 @@ variables (`--muted`, `--faint`), so a class never has to know which skin it is 
 **The Unlit Means Stopped Rule.** A stopped session is a light gone out: its dot is the text colour at 30%, and it
 lights coral when it comes back. There is no red.
 
-**The Real Screens Stay Dark Rule.** Device mockups use `.dark-scope` and keep the dark palette in both skins,
-like real screens on a desk.
+**The Real Screens Stay Dark Rule.** Device mockups (the hero desktop, Mo's desk, the terminal) use `.dark-scope` and
+keep the dark palette in both skins, like real screens on a desk. App screenshots shown on their own (the tour, the
+Moss page) follow the visitor's skin on purpose: each exists per language and per skin.
 
 ## Typography
 

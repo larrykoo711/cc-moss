@@ -34,7 +34,7 @@
       </p>
       <div class="reveal mt-10 flex flex-col md:flex-row items-center justify-center gap-3" style="--d:240ms">
         <a href="#install" data-hero-cta class="group inline-flex items-center gap-3 rounded-full bg-coral-deep text-white font-semibold pl-6 pr-1.5 py-1.5 shadow-[0_10px_40px_-10px_rgba(255,90,60,.7)] hover:brightness-110 active:scale-[0.98] transition">
-          <span lang="zh">免费安装</span><span lang="en">Get cc-moss</span>
+          <span lang="zh">免费安装</span><span lang="en">Install for free</span>
           <span class="grid place-items-center w-9 h-9 rounded-full bg-black/15 transition-transform duration-500 ease-[cubic-bezier(.32,.72,0,1)] group-hover:translate-x-0.5 group-hover:-translate-y-px group-hover:scale-105"><svg class="w-4 h-4"><use href="#arrow"/></svg></span>
         </a>
         <button data-copy="brew install larrykoo711/tap/cc-moss && cc-moss install" class="group hidden sm:inline-flex items-center gap-2.5 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] px-5 py-3 font-mono text-[13px] text-fg/80 cursor-pointer hover:bg-fg/[.08] active:scale-[0.98] transition">
@@ -104,13 +104,12 @@
         <div class="shell">
           <div class="core p-3" id="restore">
             <div class="flex items-center justify-between px-3 pt-2 pb-3">
-              <p class="text-sm font-medium"><span lang="zh">3 个会话断了</span><span lang="en">3 sessions stopped</span></p>
+              <p class="text-sm font-medium"><span lang="zh">2 个会话断了</span><span lang="en">2 sessions stopped</span></p>
               <button class="restore-demo min-h-11 rounded-full bg-coral-deep text-white text-sm font-semibold px-4 py-1.5 cursor-pointer hover:brightness-110 active:scale-[0.97] transition disabled:cursor-default disabled:hover:brightness-100"><span class="restore-label"><span lang="zh">全部找回</span><span lang="en">Bring them back</span></span></button>
             </div>
             <ul class="space-y-1">
-              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-fg/30 transition-colors duration-300"></span><span class="text-sm"><span lang="zh">官网改版</span><span lang="en">acme-web</span></span><span class="row-state ml-auto text-xs text-faint"><span lang="zh">断了</span><span lang="en">stopped</span></span></li>
-              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-fg/30 transition-colors duration-300"></span><span class="text-sm"><span lang="zh">接口评审</span><span lang="en">api-review</span></span><span class="row-state ml-auto text-xs text-faint"><span lang="zh">断了</span><span lang="en">stopped</span></span></li>
-              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-fg/30 transition-colors duration-300"></span><span class="text-sm"><span lang="zh">账单修复</span><span lang="en">billing-fix</span></span><span class="row-state ml-auto text-xs text-faint"><span lang="zh">断了</span><span lang="en">stopped</span></span></li>
+              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-fg/30 transition-colors duration-300"></span><span class="text-sm"><span lang="zh">修发票</span><span lang="en">fix-invoice</span></span><span class="row-state ml-auto text-xs text-faint"><span lang="zh">断了</span><span lang="en">stopped</span></span></li>
+              <li class="flex items-center gap-3 rounded-xl bg-fg/[.03] px-3 py-2.5"><span class="dot w-2 h-2 rounded-full bg-fg/30 transition-colors duration-300"></span><span class="text-sm"><span lang="zh">偶发测试</span><span lang="en">flaky-test</span></span><span class="row-state ml-auto text-xs text-faint"><span lang="zh">断了</span><span lang="en">stopped</span></span></li>
             </ul>
           </div>
         </div>
@@ -129,7 +128,7 @@
       </header>
 
       <div class="relative mt-10 lg:mt-4 lg:grid lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)] lg:gap-16">
-        <div id="stage" data-agent="skip" class="sticky top-[76px] lg:top-[13vh] z-10 self-start lg:col-start-2 lg:row-start-1 bg-bg lg:bg-transparent pb-3 lg:pb-0">
+        <div id="stage" data-agent="skip" class="hidden lg:block sticky lg:top-[13vh] z-10 self-start lg:col-start-2 lg:row-start-1">
           <div class="shell">
             <div class="core relative h-[46vh] lg:h-[68vh] overflow-hidden">
               <div class="absolute inset-0 bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.16),transparent_70%)]"></div>
@@ -160,30 +159,34 @@
           </div>
         </div>
 
-        <ol data-agent="unwrap" class="lg:col-start-1 lg:row-start-1 pb-[22vh] lg:pb-[20vh]">
-          <li data-agent="unwrap" class="step min-h-[38vh] lg:min-h-[80vh] flex items-center" data-step="panel">
-            <div class="max-w-sm py-10">
+        <ol data-agent="unwrap" class="lg:col-start-1 lg:row-start-1 lg:pb-[20vh]">
+          <li data-agent="unwrap" class="step lg:min-h-[80vh] flex flex-col lg:flex-row lg:items-center pt-10 lg:pt-0" data-step="panel">
+            <figure class="lg:hidden shell w-full" data-agent="skip"><div class="core p-3 sm:p-5 grid place-items-center bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.14),transparent_70%)]"><img data-pic="panel" src="/assets/panel.zh.dark.webp" alt="" data-alt-zh="会话页：按项目分组，顶上一条「有 2 个会话断了」和「全部找回」" data-alt-en="The Sessions page: grouped by project, with “2 sessions stopped” and Bring All Back at the top" width="952" height="1080" loading="lazy" class="lang-img w-full max-w-[420px] h-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.6),0_0_0_1px_var(--hair)]"></div></figure>
+            <div class="max-w-sm pt-6 lg:py-10">
               <p class="font-mono text-xs text-coral" data-agent="skip">01</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">点一下菜单栏，全都在眼前。</span><span lang="en">Click. It&rsquo;s all there.</span></h3>
               <p class="mt-3 text-muted leading-relaxed"><span lang="zh">按项目排好，打字就搜，回车就在终端里打开。断了的，点一下找回。</span><span lang="en">Sorted by project. Type to find one, press Return to jump in. Stopped ones come back in a click.</span></p>
             </div>
           </li>
-          <li data-agent="unwrap" class="step min-h-[38vh] lg:min-h-[80vh] flex items-center" data-step="queue">
-            <div class="max-w-sm py-10">
+          <li data-agent="unwrap" class="step lg:min-h-[80vh] flex flex-col lg:flex-row lg:items-center pt-10 lg:pt-0" data-step="queue">
+            <figure class="lg:hidden shell w-full" data-agent="skip"><div class="core p-3 sm:p-5 grid place-items-center bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.14),transparent_70%)]"><img data-pic="queue" src="/assets/queue.zh.dark.webp" alt="" data-alt-zh="待处理页：接口评审的问题展开着，选项点一下就答；下面还排着两件" data-alt-en="The To Do page: api-review’s question open with its options to click, two more waiting below" width="952" height="1080" loading="lazy" class="lang-img w-full max-w-[420px] h-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.6),0_0_0_1px_var(--hair)]"></div></figure>
+            <div class="max-w-sm pt-6 lg:py-10">
               <p class="font-mono text-xs text-coral" data-agent="skip">02</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">在等你的，不用进去就能答。</span><span lang="en">Answer without going in.</span></h3>
               <p class="mt-3 text-muted leading-relaxed"><span lang="zh">会话问你选择题、等你回话，都排在「待处理」里。点一下就答，会话接着干。</span><span lang="en">Questions and replies a session waits for line up in To Do. Click an answer and it carries on.</span></p>
             </div>
           </li>
-          <li data-agent="unwrap" class="step min-h-[38vh] lg:min-h-[80vh] flex items-center" data-step="archive">
-            <div class="max-w-sm py-10">
+          <li data-agent="unwrap" class="step lg:min-h-[80vh] flex flex-col lg:flex-row lg:items-center pt-10 lg:pt-0" data-step="archive">
+            <figure class="lg:hidden shell w-full" data-agent="skip"><div class="core p-3 sm:p-5 grid place-items-center bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.14),transparent_70%)]"><img data-pic="archive" src="/assets/archive.zh.dark.webp" alt="" data-alt-zh="会话列表底部的「已归档」：三个旧会话，每个都能拿回来或清理" data-alt-en="Archived at the foot of the list: three old sessions, each ready to bring back or clean up" width="952" height="1080" loading="lazy" class="lang-img w-full max-w-[420px] h-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.6),0_0_0_1px_var(--hair)]"></div></figure>
+            <div class="max-w-sm pt-6 lg:py-10">
               <p class="font-mono text-xs text-coral" data-agent="skip">03</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">旧会话，自己收好。</span><span lang="en">Old sessions put themselves away.</span></h3>
               <p class="mt-3 text-muted leading-relaxed"><span lang="zh">结束了 30 天没动的会话自动归档，想要时一点就拿回来。不要了，让 Moss 清理：它先问你，对话文件进废纸篓。</span><span lang="en">Ended and untouched for 30 days? Archived, and back with a click whenever you want. Done with them? Moss cleans up, asks first, and puts the conversations in the Trash.</span></p>
             </div>
           </li>
-          <li data-agent="unwrap" class="step min-h-[38vh] lg:min-h-[80vh] flex items-center" data-step="provider">
-            <div class="max-w-sm py-10">
+          <li data-agent="unwrap" class="step lg:min-h-[80vh] flex flex-col lg:flex-row lg:items-center pt-10 lg:pt-0" data-step="provider">
+            <figure class="lg:hidden shell w-full" data-agent="skip"><div class="core p-3 sm:p-5 grid place-items-center bg-[radial-gradient(70%_60%_at_50%_0%,rgba(255,90,60,.14),transparent_70%)]"><img data-pic="provider" src="/assets/provider.zh.dark.webp" alt="" data-alt-zh="换了供应商之后：顶上写着 2 个会话要重开，带「全部重开」按钮，要重开的会话名字旁有标记" data-alt-en="After a provider switch: 2 sessions need a restart, with Restart All at the top and a mark beside each one" width="952" height="1080" loading="lazy" class="lang-img w-full max-w-[420px] h-auto rounded-xl shadow-[0_30px_60px_-20px_rgba(0,0,0,.6),0_0_0_1px_var(--hair)]"></div></figure>
+            <div class="max-w-sm pt-6 lg:py-10">
               <p class="font-mono text-xs text-coral" data-agent="skip">04</p>
               <h3 class="mt-3 text-2xl sm:text-3xl font-semibold tracking-[-0.025em]"><span lang="zh">换了供应商，不用从头来。</span><span lang="en">New provider, same conversation.</span></h3>
               <p class="mt-3 text-muted leading-relaxed"><span lang="zh">用 cc-switch 这类工具换了 API 供应商，多数会话下一条消息就用上，Moss 也跟着换。要重开的会标出来，在原地重开，对话接着聊。</span><span lang="en">Switch with a tool like cc-switch and most sessions, Moss included, use it from your next message. The few that need it restart in place, same conversation.</span></p>
@@ -369,9 +372,9 @@
             <p><span class="text-faint">~/code/acme-web</span> <span class="text-coral">❯</span> <span id="typed"></span><span class="inline-block w-2 h-4 bg-coral align-middle animate-pulse"></span></p>
             <div id="picker" class="mt-3 hidden">
               <p class="text-faint whitespace-pre">  <span lang="zh">会话</span><span lang="en">Sessions</span> · 3</p>
-              <p class="bg-fg/[.06] rounded px-2 whitespace-pre"><span class="text-coral">●</span> acme-web      <span class="text-faint"><span lang="zh">在忙</span><span lang="en">busy</span></span></p>
+              <p class="bg-fg/[.06] rounded px-2 whitespace-pre"><span class="text-coral">●</span> login-page    <span class="text-faint"><span lang="zh">在忙</span><span lang="en">busy</span></span></p>
               <p class="px-2 whitespace-pre"><span class="text-amber">●</span> api-review    <span class="text-faint"><span lang="zh">在等你</span><span lang="en">waiting</span></span></p>
-              <p class="px-2 whitespace-pre"><span class="text-faint">●</span> billing-fix   <span class="text-faint"><span lang="zh">断了 · 回车找回</span><span lang="en">stopped · ⏎ to bring back</span></span></p>
+              <p class="px-2 whitespace-pre"><span class="text-faint">●</span> fix-invoice   <span class="text-faint"><span lang="zh">断了 · 回车找回</span><span lang="en">stopped · ⏎ to bring back</span></span></p>
             </div>
           </div>
         </div>
@@ -400,7 +403,7 @@
             <tbody>
               <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]"><code>claude --resume</code> / <code>--continue</code></th><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">找回 Claude 对话</span><span lang="en">Brings back Claude conversations</span></span><span lang="zh">一次一个，自己挑</span><span lang="en">One at a time, you pick</span></td><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">知道哪个会话在哪</span><span lang="en">Knows which session was where</span></span><span lang="zh">不知道</span><span lang="en">No</span></td><td class="py-4"><span class="cmp-label" data-agent="skip"><span lang="zh">重启之后</span><span lang="en">After a reboot</span></span><span lang="zh">逐个手动</span><span lang="en">By hand, one by one</span></td></tr>
               <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]">tmux-resurrect / continuum</th><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">找回 Claude 对话</span><span lang="en">Brings back Claude conversations</span></span><span lang="zh">不能（只恢复终端窗口）</span><span lang="en">No (brings back terminal windows only)</span></td><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">知道哪个会话在哪</span><span lang="en">Knows which session was where</span></span><span lang="zh">只知道窗口布局</span><span lang="en">Only the window layout</span></td><td class="py-4"><span class="cmp-label" data-agent="skip"><span lang="zh">重启之后</span><span lang="en">After a reboot</span></span><span lang="zh">可以</span><span lang="en">Yes</span></td></tr>
-              <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]"><span class="font-semibold text-coral">cc-moss</span></th><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">找回 Claude 对话</span><span lang="en">Brings back Claude conversations</span></span><span lang="zh">所有断了的会话，一次找回</span><span lang="en">Every stopped one, in one go</span></td><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">知道哪个会话在哪</span><span lang="en">Knows which session was where</span></span><span lang="zh">知道：名字、目录、备注</span><span lang="en">Yes: name, folder, notes</span></td><td class="py-4"><span class="cmp-label" data-agent="skip"><span lang="zh">重启之后</span><span lang="en">After a reboot</span></span><span lang="zh">点一下，全部找回</span><span lang="en">One click brings them all back</span></td></tr>
+              <tr class="border-t border-fg/[.07]"><th scope="row" class="py-4 pr-4 text-left font-normal font-mono text-[13px]"><span class="font-semibold text-coral">cc-moss</span></th><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">找回 Claude 对话</span><span lang="en">Brings back Claude conversations</span></span><span lang="zh">每一个，接着原来的对话</span><span lang="en">Every one, same conversation</span></td><td class="py-4 pr-4"><span class="cmp-label" data-agent="skip"><span lang="zh">知道哪个会话在哪</span><span lang="en">Knows which session was where</span></span><span lang="zh">知道：名字、目录、备注</span><span lang="en">Yes: name, folder, notes</span></td><td class="py-4"><span class="cmp-label" data-agent="skip"><span lang="zh">重启之后</span><span lang="en">After a reboot</span></span><span lang="zh">点一下，全部找回</span><span lang="en">One click brings them all back</span></td></tr>
             </tbody>
           </table>
         </div>
@@ -439,6 +442,13 @@
               <svg aria-hidden="true" viewBox="0 0 16 16" class="faq-icon size-4 shrink-0 text-faint transition-transform duration-300 group-open:rotate-45 group-hover:text-fg/70"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
             </summary>
             <p class="faq-a pb-6 pr-8 text-muted leading-relaxed [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg"><span lang="zh">打开「终端」，粘贴 <code>brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</code> 回车，然后跟着欢迎页走，一分钟就好。没有 Homebrew 的话，可以<a href="https://github.com/larrykoo711/cc-moss/releases/latest">在 GitHub 上下载</a>。</span><span lang="en">Open Terminal, paste <code>brew install larrykoo711/tap/cc-moss &amp;&amp; cc-moss install</code> and press Return, then follow the welcome. It takes about a minute. No Homebrew? <a href="https://github.com/larrykoo711/cc-moss/releases/latest">Download it from GitHub</a>.</span></p>
+          </details>
+          <details name="faq" class="faq-item group border-t border-fg/[.07]" id="faq-15">
+            <summary class="flex items-center gap-4 py-6 cursor-pointer">
+              <h3 class="faq-q text-lg font-semibold tracking-[-0.01em] flex-1"><span lang="zh">会改我的 tmux 吗？</span><span lang="en">Will it change my tmux?</span></h3>
+              <svg aria-hidden="true" viewBox="0 0 16 16" class="faq-icon size-4 shrink-0 text-faint transition-transform duration-300 group-open:rotate-45 group-hover:text-fg/70"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" fill="none"/></svg>
+            </summary>
+            <p class="faq-a pb-6 pr-8 text-muted leading-relaxed [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg"><span lang="zh">会加一份调好的配置，由 <code>~/.tmux.conf</code> 顶部的一行引入，写在那行之后的设置都以你的为准。前缀键仍是 <code>Ctrl-b</code>；它打开了鼠标、复制模式的 vi 按键、5 万行历史、窗口从 1 开始编号和一条状态栏。前缀键之后新绑定的键：<code>t</code> 打开选择器（原来是时钟），<code>r</code> 重载配置，<code>|</code> 和 <code>-</code> 分屏，<code>c</code> 在当前目录开新窗口，<code>h</code> <code>j</code> <code>k</code> <code>l</code> 在窗格间移动（所以 <code>l</code> 不再跳回上一个窗口），<code>H</code> <code>J</code> <code>K</code> <code>L</code> 调整大小。想换回哪个，就在 cc-moss 那一段之后写上你自己的 <code>bind</code>；完全不想动 tmux，安装时加 <code>--skip tmux</code>。</span><span lang="en">It adds a tuned config, loaded from one line at the top of your <code>~/.tmux.conf</code>; anything you set below that line wins. The prefix stays <code>Ctrl-b</code>. It turns on the mouse, vi keys in copy mode, a 50k-line history, windows numbered from 1 and a status bar. Keys after the prefix: <code>t</code> opens the picker (instead of the clock), <code>r</code> reloads the config, <code>|</code> and <code>-</code> split, <code>c</code> opens a window in the current folder, <code>h</code> <code>j</code> <code>k</code> <code>l</code> move between panes (so <code>l</code> no longer jumps to the last window) and <code>H</code> <code>J</code> <code>K</code> <code>L</code> resize them. Put your own <code>bind</code> lines below the cc-moss block to take any of them back, or install with <code>--skip tmux</code> to leave tmux alone.</span></p>
           </details>
           <details name="faq" class="faq-item group border-t border-fg/[.07]" id="faq-3">
             <summary class="flex items-center gap-4 py-6 cursor-pointer">
@@ -530,39 +540,36 @@
     <div class="relative mx-auto max-w-3xl px-5 text-center">
       <svg class="reveal float w-20 h-24 mx-auto"><use href="#mo-figure"/></svg>
       <h2 class="reveal mt-6 text-[clamp(2.5rem,6vw,4.5rem)] font-semibold tracking-[-0.04em] leading-[1.02]" style="--d:80ms"><span lang="zh">一分钟，装好。</span><span lang="en">Up and running<br>in a minute.</span></h2>
-      <p class="reveal mt-5 text-lg sm:text-xl text-muted" style="--d:120ms"><span lang="zh">你点头之前，什么都不改。</span><span lang="en">Nothing changes until you say yes.</span></p>
+      <p class="reveal mt-5 text-lg sm:text-xl text-muted" style="--d:120ms"><span lang="zh">改你的设置之前，一定先问你。</span><span lang="en">It asks before it changes your settings.</span></p>
       <div class="reveal mt-10 shell text-left" style="--d:160ms">
-        <div class="core p-2">
-          <button data-copy="brew install larrykoo711/tap/cc-moss && cc-moss install" class="group w-full flex items-start sm:items-center gap-3 rounded-[1.25rem] px-5 py-4 font-mono text-[13px] sm:text-sm cursor-pointer hover:bg-fg/[.04] active:scale-[0.99] transition">
-            <span class="text-coral">$</span>
-            <span class="min-w-0 text-left"><span class="whitespace-nowrap">brew install</span> <span class="whitespace-nowrap">larrykoo711/tap/cc-moss</span> <span class="whitespace-nowrap">&amp;&amp; cc-moss install</span></span>
-            <span class="copy-label ml-auto whitespace-nowrap text-xs text-faint group-hover:text-fg/70 font-sans shrink-0"><span lang="zh">复制</span><span lang="en">Copy</span></span>
-          </button>
-        </div>
+        <ol class="core p-2 sm:p-3 divide-y divide-fg/[.07] [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg">
+          <li class="px-4 sm:px-5 py-5">
+            <p class="flex items-baseline gap-3"><span class="font-mono text-xs text-coral" data-agent="skip">01</span><span class="font-medium"><span lang="zh">用 Homebrew 装上</span><span lang="en">Install with Homebrew</span></span></p>
+            <button data-copy="brew install larrykoo711/tap/cc-moss" class="group mt-3 w-full flex items-center gap-3 rounded-2xl bg-fg/[.04] shadow-[inset_0_0_0_1px_var(--hair)] px-4 py-3 font-mono text-[13px] text-left cursor-pointer hover:bg-fg/[.07] active:scale-[0.99] transition"><span class="text-coral">$</span><span class="min-w-0"><span class="whitespace-nowrap">brew install</span> <span class="whitespace-nowrap">larrykoo711/tap/cc-moss</span></span><span class="copy-label ml-auto whitespace-nowrap text-xs text-faint group-hover:text-fg/70 font-sans shrink-0"><span lang="zh">复制</span><span lang="en">Copy</span></span></button>
+          </li>
+          <li class="px-4 sm:px-5 py-5">
+            <p class="flex items-baseline gap-3"><span class="font-mono text-xs text-coral" data-agent="skip">02</span><span class="font-medium"><span lang="zh">接上 <span class="whitespace-nowrap">Claude Code</span></span><span lang="en">Connect Claude Code</span></span></p>
+            <p class="mt-1 text-sm text-muted"><span lang="zh">它先把每一处改动给你看，问过再改。</span><span lang="en">It shows you every change first, and asks.</span></p>
+            <button data-copy="cc-moss install" class="group mt-3 w-full flex items-center gap-3 rounded-2xl bg-fg/[.04] shadow-[inset_0_0_0_1px_var(--hair)] px-4 py-3 font-mono text-[13px] text-left cursor-pointer hover:bg-fg/[.07] active:scale-[0.99] transition"><span class="text-coral">$</span><span class="min-w-0">cc-moss install</span><span class="copy-label ml-auto whitespace-nowrap text-xs text-faint group-hover:text-fg/70 font-sans shrink-0"><span lang="zh">复制</span><span lang="en">Copy</span></span></button>
+            <ul class="mt-4 grid sm:grid-cols-3 gap-x-5 gap-y-3 text-sm">
+              <li><p class="font-medium"><span lang="zh">只加，不覆盖</span><span lang="en">Adds, never overwrites</span></p><p class="mt-0.5 text-muted leading-relaxed"><span lang="zh">会调好 Claude Code、tmux 和终端的设置，改到的每个文件都先留一份备份。<a href="#faq-15">tmux 会有哪些变化</a></span><span lang="en">It sets up Claude Code, tmux and your terminal, and backs up every file it touches first. <a href="#faq-15">What changes in tmux</a></span></p></li>
+              <li><p class="font-medium"><span lang="zh">先看一眼</span><span lang="en">Look first</span></p><p class="mt-0.5 text-muted leading-relaxed"><span lang="zh"><code>cc-moss install --dry-run</code> 列出会改什么，什么都不动。</span><span lang="en"><code>cc-moss install --dry-run</code> lists what would change and touches nothing.</span></p></li>
+              <li><p class="font-medium"><span lang="zh">随时撤掉</span><span lang="en">Undo anytime</span></p><p class="mt-0.5 text-muted leading-relaxed"><span lang="zh"><code>cc-moss install --uninstall</code> 先问你，再把装过的都清理干净。</span><span lang="en"><code>cc-moss install --uninstall</code> asks first, then removes everything it added.</span></p></li>
+            </ul>
+          </li>
+          <li class="px-4 sm:px-5 py-5">
+            <p class="flex items-baseline gap-3"><span class="font-mono text-xs text-coral" data-agent="skip">03</span><span class="font-medium"><span lang="zh">跟着欢迎页走</span><span lang="en">Follow the welcome</span></span></p>
+            <p class="mt-1 text-sm text-muted"><span lang="zh">菜单栏出现 ∞，欢迎页带你做完剩下的。</span><span lang="en">The ∞ shows up in your menu bar, and the welcome walks you through the rest.</span></p>
+          </li>
+        </ol>
       </div>
-      <ul class="reveal mt-8 grid sm:grid-cols-3 gap-x-6 gap-y-5 text-left [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg" style="--d:200ms">
-        <li class="flex items-start gap-3">
-          <svg viewBox="0 0 24 24" class="mt-0.5 shrink-0 w-5 h-5 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10.5 14.5h5M13 12v5"/></svg>
-          <div class="min-w-0"><p class="font-medium"><span lang="zh">只加，不覆盖</span><span lang="en">Adds, never overwrites</span></p><p class="mt-1 text-muted leading-relaxed"><span lang="zh">只往 Claude Code 和终端的设置里追加，改到的每个文件都先留一份备份。</span><span lang="en">It only adds to your Claude Code and terminal settings, and backs up every file it touches first.</span></p></div>
-        </li>
-        <li class="flex items-start gap-3">
-          <svg viewBox="0 0 24 24" class="mt-0.5 shrink-0 w-5 h-5 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/></svg>
-          <div class="min-w-0"><p class="font-medium"><span lang="zh">先看一眼</span><span lang="en">Look first</span></p><p class="mt-1 text-muted leading-relaxed"><span lang="zh"><code>cc-moss install --dry-run</code> 列出会改什么，什么都不动。</span><span lang="en"><code>cc-moss install --dry-run</code> lists what would change and touches nothing.</span></p></div>
-        </li>
-        <li class="flex items-start gap-3">
-          <svg viewBox="0 0 24 24" class="mt-0.5 shrink-0 w-5 h-5 text-coral" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 7H4V2"/><path d="M4.5 7A8.5 8.5 0 1 1 3.5 13"/></svg>
-          <div class="min-w-0"><p class="font-medium"><span lang="zh">随时撤掉</span><span lang="en">Undo anytime</span></p><p class="mt-1 text-muted leading-relaxed"><span lang="zh"><code>cc-moss install --uninstall</code> 先问你，再把装过的都清理干净。</span><span lang="en"><code>cc-moss install --uninstall</code> asks first, then removes everything it added.</span></p></div>
-        </li>
-      </ul>
-      <p class="reveal mt-6 mx-auto max-w-xl text-muted leading-relaxed [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg" style="--d:220ms"><span lang="zh">新会话默认不再逐步问你权限，<a href="#faq-6">一个开关就能改回来</a>。每一处改动都写在<a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md">使用说明</a>里。</span><span lang="en">New sessions don&rsquo;t stop to ask for permission by default, and <a href="#faq-6">one switch changes that</a>. Every change is spelled out in <a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md">the guide</a>.</span></p>
-      <button data-share data-agent="skip" class="reveal sm:hidden mt-6 inline-flex items-center min-h-11 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] px-5 py-3 text-sm text-fg/80 cursor-pointer active:scale-[0.98] transition">
-        <span class="share-label"><span lang="zh">在手机上？把链接发到 Mac 上</span><span lang="en">On your phone? Send the link to your Mac</span></span>
-      </button>
-      <ol class="reveal mt-10 grid grid-cols-3 gap-3 text-sm text-muted" style="--d:240ms">
-        <li><span class="block font-mono text-xs text-coral" data-agent="skip">01</span><span class="mt-1.5 block"><span lang="zh">Homebrew 安装</span><span lang="en">Install with Homebrew</span></span></li>
-        <li><span class="block font-mono text-xs text-coral" data-agent="skip">02</span><span class="mt-1.5 block"><span lang="zh">加进 <span class="whitespace-nowrap">Claude Code</span> 设置</span><span lang="en">Add it to Claude Code</span></span></li>
-        <li><span class="block font-mono text-xs text-coral" data-agent="skip">03</span><span class="mt-1.5 block"><span lang="zh">跟着引导走</span><span lang="en">Follow the welcome</span></span></li>
-      </ol>
+      <p class="reveal mt-6 mx-auto max-w-xl text-muted leading-relaxed [&_code]:font-mono [&_code]:text-[0.9em] [&_code]:text-fg/80 [&_code]:whitespace-nowrap [&_a]:underline [&_a]:underline-offset-4 [&_a:hover]:text-fg" style="--d:220ms"><span lang="zh">新会话默认不再逐步问你权限，<a href="#faq-6">一个开关就能改回来</a>；已经在跑的会话、找回的会话，照旧用原来的设置。每一处改动都写在<span class="whitespace-nowrap"><a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.md">使用说明</a>里。</span></span><span lang="en">New sessions don&rsquo;t stop to ask for permission by default, and <a href="#faq-6">one switch changes that</a>. Sessions already running, and ones you bring back, keep the settings they started with. Every change is spelled out in <a href="https://github.com/larrykoo711/cc-moss/blob/main/docs/guide.en.md">the guide</a>.</span></p>
+      <div class="reveal mt-6 flex flex-col sm:flex-row items-center justify-center gap-3" style="--d:260ms">
+        <button data-copy="brew install larrykoo711/tap/cc-moss && cc-moss install" class="group hidden sm:inline-flex items-center gap-2 min-h-11 rounded-full px-4 text-sm text-muted cursor-pointer hover:text-fg hover:bg-fg/[.05] transition"><span lang="zh">一次复制两条命令</span><span lang="en">Copy both commands at once</span><span class="copy-label whitespace-nowrap text-xs text-faint group-hover:text-fg/70"><span lang="zh">复制</span><span lang="en">Copy</span></span></button>
+        <button data-share data-agent="skip" class="sm:hidden inline-flex items-center min-h-11 rounded-full bg-fg/[.05] shadow-[inset_0_0_0_1px_var(--hair)] px-5 py-3 text-sm text-fg/80 cursor-pointer active:scale-[0.98] transition">
+          <span class="share-label"><span lang="zh">在手机上？把链接发到 Mac 上</span><span lang="en">On your phone? Send the link to your Mac</span></span>
+        </button>
+      </div>
       <p class="reveal mt-10 text-sm text-faint" style="--d:300ms"><span lang="zh">没有 Homebrew？</span><span lang="en">No Homebrew?</span> <a class="inline-flex items-center min-h-11 underline underline-offset-4 hover:text-fg" href="https://github.com/larrykoo711/cc-moss/releases/latest"><span lang="zh">直接下载</span><span lang="en">Download the app</span></a> · <a class="inline-flex items-center min-h-11 underline underline-offset-4 hover:text-fg" href="#faq"><span lang="zh">常见问题</span><span lang="en">FAQ</span></a></p>
     </div>
   </section>
