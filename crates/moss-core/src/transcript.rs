@@ -226,6 +226,26 @@ pub fn last_prompt(path: &Path) -> Option<(String, i64)> {
     scan_back(&mut file, 0, size, prompt)
 }
 
+/// Whether the user ever typed anything here (as [`last_prompt`] reads it),
+/// reading from the start and stopping at the first. A transcript that
+/// cannot be read has nothing.
+pub fn has_prompt(path: &Path) -> bool {
+    use std::io::BufRead;
+    let Ok(file) = File::open(path) else {
+        return false;
+    };
+    let mut reader = std::io::BufReader::new(file);
+    let mut line = Vec::new();
+    loop {
+        line.clear();
+        match reader.read_until(b'\n', &mut line) {
+            Ok(0) | Err(_) => return false,
+            Ok(_) if prompt(&line).is_some() => return true,
+            Ok(_) => {}
+        }
+    }
+}
+
 fn prompt(line: &[u8]) -> Option<(String, i64)> {
     let needle = b"\"user\"";
     if !line.windows(needle.len()).any(|w| w == needle) {

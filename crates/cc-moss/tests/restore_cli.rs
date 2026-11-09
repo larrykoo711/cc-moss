@@ -184,9 +184,13 @@ fn json_reports_each_result() {
 
 #[test]
 fn json_empty_session_has_reason_empty() {
+    // You said something, but it was killed before Claude Code wrote the
+    // transcript (it appears with the first reply): nothing to bring back.
+    // (One nobody spoke to is simply closed.)
     let w = World::new("json-empty");
     w.new_session("job-x");
-    w.session_id("job-x");
+    let id = w.session_id("job-x");
+    common::said(&w.state(), &id, None, None);
     w.tmux(&["kill-server"]);
     wait_for(|| {
         (ls_json(&w.state(), false)["sessions"][0]["status"] == "interrupted").then_some(())

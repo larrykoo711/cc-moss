@@ -96,7 +96,8 @@ pub fn start_json(session_id: &str, source: &str, title: Option<&str>) -> String
 }
 
 /// You say something in `session_id` (UserPromptSubmit with what you typed,
-/// then the reply's Stop), with `title` as the session's name when given.
+/// then the reply's Stop), with `title` as the session's name when given. A
+/// session nobody spoke to is closed when it exits.
 pub fn said(state: &Path, session_id: &str, title: Option<&str>, pid: Option<u32>) {
     let prompt = serde_json::json!({
         "session_id": session_id,

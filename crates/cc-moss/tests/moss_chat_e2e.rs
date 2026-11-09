@@ -338,6 +338,8 @@ fn moss_hears_a_disconnect() {
     // An ordinary session, then its process is killed.
     w.new_session("api");
     let sid = w.session_id("api");
+    // You said something to it: one nobody spoke to just closes (F62).
+    w.first_prompt(&sid, "api");
     let pid = wait_until("the session's pid", 10, || {
         ls_json(&w.state(), true)["sessions"]
             .as_array()?

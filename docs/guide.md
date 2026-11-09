@@ -606,6 +606,8 @@ cc-moss events --json --since 42
 
 ### 恢复时带回什么
 
+一句话都没对它说过的会话没有什么可找回：不管它怎么退出（正常关掉、崩溃、进程没了），都直接关掉，不列为「断了」，也不归档、不删任何文件。升级后第一次查看时，旧版本留下的这类「断了」的会话也会一并关掉。
+
 `restore` 在原来的目录里接上同一段对话（`claude --resume <id>`），回放安全白名单中的 `--permission-mode`、`--effort`、`--add-dir`、`--agent`、`--dangerously-skip-permissions`。普通恢复不回放旧 `--model`，交给 Claude Code 恢复会话选择；只有显式 `--provider-default` 才指定当前渠道模型。看起来像密钥的参数值不会保存或回放，系统提示词也不自动带回。
 
 配置来源必须已知且可安全回放。新捕获的 `--mcp-config`、`--strict-mcp-config`、`--settings`、`--setting-sources` 会留下仅参数名的阻断标记；参数结构无法确认也会拒绝，不是默默丢掉来源后启动。旧记录 Unknown 不猜默认，历史已污染的 Explicit 不自动纠正。保留配置来源不代表 MCP 服务连通性已通过验证。

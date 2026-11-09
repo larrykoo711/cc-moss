@@ -48,6 +48,7 @@ fn restore_all_skips_a_session_ended_on_purpose() {
         &start_json("done1", "startup", Some("done1")),
         p.pid(),
     );
+    said(state, "done1", None, p.pid());
     hook(
         state,
         "session-end",
@@ -226,12 +227,14 @@ fn cc_moss(state: &Path, args: &[&str]) -> std::process::Output {
 
 /// A session that ended (its process is gone).
 fn ended(state: &Path, sid: &str) {
+    let gone = Some(dead_pid());
     hook(
         state,
         "session-start",
         &start_json(sid, "startup", Some(sid)),
-        Some(dead_pid()),
+        gone,
     );
+    said(state, sid, None, gone);
 }
 
 /// Make a session look last used `days` ago.
@@ -388,6 +391,7 @@ fn an_ended_session_brought_back_shows_in_the_list() {
         &start_json("api", "startup", Some("api")),
         gone,
     );
+    said(state, "api", None, gone);
     hook(
         state,
         "session-end",

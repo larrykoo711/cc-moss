@@ -92,12 +92,21 @@ fn audit(w: &World) -> Vec<serde_json::Value> {
         .collect()
 }
 
+/// A transcript with what you said and the turn it finished: one nobody
+/// spoke to is closed when it exits (F62).
+const SAID: &str = concat!(
+    r#"{"type":"user","timestamp":"2026-11-09T10:00:00Z","message":{"role":"user","content":"fix the login page"}}"#,
+    "\n",
+    r#"{"type":"system","subtype":"turn_duration"}"#,
+    "\n",
+);
+
 /// A dropped session, registered by its hooks; its process is gone.
 fn dropped(w: &World, sid: &str, cwd: &Path) {
     std::fs::create_dir_all(cwd).unwrap();
     // It said something before it dropped: there is a conversation to resume.
     let transcript = w.path("fifos").join(format!("{sid}.jsonl"));
-    std::fs::write(&transcript, "{}\n").unwrap();
+    std::fs::write(&transcript, SAID).unwrap();
     let start = serde_json::json!({
         "session_id": sid,
         "transcript_path": transcript,
@@ -158,7 +167,7 @@ fn dropped_with_captured_source(w: &World, sid: &str, cwd: &Path) {
             && snapshot.unreplayable_args.is_empty())
         .then_some(())
     });
-    std::fs::write(w.path("fifos").join(format!("{sid}.jsonl")), "{}\n").unwrap();
+    std::fs::write(w.path("fifos").join(format!("{sid}.jsonl")), SAID).unwrap();
     drop(process);
     wait_until("captured session to show as dropped", 10, || {
         let all = ls_json(&w.state(), true);

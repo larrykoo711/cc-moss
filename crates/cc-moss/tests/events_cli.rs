@@ -4,7 +4,7 @@ mod common;
 
 use std::path::Path;
 
-use common::{bin, end_json, hook, ls_json, start_json, wait_for, FakeProcess, World};
+use common::{bin, end_json, hook, ls_json, said, start_json, wait_for, FakeProcess, World};
 use serde_json::{json, Value};
 
 fn events(state: &Path, args: &[&str]) -> Value {
@@ -320,9 +320,13 @@ fn crash_not_reported_again_after_prune() {
         &start_json("U1", "startup", Some("job-a")),
         claude.pid(),
     );
+    said(&state, "U1", None, claude.pid());
     drop(claude);
     ls_json(&state, true);
-    assert_eq!(kinds(&events(&state, &[])), ["started", "interrupted"]);
+    assert_eq!(
+        kinds(&events(&state, &[])),
+        ["started", "working", "finished", "interrupted"]
+    );
 
     // Never restored: a week later its events are pruned, the crash is not news.
     age_events(&state, 8);

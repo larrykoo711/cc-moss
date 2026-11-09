@@ -8,6 +8,10 @@ use moss_core::registry::Registry;
 use moss_core::slot::{Slot, Status};
 use serde_json::json;
 
+/// A transcript with something you said: a session nobody spoke to is
+/// closed when it exits (F62), which is not what these tests are about.
+const SAID: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/said.jsonl");
+
 fn ctx(pid: u32, now_ms: i64) -> Context {
     Context {
         pid: Some(pid),
@@ -30,7 +34,7 @@ fn start(source: StartSource, id: &str, title: Option<&str>) -> Event {
         session_id: id.into(),
         cwd: "/work".into(),
         title: title.map(Into::into),
-        transcript_path: Some(format!("/t/{id}.jsonl")),
+        transcript_path: Some(SAID.into()),
     }
 }
 
@@ -160,7 +164,7 @@ fn clear_and_compact_keep_the_folder_it_started_in() {
         session_id: id.into(),
         cwd: "/work/.claude/worktrees/agent-1".into(),
         title: None,
-        transcript_path: Some(format!("/t/{id}.jsonl")),
+        transcript_path: Some(SAID.into()),
     };
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))

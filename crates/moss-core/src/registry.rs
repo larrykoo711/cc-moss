@@ -513,8 +513,13 @@ impl Registry {
                             (None, None)
                         }
                         EndReason::Closed(r) => (Some(Status::Closed), Some(r)),
+                        // One that never heard a word from you is just over.
+                        EndReason::Abnormal(r) if silent(&tx, &id, ctx.now_ms)? => {
+                            (Some(Status::Closed), Some(r))
+                        }
                         EndReason::Abnormal(r) => (Some(Status::Interrupted), Some(r)),
                     };
+                    let silently = matches!(reason, EndReason::Abnormal(_));
                     if let Some(status) = status {
                         // A slot the user closed stays closed: killing its tmux
                         // session makes claude report SessionEnd(other) afterwards.
@@ -523,7 +528,11 @@ impl Registry {
                              WHERE slot_id=?1 AND status <> 'closed'",
                             params![id, status.as_str(), raw, ctx.now_ms],
                         )?;
-                        let detail = serde_json::json!({ "reason": raw });
+                        let detail = if silently && status == Status::Closed {
+                            serde_json::json!({ "reason": raw, "silent": true })
+                        } else {
+                            serde_json::json!({ "reason": raw })
+                        };
                         // `cc-moss restart` (or restore) ended it on purpose
                         // and brings it back right away: no news.
                         let restarting = tx
@@ -1377,14 +1386,14 @@ impl Registry {
     /// come back. Nothing when the slot runs another process by now.
     pub fn release_process(&self, slot_id: &str, pid: u32, now_ms: i64) -> Result<bool> {
         let tx = self.write_tx()?;
-        let held: Option<(Option<u32>, Option<String>)> = tx
+        let held: Option<Option<u32>> = tx
             .query_row(
-                "SELECT pid, last_prompt FROM slots WHERE slot_id = ?1 AND status = 'running'",
+                "SELECT pid FROM slots WHERE slot_id = ?1 AND status = 'running'",
                 [slot_id],
-                |r| Ok((r.get(0)?, r.get(1)?)),
+                |r| r.get(0),
             )
             .optional()?;
-        let Some((Some(held), last_prompt)) = held else {
+        let Some(Some(held)) = held else {
             return Ok(false);
         };
         if held != pid {
@@ -1397,7 +1406,7 @@ impl Registry {
         set_tmux(&tx, slot_id, None)?;
         clear_attention(&tx, slot_id)?;
         let detail = serde_json::json!({ "reason": "moved" });
-        if last_prompt.is_none() {
+        if never_spoke(&tx, slot_id)? {
             tx.execute(
                 "UPDATE slots SET status = 'closed', end_reason = 'moved', ended_at = ?2
                  WHERE slot_id = ?1",
@@ -1457,11 +1466,26 @@ impl Registry {
         if returning {
             return Ok(false);
         }
+        if close_if_silent(&tx, slot_id, Some("process-gone"), now_ms)? {
+            tx.commit()?;
+            return Ok(false);
+        }
         let detail = serde_json::json!({ "reason": "process-gone" });
         let recorded = record_interrupted(&tx, slot_id, &detail, now_ms)?;
         clear_attention(&tx, slot_id)?;
         tx.commit()?;
         Ok(recorded)
+    }
+
+    /// Close a stopped slot that never heard a word from the user (F62), as
+    /// one an older cc-moss left interrupted. Recorded as `ended`, which is
+    /// no news for Moss. Running, archived and Moss slots stay as they are;
+    /// the caller has seen its process gone. Whether it closed it.
+    pub fn close_silent(&self, slot_id: &str, now_ms: i64) -> Result<bool> {
+        let tx = self.write_tx()?;
+        let closed = close_if_silent(&tx, slot_id, None, now_ms)?;
+        tx.commit()?;
+        Ok(closed)
     }
 
     /// Drop events recorded before `before_ms`. Returns how many went.
@@ -1644,6 +1668,82 @@ fn record_interrupted(
         return Ok(false);
     }
     record_event(conn, slot_id, "interrupted", detail, at_ms)?;
+    Ok(true)
+}
+
+/// Whether a slot never heard a word from the user: no prompt the hooks
+/// saw, and none in any of its transcripts (an adopted slot's are only
+/// there). A transcript that is gone has none.
+fn never_spoke(conn: &Connection, slot_id: &str) -> Result<bool> {
+    let prompt: Option<String> = conn
+        .query_row(
+            "SELECT last_prompt FROM slots WHERE slot_id = ?1",
+            [slot_id],
+            |r| r.get(0),
+        )
+        .optional()?
+        .flatten();
+    if prompt.is_some_and(|p| !p.is_empty()) {
+        return Ok(false);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT transcript_path FROM slot_sessions
+         WHERE slot_id = ?1 AND transcript_path IS NOT NULL",
+    )?;
+    let paths = stmt
+        .query_map([slot_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(!paths
+        .iter()
+        .any(|p| crate::transcript::has_prompt(Path::new(p))))
+}
+
+/// [`never_spoke`] for a slot whose exit is in question: not already
+/// closed, not archived, not Moss, and not on its way back (`restart`,
+/// `restore`).
+fn silent(conn: &Connection, slot_id: &str, now_ms: i64) -> Result<bool> {
+    let row: Option<(bool, Option<i64>)> = conn
+        .query_row(
+            "SELECT status <> 'closed' AND archived_at_ms IS NULL
+                    AND COALESCE(role, '') <> ?2,
+                    restore_started_at
+             FROM slots WHERE slot_id = ?1",
+            params![slot_id, crate::moss::ROLE],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .optional()?;
+    let Some((open, restoring)) = row else {
+        return Ok(false);
+    };
+    let returning = restoring.is_some_and(|t| now_ms - t < crate::restore::PENDING_WINDOW_MS);
+    Ok(open && !returning && never_spoke(conn, slot_id)?)
+}
+
+/// Close a [`silent`] slot that stopped, recorded as `ended` (no news for
+/// Moss). `reason` replaces the end reason when given.
+fn close_if_silent(
+    conn: &Connection,
+    slot_id: &str,
+    reason: Option<&str>,
+    now_ms: i64,
+) -> Result<bool> {
+    if !silent(conn, slot_id, now_ms)? {
+        return Ok(false);
+    }
+    conn.execute(
+        "UPDATE slots SET status = 'closed', end_reason = COALESCE(?2, end_reason),
+           ended_at = COALESCE(ended_at, ?3), busy = 0
+         WHERE slot_id = ?1",
+        params![slot_id, reason, now_ms],
+    )?;
+    clear_attention(conn, slot_id)?;
+    let raw: Option<String> = conn.query_row(
+        "SELECT end_reason FROM slots WHERE slot_id = ?1",
+        [slot_id],
+        |r| r.get(0),
+    )?;
+    let detail = serde_json::json!({ "reason": raw, "silent": true });
+    record_event(conn, slot_id, "ended", &detail, now_ms)?;
     Ok(true)
 }
 

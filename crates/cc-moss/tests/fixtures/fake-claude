@@ -54,8 +54,10 @@ while true; do
   case "$cmd" in
     prompt)
       [ -n "$arg" ] && name="$arg"
-      echo '{}' >> "$(transcript "$sid")"
-      hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\"}" ;;
+      # What you typed comes with the hook, as in Claude Code. The transcript
+      # after it: a test that waits for the transcript knows the hook is done.
+      hook user-prompt-submit "{\"session_id\":\"$sid\",\"session_title\":\"$name\",\"prompt\":\"prompt $arg\"}"
+      echo '{}' >> "$(transcript "$sid")" ;;
     stop)
       # The reply is done (Stop).
       hook stop "{\"session_id\":\"$sid\",\"hook_event_name\":\"Stop\"}" ;;

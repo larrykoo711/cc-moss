@@ -966,6 +966,10 @@ missing; run `cc-moss setup` once to add them. It adds just the missing ones and
 
 ### What comes back
 
+A session you never said a word to has nothing to bring back: however it exits (closed normally, crashed, its process
+gone), it is closed rather than listed as stopped. Nothing is archived or deleted. After an update, the first look
+closes any such sessions an older version left as stopped.
+
 `restore` resumes the same conversation (`claude --resume <id>`) in the same folder and replays safe allowlisted flags: `--permission-mode`, `--effort`, `--add-dir`, `--agent` and `--dangerously-skip-permissions`. Ordinary recovery does not replay the old `--model`; Claude Code restores the conversation's selection. Only explicit `--provider-default` selects the current channel model. Secret-looking argument values are neither stored nor replayed, and system prompts are not automatically carried over.
 
 The configuration source must be known and safe to replay. Newly captured `--mcp-config`, `--strict-mcp-config`, `--settings` and `--setting-sources` leave blocking markers containing only their names. Unverifiable argument structure also blocks recovery instead of silently dropping the source and starting anyway. Older Unknown records do not fall back to a guessed default, and previously polluted Explicit records are not automatically corrected. Preserving the source is not a guarantee that MCP servers can connect.

@@ -12,6 +12,7 @@ fn dead_pid_shows_interrupted() {
         &start_json("U1", "startup", Some("gone")),
         Some(dead_pid()),
     );
+    said(dir.path(), "U1", None, Some(dead_pid()));
     let v = ls_json(dir.path(), false);
     assert_eq!(v["sessions"][0]["status"], "interrupted");
 }
@@ -105,6 +106,7 @@ fn text_sort_order() {
         &start_json("I", "startup", Some("interrupted-one")),
         pi.pid(),
     );
+    said(dir.path(), "I", None, pi.pid());
     hook(dir.path(), "session-end", &end_json("I", "other"), pi.pid());
 
     let out = bin()

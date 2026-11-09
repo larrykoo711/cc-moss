@@ -24,7 +24,12 @@ fn new(w: &World, name: &str, extra: &[&str]) -> std::process::Output {
 fn interrupted(w: &World, name: &str, with_message: bool) -> String {
     w.new_session(name);
     let id = w.session_id(name);
-    if with_message {
+    if !with_message {
+        // You typed something, but it was killed before Claude Code wrote
+        // the transcript: empty, yet not silent (a session nobody spoke to
+        // is closed when it exits, F62).
+        common::said(&w.state(), &id, None, None);
+    } else {
         w.send(&id, &format!("prompt {name}"));
         wait_for(|| {
             w.path("fifos")

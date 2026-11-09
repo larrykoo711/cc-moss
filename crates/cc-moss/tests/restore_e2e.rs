@@ -693,7 +693,7 @@ fn crash_then_restore_full_cycle() {
     // /clear rotates the id; the restore must use the new one.
     w.send(&first_id, "clear");
     let latest = wait_for(|| slot_field(&w, "job-b", "session_id").filter(|id| *id != first_id));
-    w.send(&latest, "prompt job-b");
+    w.first_prompt(&latest, "job-b");
 
     for round in 1..=2 {
         crash(&w);
@@ -731,7 +731,7 @@ fn restore_replays_only_whitelisted_arguments() {
     let w = World::new("planted-args");
     w.new_session("job-p");
     let sid = w.session_id("job-p");
-    w.send(&sid, "prompt job-p");
+    w.first_prompt(&sid, "job-p");
     wait_for(|| (w.session_names() == ["host_job-p"]).then_some(()));
     w.tmux(&["kill-server"]);
     wait_for(|| (slot_status(&w, "job-p").as_deref() == Some("interrupted")).then_some(()));
@@ -767,9 +767,12 @@ fn restore_replays_only_whitelisted_arguments() {
 
 #[test]
 fn empty_session_is_not_restored() {
+    // You typed something, but it was killed before Claude Code wrote the
+    // transcript (F8). One nobody spoke to is simply closed (F62).
     let w = World::new("empty");
     w.new_session("job-x");
-    w.session_id("job-x");
+    let id = w.session_id("job-x");
+    common::said(&w.state(), &id, None, None);
     w.tmux(&["kill-server"]);
     wait_for(|| (slot_status(&w, "job-x").as_deref() == Some("interrupted")).then_some(()));
 
