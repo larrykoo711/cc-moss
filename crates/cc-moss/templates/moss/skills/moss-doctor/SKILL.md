@@ -17,7 +17,7 @@ cc-moss doctor --sessions --json
 ```
 
 It gives facts, not verdicts. Per session: `name`, `auto_named` (no real name), `folder`, `folder_exists`,
-`status` (running / interrupted = dropped), `dropped_for_secs`, `idle_for_secs` (open and doing nothing),
+`status` (running / interrupted = stopped), `dropped_for_secs` (how long it has been stopped), `idle_for_secs` (open and doing nothing),
 `working`, `waiting_on_you` (permission / question / input), `tmux_name_matches`, `name_fix` (the
 standard form of a name that isn't standard: spaces, dots, too long) and `name_suggestion` (a short name
 from the folder for a session without one, already unique). And `install.hooks`, `install.alias_links`.
@@ -37,9 +37,9 @@ archived session is still restorable, `claude --resume` takes it back out, and t
 | `install.hooks` or `install.alias_links` false | `cc-moss moss act setup-fix --wait` | no |
 | `name_fix` set | `cc-moss moss act name <session> <name_fix> --wait` | no |
 | `name_suggestion` set | `cc-moss moss act name <session> <name_suggestion> --wait` | no |
-| dropped and `folder_exists` false | `cc-moss moss act forget-gone <session> --wait` (it can't come back anyway); say so in the brief | no |
-| dropped, folder still there | ask with `[[confirm: restore <session>]]` for each (bringing back starts work and spends usage) | yes |
-| dropped over 7 days | ask with `[[confirm: forget <session>]]` for each, and `[[buttons: 留着]]` | yes |
+| stopped and `folder_exists` false | `cc-moss moss act forget-gone <session> --wait` (it can't come back anyway); say so in the brief | no |
+| stopped, folder still there | ask with `[[confirm: restore <session>]]` for each (bringing back starts work and spends usage) | yes |
+| stopped over 7 days | ask with `[[confirm: forget <session>]]` for each, and `[[buttons: 留着]]` | yes |
 | open and idle over 3 days | ask with `[[confirm: end <session>]]` for each, and `[[buttons: 留着]]` (closing ends it) | yes |
 | `waiting_on_you` set | don't touch; say how many wait in 待处理 (To Do) | — |
 | `archived_last_day` above 0 | nothing to do (cc-moss archived them, idle over `archive_after_days` days); one line in the brief: "归档了 5 个 30 天没用的会话" ("Archived 5 sessions unused for 30 days") | no |
@@ -97,7 +97,7 @@ refusal ("too old", "does not answer a question") means ask again; never work ar
 ## 整理会话 (tidy up)
 
 The same flow, focused on names (`sync-names`, then every `name_fix` and `name_suggestion`, no asking),
-old dropped sessions and sessions idle for days. Skip the install checks unless they are broken.
+sessions stopped long ago and sessions idle for days. Skip the install checks unless they are broken.
 First of all, `cc-moss moss act archive-idle --wait`: it archives every session that isn't running and
 wasn't used for `archive_after_days` days (no asking: it can be undone). Say how many in the brief.
 To archive one session (it must not be running), ask first with `[[confirm: archive <session>]]`

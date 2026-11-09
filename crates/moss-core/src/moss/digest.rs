@@ -1,5 +1,5 @@
 //! What Moss hears about the other sessions without being asked: a session
-//! that dropped or finished. Changes within a window go in as one line; the
+//! that stopped or finished. Changes within a window go in as one line; the
 //! same news about the same session is not repeated for a while. Moss's own
 //! session is left out by the caller.
 //!
@@ -166,7 +166,7 @@ impl Digest {
     }
 }
 
-/// `[动态] api 做完了；login 断了` / `[Update] api finished; login dropped`.
+/// `[动态] api 做完了；login 断了` / `[Update] api finished; login stopped`.
 pub fn line(changes: &[Change], zh: bool) -> String {
     let parts: Vec<String> = changes.iter().map(|c| part(c, zh)).collect();
     join(&parts, zh)
@@ -215,7 +215,7 @@ fn part(c: &Change, zh: bool) -> String {
     let name = &short_name(&c.name);
     match (c.kind, zh) {
         (Kind::Disconnected, true) => format!("{name} 断了"),
-        (Kind::Disconnected, false) => format!("{name} dropped"),
+        (Kind::Disconnected, false) => format!("{name} stopped"),
         (Kind::Done, true) => format!("{name} 做完了"),
         (Kind::Done, false) => format!("{name} finished"),
     }

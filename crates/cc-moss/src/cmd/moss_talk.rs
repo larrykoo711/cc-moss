@@ -1053,7 +1053,7 @@ mod tests {
             [
                 "[Update] proj-a finished",
                 "[Update] proj-b finished",
-                "[Update] proj-a dropped"
+                "[Update] proj-a stopped"
             ]
         );
         // A line about two sessions keeps the one a newer line doesn't tell.

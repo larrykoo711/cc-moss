@@ -5,7 +5,7 @@
    "id": "1792143665000-3f9a1c",
    "at": "2026-10-16T09:41:05Z",
    "from": "events",
-   "text": "[Events] api-review is waiting for your OK; fix-invoice dropped",
+   "text": "[Events] api-review is waiting for your OK; fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },

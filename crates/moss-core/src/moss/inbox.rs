@@ -1353,7 +1353,7 @@ mod tests {
                 id: "0000000000002-aaaaaa".into(),
                 at: "t".into(),
                 from: "events".into(),
-                text: "[Update] api dropped".into(),
+                text: "[Update] api stopped".into(),
                 ..Message::default()
             },
         )

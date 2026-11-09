@@ -355,12 +355,12 @@ fn moss_hears_a_disconnect() {
             m["from"] == "events"
                 && m["text"]
                     .as_str()
-                    .is_some_and(|t| t.contains("api dropped"))
+                    .is_some_and(|t| t.contains("api stopped"))
         })
     });
-    assert_eq!(news["text"], "[Update] api dropped", "{news}");
+    assert_eq!(news["text"], "[Update] api stopped", "{news}");
     wait_until("Moss to hear it", 30, || {
-        heard(&w).contains("[Update] api dropped").then_some(())
+        heard(&w).contains("[Update] api stopped").then_some(())
     });
     // Its answer was silent: nothing from Moss shows for it.
     std::thread::sleep(Duration::from_millis(800));
