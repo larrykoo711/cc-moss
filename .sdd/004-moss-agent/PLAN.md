@@ -182,6 +182,10 @@ R1 ◄── 全部
 - 目标：各条退出路径统一关掉从没说过话的会话；对账关掉现有的这类行
 - 依赖：—
 
+### T2.25 信任此文件夹默认选 No 时也替 Moss 选 Yes（F64）
+- 目标：信任框不管默认选哪项都替 Moss 选 Yes 再确认，No 被选中时绝不按回车；处理不了就报卡住
+- 依赖：T2.21
+
 ## Kanban
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
@@ -209,11 +213,12 @@ R1 ◄── 全部
 | **T2.17** 旧会话来源选择 | cc-moss | T2.15,T2.16 | ✅ Done | done/T2.17-restore-source-choice.spec.md | typed来源错误、单次选择、零隐式授权 |
 | **T2.18** 恢复选择布局重整 | cc-moss | T2.17 | ✅ Done | done/T2.18-restore-choice-layout.spec.md | 单标题、轻量选择、相邻取消与唯一找回 |
 | **T2.19** 原来源优先与异常更换 | cc-moss | T2.18 | ✅ Done | done/T2.19-source-first-restore.spec.md | 有效原源直接恢复，灰路径，异常才更换 |
-| **T2.20** Moss 跳过警告写本地级 | cc-moss | — | 🔲 Todo | todo/T2.20-moss-bypass-local.spec.md | 隔离环境真 Claude Code 不出警告框 |
-| **T2.21** Moss 卡住如实报告 | cc-moss | T2.20 | 🔲 Todo | todo/T2.21-moss-blocked.spec.md | 窗格有确认框时 status 报 blocked、页面给打开窗口 |
-| **T2.22** 收件箱优先与去旧 | cc-moss | — | 🔲 Todo | todo/T2.22-inbox-order.spec.md | 你的先送、动态合并过期带时间、体检不重复 |
-| **T2.23** 同名自动加编号 | cc-moss | — | 🔲 Todo | todo/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
-| **T2.24** 没说过话的会话退出即关 | cc-moss | — | 🔲 Todo | todo/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
+| **T2.20** Moss 跳过警告写本地级 | cc-moss | — | ✅ Done | done/T2.20-moss-bypass-local.spec.md | 隔离环境真 Claude Code 不出警告框 |
+| **T2.21** Moss 卡住如实报告 | cc-moss | T2.20 | ✅ Done | done/T2.21-moss-blocked.spec.md | 窗格有确认框时 status 报 blocked、页面给打开窗口 |
+| **T2.22** 收件箱优先与去旧 | cc-moss | — | ✅ Done | done/T2.22-inbox-order.spec.md | 你的先送、动态合并过期带时间、体检不重复 |
+| **T2.23** 同名自动加编号 | cc-moss | — | 🟨 In Progress | todo/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
+| **T2.25** 信任框默认 No 也选 Yes | cc-moss | T2.21 | 🔲 Todo | todo/T2.25-trust-prompt-yes.spec.md | 选中 No 时先移到 Yes 核对再回车，处理不了报卡住 |
+| **T2.24** 没说过话的会话退出即关 | cc-moss | — | 🟨 In Progress | todo/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -351,6 +356,7 @@ R1 ◄── 全部
 | F60 | Moss 积压时你的消息排在系统动态后面，旧动态不带时间被当成刚发生（含 F63「闲置天数不更新」）（T2.22） | 🔧 0.3.10 |
 | F61 | Claude Code 后台分叉出的新会话继承原名，面板两行同名（F41、F57 同族）（T2.23） | 🔧 0.3.10 |
 | F62 | 没说过话就退出的会话被列成「断了」，找回报 empty（T2.24） | 🔧 0.3.10 |
+| F64 | Claude Code 2.1.319 的「信任此文件夹」默认选中 No，新机器上 Moss 会停在这个框上且不报卡住（T2.20 探针发现，用户要求默认替它选 Yes）（T2.25） | 🔧 0.3.10 |
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
@@ -474,3 +480,7 @@ R1 ◄── 全部
 - 实施分支 `feature/004-moss-stuck`（工作树 `../cc-moss-004r`，基于 main `3c239f3`）。
 - G2：编排双写一致（`gen_kanban.py --check` OK，32 任务）2026-11-09。
 - G3：T2.20–T2.24 spec 过 `sdd-gate.sh`，移入 `todo/`（2026-11-09）。
+- S4 两线并行：A 线（本工作树）T2.20–T2.22，B 线（`../cc-moss-004r-b`，分支 `feature/004-moss-stuck-names`）T2.23–T2.24。
+- A 线完成（0f60d15 / f4629ad / 0abc2d1 / 73a691d）：Rust 1199 通过 / 0 失败 / 7 ignored，Swift 1000 通过；探针（Claude Code 2.1.319）：键只在项目级时 20 秒内出警告，放本地级不出（`reports/moss-bypass-probe.md`）。controller 抽查：变异「去掉你的消息优先排序」→ `inbox_yours_first` 红；「卡住仍报 idle」→ `moss_status_reports_blocked` 红；还原后树干净。
+- A 线偏离（controller 认可）：(1) `lay_out` 原先会删 `settings.local.json`，改为保留普通文件、链接照删（spec Scope 的「现有行为」前提有误）；(2) 新增 `cc-moss moss attach`（Moss 卡在启动时常不在登记表里，App 的「在终端打开」用不了）；(3) 动态时间写成「[动态]（3 小时前）…」，保留 Moss 认动态用的开头；(4) 登录界面匹配未在本机实抓。
+- 新发现：Claude Code 2.1.319 的「信任此文件夹」默认选中「No, exit」，`reply::trust_prompt` 要求选中 Yes，新机器上 Moss 会停在这个框上且不报卡住（F59 同族），用户 2026-11-09 裁决「一起修，默认替它选 Yes」→ T2.25（G3 过 gate 后派给 A 线）。
