@@ -134,10 +134,46 @@ if [ -n "$CC_MOSS_FAKE_BYPASS" ] && [ ! -e "$CC_MOSS_FAKE_DIR/accepted" ]; then
 fi
 
 # With CC_MOSS_FAKE_TRUST set, a fresh machine's first question: trust this
-# folder? It waits for Enter (yes), and asks only once.
+# folder? It asks only once.
+# - `1` (any other value): the older one, "1. Yes" selected; Enter is yes.
+# - `no`: Claude Code 2.1.319's, "No, exit" selected; Down selects Yes, Up
+#   No; Enter on Yes trusts, Enter on No exits (and says so in
+#   enter-on-no).
+# - `stuck`: the same, but the arrows do nothing.
+# Every key it reads goes to trust-keys.txt.
+trust_draw() {
+  local no="  " yes="  "
+  [ "$1" = yes ] && yes="❯ " || no="❯ "
+  printf '\e[2J\e[H────────────────────────────────────────\n Accessing workspace:\n\n %s\n\n Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,\n take a moment to review what'"'"'s in this folder first.\n\n Security guide\n\n %sNo, exit\n %sYes, I trust this folder\n\n Enter to confirm · Esc to cancel\n' "$PWD" "$no" "$yes"
+}
 if [ -n "$CC_MOSS_FAKE_TRUST" ] && [ ! -e "$CC_MOSS_FAKE_DIR/trusted" ]; then
-  printf '\n Do you trust the files in this folder?\n\n %s\n\n ❯ 1. Yes, proceed\n   2. No, exit\n\n Enter to confirm · Esc to exit\n' "$PWD"
-  IFS= read -r _
+  case "$CC_MOSS_FAKE_TRUST" in
+    no|stuck)
+      stty -echo 2>/dev/null
+      sel=no
+      trust_draw "$sel"
+      while true; do
+        IFS= read -r -n1 -d '' c || { sleep 0.1; continue; }
+        printf '%q ' "$c" >> "$CC_MOSS_FAKE_DIR/trust-keys.txt"
+        if [ "$c" = $'\e' ]; then
+          IFS= read -r -n1 -t 1 -d '' n; IFS= read -r -n1 -t 1 -d '' k
+          printf '%q ' "$n$k" >> "$CC_MOSS_FAKE_DIR/trust-keys.txt"
+          if [ "$CC_MOSS_FAKE_TRUST" = no ]; then
+            case "$k" in B) sel=yes ;; A) sel=no ;; esac
+          fi
+          trust_draw "$sel"
+          continue
+        fi
+        if [ "$c" = $'\r' ] || [ "$c" = $'\n' ]; then
+          [ "$sel" = yes ] && break
+          touch "$CC_MOSS_FAKE_DIR/enter-on-no"
+          exit 1
+        fi
+      done ;;
+    *)
+      printf '\n Do you trust the files in this folder?\n\n %s\n\n ❯ 1. Yes, proceed\n   2. No, exit\n\n Enter to confirm · Esc to exit\n' "$PWD"
+      IFS= read -r _ ;;
+  esac
   touch "$CC_MOSS_FAKE_DIR/trusted"
   printf '\e[2J\e[H'
 fi

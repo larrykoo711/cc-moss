@@ -57,6 +57,13 @@ import Testing
         let login = MossStatus(enabled: true, running: true, activity: .blocked,
                                blocked: MossBlocked(kind: .login, since: nil))
         #expect(login.blockedNotice(lang: .en)?.title == "Moss's Claude Code wants you to sign in")
+        let trust = MossStatus(enabled: true, running: true, activity: .blocked,
+                               blocked: MossBlocked(kind: .trustFolder, since: nil))
+        #expect(trust.blockedNotice(lang: .en)?.title == "Claude Code asks whether to trust Moss's folder")
+        #expect(trust.blockedNotice(lang: .en)?.detail.contains("Yes, I trust this folder") == true)
+        #expect(trust.blockedNotice(lang: .zh)?.title == "Claude Code 在问要不要信任 Moss 的文件夹")
+        let decoded = try MossStatus.decode(Data(#"{"schema":1,"enabled":true,"running":true,"activity":"blocked","blocked":{"kind":"trust_folder"}}"#.utf8))
+        #expect(decoded.blocked?.kind == .trustFolder)
         let other = MossStatus(enabled: true, running: true, activity: .blocked,
                                blocked: MossBlocked(kind: .unknownDialog, since: nil))
         #expect(other.blockedNotice(lang: .en)?.title == "Moss stopped on a question in its window")

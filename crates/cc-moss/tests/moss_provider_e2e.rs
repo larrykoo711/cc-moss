@@ -24,6 +24,17 @@ impl Drop for Daemon {
 }
 
 fn daemon(w: &World, claude: Option<&Path>, trust: bool) -> Daemon {
+    daemon_with(w, claude, trust.then_some("1"), &[])
+}
+
+/// [`daemon`] with the fake's trust question in `trust` mode (see
+/// `fixtures/moss-claude`) and more environment.
+fn daemon_with(
+    w: &World,
+    claude: Option<&Path>,
+    trust: Option<&str>,
+    env: &[(&str, &str)],
+) -> Daemon {
     common::debug_only();
     let mut cmd = w.cc_moss();
     cmd.env("CC_MOSS_MOSS_SOCKET", &w.socket)
@@ -34,8 +45,11 @@ fn daemon(w: &World, claude: Option<&Path>, trust: bool) -> Daemon {
     if let Some(claude) = claude {
         cmd.env("CC_MOSS_CLAUDE_BIN", claude);
     }
-    if trust {
-        cmd.env("CC_MOSS_FAKE_TRUST", "1");
+    if let Some(mode) = trust {
+        cmd.env("CC_MOSS_FAKE_TRUST", mode);
+    }
+    for (k, v) in env {
+        cmd.env(k, v);
     }
     Daemon(
         cmd.args(["daemon", "run"])
@@ -333,4 +347,69 @@ fn moss_answers_the_folder_trust_question() {
         "{}",
         log(&w)
     );
+}
+
+fn trust_keys(w: &World) -> String {
+    std::fs::read_to_string(w.path("fifos/trust-keys.txt")).unwrap_or_default()
+}
+
+fn moss_status(w: &World) -> serde_json::Value {
+    let out = w
+        .cc_moss()
+        .env("CC_MOSS_MOSS_SOCKET", &w.socket)
+        .args(["moss", "status", "--json"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+
+/// F64: Claude Code 2.1.319 selects "No, exit" first. The daemon moves to
+/// Yes and confirms only once Yes shows; Enter never lands on No.
+#[test]
+fn moss_answers_the_trust_question_with_no_selected() {
+    let w = World::new("moss-trust-no");
+    let _d = daemon_with(&w, Some(&fixture("moss-claude")), Some("no"), &[]);
+    wait_until("the question to be answered", || {
+        w.path("fifos/trusted").exists().then_some(())
+    });
+    wait_until("Moss to come up", || running_moss(&w, None));
+    assert!(!w.path("fifos/enter-on-no").exists(), "Enter on No");
+    let keys = trust_keys(&w);
+    assert!(keys.contains("[B"), "a Down went in: {keys}");
+    assert!(
+        log(&w).contains("trust Moss's folder; answered yes"),
+        "{}",
+        log(&w)
+    );
+}
+
+/// F64: a trust question Yes can't be selected on is left alone (never
+/// Enter on No) and, once its window is over, reported as stuck.
+#[test]
+fn moss_status_reports_trust_blocked() {
+    let w = World::new("moss-trust-stuck");
+    let _d = daemon_with(
+        &w,
+        Some(&fixture("moss-claude")),
+        Some("stuck"),
+        &[("CC_MOSS_TRUST_WINDOW_MS", "1500")],
+    );
+    let st = wait_until("Moss to be reported blocked", || {
+        let st = moss_status(&w);
+        (st["activity"] == "blocked").then_some(st)
+    });
+    assert_eq!(st["blocked"]["kind"], "trust_folder", "{st}");
+    let keys = trust_keys(&w);
+    assert!(
+        !keys.contains("$'\\r'") && !keys.contains("$'\\n'"),
+        "no Enter: {keys}"
+    );
+    assert!(!w.path("fifos/enter-on-no").exists());
+    assert!(!w.path("fifos/trusted").exists());
+    // Nothing more is pressed while it waits for you.
+    let before = trust_keys(&w);
+    std::thread::sleep(Duration::from_secs(3));
+    assert_eq!(trust_keys(&w), before);
+    assert_eq!(moss_status(&w)["activity"], "blocked");
 }

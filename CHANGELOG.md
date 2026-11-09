@@ -15,6 +15,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   warning, a sign-in), `cc-moss moss status` and `cc-moss doctor` say what it is, and the Moss page shows a note with
   an Open Moss's window button instead of "Sending…". cc-moss never answers it for you. `cc-moss moss attach` opens
   Moss's window from a terminal.
+- **Moss gets past Claude Code's "trust this folder" question again.** Newer Claude Code selects "No, exit" first,
+  so a Moss starting on a new Mac stopped there. The daemon now moves to Yes, checks that Yes is selected before
+  confirming, and never confirms No; when it can't, Moss is reported as stuck so you can answer it.
 - **Your messages to Moss go before its session updates.** When updates piled up, Moss read every one of them before
   your message. Now yours go first, a newer update about a session replaces the older one, updates older than 6
   hours are dropped, and an update older than 15 minutes says how long ago it happened, so Moss no longer takes

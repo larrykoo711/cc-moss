@@ -989,6 +989,10 @@ pub fn blocked_words(kind: &str) -> (String, String) {
             "Moss's Claude Code is waiting for you to sign in",
             "Moss 的 Claude Code 在等你登录"
         ),
+        "trust_folder" => tr!(
+            "Claude Code asks whether to trust Moss's folder, and cc-moss couldn't pick Yes for it",
+            "Claude Code 在问要不要信任 Moss 的文件夹，cc-moss 没能替它选上 Yes"
+        ),
         _ => tr!(
             "Moss is stopped on a question in its window",
             "Moss 停在它窗口里的一个问题上"
@@ -1075,6 +1079,8 @@ pub struct Looker {
     /// When Moss's screen is next looked at.
     next_trust: Instant,
     trust_told: bool,
+    /// Looks since the start that could not move the trust question to Yes.
+    trust_tries: u32,
     /// Until when Moss's screen is looked at after a start (or adopting
     /// it), with nothing waiting for it.
     watch_until: Option<Instant>,
@@ -1093,8 +1099,60 @@ const DAILY_EVERY: Duration = Duration::from_secs(30);
 
 /// How often Moss's provider is compared with the user's.
 const PROVIDER_EVERY: Duration = Duration::from_secs(1);
-/// How long after a start a folder-trust question is answered.
-const TRUST_WINDOW: Duration = Duration::from_secs(60);
+/// How long after a start a folder-trust question is answered. Debug
+/// builds take `CC_MOSS_TRUST_WINDOW_MS`.
+fn trust_window() -> Duration {
+    test_millis("CC_MOSS_TRUST_WINDOW_MS").unwrap_or(Duration::from_secs(60))
+}
+
+/// How many looks may move a "No" selection of the trust question to "Yes"
+/// before it is left to the user (2.1.319 drops a key sent too early).
+const TRUST_TRIES: u32 = 3;
+
+/// How long Moss's screen is still looked at after the trust window.
+const WATCH_AFTER_TRUST: Duration = Duration::from_secs(60);
+
+/// How long a moved selection has to show.
+const TRUST_SETTLE: Duration = Duration::from_millis(400);
+
+/// What [`answer_trust`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Trust {
+    /// No folder-trust question on screen.
+    NotAsked,
+    /// Yes was selected, and Enter pressed.
+    Answered,
+    /// "No" stayed selected after one Down: nothing more was pressed.
+    Unmoved,
+}
+
+/// Answer the folder-trust question on Moss's screen with Yes (F64).
+/// Enter is pressed only while Yes is selected: with "No" selected, one
+/// Down, a fresh look, and Enter only once that look shows Yes selected.
+fn answer_trust(pane: &mut dyn inbox::Pane) -> Trust {
+    let Ok(screen) = pane.screen() else {
+        return Trust::NotAsked;
+    };
+    match reply::trust_dialog(&screen) {
+        None => Trust::NotAsked,
+        Some(reply::Choice::Yes) => {
+            let _ = pane.key("Enter");
+            Trust::Answered
+        }
+        Some(reply::Choice::No) => {
+            let _ = pane.key("Down");
+            pane.wait(TRUST_SETTLE);
+            let moved = pane
+                .screen()
+                .is_ok_and(|s| reply::trust_dialog(&s) == Some(reply::Choice::Yes));
+            if !moved {
+                return Trust::Unmoved;
+            }
+            let _ = pane.key("Enter");
+            Trust::Answered
+        }
+    }
+}
 
 /// How long a choice stays on Moss's screen before it counts as stuck
 /// (Claude Code shows some for a moment while it starts).
@@ -1226,6 +1284,7 @@ impl Looker {
             trust_until: None,
             next_trust: now,
             trust_told: false,
+            trust_tries: 0,
             watch_until: None,
             dialog: None,
             url_told: false,
@@ -1385,22 +1444,40 @@ impl Looker {
         }
         // One look a second is plenty.
         self.next_trust = now + Duration::from_secs(1);
-        let target = format!("={}:", moss::SESSION);
-        let Ok(out) = tmux(&self.socket, &["capture-pane", "-p", "-t", &target]) else {
+        // Only Moss's own pane, on its own tmux server.
+        let mut pane = super::moss_talk::TmuxPane::new(&self.socket, &self.state);
+        if trusting {
+            match answer_trust(&mut pane) {
+                Trust::NotAsked => {}
+                Trust::Answered => {
+                    // Once per start: a second question is not answered blindly.
+                    self.trust_until = None;
+                    if !self.trust_told {
+                        self.trust_told = true;
+                        log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
+                    }
+                    return;
+                }
+                Trust::Unmoved => {
+                    self.trust_tries += 1;
+                    if self.trust_tries >= TRUST_TRIES {
+                        // Left to the user, and reported as stuck below.
+                        self.trust_until = None;
+                        log("moss: Claude Code asks whether to trust Moss's folder and Yes could not be selected; left for you to answer in Moss's window");
+                    }
+                    return;
+                }
+            }
+        }
+        let Ok(screen) = inbox::Pane::screen(&mut pane) else {
             return;
         };
-        let screen = String::from_utf8_lossy(&out.stdout);
-        if !(trusting && reply::trust_prompt(&screen)) {
-            self.note_dialog(reply::blocking_dialog(&screen), now, log);
-            return;
-        }
-        let _ = tmux(&self.socket, &["send-keys", "-t", &target, "Enter"]);
-        // Once per start: a second question is not answered blindly.
-        self.trust_until = None;
-        if !self.trust_told {
-            self.trust_told = true;
-            log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
-        }
+        // The trust question still there once its window is over: stuck.
+        let seen = reply::blocking_dialog(&screen).or_else(|| {
+            (!trusting && reply::trust_dialog(&screen).is_some())
+                .then_some(reply::Dialog::TrustFolder)
+        });
+        self.note_dialog(seen, now, log);
     }
 
     /// Keep [`moss::blocked_path`] in step with the choice on Moss's screen.
@@ -1455,8 +1532,10 @@ impl Looker {
         match self.launch(log) {
             Ok(session_id) => {
                 self.keeper.started(now);
-                self.trust_until = Some(now + TRUST_WINDOW);
-                self.watch_until = Some(now + TRUST_WINDOW);
+                self.trust_until = Some(now + trust_window());
+                self.trust_tries = 0;
+                // Past the trust window too: a question left there is reported.
+                self.watch_until = Some(now + trust_window() + WATCH_AFTER_TRUST);
                 // A fresh Moss: what the old one was stuck on is gone.
                 self.clear_blocked(log);
                 // A fresh Moss: whatever the old one had in hand is lost.
@@ -1510,7 +1589,7 @@ impl Looker {
 
     fn adopt(&mut self, now: Instant, log: &dyn Fn(&str)) {
         // It may be stuck since before the daemon started.
-        self.watch_until = Some(now + TRUST_WINDOW);
+        self.watch_until = Some(now + trust_window() + WATCH_AFTER_TRUST);
         let path = moss::status_path(&self.state);
         let stored = moss::read(&path);
         self.keeper
@@ -1895,6 +1974,94 @@ fn test_millis_list(var: &str) -> Vec<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The 2.1.319 folder-trust question with `selected` on the `❯`.
+    fn trust_screen(yes: bool) -> String {
+        let (no, yes) = if yes { ("  ", "❯ ") } else { ("❯ ", "  ") };
+        format!(
+            " Accessing workspace:\n\n /p/moss\n\n Quick safety check: Is this a project you created or one you trust?\n\n Security guide\n\n {no}No, exit\n {yes}Yes, I trust this folder\n\n Enter to confirm · Esc to cancel\n"
+        )
+    }
+
+    /// A pane that shows the trust question; `Down` selects Yes unless it
+    /// is `stuck`, or until `swallow` Downs went by (2.1.319 dropped the
+    /// first one in the probe).
+    #[derive(Default)]
+    struct TrustPane {
+        yes: bool,
+        stuck: bool,
+        swallow: u32,
+        keys: Vec<String>,
+    }
+
+    impl inbox::Pane for TrustPane {
+        fn paste(&mut self, _: &str) -> Result<(), String> {
+            Err("no paste here".into())
+        }
+        fn screen(&mut self) -> Result<String, String> {
+            Ok(trust_screen(self.yes))
+        }
+        fn key(&mut self, key: &str) -> Result<(), String> {
+            self.keys.push(key.to_string());
+            if key == "Down" && !self.stuck {
+                if self.swallow > 0 {
+                    self.swallow -= 1;
+                } else {
+                    self.yes = true;
+                }
+            }
+            Ok(())
+        }
+        fn wait(&mut self, _: Duration) {}
+    }
+
+    #[test]
+    fn accept_trust_moves_to_yes() {
+        // Yes already selected: Enter, as before.
+        let mut pane = TrustPane {
+            yes: true,
+            ..TrustPane::default()
+        };
+        assert_eq!(answer_trust(&mut pane), Trust::Answered);
+        assert_eq!(pane.keys, ["Enter"]);
+        // No selected: one Down, a fresh look, Enter only on Yes.
+        let mut pane = TrustPane::default();
+        assert_eq!(answer_trust(&mut pane), Trust::Answered);
+        assert_eq!(pane.keys, ["Down", "Enter"]);
+        // Down didn't move it: nothing more, never Enter on No.
+        let mut pane = TrustPane {
+            stuck: true,
+            ..TrustPane::default()
+        };
+        assert_eq!(answer_trust(&mut pane), Trust::Unmoved);
+        assert_eq!(pane.keys, ["Down"]);
+        // The first Down swallowed: the next look tries once more.
+        let mut pane = TrustPane {
+            swallow: 1,
+            ..TrustPane::default()
+        };
+        assert_eq!(answer_trust(&mut pane), Trust::Unmoved);
+        assert_eq!(answer_trust(&mut pane), Trust::Answered);
+        assert_eq!(pane.keys, ["Down", "Down", "Enter"]);
+        // Not the trust question: nothing pressed.
+        struct Plain(Vec<String>);
+        impl inbox::Pane for Plain {
+            fn paste(&mut self, _: &str) -> Result<(), String> {
+                Ok(())
+            }
+            fn screen(&mut self) -> Result<String, String> {
+                Ok("────────\n❯ \n────────\n".into())
+            }
+            fn key(&mut self, key: &str) -> Result<(), String> {
+                self.0.push(key.into());
+                Ok(())
+            }
+            fn wait(&mut self, _: Duration) {}
+        }
+        let mut plain = Plain(vec![]);
+        assert_eq!(answer_trust(&mut plain), Trust::NotAsked);
+        assert!(plain.0.is_empty());
+    }
 
     #[test]
     fn moss_home_bypass_key_in_local_settings() {

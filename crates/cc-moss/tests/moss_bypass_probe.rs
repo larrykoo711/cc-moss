@@ -134,3 +134,97 @@ fn moss_bypass_probe() {
     );
     assert!(!local, "the warning came up with the key in local settings");
 }
+
+/// The line of the trust question with `❯` on it.
+fn selected(screen: &str) -> String {
+    screen
+        .lines()
+        .find(|l| l.trim_start().starts_with('❯'))
+        .unwrap_or("")
+        .trim()
+        .to_string()
+}
+
+fn wait_for(case: &str, what: &str) -> Option<String> {
+    let until = Instant::now() + WAIT;
+    while Instant::now() < until {
+        let screen = tmux(&["capture-pane", "-p", "-t", &format!("={case}:")]);
+        if screen.contains(what) {
+            return Some(screen);
+        }
+        std::thread::sleep(Duration::from_millis(250));
+    }
+    None
+}
+
+/// F64 (T2.25): the folder-trust question in a folder never trusted, with
+/// the bypass answer in local settings as Moss has it. Which option is
+/// selected first, which key moves to "Yes", and that Enter on it starts
+/// Claude Code. Keys go only to this test's own pane.
+#[test]
+#[ignore = "starts the real Claude Code; run by hand"]
+fn moss_trust_probe() {
+    let Some(claude) = claude() else {
+        panic!("no Claude Code found: set CC_MOSS_PROBE_CLAUDE");
+    };
+    let _server = Server;
+    tmux(&["kill-server"]);
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let home = root.join("home");
+    let work = root.join("work");
+    std::fs::create_dir_all(home.join(".claude")).unwrap();
+    std::fs::create_dir_all(work.join(".claude")).unwrap();
+    std::fs::write(
+        work.join(".claude/settings.local.json"),
+        format!("{{\"{KEY}\": true}}\n"),
+    )
+    .unwrap();
+    let onboarded = serde_json::json!({ "hasCompletedOnboarding": true, "theme": "dark" });
+    std::fs::write(home.join(".claude.json"), onboarded.to_string()).unwrap();
+    let command = format!(
+        "env -i HOME='{}' PATH=/usr/bin:/bin TERM=xterm-256color '{}' \
+         --dangerously-skip-permissions --strict-mcp-config --setting-sources project,local",
+        home.display(),
+        claude.display()
+    );
+    let case = "probe-trust";
+    tmux(&[
+        "new-session",
+        "-d",
+        "-x",
+        "160",
+        "-y",
+        "50",
+        "-s",
+        case,
+        "-c",
+        &work.to_string_lossy(),
+        &command,
+    ]);
+    let target = format!("={case}:");
+    let first = wait_for(case, "trust this folder").expect("the trust question comes up");
+    println!("--- first screen (selected: {})\n{first}", selected(&first));
+    for key in ["Down", "Down", "Up"] {
+        tmux(&["send-keys", "-t", &target, key]);
+        std::thread::sleep(Duration::from_millis(800));
+        let screen = tmux(&["capture-pane", "-p", "-t", &target]);
+        println!("--- after {key}: selected: {}", selected(&screen));
+    }
+    // Back on whichever; select Yes with Down from No, then Enter.
+    let now = tmux(&["capture-pane", "-p", "-t", &target]);
+    if selected(&now).contains("No") {
+        tmux(&["send-keys", "-t", &target, "Down"]);
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    let before = tmux(&["capture-pane", "-p", "-t", &target]);
+    assert!(selected(&before).contains("Yes"), "{before}");
+    tmux(&["send-keys", "-t", &target, "Enter"]);
+    let after = wait_for(case, "bypass permissions on");
+    println!(
+        "--- after Enter on Yes:\n{}",
+        after.as_deref().unwrap_or("(no prompt within 20 s)")
+    );
+    tmux(&["kill-session", "-t", &format!("={case}")]);
+    assert!(after.is_some(), "Claude Code started after Enter on Yes");
+}

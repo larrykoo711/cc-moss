@@ -1165,11 +1165,19 @@ mod tests {
         );
         let login = moss_check(&facts(Some("login")));
         assert!(login.detail.contains("sign in"), "{}", login.detail);
+        let trust = moss_check(&facts(Some("trust_folder")));
+        assert!(
+            trust.detail.contains("trust Moss's folder"),
+            "{}",
+            trust.detail
+        );
         let other = moss_check(&facts(Some("unknown_dialog")));
         assert!(other.detail.contains("question"), "{}", other.detail);
         crate::i18n::set_for_test(crate::i18n::Lang::Zh);
         let zh = moss_check(&facts(Some("bypass_warning")));
         assert!(zh.detail.contains("警告"), "{}", zh.detail);
+        let zh_trust = moss_check(&facts(Some("trust_folder")));
+        assert!(zh_trust.detail.contains("信任"), "{}", zh_trust.detail);
         assert!(zh
             .fix
             .as_deref()

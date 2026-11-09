@@ -7,6 +7,7 @@ public struct MossBlocked: Equatable, Sendable {
     public enum Kind: String, Equatable, Sendable {
         case bypassWarning = "bypass_warning"
         case login
+        case trustFolder = "trust_folder"
         case unknownDialog = "unknown_dialog"
     }
 
@@ -46,6 +47,9 @@ extension MossStatus {
         case .login:
             (t("Moss's Claude Code wants you to sign in", "Moss 的 Claude Code 要你先登录"),
              t("Open its window and sign in there.", "打开它的窗口，在那里登录。") + after)
+        case .trustFolder:
+            (t("Claude Code asks whether to trust Moss's folder", "Claude Code 在问要不要信任 Moss 的文件夹"),
+             t("Open its window and pick Yes, I trust this folder.", "打开它的窗口，选 Yes, I trust this folder。") + after)
         case .unknownDialog:
             (t("Moss stopped on a question in its window", "Moss 停在它窗口里的一个问题上"),
              t("Open its window to see what it's asking.", "打开它的窗口，看看它在问什么。") + after)

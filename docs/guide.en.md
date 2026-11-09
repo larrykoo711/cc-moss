@@ -485,7 +485,10 @@ the daemon notices within a few seconds: `moss status` says `"activity": "blocke
 kind (`bypass_warning`, `login`, `unknown_dialog`) and since when; `cc-moss doctor` says so too. cc-moss never
 answers it for you and never presses a key in that window: click Open Moss's window on the Moss page, or run
 `cc-moss moss attach`, and answer it there. Your waiting messages go in after that. The folder-trust question is
-still answered by the daemon, as before.
+answered Yes for Moss by the daemon: newer Claude Code selects "No, exit" first, so the daemon moves the selection
+to Yes and confirms only once it sees Yes selected, never pressing Enter on No. If it can't get to Yes, or the
+question is still there after a minute, Moss is reported as stuck the same way (`trust_folder`), for you to answer
+in its window.
 
 - **You can't end it, only turn it off.** The picker and `cc-moss close` don't end Moss; the panel's session list
   leaves it out (it has a Moss page of its own), and it never shows up to bring back. To stop it, switch

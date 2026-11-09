@@ -323,32 +323,55 @@ pub fn confirm_prompt(screen: &str) -> bool {
     }
 }
 
+/// Which option of a yes-or-no question is selected (`❯`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Choice {
+    Yes,
+    No,
+}
+
 /// Claude Code asking whether to trust the folder it starts in (a fresh
-/// machine, or a home it has not seen): the question with its yes option
-/// selected. Answering it with Enter takes that yes.
-pub fn trust_prompt(screen: &str) -> bool {
-    // Only the dialog at the bottom of the screen: the same words higher up
-    // (in the conversation, with the input box below) are not a question.
+/// machine, or a home it has not seen), and which answer is selected:
+/// Claude Code 2.1.319 selects "No, exit" first, older ones "1. Yes".
+/// Only the dialog at the bottom of the screen counts: the same words
+/// higher up, with the input box below, are conversation. `None` when the
+/// selected option is neither a yes nor a no.
+pub fn trust_dialog(screen: &str) -> Option<Choice> {
     let plain = inbox::plain(screen);
     let lines: Vec<&str> = plain.lines().filter(|l| !l.trim().is_empty()).collect();
-    let text = lines[lines.len().saturating_sub(TRUST_LINES)..].join("\n");
-    if text.lines().any(inbox::prompt_line) && !text.contains("1.") {
-        return false;
-    }
+    let bottom = &lines[lines.len().saturating_sub(DIALOG_LINES)..];
+    let input_box = bottom
+        .windows(2)
+        .any(|w| w[0].trim_start().starts_with("───") && inbox::prompt_line(w[1]));
+    let text = bottom.join("\n");
     let asks = text.contains("trust the files in this folder")
         || text.contains("Do you trust")
         || text.contains("one you trust");
-    let yes_selected = text.lines().any(|l| {
-        l.split_once('❯').is_some_and(|(_, after)| {
-            let after = after.trim_start();
-            after.starts_with("1. Yes") || after.starts_with("Yes")
-        })
-    });
-    asks && yes_selected
+    if input_box || !asks {
+        return None;
+    }
+    let selected = bottom
+        .iter()
+        .find_map(|l| l.split_once('❯').map(|(_, after)| after.trim_start()))?;
+    // `1. Yes, proceed` reads as `Yes, proceed`.
+    let option = selected
+        .split_once(". ")
+        .filter(|(n, _)| n.chars().all(|c| c.is_ascii_digit()))
+        .map_or(selected, |(_, rest)| rest);
+    if option.starts_with("Yes") {
+        Some(Choice::Yes)
+    } else if option.starts_with("No") {
+        Some(Choice::No)
+    } else {
+        None
+    }
 }
 
-/// How many lines at the bottom the trust dialog fills, at most.
-const TRUST_LINES: usize = 12;
+/// The folder-trust question with its yes option selected: Enter takes
+/// that yes.
+pub fn trust_prompt(screen: &str) -> bool {
+    trust_dialog(screen) == Some(Choice::Yes)
+}
 
 /// A choice Claude Code waits on before Moss can be talked to (F59). The
 /// daemon only reports it: it never answers one for the user.
@@ -358,6 +381,9 @@ pub enum Dialog {
     BypassWarning,
     /// Claude Code asking how to sign in.
     Login,
+    /// The folder-trust question, still there after the daemon's window
+    /// to answer it ([`trust_dialog`]).
+    TrustFolder,
     /// Any other choice in its place.
     Unknown,
 }
@@ -368,6 +394,7 @@ impl Dialog {
         match self {
             Dialog::BypassWarning => "bypass_warning",
             Dialog::Login => "login",
+            Dialog::TrustFolder => "trust_folder",
             Dialog::Unknown => "unknown_dialog",
         }
     }
@@ -813,6 +840,72 @@ mod tests {
             None
         );
         assert_eq!(blocking_dialog(""), None);
+    }
+
+    /// Claude Code 2.1.319's folder-trust question, as `capture-pane -p`
+    /// shows it in a folder never trusted (`reports/moss-bypass-probe.md`).
+    const TRUST_NO_SCREEN: &str = "\
+────────────────────────────────────────────────────────────────────────────────
+ Accessing workspace:
+
+ /private/var/folders/xx/T/.tmpAbC/work
+
+ Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,
+ take a moment to review what's in this folder first.
+
+ Claude Code'll be able to read, edit, and execute files here.
+
+ Security guide
+
+ ❯ No, exit
+   Yes, I trust this folder
+
+ Enter to confirm · Esc to cancel
+";
+
+    #[test]
+    fn trust_prompt_selection() {
+        assert_eq!(trust_dialog(TRUST_NO_SCREEN), Some(Choice::No));
+        let yes = TRUST_NO_SCREEN
+            .replace(" ❯ No, exit", "   No, exit")
+            .replace("   Yes, I trust this folder", " ❯ Yes, I trust this folder");
+        assert_eq!(trust_dialog(&yes), Some(Choice::Yes));
+        // The older, numbered one.
+        assert_eq!(
+            trust_dialog("Do you trust the files in this folder?\n\n/p/x\n\n❯ 1. Yes, proceed\n  2. No, exit\n"),
+            Some(Choice::Yes)
+        );
+        assert_eq!(
+            trust_dialog(
+                "Do you trust the files in this folder?\n  1. Yes, proceed\n❯ 2. No, exit\n"
+            ),
+            Some(Choice::No)
+        );
+        // Coloured, as tmux may hand it over.
+        let styled = TRUST_NO_SCREEN.replace("❯ No, exit", "\u{1b}[36m❯ No, exit\u{1b}[0m");
+        assert_eq!(trust_dialog(&styled), Some(Choice::No));
+        // Answered by the daemon only with Yes selected.
+        assert!(!trust_prompt(TRUST_NO_SCREEN));
+        assert!(trust_prompt(&yes));
+        // Not the trust question: the bypass warning, the input box, the
+        // words higher up in the conversation.
+        assert_eq!(trust_dialog(BYPASS_SCREEN), None);
+        assert_eq!(trust_dialog("────────\n❯ \n────────\n"), None);
+        assert_eq!(
+            trust_dialog("────────\n❯ do you trust me?\n────────\n"),
+            None
+        );
+        let mut talked = String::from(TRUST_NO_SCREEN);
+        for i in 0..20 {
+            talked.push_str(&format!("⏺ line {i}\n"));
+        }
+        talked.push_str("────────\n❯ \n────────\n");
+        assert_eq!(trust_dialog(&talked), None);
+        // An option that is neither: not ours to judge.
+        assert_eq!(
+            trust_dialog("Is this a project you created or one you trust?\n❯ Maybe later\n  Yes, I trust this folder\n"),
+            None
+        );
     }
 
     #[test]

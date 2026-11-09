@@ -338,7 +338,7 @@ cc-moss moss start           # 重新打开，守护进程几秒内把它拉起�
 
 Moss 开着却没在运行时，`--json` 能说明原因的会说明：`"daemon_running": false`（负责启动它的守护进程没开），或者 `"last_error"` 写着上次没能启动的原因。`moss stop` 如果没法确认 Moss 已经结束（tmux 没回应），会直说并以错误退出；开关照样已经关上，守护进程会继续去停。
 
-Moss 的 Claude Code 停在一个确认框上、到不了输入框时（比如 bypass 警告、要你登录），守护进程会在几秒后认出来，`moss status` 报 `"activity": "blocked"`，`"blocked"` 写着是哪种（`bypass_warning`、`login`、`unknown_dialog`）和从什么时候起；`cc-moss doctor` 也会说一行。cc-moss 不会替你点同意，也不会往那个窗口里按任何键：在 App 的 Moss 页点「打开 Moss 的窗口」，或者运行 `cc-moss moss attach`，在那里回答。回答之后，排着的消息就会送进去。「信任此文件夹」照旧由守护进程自动回答。
+Moss 的 Claude Code 停在一个确认框上、到不了输入框时（比如 bypass 警告、要你登录），守护进程会在几秒后认出来，`moss status` 报 `"activity": "blocked"`，`"blocked"` 写着是哪种（`bypass_warning`、`login`、`unknown_dialog`）和从什么时候起；`cc-moss doctor` 也会说一行。cc-moss 不会替你点同意，也不会往那个窗口里按任何键：在 App 的 Moss 页点「打开 Moss 的窗口」，或者运行 `cc-moss moss attach`，在那里回答。回答之后，排着的消息就会送进去。「信任此文件夹」由守护进程替 Moss 回答 Yes：新版 Claude Code 默认选中的是「No, exit」，守护进程先把选择移到 Yes，看清楚确实选中了 Yes 才确认，选中 No 时绝不按回车；移不过去，或者一分钟后框还在，就按上面的办法报告卡住（`trust_folder`），留给你在 Moss 的窗口里选。
 
 - **结束不了它，只能关掉它。** 选择器、`cc-moss close` 都不提供结束 Moss；面板的会话列表里没有它（它有自己的 Moss 页），也不会出现在「找回」里。要停，就在菜单栏 App 的设置 ›「Moss」里关掉开关，或者运行 `cc-moss moss stop`，或者在配置里写 `[moss] enabled = false`。三种都会一直关着，直到你再打开。
 - **它住在哪。** 状态目录下的 `moss/`（默认 `~/.local/state/cc-moss/moss/`），不在「文稿」这类受隐私保护的文件夹里。菜单栏 App 的设置 ›「Moss」里点「在 Finder 中显示」就能打开它（`cc-moss moss status --json` 的 `home` 也是这个路径）：
