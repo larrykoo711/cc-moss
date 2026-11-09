@@ -119,6 +119,20 @@ slash() {
   printf '%s\n' "$1" >> "$CC_MOSS_FAKE_DIR/moss-commands.txt"
 }
 
+# With CC_MOSS_FAKE_BYPASS set, Claude Code's bypass warning (as 2.1.319
+# draws it) until $CC_MOSS_FAKE_DIR/accepted exists, the user's answer.
+# Every key that comes in meanwhile goes to dialog-keys.txt.
+if [ -n "$CC_MOSS_FAKE_BYPASS" ] && [ ! -e "$CC_MOSS_FAKE_DIR/accepted" ]; then
+  printf '────────────────────────────────────────\n  WARNING: Claude Code running in Bypass Permissions mode\n\n  In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.\n\n  https://code.claude.com/docs/en/security\n\n  ❯ No, exit\n    Yes, I accept\n\n  Enter to confirm · Esc to cancel\n'
+  stty -echo 2>/dev/null
+  until [ -e "$CC_MOSS_FAKE_DIR/accepted" ]; do
+    if IFS= read -r -n1 -t 1 -d '' c; then
+      printf '%s' "${c:-<enter>}" >> "$CC_MOSS_FAKE_DIR/dialog-keys.txt"
+    fi
+  done
+  printf '\e[2J\e[H'
+fi
+
 # With CC_MOSS_FAKE_TRUST set, a fresh machine's first question: trust this
 # folder? It waits for Enter (yes), and asks only once.
 if [ -n "$CC_MOSS_FAKE_TRUST" ] && [ ! -e "$CC_MOSS_FAKE_DIR/trusted" ]; then

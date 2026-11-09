@@ -232,6 +232,11 @@ const TEXT: &[(&str, &str, &str)] = &[
     ("moss", "", "Moss：cc-moss 替你一直开着的那个会话，在这里打开或关掉"),
     ("moss start", "", "打开 Moss；守护进程会把它拉起来并一直看着"),
     ("moss stop", "", "关掉 Moss 并结束它；在你再次 start 之前不会启动"),
+    (
+        "moss attach",
+        "",
+        "在这个终端里打开 Moss 自己的窗口（它的 tmux 会话），看它显示什么、回答它问的",
+    ),
     ("moss status", "", "Moss 开没开、在不在运行、跑了多久、重启过几次"),
     ("moss status", "json", "机器可读的输出（schema 1）"),
     (

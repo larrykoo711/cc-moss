@@ -11,6 +11,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 - **Moss no longer stops on Claude Code's bypass warning.** The answer to the warning was in Moss's project settings,
   where Claude Code ignores it, so a fresh Moss could wait on the warning for days. It is now in Moss's local
   settings, every time.
+- **When Moss is stuck on a question, it says so.** If Claude Code shows Moss a question it can't get past (a
+  warning, a sign-in), `cc-moss moss status` and `cc-moss doctor` say what it is, and the Moss page shows a note with
+  an Open Moss's window button instead of "Sending…". cc-moss never answers it for you. `cc-moss moss attach` opens
+  Moss's window from a terminal.
 
 ## [0.3.9] - 2026-11-06
 

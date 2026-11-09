@@ -455,6 +455,7 @@ fn end_moss(state: &Path, reason: &str) -> Result<bool> {
         Registry::open(&db)?.close_role(moss::ROLE, &socket, None, reason, now_ms())?;
     }
     moss::remove(&moss::status_path(state))?;
+    moss::remove(&moss::blocked_path(state))?;
     moss::clear_error(state);
     Ok(before.liveness == Liveness::Alive)
 }
@@ -490,7 +491,15 @@ pub fn report() -> moss::Report {
         .filter(|t| !t.is_empty())
         .unwrap_or_else(|| moss::account::current().as_str().to_string());
     let waiting = reply::waiting_path(&home).exists();
-    r.activity = moss::activity(on, running, daemon_running, waiting, turn);
+    r.blocked = moss::read_blocked(&state).filter(|_| on && running && daemon_running);
+    r.activity = moss::activity(
+        on,
+        running,
+        daemon_running,
+        r.blocked.is_some(),
+        waiting,
+        turn,
+    );
     r
 }
 
@@ -636,6 +645,31 @@ pub fn stop_hook(args: &[std::ffi::OsString]) -> ExitCode {
 }
 
 /// `cc-moss moss status [--json]`.
+/// `cc-moss moss attach`: this terminal joins Moss's tmux session, on
+/// Moss's own tmux server. Nothing is typed into it.
+pub fn attach() -> Result<()> {
+    use std::os::unix::process::CommandExt;
+    let Some(socket) = socket() else {
+        bail!(tr!("Moss isn't looked after here.", "这里没有 Moss。"));
+    };
+    let seen = look(&socket);
+    let Some(id) = seen.live.first() else {
+        bail!(tr!(
+            "Moss isn't running right now; `cc-moss moss status` says why.",
+            "Moss 现在没在运行；`cc-moss moss status` 会说明原因。"
+        ));
+    };
+    // From inside another tmux too: Moss's server is a different one.
+    let error = moss_core::tmux::command()
+        .args(["-L", &socket, "-f", "/dev/null", "attach-session", "-t", id])
+        .env_remove("TMUX")
+        .exec();
+    Err(error).context(tr!(
+        "tmux could not open Moss's window",
+        "tmux 没能打开 Moss 的窗口"
+    ))
+}
+
 pub fn print_status(json: bool) -> Result<()> {
     let r = report();
     if json {
@@ -661,6 +695,10 @@ pub fn describe(r: &moss::Report) -> String {
             "Moss 已打开，但现在没在运行；cc-moss 守护进程会把它拉起来（看看 `cc-moss doctor`）。"
         )
         .to_string();
+    }
+    if let Some(blocked) = &r.blocked {
+        let (what, fix) = blocked_words(&blocked.kind);
+        return tr!(format!("{what}: {fix}."), format!("{what}：{fix}。")).to_string();
     }
     let up = r
         .since_ms
@@ -934,6 +972,32 @@ pub struct Facts {
     pub tmux_found: bool,
     /// `CLAUDE_CONFIG_DIR` here, when Moss's fence doesn't cover it.
     pub fence_gap: Option<PathBuf>,
+    /// The kind of choice Moss is stuck on (`moss status`'s `blocked.kind`).
+    pub blocked: Option<String>,
+}
+
+/// What Moss is stuck on, and what to do about it: for `doctor` and
+/// `moss status`.
+pub fn blocked_words(kind: &str) -> (String, String) {
+    let what = match kind {
+        "bypass_warning" => tr!(
+            "Moss is stopped on Claude Code's bypass warning",
+            "Moss 停在 Claude Code 的 bypass 警告上"
+        ),
+        "login" => tr!(
+            "Moss's Claude Code is waiting for you to sign in",
+            "Moss 的 Claude Code 在等你登录"
+        ),
+        _ => tr!(
+            "Moss is stopped on a question in its window",
+            "Moss 停在它窗口里的一个问题上"
+        ),
+    };
+    let fix = tr!(
+        "open its window with `cc-moss moss attach` and answer there; your messages go in after that",
+        "用 `cc-moss moss attach` 打开它的窗口，在那里回答；你的消息随后就会送进去"
+    );
+    (what.to_string(), fix.to_string())
 }
 
 /// `None` where there is no daemon to run Moss (not macOS, root).
@@ -964,6 +1028,7 @@ pub fn facts() -> Option<Facts> {
                         .map(Path::new),
                 )
             }),
+        blocked: r.blocked.map(|b| b.kind),
     })
 }
 
@@ -1006,8 +1071,14 @@ pub struct Looker {
     next_provider: Instant,
     /// Until when a folder-trust question on Moss's screen is answered.
     trust_until: Option<Instant>,
+    /// When Moss's screen is next looked at.
     next_trust: Instant,
     trust_told: bool,
+    /// Until when Moss's screen is looked at after a start (or adopting
+    /// it), with nothing waiting for it.
+    watch_until: Option<Instant>,
+    /// The choice Moss's Claude Code is stuck on, and since when.
+    dialog: Option<(reply::Dialog, Instant, i64)>,
     /// Said once: the base URL held a password and was left out.
     url_told: bool,
 }
@@ -1023,6 +1094,10 @@ const DAILY_EVERY: Duration = Duration::from_secs(30);
 const PROVIDER_EVERY: Duration = Duration::from_secs(1);
 /// How long after a start a folder-trust question is answered.
 const TRUST_WINDOW: Duration = Duration::from_secs(60);
+
+/// How long a choice stays on Moss's screen before it counts as stuck
+/// (Claude Code shows some for a moment while it starts).
+const BLOCKED_AFTER: Duration = Duration::from_secs(5);
 
 /// What [`sync_provider`] did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1150,6 +1225,8 @@ impl Looker {
             trust_until: None,
             next_trust: now,
             trust_told: false,
+            watch_until: None,
+            dialog: None,
             url_told: false,
         })
     }
@@ -1212,7 +1289,8 @@ impl Looker {
         }
         if enabled && self.keeper.is_up() {
             self.follow_provider(now, log);
-            self.accept_trust(now, log);
+            self.watch_screen(now, log);
+            self.talk.blocked = self.dialog.is_some();
             self.refresh_sessions(now, log);
             self.daily_checkup(now, log);
             self.talk.tick(&self.socket, now, self.digest, log);
@@ -1282,11 +1360,26 @@ impl Looker {
         }
     }
 
-    /// A fresh machine asks whether to trust Moss's folder before it
-    /// starts: the keeper answers yes, in Moss's own pane, for a while
-    /// after each start.
-    fn accept_trust(&mut self, now: Instant, log: &dyn Fn(&str)) {
-        if self.trust_until.is_none_or(|until| now >= until) || now < self.next_trust {
+    /// Look at Moss's screen, once a second, for a while after each start
+    /// and while something waits for it (a message, a choice seen).
+    ///
+    /// - A fresh machine asks whether to trust Moss's folder before it
+    ///   starts: the keeper answers yes, in Moss's own pane, for a while
+    ///   after each start.
+    /// - Any other choice in place of the input box (F59) is only reported
+    ///   ([`moss::blocked_path`]) once it stayed [`BLOCKED_AFTER`], and
+    ///   cleared once it is gone. No key is sent for it: the user answers
+    ///   it in Moss's window.
+    fn watch_screen(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        if now < self.next_trust {
+            return;
+        }
+        let trusting = self.trust_until.is_some_and(|until| now < until);
+        let watching = self.watch_until.is_some_and(|until| now < until)
+            || self.dialog.is_some()
+            || moss::blocked_path(&self.state).exists()
+            || inbox::count(&moss::home_dir(&self.state)) > 0;
+        if !trusting && !watching {
             return;
         }
         // One look a second is plenty.
@@ -1295,7 +1388,9 @@ impl Looker {
         let Ok(out) = tmux(&self.socket, &["capture-pane", "-p", "-t", &target]) else {
             return;
         };
-        if !reply::trust_prompt(&String::from_utf8_lossy(&out.stdout)) {
+        let screen = String::from_utf8_lossy(&out.stdout);
+        if !(trusting && reply::trust_prompt(&screen)) {
+            self.note_dialog(reply::blocking_dialog(&screen), now, log);
             return;
         }
         let _ = tmux(&self.socket, &["send-keys", "-t", &target, "Enter"]);
@@ -1304,6 +1399,48 @@ impl Looker {
         if !self.trust_told {
             self.trust_told = true;
             log("moss: Claude Code asked whether to trust Moss's folder; answered yes");
+        }
+    }
+
+    /// Keep [`moss::blocked_path`] in step with the choice on Moss's screen.
+    fn note_dialog(&mut self, seen: Option<reply::Dialog>, now: Instant, log: &dyn Fn(&str)) {
+        let Some(kind) = seen else {
+            if self.dialog.take().is_some() || moss::blocked_path(&self.state).exists() {
+                self.clear_blocked(log);
+            }
+            return;
+        };
+        if self.dialog.is_none_or(|(k, _, _)| k != kind) {
+            self.dialog = Some((kind, now, now_ms()));
+        }
+        let Some((_, at, at_ms)) = self.dialog else {
+            return;
+        };
+        let blocked = moss::Blocked {
+            kind: kind.as_str().to_string(),
+            since: rfc3339(at_ms),
+        };
+        if now.duration_since(at) < BLOCKED_AFTER
+            || moss::read_blocked(&self.state).as_ref() == Some(&blocked)
+        {
+            return;
+        }
+        match moss::write_blocked(&self.state, &blocked) {
+            Ok(()) => log(&format!(
+                "moss: Claude Code is waiting on a choice ({}); it is left for you to answer in Moss's window",
+                blocked.kind
+            )),
+            Err(e) => log(&format!("moss: error: cannot note that it is stuck: {e}")),
+        }
+    }
+
+    fn clear_blocked(&mut self, log: &dyn Fn(&str)) {
+        self.dialog = None;
+        if moss::blocked_path(&self.state).exists() {
+            match moss::remove(&moss::blocked_path(&self.state)) {
+                Ok(()) => log("moss: the choice it was waiting on is gone"),
+                Err(e) => log(&format!("moss: error: cannot clear that it was stuck: {e}")),
+            }
         }
     }
 
@@ -1318,6 +1455,9 @@ impl Looker {
             Ok(session_id) => {
                 self.keeper.started(now);
                 self.trust_until = Some(now + TRUST_WINDOW);
+                self.watch_until = Some(now + TRUST_WINDOW);
+                // A fresh Moss: what the old one was stuck on is gone.
+                self.clear_blocked(log);
                 // A fresh Moss: whatever the old one had in hand is lost.
                 self.talk.moss_restarted(log);
                 let restarts = self.keeper.restarts();
@@ -1368,6 +1508,8 @@ impl Looker {
     }
 
     fn adopt(&mut self, now: Instant, log: &dyn Fn(&str)) {
+        // It may be stuck since before the daemon started.
+        self.watch_until = Some(now + TRUST_WINDOW);
         let path = moss::status_path(&self.state);
         let stored = moss::read(&path);
         self.keeper

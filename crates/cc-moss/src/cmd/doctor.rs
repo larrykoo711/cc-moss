@@ -900,6 +900,10 @@ fn moss_check(f: &super::moss::Facts) -> Check {
             )),
         );
     }
+    if let Some(kind) = f.blocked.as_deref().filter(|_| f.running) {
+        let (stuck, fix) = super::moss::blocked_words(kind);
+        return check(Mark::Warn, what, stuck, Some(fix));
+    }
     if f.running {
         check(Mark::Ok, what, tr!("running", "运行中"), None)
     } else {
@@ -1088,6 +1092,7 @@ mod tests {
             claude_found,
             tmux_found,
             fence_gap: None,
+            blocked: None,
         };
         let c = moss_check(&facts(false, true));
         assert_eq!(c.mark, Mark::Warn);
@@ -1108,6 +1113,7 @@ mod tests {
             claude_found: true,
             tmux_found: true,
             fence_gap: None,
+            blocked: None,
         });
         assert_eq!(fine.mark, Mark::Ok);
         let gap = moss_check(&super::super::moss::Facts {
@@ -1116,6 +1122,7 @@ mod tests {
             claude_found: true,
             tmux_found: true,
             fence_gap: Some("/c".into()),
+            blocked: None,
         });
         assert_eq!(gap.mark, Mark::Warn);
         assert!(gap.detail.contains("CLAUDE_CONFIG_DIR"), "{}", gap.detail);
@@ -1126,8 +1133,48 @@ mod tests {
             claude_found: false,
             tmux_found: false,
             fence_gap: None,
+            blocked: None,
         });
         assert_eq!(off.mark, Mark::Note, "off is a choice, not a problem");
+    }
+
+    #[test]
+    fn doctor_reports_moss_blocked() {
+        let facts = |blocked: Option<&str>| super::super::moss::Facts {
+            enabled: true,
+            running: true,
+            claude_found: true,
+            tmux_found: true,
+            fence_gap: None,
+            blocked: blocked.map(String::from),
+        };
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
+        let fine = moss_check(&facts(None));
+        assert_eq!(fine.mark, Mark::Ok);
+        assert!(fine.fix.is_none());
+        let stuck = moss_check(&facts(Some("bypass_warning")));
+        assert_eq!(stuck.mark, Mark::Warn);
+        assert!(stuck.detail.contains("bypass warning"), "{}", stuck.detail);
+        assert!(
+            stuck
+                .fix
+                .as_deref()
+                .is_some_and(|f| f.contains("cc-moss moss attach")),
+            "{:?}",
+            stuck.fix
+        );
+        let login = moss_check(&facts(Some("login")));
+        assert!(login.detail.contains("sign in"), "{}", login.detail);
+        let other = moss_check(&facts(Some("unknown_dialog")));
+        assert!(other.detail.contains("question"), "{}", other.detail);
+        crate::i18n::set_for_test(crate::i18n::Lang::Zh);
+        let zh = moss_check(&facts(Some("bypass_warning")));
+        assert!(zh.detail.contains("警告"), "{}", zh.detail);
+        assert!(zh
+            .fix
+            .as_deref()
+            .is_some_and(|f| f.contains("cc-moss moss attach")));
+        crate::i18n::set_for_test(crate::i18n::Lang::En);
     }
 
     #[test]

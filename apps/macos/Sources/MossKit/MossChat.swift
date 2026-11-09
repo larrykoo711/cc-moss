@@ -12,6 +12,8 @@ public enum MossActivity: String, CaseIterable, Equatable, Sendable {
     case thinking
     /// Stuck on a confirm prompt in its terminal.
     case waiting
+    /// Claude Code waits on a choice before Moss can be talked to (F59).
+    case blocked
     /// Switched on but not running (restarting, or the daemon is down).
     case offline
     /// Switched off.
@@ -48,6 +50,7 @@ extension MossStatus {
             }
         case .thinking: t("Thinking…", "正在想…")
         case .waiting: t("Waiting for your OK, check the terminal", "在等你确认，去终端看看")
+        case .blocked: t("Stopped on a question in its window", "停在它窗口里的一个确认框上")
         case .offline: offlineReason(lang: lang)
         case .off: t("Off · turn it on in Settings", "已关闭 · 去设置里打开")
         }

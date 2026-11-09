@@ -110,6 +110,33 @@ pub fn read_error(state: &Path) -> Option<String> {
         .filter(|t| !t.is_empty())
 }
 
+/// `<state>/daemon/moss-blocked.json`: there while Moss's Claude Code waits
+/// on a choice it can't get past by itself ([`reply::blocking_dialog`]),
+/// written by the daemon after a few seconds of it.
+pub fn blocked_path(state: &Path) -> PathBuf {
+    crate::daemon::Paths::new(state)
+        .dir
+        .join("moss-blocked.json")
+}
+
+/// What Moss is stuck on: `moss status --json`'s `blocked`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Blocked {
+    /// [`reply::Dialog::as_str`].
+    pub kind: String,
+    /// Since when, RFC 3339.
+    pub since: String,
+}
+
+pub fn read_blocked(state: &Path) -> Option<Blocked> {
+    serde_json::from_str(&std::fs::read_to_string(blocked_path(state)).ok()?).ok()
+}
+
+pub fn write_blocked(state: &Path, blocked: &Blocked) -> io::Result<()> {
+    let text = serde_json::to_string(blocked).map_err(io::Error::other)?;
+    crate::moss::home::write_if_changed(&blocked_path(state), &format!("{text}\n")).map(|_| ())
+}
+
 /// `<state>/daemon/moss-account.txt`: the account kind as the daemon (and
 /// so Moss) sees it.
 pub fn account_path(state: &Path) -> PathBuf {
@@ -147,6 +174,9 @@ pub struct Report {
     pub last_error: Option<String>,
     /// What it is doing: [`activity`].
     pub activity: &'static str,
+    /// What it is stuck on, while `activity` is `blocked`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub blocked: Option<Blocked>,
     /// Your messages waiting in its inbox.
     pub queued: usize,
     /// Text cc-moss could not clear is stuck in Moss's input: nothing more
@@ -168,18 +198,21 @@ pub struct Report {
 }
 
 /// What Moss is doing, for `moss status --json`: `off` (switched off),
-/// `offline` (on, but it or the daemon is not running), `waiting` (stopped
-/// at a confirm prompt), `thinking` (in a turn), else `idle`.
+/// `offline` (on, but it or the daemon is not running), `blocked` (Claude
+/// Code waits on a choice before it can be talked to), `waiting` (stopped
+/// at a confirm prompt in a turn), `thinking` (in a turn), else `idle`.
 pub fn activity(
     enabled: bool,
     running: bool,
     daemon_running: bool,
+    blocked: bool,
     waiting: bool,
     turn_open: Option<bool>,
 ) -> &'static str {
     match () {
         _ if !enabled => "off",
         _ if !running || !daemon_running => "offline",
+        _ if blocked => "blocked",
         _ if waiting => "waiting",
         _ if turn_open == Some(true) => "thinking",
         _ => "idle",
@@ -206,7 +239,8 @@ impl Report {
             restarts: stored.map_or(0, |s| s.restarts),
             session_id: stored.map(|s| s.session_id.clone()),
             since_ms: stored.map(|s| s.started_ms),
-            activity: activity(enabled, running, daemon_running, false, None),
+            activity: activity(enabled, running, daemon_running, false, false, None),
+            blocked: None,
             queued: 0,
             input_busy: false,
             account: "unknown".into(),
@@ -257,13 +291,23 @@ mod tests {
 
     #[test]
     fn activity_reads_switch_process_and_turn() {
-        assert_eq!(activity(false, true, true, true, Some(true)), "off");
-        assert_eq!(activity(true, false, true, false, None), "offline");
-        assert_eq!(activity(true, true, false, false, None), "offline");
-        assert_eq!(activity(true, true, true, true, Some(true)), "waiting");
-        assert_eq!(activity(true, true, true, false, Some(true)), "thinking");
-        assert_eq!(activity(true, true, true, false, Some(false)), "idle");
-        assert_eq!(activity(true, true, true, false, None), "idle");
+        assert_eq!(activity(false, true, true, true, true, Some(true)), "off");
+        assert_eq!(activity(true, false, true, true, false, None), "offline");
+        assert_eq!(activity(true, true, false, false, false, None), "offline");
+        assert_eq!(activity(true, true, true, true, false, None), "blocked");
+        assert_eq!(
+            activity(true, true, true, false, true, Some(true)),
+            "waiting"
+        );
+        assert_eq!(
+            activity(true, true, true, false, false, Some(true)),
+            "thinking"
+        );
+        assert_eq!(
+            activity(true, true, true, false, false, Some(false)),
+            "idle"
+        );
+        assert_eq!(activity(true, true, true, false, false, None), "idle");
     }
 
     #[test]
@@ -285,5 +329,9 @@ mod tests {
         let s = Path::new("/s");
         assert_eq!(home_dir(s), PathBuf::from("/s/moss"));
         assert_eq!(status_path(s), PathBuf::from("/s/daemon/moss.json"));
+        assert_eq!(
+            blocked_path(s),
+            PathBuf::from("/s/daemon/moss-blocked.json")
+        );
     }
 }

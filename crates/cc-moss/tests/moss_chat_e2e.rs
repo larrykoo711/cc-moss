@@ -227,6 +227,73 @@ fn slash_command_not_allowed() {
     assert!(!heard(&w).starts_with("/login\n/login"), "{}", heard(&w));
 }
 
+/// F59: Moss stopped on Claude Code's bypass warning is reported as
+/// `blocked`, nothing is typed into the warning, and once the user answers
+/// it (in Moss's window) the message goes in.
+#[test]
+fn moss_status_reports_blocked() {
+    let w = World::new("chat-blocked");
+    let _d = Daemon(
+        moss_cmd(&w)
+            .env("CC_MOSS_CLAUDE_BIN", fixture("moss-claude"))
+            .env("CC_MOSS_FAKE_BYPASS", "1")
+            .args(["daemon", "run"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cc-moss daemon run"),
+    );
+    let fifos = w.path("fifos");
+    wait_until("the warning on Moss's screen", 20, || {
+        w.tmux(&["capture-pane", "-p", "-t", "=moss:"])
+            .contains("Bypass Permissions mode")
+            .then_some(())
+    });
+    let shown = Instant::now();
+    let id = say(&w, "hello while stuck");
+    let st = wait_until("Moss to be reported blocked", 30, || {
+        let st = status(&w);
+        (st["activity"] == "blocked").then_some(st)
+    });
+    assert!(
+        shown.elapsed() >= Duration::from_secs(4),
+        "only once it stayed a while: {st}"
+    );
+    assert_eq!(st["blocked"]["kind"], "bypass_warning", "{st}");
+    assert!(
+        st["blocked"]["since"]
+            .as_str()
+            .is_some_and(|s| s.ends_with('Z')),
+        "{st}"
+    );
+    assert_eq!(st["queued"], 1, "{st}");
+    assert!(
+        log(&w).contains("waiting on a choice (bypass_warning)"),
+        "{}",
+        log(&w)
+    );
+    // Still stuck a while later, and nothing typed into the warning.
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(status(&w)["activity"], "blocked");
+    assert!(heard(&w).is_empty(), "{}", heard(&w));
+
+    // The user answers it in Moss's window.
+    std::fs::write(fifos.join("accepted"), "").unwrap();
+    let reply = reply_to(&w, &id);
+    assert_eq!(reply["text"], "echo: hello while stuck", "{reply}");
+    let st = wait_until("the mark to clear", 20, || {
+        let st = status(&w);
+        (st["activity"] != "blocked").then_some(st)
+    });
+    assert!(st.get("blocked").is_none(), "{st}");
+    assert!(
+        !fifos.join("dialog-keys.txt").exists(),
+        "keys reached the warning: {:?}",
+        std::fs::read_to_string(fifos.join("dialog-keys.txt"))
+    );
+}
+
 #[test]
 fn say_gets_a_reply() {
     let w = World::new("chat-reply");

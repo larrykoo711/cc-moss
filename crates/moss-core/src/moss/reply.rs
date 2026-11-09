@@ -350,6 +350,66 @@ pub fn trust_prompt(screen: &str) -> bool {
 /// How many lines at the bottom the trust dialog fills, at most.
 const TRUST_LINES: usize = 12;
 
+/// A choice Claude Code waits on before Moss can be talked to (F59). The
+/// daemon only reports it: it never answers one for the user.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Dialog {
+    /// The bypass-mode warning (the answer is in Moss's local settings).
+    BypassWarning,
+    /// Claude Code asking how to sign in.
+    Login,
+    /// Any other choice in its place.
+    Unknown,
+}
+
+impl Dialog {
+    /// The `blocked.kind` of `moss status --json`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Dialog::BypassWarning => "bypass_warning",
+            Dialog::Login => "login",
+            Dialog::Unknown => "unknown_dialog",
+        }
+    }
+}
+
+/// How many lines at the bottom a blocking dialog fills, at most.
+const DIALOG_LINES: usize = 16;
+
+/// The choice Claude Code shows at the bottom of `screen` instead of its
+/// input box, when it is one Moss can't get past by itself. The
+/// folder-trust question (the daemon answers it), a permission question
+/// in a turn (that is `waiting`), a turn running, or the input box: `None`.
+pub fn blocking_dialog(screen: &str) -> Option<Dialog> {
+    let plain = inbox::plain(screen);
+    let lines: Vec<&str> = plain.lines().filter(|l| !l.trim().is_empty()).collect();
+    let bottom = &lines[lines.len().saturating_sub(DIALOG_LINES)..];
+    let text = bottom.join("\n");
+    // The input box (a prompt right under a rule): Claude Code is ready.
+    let input_box = bottom
+        .windows(2)
+        .any(|w| w[0].trim_start().starts_with("───") && inbox::prompt_line(w[1]));
+    // A turn running, or a permission question in one (`waiting`). Not
+    // [`working`]: its "esc to cancel" is also a dialog's footer.
+    let in_turn = text.to_lowercase().contains("esc to interrupt")
+        || text.contains("Do you want to")
+        || text.contains("Would you like to");
+    if input_box || in_turn {
+        return None;
+    }
+    if text.contains("trust the files in this folder") || text.contains("one you trust") {
+        return None;
+    }
+    if text.contains("Bypass Permissions mode") && text.contains("Yes, I accept") {
+        return Some(Dialog::BypassWarning);
+    }
+    if text.contains("Select login method") || text.contains("Paste code here") {
+        return Some(Dialog::Login);
+    }
+    let choice = bottom.iter().any(|l| inbox::prompt_line(l));
+    (choice && text.contains("Enter to confirm")).then_some(Dialog::Unknown)
+}
+
 /// Claude Code working on a turn.
 pub fn working(screen: &str) -> bool {
     let text = inbox::plain(screen).to_lowercase();
@@ -672,6 +732,87 @@ mod tests {
             c.tick(SENT + ms(t.late) + 70_000, false, &mut pane),
             Verdict::Received(_)
         ));
+    }
+
+    /// Claude Code 2.1.319's bypass warning as `capture-pane -p` shows it
+    /// (`reports/moss-bypass-probe.md`, `notes/round-0310-drivers.md`).
+    const BYPASS_SCREEN: &str = "\
+────────────────────────────────────────────────────────────────────────────────
+  WARNING: Claude Code running in Bypass Permissions mode
+
+  In Bypass Permissions mode, Claude Code will not ask for your approval before running potentially dangerous commands.
+
+  This mode should only be used in a sandboxed container/VM that has restricted internet access and can easily be restored if damaged.
+
+  By proceeding, you accept all responsibility for actions taken while running in Bypass Permissions mode.
+
+  https://code.claude.com/docs/en/security
+
+  ❯ No, exit
+    Yes, I accept
+
+  Enter to confirm · Esc to cancel
+";
+
+    /// Claude Code asking how to sign in (a Mac with no account yet).
+    const LOGIN_SCREEN: &str = "\
+ Claude Code can be used with your Claude subscription or billed based on API usage through your Console account.
+
+ Select login method:
+
+ ❯ 1. Claude account with subscription · Pro, Max, Team, or Enterprise
+
+   2. Anthropic Console account · API usage billing
+
+   3. 3rd-party platform · Amazon Bedrock, Microsoft Foundry, or Vertex AI
+";
+
+    #[test]
+    fn blocked_dialog_detection() {
+        assert_eq!(blocking_dialog(BYPASS_SCREEN), Some(Dialog::BypassWarning));
+        // Coloured, as tmux may hand it over.
+        let styled = BYPASS_SCREEN.replace("WARNING", "\u{1b}[1;31mWARNING\u{1b}[0m");
+        assert_eq!(blocking_dialog(&styled), Some(Dialog::BypassWarning));
+        assert_eq!(blocking_dialog(LOGIN_SCREEN), Some(Dialog::Login));
+        // Another choice Claude Code waits on before it starts.
+        assert_eq!(
+            blocking_dialog(
+                " Something new to agree to\n\n ❯ 1. Yes\n   2. No\n\n Enter to confirm · Esc to cancel\n"
+            ),
+            Some(Dialog::Unknown)
+        );
+        assert_eq!(Dialog::BypassWarning.as_str(), "bypass_warning");
+        assert_eq!(Dialog::Login.as_str(), "login");
+        assert_eq!(Dialog::Unknown.as_str(), "unknown_dialog");
+        // The input box: ready, not stuck (with the bar under it saying
+        // bypass is on, and text typed in).
+        let ready = " ▐▛███▜▌   Claude Code v2.1.319\n\n────────\n❯ \n────────\n  ⏵⏵ bypass permissions on (shift+tab to cycle)\n";
+        assert_eq!(blocking_dialog(ready), None);
+        assert_eq!(blocking_dialog("────────\n❯ hello there\n────────\n"), None);
+        // The warning's words in the conversation, the input box below.
+        let mut talked = String::from(BYPASS_SCREEN);
+        talked.push_str(
+            "⏺ It said Bypass Permissions mode and Yes, I accept.\n────────\n❯ \n────────\n",
+        );
+        assert_eq!(blocking_dialog(&talked), None);
+        // Replying.
+        assert_eq!(
+            blocking_dialog("⏺ Looking\n✻ Thinking… (esc to interrupt)\n"),
+            None
+        );
+        // A confirm prompt in a turn is `waiting`, not this.
+        assert_eq!(
+            blocking_dialog("Do you want to proceed?\n❯ 1. Yes\n  2. No\n\n Esc to cancel\n"),
+            None
+        );
+        // The folder-trust question is answered by the daemon.
+        assert_eq!(
+            blocking_dialog(
+                "Do you trust the files in this folder?\n\n/p/x\n\n❯ 1. Yes, proceed\n  2. No, exit\n\n Enter to confirm · Esc to exit\n"
+            ),
+            None
+        );
+        assert_eq!(blocking_dialog(""), None);
     }
 
     #[test]

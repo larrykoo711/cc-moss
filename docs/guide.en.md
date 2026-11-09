@@ -471,6 +471,7 @@ from the panel (see Talking to Moss below); handing it work comes in a later ver
 cc-moss moss status          # on or off, running or not, for how long, how often it restarted
 cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…","daemon_running":true}
 cc-moss moss stop            # turn it off and end it; it stays off, after logging in again too
+cc-moss moss attach          # open Moss's own window (its tmux session) in this terminal
 cc-moss moss start           # turn it back on; the daemon starts it within seconds
 ```
 
@@ -478,6 +479,13 @@ When Moss is on but not running, `--json` also says why when it can: `"daemon_ru
 starts it is off), or `"last_error"` with the reason the last start failed. If `moss stop` can't make sure Moss
 ended (tmux doesn't answer), it says so and exits with an error; the switch is off all the same, and the daemon
 keeps trying.
+
+When Moss's Claude Code stops on a question before its input box (the bypass warning, or asking you to sign in),
+the daemon notices within a few seconds: `moss status` says `"activity": "blocked"`, and `"blocked"` says which
+kind (`bypass_warning`, `login`, `unknown_dialog`) and since when; `cc-moss doctor` says so too. cc-moss never
+answers it for you and never presses a key in that window: click Open Moss's window on the Moss page, or run
+`cc-moss moss attach`, and answer it there. Your waiting messages go in after that. The folder-trust question is
+still answered by the daemon, as before.
 
 - **You can't end it, only turn it off.** The picker and `cc-moss close` don't end Moss; the panel's session list
   leaves it out (it has a Moss page of its own), and it never shows up to bring back. To stop it, switch
@@ -545,7 +553,7 @@ keeps trying.
 #### Talking to Moss
 
 The third page on the panel's side rail is Moss (⌘3). The top line says how it's doing (standing by and for how long,
-thinking, waiting for your OK, restarting, off), with Open in Terminal beside it to watch its terminal; below is your
+thinking, waiting for your OK, stopped on a question, restarting, off), with Open in Terminal beside it to watch its terminal; when it is stopped on a question, a note at the top says which, with an Open Moss's window button; below is your
 conversation, and at the bottom the quick bar. On the rail, Moss's icon has a softly pulsing dot while it thinks, and
 a dot in the brand color when there's a reply you haven't seen.
 

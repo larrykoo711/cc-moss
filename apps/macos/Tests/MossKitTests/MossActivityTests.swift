@@ -93,7 +93,7 @@ import Testing
     }
 
     @Test func onlyOnAndRunningCanTalk() {
-        #expect(MossActivity.allCases.filter(\.canTalk) == [.idle, .thinking, .waiting])
+        #expect(MossActivity.allCases.filter(\.canTalk) == [.idle, .thinking, .waiting, .blocked])
         #expect(MossStatus(enabled: true, running: true, activity: .thinking).inputBlocked(lang: .en) == nil)
     }
 }

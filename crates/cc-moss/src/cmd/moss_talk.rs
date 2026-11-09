@@ -205,6 +205,9 @@ pub struct Talk {
     quiet: std::collections::HashSet<String>,
     /// Per news line (id): what it said of each session (slot id → state).
     told: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
+    /// Claude Code shows a choice in place of its input box (F59): nothing
+    /// is typed in, so no key ever lands on that choice.
+    pub blocked: bool,
 }
 
 /// Whether a change is still so: a session still dropped. Finished turns
@@ -250,6 +253,7 @@ impl Talk {
             compacting: None,
             quiet: Default::default(),
             told: Default::default(),
+            blocked: false,
         }
     }
 
@@ -343,6 +347,9 @@ impl Talk {
             return;
         }
         self.next_inbox = now + INBOX_EVERY;
+        if self.blocked {
+            return;
+        }
         // The inbox is a real folder, never a link elsewhere.
         if moss_core::moss::dir::Dir::open(&self.home, "inbox").is_err()
             || inbox::count(&self.home) == 0

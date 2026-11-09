@@ -492,3 +492,18 @@ fn status_says_where_moss_lives() {
     let home = status(&w)["home"].as_str().map(std::path::PathBuf::from);
     assert_eq!(home, Some(w.state().join("moss")));
 }
+
+/// `moss attach` with no Moss on its tmux server: says so, opens nothing.
+#[test]
+fn moss_attach_says_when_moss_is_not_running() {
+    let w = World::new("moss-attach");
+    let out = moss_cmd(&w)
+        .env("CC_MOSS_LANG", "en")
+        .args(["moss", "attach"])
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(!out.status.success(), "{out:?}");
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert!(err.contains("Moss isn't running right now"), "{err}");
+}

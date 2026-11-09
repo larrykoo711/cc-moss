@@ -17,7 +17,7 @@ import SwiftUI
 ///          [--asks <ask list --json file> [--ask <id>] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
 ///                  [--click x,y]] [--press x,y [--command k]]
-///          [--moss-guide] [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
+///          [--moss-guide] [--page moss [--moss-chat <moss chat --json file>] [--moss running|thinking|waiting|queued|stuck|blocked|api|off|offline|failing|nodaemon] [--moss-typing [text]]]
 ///
 /// `--asks`: the answer area from demo questions (`--ask` keeps one). `--click x,y` clicks the
 /// rendered panel at that point (points from its top-left corner) before the picture is taken, and
@@ -1131,6 +1131,7 @@ actor DemoRunner: CommandRunner {
         case "waiting": "{\(up),\"activity\":\"waiting\",\"queued\":1}"
         case "api": "{\(up.replacingOccurrences(of: "subscription", with: "api")),\"activity\":\"idle\",\"queued\":0}"
         case "stuck": "{\(up),\"activity\":\"idle\",\"queued\":1,\"input_busy\":true}"
+        case "blocked": "{\(up),\"activity\":\"blocked\",\"blocked\":{\"kind\":\"bypass_warning\",\"since\":\"\(since)\"},\"queued\":2}"
         case "off": #"{"schema":1,"enabled":false,"running":false,"activity":"off","queued":0}"#
         case "offline": #"{"schema":1,"enabled":true,"running":false,"activity":"offline","queued":0}"#
         case "failing": #"{"schema":1,"enabled":true,"running":false,"last_error":"Claude Code exited right after it started","activity":"offline","queued":0}"#
