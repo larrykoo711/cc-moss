@@ -294,6 +294,57 @@ fn moss_status_reports_blocked() {
     );
 }
 
+/// Moss's pane, by its mark.
+fn moss_pane(w: &World) -> Option<String> {
+    w.tmux(&["list-panes", "-a", "-F", "#{pane_id}|#{@cc-moss-role}"])
+        .lines()
+        .find_map(|l| l.strip_suffix("|moss").map(String::from))
+}
+
+/// Someone attached to Moss can only detach; a window opened in Moss's
+/// session (as tmux's own keys could) is not typed into, and once Moss's
+/// Claude Code exits that window does not keep a dead Moss alive.
+#[test]
+fn moss_ignores_panes_a_user_adds() {
+    let w = World::new("chat-panes");
+    let _d = daemon(&w);
+    moss_idle(&w);
+    // Only detach, in the tables a person reaches (copy mode's own keys
+    // stay, but no key leads there any more).
+    let keys = w.tmux(&["list-keys", "-T", "prefix"]) + &w.tmux(&["list-keys", "-T", "root"]);
+    assert_eq!(keys.lines().count(), 1, "{keys}");
+    assert!(
+        keys.contains("prefix") && keys.contains(" d ") && keys.contains("detach-client"),
+        "{keys}"
+    );
+    let first = moss_pane(&w).expect("Moss's pane is marked");
+    // A window of the user's own, made the active one, and a split.
+    w.tmux(&["new-window", "-t", "=moss:", "sleep 600"]);
+    w.tmux(&["split-window", "-t", "=moss:", "sleep 600"]);
+    assert_eq!(
+        moss_pane(&w).as_deref(),
+        Some(first.as_str()),
+        "only Moss's pane is marked"
+    );
+    let id = say(&w, "hello past the extra window");
+    assert_eq!(
+        reply_to(&w, &id)["text"],
+        "echo: hello past the extra window"
+    );
+    // Claude Code exits; the user's window stays, Moss comes back fresh.
+    let old = status(&w)["session_id"].as_str().unwrap().to_string();
+    w.tmux(&["kill-pane", "-t", &first]);
+    wait_until("a fresh Moss", 30, || {
+        let st = status(&w);
+        (st["running"] == true && st["session_id"].as_str().is_some_and(|s| s != old)).then_some(())
+    });
+    assert!(moss_pane(&w).is_some(), "the fresh Moss is marked");
+    // What was left of the old one went with it: only Moss's pane is there.
+    let panes = w.tmux(&["list-panes", "-a", "-F", "#{pane_id}"]);
+    assert_eq!(panes.lines().count(), 1, "{panes}");
+    assert!(log(&w).contains("without Moss in it"), "{}", log(&w));
+}
+
 #[test]
 fn say_gets_a_reply() {
     let w = World::new("chat-reply");

@@ -337,19 +337,7 @@ pub enum Choice {
 /// higher up, with the input box below, are conversation. `None` when the
 /// selected option is neither a yes nor a no.
 pub fn trust_dialog(screen: &str) -> Option<Choice> {
-    let plain = inbox::plain(screen);
-    let lines: Vec<&str> = plain.lines().filter(|l| !l.trim().is_empty()).collect();
-    let bottom = &lines[lines.len().saturating_sub(DIALOG_LINES)..];
-    let input_box = bottom
-        .windows(2)
-        .any(|w| w[0].trim_start().starts_with("───") && inbox::prompt_line(w[1]));
-    let text = bottom.join("\n");
-    let asks = text.contains("trust the files in this folder")
-        || text.contains("Do you trust")
-        || text.contains("one you trust");
-    if input_box || !asks {
-        return None;
-    }
+    let bottom = trust_bottom(screen)?;
     let selected = bottom
         .iter()
         .find_map(|l| l.split_once('❯').map(|(_, after)| after.trim_start()))?;
@@ -365,6 +353,29 @@ pub fn trust_dialog(screen: &str) -> Option<Choice> {
     } else {
         None
     }
+}
+
+/// The folder-trust question at the bottom of the screen, whatever its
+/// options say (a newer wording [`trust_dialog`] can't read an answer from
+/// is still this question).
+pub fn trust_question(screen: &str) -> bool {
+    trust_bottom(screen).is_some()
+}
+
+/// The bottom lines of `screen` when they hold the folder-trust question
+/// and no input box.
+fn trust_bottom(screen: &str) -> Option<Vec<String>> {
+    let plain = inbox::plain(screen);
+    let lines: Vec<&str> = plain.lines().filter(|l| !l.trim().is_empty()).collect();
+    let bottom = &lines[lines.len().saturating_sub(DIALOG_LINES)..];
+    let input_box = bottom
+        .windows(2)
+        .any(|w| w[0].trim_start().starts_with("───") && inbox::prompt_line(w[1]));
+    let text = bottom.join("\n");
+    let asks = text.contains("trust the files in this folder")
+        || text.contains("Do you trust")
+        || text.contains("one you trust");
+    (!input_box && asks).then(|| bottom.iter().map(|l| l.to_string()).collect())
 }
 
 /// The folder-trust question with its yes option selected: Enter takes
@@ -862,6 +873,20 @@ mod tests {
 
  Enter to confirm · Esc to cancel
 ";
+
+    #[test]
+    fn trust_question_without_a_known_choice() {
+        // New wording: still the trust question, no answer read from it.
+        let odd = "Is this a project you created or one you trust?\n❯ Maybe later\n  Trust it\n";
+        assert_eq!(trust_dialog(odd), None);
+        assert!(trust_question(odd));
+        assert!(trust_question(TRUST_NO_SCREEN));
+        assert!(!trust_question(BYPASS_SCREEN));
+        assert!(
+            !trust_question("────────\n❯ one you trust\n────────\n"),
+            "the input box"
+        );
+    }
 
     #[test]
     fn trust_prompt_selection() {

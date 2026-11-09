@@ -219,6 +219,17 @@ fn moss_trust_probe() {
     }
     let before = tmux(&["capture-pane", "-p", "-t", &target]);
     assert!(selected(&before).contains("Yes"), "{before}");
+    // Does Down on Yes (the last option) wrap back to No?
+    tmux(&["send-keys", "-t", &target, "Down"]);
+    std::thread::sleep(Duration::from_millis(800));
+    let wrapped = tmux(&["capture-pane", "-p", "-t", &target]);
+    println!("--- Down on Yes: selected: {}", selected(&wrapped));
+    if selected(&wrapped).contains("No") {
+        tmux(&["send-keys", "-t", &target, "Down"]);
+        std::thread::sleep(Duration::from_millis(800));
+    }
+    let before = tmux(&["capture-pane", "-p", "-t", &target]);
+    assert!(selected(&before).contains("Yes"), "{before}");
     tmux(&["send-keys", "-t", &target, "Enter"]);
     let after = wait_for(case, "bypass permissions on");
     println!(

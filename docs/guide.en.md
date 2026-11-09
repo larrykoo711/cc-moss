@@ -476,7 +476,7 @@ from the panel (see Talking to Moss below); handing it work comes in a later ver
 cc-moss moss status          # on or off, running or not, for how long, how often it restarted
 cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…","daemon_running":true}
 cc-moss moss stop            # turn it off and end it; it stays off, after logging in again too
-cc-moss moss attach          # open Moss's own window (its tmux session) in this terminal
+cc-moss moss attach          # open Moss's own window (its tmux session) in this terminal; Ctrl-b d leaves it
 cc-moss moss start           # turn it back on; the daemon starts it within seconds
 ```
 
@@ -536,8 +536,9 @@ in its window.
     "Operation not permitted" line about that; the command itself still runs.
 - **Where it runs.** A tmux server of its own (`tmux -L cc-moss-moss`, session `moss`), apart from yours:
   `tmux kill-server` on your side leaves it alone. That server doesn't read your `~/.tmux.conf`, so plugins and
-  options there don't change how Moss lives (a `remain-on-exit` left on is treated as the death it is). cc-moss knows
-  Moss by a mark on its tmux session, so renaming that session is fine. To look in on it, click Open in Terminal on
+  options there don't change how Moss lives (a `remain-on-exit` left on is treated as the death it is), and its only
+  key is Ctrl-b d to leave: no new windows or split panes there. cc-moss knows Moss by a mark on its tmux pane, so
+  renaming the session is fine. To look in on it, click Open in Terminal on
   the panel's Moss page. Only the session the daemon started is Moss: a window you open next to it, or
   `claude --resume` of its id elsewhere, is an ordinary session.
 - **What it starts with.** Moss starts with no MCP servers (`--strict-mcp-config`) and only the settings in its own

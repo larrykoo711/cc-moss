@@ -188,9 +188,18 @@ fn moss_comes_up_with_role() {
     assert_eq!(tmux_name, "moss", "never renamed after its Claude name");
     // Known by its mark, kept when detached, gone (not a dead pane) on exit,
     // whatever a tmux.conf says.
+    // The mark is on Moss's pane, not its session: a window or pane added
+    // there is not Moss.
+    assert_eq!(
+        moss_option(
+            &w,
+            &["show-options", "-p", "-v", "-t", "=moss:", "@cc-moss-role"]
+        ),
+        "moss"
+    );
     assert_eq!(
         moss_option(&w, &["show-options", "-v", "-t", "=moss:", "@cc-moss-role"]),
-        "moss"
+        ""
     );
     assert_eq!(
         moss_option(

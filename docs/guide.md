@@ -334,7 +334,7 @@ Moss 是 cc-moss 替你一直开着的一个 Claude Code 会话（macOS）。守
 cc-moss moss status          # 开没开、在不在运行、跑了多久、重启过几次
 cc-moss moss status --json   # {"schema":1,"enabled":true,"running":true,"since":"…","restarts":0,"session_id":"…","daemon_running":true}
 cc-moss moss stop            # 关掉并结束它；之后一直关着，重新登录也不会启动
-cc-moss moss attach          # 在这个终端里打开 Moss 自己的窗口（它的 tmux 会话）
+cc-moss moss attach          # 在这个终端里打开 Moss 自己的窗口（它的 tmux 会话）；那里只能按 Ctrl-b d 离开
 cc-moss moss start           # 重新打开，守护进程几秒内把它拉起来
 ```
 
@@ -355,7 +355,7 @@ Moss 的 Claude Code 停在一个确认框上、到不了输入框时（比如 b
   - 不联网：网页抓取和网页搜索一律拒绝，命令行也连不上网。
   - `IDENTITY.md`、`SOUL.md`、`USER.md` 只能经 `/moss-profile` 改，它用 `cc-moss moss profile <名字> --from <草稿>` 保存：这是唯一允许在沙箱外跑的命令，而且只能单独一条（旧文件会先存进 `.snapshots/`）。
   - 围栏管不到的：Moss 仍然能读你 Mac 上别的文件，比如你的项目文件夹。`SECURITY.md` 要求它远离密钥之类的东西，但那是它遵守的规矩，不是一堵墙。如果你的 shell 启动文件在开 shell 时会往别处写东西（有些版本管理工具会），它的每条命令都会多打一行与此有关的「Operation not permitted」，命令本身照常执行。
-- **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 会话上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板的 Moss 页点「在终端打开」。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
+- **它在哪跑。** 一个只给它用的 tmux server（`tmux -L cc-moss-moss`，会话名 `moss`），和你自己的 tmux 互不相干：你 `tmux kill-server` 不会带走它。这个 server 不读你的 `~/.tmux.conf`，tmux 的快捷键也只留了 Ctrl-b d（离开），开不了新窗口、分不了屏；那里的插件和选项不影响 Moss 的死活（就算开着 `remain-on-exit`，退出了也按死了算）。cc-moss 靠 tmux 窗格上的标记认出 Moss，所以改了会话名也没关系。想看看它，在面板的 Moss 页点「在终端打开」。只有守护进程启动的那个会话才是 Moss：你在它旁边新开的窗口，或者在别处 `claude --resume` 它的 id，都是普通会话。
 - **它带什么上路。** Moss 启动时不加载任何 MCP 服务器（`--strict-mcp-config`），也只用它自己家里的设置（`--setting-sources project,local`），你给 Claude Code 配的 MCP、钩子和设置都不会跟着它跑；只有 API 供应商的地址和模型会抄进它家的 `.claude/settings.local.json`（见[换 API 供应商](#换-api-供应商)），它的命令行读不了这个文件。这个文件里还总会写上同意 Claude Code 的 bypass 警告（`skipDangerousModePermissionPrompt`），不管你自己的设置怎么写，Moss 就不会停在一个没人看得见的警告框上。它的上下文上限设成 50 万 token（`CLAUDE_CODE_AUTO_COMPACT_WINDOW=500000`，模型的窗口更小就按模型的来），到了 Claude Code 会自动压缩，对话不会一直涨下去。
 - **隐私和额度。** 它就是一个 Claude Code 会话，用的是你的 Claude Code 登录，和你自己开的会话一样跟 Anthropic 通信；你换到别的 API 供应商时，它也跟着走那个供应商。闲着等的时候不发请求、不耗额度；每次启动会先读一遍自己的笔记，算一轮很短的对话。
 - Moss 需要你的时候（要权限、有问题要问），菜单栏图标和数字会像别的会话一样提醒你；但 Moss 本身从不算进你的会话数。

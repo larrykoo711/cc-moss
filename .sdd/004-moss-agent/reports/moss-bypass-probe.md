@@ -38,3 +38,7 @@
 | 移回 Yes 后 `Enter` | 进入 Claude Code 输入框，底栏 `⏵⏵ bypass permissions on` |
 
 结论：`Down` 把选择从 No 移到 Yes，`Up` 移回；在 Yes 上回车即信任并启动。框刚出现时发的第一下可能被吞掉，所以守护进程每次只发一下 `Down`，重新抓窗格确认选中 Yes 才回车；没移过去就什么也不按，下一秒再试，最多 3 次，之后按卡住（`trust_folder`）报告。框文本即测试夹具 `reply.rs` 的 `TRUST_NO_SCREEN`。
+
+## 复跑（安全复审，2026-11-09）：Yes 上再按 Down
+
+同一探针加了一步：移到 Yes 后再发一下 `Down`，选中项回到 `No, exit`。即 2.1.319 的这个框在两项间**循环**：一下晚到的 `Down` 能把 Yes 翻回 No。守护进程因此要求两次相隔 ≥300 ms 的抓屏都显示选中 Yes 才回车，每次看窗格最多发一下 `Down`（`accept_trust_waits_out_a_late_down` 用迟到按键的假窗格守住）。

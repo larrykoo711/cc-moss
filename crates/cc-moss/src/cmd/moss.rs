@@ -296,6 +296,45 @@ pub(super) fn tmux(socket: &str, args: &[&str]) -> Result<Output, RunError> {
     )
 }
 
+/// Moss's tmux server is no tmux for people: someone who attaches
+/// (`moss attach`) can only detach (prefix `d`), not open windows or split
+/// panes in Moss's session.
+const KEYS_FOR_PEOPLE: &[&str] = &[
+    "unbind-key",
+    "-a",
+    "-T",
+    "prefix",
+    ";",
+    "unbind-key",
+    "-a",
+    "-T",
+    "root",
+    ";",
+    "bind-key",
+    "-T",
+    "prefix",
+    "d",
+    "detach-client",
+];
+
+/// A session named like Moss's on its server with no Moss pane in it: what
+/// is left after its Claude Code exited while a window someone opened kept
+/// the session (or a Moss from before the mark). Ended, so a fresh Moss can
+/// start under that name.
+fn clear_leftover(socket: &str, log: &dyn Fn(&str)) {
+    let target = format!("={}", moss::SESSION);
+    let there = tmux(socket, &["has-session", "-t", &target]).is_ok_and(|o| o.status.success());
+    if there && look(socket).live.is_empty() {
+        let _ = tmux(socket, &["kill-session", "-t", &target]);
+        log("moss: its tmux session was there without Moss in it; ended it");
+    }
+}
+
+/// Leave only detach bound on Moss's server ([`KEYS_FOR_PEOPLE`]).
+fn lock_keys(socket: &str) {
+    let _ = tmux(socket, KEYS_FOR_PEOPLE);
+}
+
 /// What Moss's tmux server holds. A dead Moss kept on screen by
 /// `remain-on-exit` is cleared away here.
 pub(super) fn look(socket: &str) -> keeper::Seen {
@@ -660,6 +699,8 @@ pub fn attach() -> Result<()> {
             "Moss 现在没在运行；`cc-moss moss status` 会说明原因。"
         ));
     };
+    // A server from before 0.3.10 still has tmux's own keys.
+    lock_keys(&socket);
     // From inside another tmux too: Moss's server is a different one.
     let error = moss_core::tmux::command()
         .args(["-L", &socket, "-f", "/dev/null", "attach-session", "-t", id])
@@ -1127,32 +1168,39 @@ enum Trust {
 }
 
 /// Answer the folder-trust question on Moss's screen with Yes (F64).
-/// Enter is pressed only while Yes is selected: with "No" selected, one
-/// Down, a fresh look, and Enter only once that look shows Yes selected.
+/// Enter is pressed only once two looks, [`TRUST_RECHECK`] apart, both show
+/// Yes selected: with "No" selected, one Down first (at most one per look).
+/// A Down that lands late wraps Yes back to No (2.1.319), and the second
+/// look catches it. Anything else presses nothing more.
 fn answer_trust(pane: &mut dyn inbox::Pane) -> Trust {
     let Ok(screen) = pane.screen() else {
         return Trust::NotAsked;
     };
+    let yes = |pane: &mut dyn inbox::Pane| {
+        pane.screen()
+            .is_ok_and(|s| reply::trust_dialog(&s) == Some(reply::Choice::Yes))
+    };
     match reply::trust_dialog(&screen) {
-        None => Trust::NotAsked,
-        Some(reply::Choice::Yes) => {
-            let _ = pane.key("Enter");
-            Trust::Answered
-        }
+        None => return Trust::NotAsked,
+        Some(reply::Choice::Yes) => {}
         Some(reply::Choice::No) => {
             let _ = pane.key("Down");
             pane.wait(TRUST_SETTLE);
-            let moved = pane
-                .screen()
-                .is_ok_and(|s| reply::trust_dialog(&s) == Some(reply::Choice::Yes));
-            if !moved {
-                return Trust::Unmoved;
-            }
-            let _ = pane.key("Enter");
-            Trust::Answered
         }
     }
+    if !yes(pane) {
+        return Trust::Unmoved;
+    }
+    pane.wait(TRUST_RECHECK);
+    if !yes(pane) {
+        return Trust::Unmoved;
+    }
+    let _ = pane.key("Enter");
+    Trust::Answered
 }
+
+/// How far apart the two looks that must both show Yes are.
+const TRUST_RECHECK: Duration = Duration::from_millis(300);
 
 /// How long a choice stays on Moss's screen before it counts as stuck
 /// (Claude Code shows some for a moment while it starts).
@@ -1189,18 +1237,18 @@ fn sync_provider_from(
     url_told: &mut bool,
     log: &dyn Fn(&str),
 ) -> Result<Synced> {
+    // The token is handed over by cc-moss itself, never written here.
+    let helper = format!("{} moss provider-key", shell_quote(exe));
     let user = match user {
         Some(path) => match std::fs::read_to_string(path) {
             Ok(text) => text,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => "{}".to_string(),
-            Err(_) => return Ok(Synced::Same),
+            Err(_) => return keep_last_copy(state, &helper),
         },
         None => "{}".to_string(),
     };
-    // The token is handed over by cc-moss itself, never written here.
-    let helper = format!("{} moss provider-key", shell_quote(exe));
     let Some(made) = moss_core::provider::moss_settings(&user, &helper) else {
-        return Ok(Synced::Same);
+        return keep_last_copy(state, &helper);
     };
     if made.dropped_url && !*url_told {
         *url_told = true;
@@ -1235,6 +1283,24 @@ fn sync_provider_from(
             moss_core::provider::Verdict::NeedsRestart(_) => Synced::Restart,
         },
     )
+}
+
+/// The user's settings can't be read or parsed: Moss's last good copy
+/// stays. With none there yet (a first start), one with no provider is
+/// written, so the bypass answer is there all the same.
+fn keep_last_copy(state: &Path, helper: &str) -> Result<Synced> {
+    let path = moss::home_dir(state).join(PROVIDER_FILE);
+    if std::fs::symlink_metadata(&path).is_ok() {
+        return Ok(Synced::Same);
+    }
+    let Some(bare) = moss_core::provider::moss_settings("{}", helper) else {
+        return Ok(Synced::Same);
+    };
+    if let Some(dir) = path.parent() {
+        moss_core::store_dir::ensure_private_dir(dir)?;
+    }
+    home::write_if_changed(&path, &bare.text)?;
+    Ok(Synced::Live)
 }
 
 /// SESSIONS.md also lists the sessions closed within this.
@@ -1474,8 +1540,7 @@ impl Looker {
         };
         // The trust question still there once its window is over: stuck.
         let seen = reply::blocking_dialog(&screen).or_else(|| {
-            (!trusting && reply::trust_dialog(&screen).is_some())
-                .then_some(reply::Dialog::TrustFolder)
+            (!trusting && reply::trust_question(&screen)).then_some(reply::Dialog::TrustFolder)
         });
         self.note_dialog(seen, now, log);
     }
@@ -1590,6 +1655,26 @@ impl Looker {
     fn adopt(&mut self, now: Instant, log: &dyn Fn(&str)) {
         // It may be stuck since before the daemon started.
         self.watch_until = Some(now + trust_window() + WATCH_AFTER_TRUST);
+        // A Moss from before 0.3.10: its mark moves from its session to its
+        // pane, and its server keeps only detach for people.
+        if let Some(pane) = look(&self.socket).live.first() {
+            let _ = tmux(
+                &self.socket,
+                &[
+                    "set-option",
+                    "-p",
+                    "-t",
+                    pane,
+                    moss::ROLE_OPTION,
+                    moss::ROLE,
+                ],
+            );
+            let _ = tmux(
+                &self.socket,
+                &["set-option", "-u", "-t", pane, moss::ROLE_OPTION],
+            );
+        }
+        lock_keys(&self.socket);
         let path = moss::status_path(&self.state);
         let stored = moss::read(&path);
         self.keeper
@@ -1664,14 +1749,17 @@ impl Looker {
         command.extend(args.iter().map(String::as_str));
         moss_core::working_directory::recheck(&working)
             .map_err(|error| Launch::Failed(error.into()))?;
+        clear_leftover(&self.socket, log);
         let out = tmux(
             &self.socket,
             &[
                 &command[..],
                 &[
-                    // How Moss is known, whatever its name becomes.
+                    // How Moss is known, whatever its session's name becomes:
+                    // on its pane, so a window or pane added there is not Moss.
                     ";",
                     "set-option",
+                    "-p",
                     "-t",
                     &target,
                     moss::ROLE_OPTION,
@@ -1718,19 +1806,16 @@ impl Looker {
                     "-g",
                     "set-titles-string",
                     moss_core::tmux::TITLE_FORMAT,
+                    ";",
                 ],
+                KEYS_FOR_PEOPLE,
             ]
             .concat(),
         )
         .map_err(|e| Launch::Failed(anyhow::anyhow!("tmux did not answer: {e:?}")))?;
         let said = String::from_utf8_lossy(&out.stderr).to_ascii_lowercase();
         if said.contains("duplicate session") {
-            // A session of that name runs: Moss from before the mark was set,
-            // or one that is just starting. Mark it and look after it.
-            let _ = tmux(
-                &self.socket,
-                &["set-option", "-t", &target, moss::ROLE_OPTION, moss::ROLE],
-            );
+            // A Moss that is just starting: look after it.
             return Err(Launch::AlreadyThere);
         }
         if !out.status.success() && liveness(&self.socket) != Liveness::Alive {
@@ -2015,6 +2100,74 @@ mod tests {
         fn wait(&mut self, _: Duration) {}
     }
 
+    /// A trust question whose Downs land late: each lands that many
+    /// captures after it was sent (`lags`, one per Down), and wraps (Down on
+    /// Yes selects No, as 2.1.319 does).
+    struct LaggyPane {
+        yes: bool,
+        captures: u32,
+        lags: Vec<u32>,
+        pending: Vec<u32>,
+        keys: Vec<String>,
+        /// Enter came while No was selected or a Down was still on its way.
+        unsafe_enter: bool,
+    }
+
+    impl inbox::Pane for LaggyPane {
+        fn paste(&mut self, _: &str) -> Result<(), String> {
+            Err("no paste here".into())
+        }
+        fn screen(&mut self) -> Result<String, String> {
+            self.captures += 1;
+            let now = self.captures;
+            let landed = self.pending.iter().filter(|at| **at <= now).count();
+            self.pending.retain(|at| *at > now);
+            for _ in 0..landed {
+                self.yes = !self.yes;
+            }
+            Ok(trust_screen(self.yes))
+        }
+        fn key(&mut self, key: &str) -> Result<(), String> {
+            self.keys.push(key.to_string());
+            match key {
+                "Down" => {
+                    let lag = if self.lags.is_empty() {
+                        1
+                    } else {
+                        self.lags.remove(0)
+                    };
+                    self.pending.push(self.captures + lag);
+                }
+                "Enter" if !self.yes || !self.pending.is_empty() => self.unsafe_enter = true,
+                _ => {}
+            }
+            Ok(())
+        }
+        fn wait(&mut self, _: Duration) {}
+    }
+
+    #[test]
+    fn accept_trust_waits_out_a_late_down() {
+        // The first Down lands three looks late, after a second one was
+        // sent: Yes shows for one capture, then the second wraps it to No.
+        let mut pane = LaggyPane {
+            yes: false,
+            captures: 0,
+            lags: vec![3, 2],
+            pending: vec![],
+            keys: vec![],
+            unsafe_enter: false,
+        };
+        for _ in 0..6 {
+            if answer_trust(&mut pane) == Trust::Answered {
+                break;
+            }
+        }
+        assert!(!pane.unsafe_enter, "{:?}", pane.keys);
+        // At most one Down per look.
+        assert!(pane.keys.iter().filter(|k| *k == "Down").count() <= 6);
+    }
+
     #[test]
     fn accept_trust_moves_to_yes() {
         // Yes already selected: Enter, as before.
@@ -2061,6 +2214,40 @@ mod tests {
         let mut plain = Plain(vec![]);
         assert_eq!(answer_trust(&mut plain), Trust::NotAsked);
         assert!(plain.0.is_empty());
+    }
+
+    #[test]
+    fn moss_local_settings_without_readable_user_settings() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("state");
+        let home = moss::home_dir(&state);
+        let exe = "/bin/cc-moss";
+        let key = moss_core::settings_json::BYPASS_PROMPT_KEY;
+        home::lay_out(&home, &files_in(exe, &state, None)).unwrap();
+        let local = home.join(PROVIDER_FILE);
+        let read = || -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(&local).unwrap()).unwrap()
+        };
+        // Not JSON, on a first start: the bypass answer is written anyway.
+        let user = dir.path().join("settings.json");
+        std::fs::write(&user, "{ not json").unwrap();
+        sync_provider_from(Some(&user), &state, exe, &mut false, &|_| {}).unwrap();
+        assert_eq!(read(), serde_json::json!({ key: true }));
+        // A copy there already stays as it was (the last good one).
+        let good =
+            format!("{{\"env\":{{\"ANTHROPIC_BASE_URL\":\"https://a.io\"}},\"{key}\":true}}\n");
+        std::fs::write(&local, &good).unwrap();
+        sync_provider_from(Some(&user), &state, exe, &mut false, &|_| {}).unwrap();
+        assert_eq!(std::fs::read_to_string(&local).unwrap(), good);
+        // Unreadable, on a first start: the same.
+        std::fs::remove_file(&local).unwrap();
+        std::fs::set_permissions(&user, std::fs::Permissions::from_mode(0o000)).unwrap();
+        let synced = sync_provider_from(Some(&user), &state, exe, &mut false, &|_| {});
+        std::fs::set_permissions(&user, std::fs::Permissions::from_mode(0o600)).unwrap();
+        synced.unwrap();
+        // (root reads it anyway, and then it is not JSON.)
+        assert_eq!(read(), serde_json::json!({ key: true }));
     }
 
     #[test]

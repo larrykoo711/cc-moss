@@ -413,3 +413,22 @@ fn moss_status_reports_trust_blocked() {
     assert_eq!(trust_keys(&w), before);
     assert_eq!(moss_status(&w)["activity"], "blocked");
 }
+
+/// F64: the trust question in wording that is neither yes nor no: no key
+/// at all, and reported as stuck once the trust window is over.
+#[test]
+fn moss_reports_a_trust_question_it_cannot_read() {
+    let w = World::new("moss-trust-odd");
+    let _d = daemon_with(
+        &w,
+        Some(&fixture("moss-claude")),
+        Some("odd"),
+        &[("CC_MOSS_TRUST_WINDOW_MS", "1500")],
+    );
+    let st = wait_until("Moss to be reported blocked", || {
+        let st = moss_status(&w);
+        (st["activity"] == "blocked").then_some(st)
+    });
+    assert_eq!(st["blocked"]["kind"], "trust_folder", "{st}");
+    assert_eq!(trust_keys(&w), "", "no key pressed");
+}

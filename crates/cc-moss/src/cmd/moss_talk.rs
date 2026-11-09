@@ -272,6 +272,7 @@ impl Talk {
     /// At daemon start: your messages a daemon before this one sent and
     /// never saw answered get their "received".
     pub fn recover(&self, log: &dyn Fn(&str)) {
+        self.mark_legacy_checkups(log);
         for id in chat::unanswered(&self.home) {
             let sent = InFlight {
                 id,
@@ -285,6 +286,33 @@ impl Talk {
                 "the daemon restarted before the reply",
                 log,
             );
+        }
+    }
+
+    /// Checkup requests a cc-moss before 0.3.10 queued carry no `kind`:
+    /// known by their text (either language, with or without the brief),
+    /// they are marked as checkups in place, keeping their id and so their
+    /// place in line.
+    fn mark_legacy_checkups(&self, log: &dyn Fn(&str)) {
+        let texts: Vec<String> = [(false, false), (false, true), (true, false), (true, true)]
+            .iter()
+            .map(|(zh, brief)| super::checkup::daily_request(*zh, *brief))
+            .collect();
+        for (path, message) in inbox::waiting(&self.home) {
+            let Some(message) = message.filter(|m| m.is_news() && texts.contains(&m.text)) else {
+                continue;
+            };
+            let marked = inbox::Message {
+                kind: Some(inbox::KIND_CHECKUP.into()),
+                ..message
+            };
+            let done =
+                inbox::take(&self.home, &path).and_then(|()| inbox::put(&self.home, &marked));
+            if let Err(e) = done {
+                log(&format!(
+                    "moss: error: marking an older checkup request: {e}"
+                ));
+            }
         }
     }
 
@@ -1120,6 +1148,46 @@ mod tests {
     }
 
     const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    /// A checkup request queued by a cc-moss before 0.3.10 (no `kind`):
+    /// known by its text, so it is not asked for twice and never expires as
+    /// a session update.
+    #[test]
+    fn legacy_checkup_is_kept_as_checkup() {
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        let home = moss::home_dir(dir.path());
+        let t = now_ms() - 8 * 60 * 60 * 1000;
+        let request = super::super::checkup::daily_request(false, false);
+        say_into(&home, "a message of mine", t);
+        inbox::put(
+            &home,
+            &inbox::Message {
+                schema: 1,
+                id: inbox::new_id(t + 1),
+                at: "t".into(),
+                from: chat::FROM_EVENTS.into(),
+                text: request.clone(),
+                ..inbox::Message::default()
+            },
+        )
+        .unwrap();
+        talk.recover(&|_| {});
+        let all: Vec<inbox::Message> = inbox::waiting(&home)
+            .into_iter()
+            .filter_map(|(_, m)| m)
+            .collect();
+        let checkup = all.iter().find(|m| m.text == request).expect("still there");
+        assert_eq!(checkup.kind.as_deref(), Some(inbox::KIND_CHECKUP));
+        assert!(!checkup.is_news(), "never dropped as a stale update");
+        assert_eq!(checkup.at_ms(), Some(t + 1), "same place in line");
+        assert!(talk.ask_checkup(&request, now_ms(), &|_| {}));
+        assert_eq!(inbox::count(&home), 2, "not asked for twice");
+        // Your messages are left alone.
+        assert!(all
+            .iter()
+            .any(|m| m.text == "a message of mine" && m.kind.is_none()));
+    }
 
     fn line(id: &str, from: &str) -> Line {
         Line::message(id, "t", from, "x")

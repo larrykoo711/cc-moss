@@ -140,15 +140,18 @@ fi
 #   No; Enter on Yes trusts, Enter on No exits (and says so in
 #   enter-on-no).
 # - `stuck`: the same, but the arrows do nothing.
+# - `odd`: the same question with options that are neither yes nor no.
 # Every key it reads goes to trust-keys.txt.
 trust_draw() {
   local no="  " yes="  "
   [ "$1" = yes ] && yes="❯ " || no="❯ "
-  printf '\e[2J\e[H────────────────────────────────────────\n Accessing workspace:\n\n %s\n\n Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,\n take a moment to review what'"'"'s in this folder first.\n\n Security guide\n\n %sNo, exit\n %sYes, I trust this folder\n\n Enter to confirm · Esc to cancel\n' "$PWD" "$no" "$yes"
+  local first="No, exit" second="Yes, I trust this folder"
+  [ "$CC_MOSS_FAKE_TRUST" = odd ] && first="Maybe later" second="Trust it"
+  printf '\e[2J\e[H────────────────────────────────────────\n Accessing workspace:\n\n %s\n\n Quick safety check: Is this a project you created or one you trust? (Like your own code, a well-known open source project, or work from your team). If not,\n take a moment to review what'"'"'s in this folder first.\n\n Security guide\n\n %s%s\n %s%s\n\n Enter to confirm · Esc to cancel\n' "$PWD" "$no" "$first" "$yes" "$second"
 }
 if [ -n "$CC_MOSS_FAKE_TRUST" ] && [ ! -e "$CC_MOSS_FAKE_DIR/trusted" ]; then
   case "$CC_MOSS_FAKE_TRUST" in
-    no|stuck)
+    no|stuck|odd)
       stty -echo 2>/dev/null
       sel=no
       trust_draw "$sel"
