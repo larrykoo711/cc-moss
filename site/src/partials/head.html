@@ -8,21 +8,16 @@
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
   <script>
-    // Before anything paints. The URL decides the language; a first-time visitor whose
-    // browser prefers the other one is moved once, and the choice is remembered after that.
+    // Before anything paints. The URL decides the language and nothing moves you off it; a
+    // first-time visitor whose browser reads the other language is offered it (see app.js).
     (function () {
-      var root = document.documentElement, page = root.dataset.lang, store = null;
+      var root = document.documentElement, store = null;
+      root.classList.add("js");
       try { store = localStorage; } catch (e) {}
-      var saved = store && store.getItem("lang");
-      if (!saved) {
+      if (store && !store.getItem("lang")) {
         var wants = (navigator.languages || [navigator.language || ""]).join(",").toLowerCase();
         var want = /(^|,)zh/.test(wants) ? "zh" : "en";
-        if (store) store.setItem("lang", want);
-        if (want !== page) {
-          var other = document.querySelector('link[rel="alternate"][hreflang="' + want + '"]');
-          // Same origin, other language: the path is all that changes.
-          if (other) { location.replace(new URL(other.href).pathname + location.search + location.hash); return; }
-        }
+        if (want !== root.dataset.lang) root.dataset.suggest = want;
       }
       // Skin: the visitor's choice, else the system's.
       var theme = store && store.getItem("theme");

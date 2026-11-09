@@ -13,6 +13,10 @@
   --color-fg: #f5f0ea;
   --color-coral: #ff5a3c;
   --color-coral-soft: #ff8a6e;
+  /* Coral under white text: deep enough for 4.5:1. */
+  --color-coral-deep: #d33c1d;
+  /* Coral words on a coral tint (badges, chips). */
+  --color-coral-on-tint: #ff5a3c;
   --color-amber: #e6ad4d;
   --font-sans: "Geist", "PingFang SC", "Hiragino Sans GB", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, "SF Mono", Menlo, monospace;
@@ -30,9 +34,15 @@
   --key-top: #2a2826;
   --key-bottom: #1b1a18;
   --key-base: #0a0908;
+  /* Text strengths, the lowest each skin can go and still read (4.5:1 on its surfaces). */
+  --muted: 0.6;
+  --faint: 0.5;
   color-scheme: dark;
 }
 .dark-scope {
+  --color-coral: #ff5a3c;
+  --color-coral-deep: #d33c1d;
+  --color-coral-on-tint: #ff5a3c;
   --color-bg: #0c0b0a;
   --color-bg-2: #141311;
   --color-raise: #22201d;
@@ -51,8 +61,17 @@
   --key-top: #ffffff;
   --key-bottom: #ece7e1;
   --key-base: #d6cfc7;
+  /* On linen the lamp burns darker, so coral words still read. */
+  --color-coral: #c0381c;
+  --color-coral-deep: #c0381c;
+  --color-coral-on-tint: #a8301a;
+  --muted: 0.72;
+  --faint: 0.64;
   color-scheme: light;
 }
+
+@utility text-muted { color: rgb(from var(--color-fg) r g b / var(--muted)); }
+@utility text-faint { color: rgb(from var(--color-fg) r g b / var(--faint)); }
 
 /* Switching language is a page load now; let it cross-fade instead of blinking. */
 @view-transition { navigation: auto; }
@@ -60,7 +79,12 @@
 html {
   scroll-behavior: smooth;
   background: var(--color-bg);
+  scrollbar-color: rgb(from var(--color-fg) r g b / 0.22) transparent;
+  caret-color: var(--color-coral);
 }
+
+/* One focus ring everywhere: the lamp, a step off the edge. */
+:focus-visible { outline: 2px solid var(--color-coral); outline-offset: 3px; }
 
 body {
   -webkit-font-smoothing: antialiased;
@@ -136,7 +160,7 @@ body::after {
   from { opacity: 0; transform: translateY(6px) scale(0.92); }
   to { opacity: 1; transform: none; }
 }
-.pop { animation: pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.2) both; }
+.pop { animation: pop 0.5s var(--ease-spring) both; }
 
 /* Keycaps pressed in turn: ⌃ then ⌃. */
 .keycap {
@@ -150,32 +174,32 @@ body::after {
   box-shadow: inset 0 1px 0 var(--hair), 0 1px 0 var(--key-base), 0 0 0 1px rgb(255 90 60 / 0.6), 0 6px 24px rgb(255 90 60 / 0.25);
 }
 .summon {
-  opacity: 0;
-  transform: translateY(14px) scale(0.96);
   transition: opacity 0.5s var(--ease-spring), transform 0.6s var(--ease-spring);
 }
-.summon.on { opacity: 1; transform: none; }
+.js .summon:not(.on) { opacity: 0; transform: translateY(14px) scale(0.96); }
 
-/* Things rise into view, in a stagger set by --d. */
+/* Things rise into view, in a stagger set by --d. Only once the script has run (.js on <html>),
+   so a page whose script never loads still shows everything. */
 .reveal {
-  opacity: 0;
-  transform: translateY(28px);
-  filter: blur(8px);
   transition: opacity 0.9s var(--ease-spring), transform 0.9s var(--ease-spring), filter 0.9s var(--ease-spring);
   transition-delay: var(--d, 0ms);
 }
-.reveal.in { opacity: 1; transform: none; filter: none; }
+.js .reveal:not(.in) { opacity: 0; transform: translateY(28px); filter: blur(8px); }
+/* The hero is there from the first frame; only the loop moves. */
+.js .hero-copy .reveal { opacity: 1; transform: none; filter: none; transition: none; }
 
 /* The tour: screens cross-fade on a sticky stage; steps light as you reach them. */
 .screen {
-  opacity: 0;
-  transform: translateY(14px) scale(0.97);
   transition: opacity 0.7s var(--ease-spring), transform 0.8s var(--ease-spring);
   pointer-events: none;
 }
-.screen.on { opacity: 1; transform: none; }
-.step { opacity: 0.28; transition: opacity 0.6s var(--ease-spring); }
-.step.on { opacity: 1; }
+.js .screen:not(.on) { opacity: 0; transform: translateY(14px) scale(0.97); }
+html:not(.js) .screen:not([data-screen="panel"]) { display: none; }
+/* Wide screens dim the steps you're not on; on phones every caption stays readable. */
+.step { transition: opacity 0.6s var(--ease-spring); }
+@media (min-width: 1024px) and (prefers-reduced-motion: no-preference) {
+  .js .step:not(.on) { opacity: 0.28; }
+}
 
 /* Restore rows flip from stopped to back. */
 .row-state { transition: color 0.4s, background-color 0.4s; }
@@ -240,6 +264,42 @@ body::after {
   white-space: nowrap;
 }
 
+/* FAQ: one answer open at a time (details name="faq"); it unfolds where the browser can animate to auto. */
+/* A linked answer lands with its question clear of the floating nav. */
+.faq-item { scroll-margin-top: 7rem; }
+.faq-item > summary { list-style: none; }
+.faq-item > summary::-webkit-details-marker { display: none; }
+.faq-item > summary:focus-visible { border-radius: 0.75rem; }
+@supports (interpolate-size: allow-keywords) {
+  .faq-item { interpolate-size: allow-keywords; }
+  .faq-item::details-content {
+    block-size: 0;
+    overflow: clip;
+    opacity: 0;
+    transition: block-size 0.45s var(--ease-spring), opacity 0.35s, content-visibility 0.45s allow-discrete;
+  }
+  .faq-item[open]::details-content { block-size: auto; opacity: 1; }
+}
+
+/* Compare: a table where there's room; on phones each tool becomes a card, its cells labelled. */
+.cmp-label { display: none; }
+@media (max-width: 639px) {
+  .cmp, .cmp tbody, .cmp tr, .cmp th[scope="row"], .cmp td { display: block; }
+  .cmp thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .cmp tr { padding: 1.25rem 0; }
+  .cmp th[scope="row"], .cmp td { padding: 0 0 0.75rem; }
+  .cmp td:last-child { padding-bottom: 0; }
+  .cmp-label { display: block; margin-bottom: 0.125rem; font-size: 0.75rem; color: rgb(from var(--color-fg) r g b / var(--faint)); }
+}
+
+/* The nav's Install steps back while the hero's own button is in view. */
+.nav-cta { transition: opacity 0.4s var(--ease-spring); }
+.nav-cta.off { opacity: 0; pointer-events: none; }
+
+/* A note for a visitor whose browser reads the other language. */
+.lang-hint { transition: opacity 0.4s var(--ease-spring), transform 0.5s var(--ease-spring); }
+.lang-hint.off { opacity: 0; transform: translateY(12px); pointer-events: none; }
+
 /* Changelog: every release hangs on one line that warms toward the newest. */
 .cl-line {
   background: linear-gradient(to bottom, rgb(255 90 60 / 0.75), rgb(255 90 60 / 0.25) 22%, var(--hair) 55%, transparent);
@@ -272,6 +332,9 @@ body::after {
   .cl-node.is-latest, .release:has(h2:target) .core { animation: none; }
   ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
   .loop-glow, .loop-comet, .float, .lamp, .blink, .pop, .hero-copy, .tilt, .lit { animation: none; }
-  .reveal { opacity: 1; transform: none; filter: none; transition: none; }
+  .js .reveal:not(.in) { opacity: 1; transform: none; filter: none; }
+  .reveal { transition: none; }
+  .lang-hint { transition: none; }
+  .faq-item::details-content, .faq-icon { transition: none; }
   html { scroll-behavior: auto; }
 }

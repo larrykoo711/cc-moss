@@ -6,8 +6,8 @@
       "date": "2026-11-06",
       "icon": "picker",
       "short": {
-        "zh": "按内容找会话，更稳也更私密",
-        "en": "Finding by what was said, steadier and more private"
+        "zh": "按说过的话找会话",
+        "en": "Find a session by what you said in it"
       },
       "headline": {
         "zh": "按说过的话找会话：第一次建索引时也能搜，收进去的内容更少、遮得更多。",
