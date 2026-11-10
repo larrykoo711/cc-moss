@@ -216,9 +216,9 @@ R1 ◄── 全部
 | **T2.20** Moss 跳过警告写本地级 | cc-moss | — | ✅ Done | done/T2.20-moss-bypass-local.spec.md | 隔离环境真 Claude Code 不出警告框 |
 | **T2.21** Moss 卡住如实报告 | cc-moss | T2.20 | ✅ Done | done/T2.21-moss-blocked.spec.md | 窗格有确认框时 status 报 blocked、页面给打开窗口 |
 | **T2.22** 收件箱优先与去旧 | cc-moss | — | ✅ Done | done/T2.22-inbox-order.spec.md | 你的先送、动态合并过期带时间、体检不重复 |
-| **T2.23** 同名自动加编号 | cc-moss | — | 🟨 In Progress | todo/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
+| **T2.23** 同名自动加编号 | cc-moss | — | ✅ Done | done/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
 | **T2.25** 信任框默认 No 也选 Yes | cc-moss | T2.21 | ✅ Done | done/T2.25-trust-prompt-yes.spec.md | 选中 No 时先移到 Yes 核对再回车，处理不了报卡住 |
-| **T2.24** 没说过话的会话退出即关 | cc-moss | — | 🟨 In Progress | todo/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
+| **T2.24** 没说过话的会话退出即关 | cc-moss | — | ✅ Done | done/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -487,3 +487,8 @@ R1 ◄── 全部
 - 新发现：Claude Code 2.1.319 的「信任此文件夹」默认选中「No, exit」，`reply::trust_prompt` 要求选中 Yes，新机器上 Moss 会停在这个框上且不报卡住（F59 同族），用户 2026-11-09 裁决「一起修，默认替它选 Yes」→ T2.25（G3 过 gate 后派给 A 线）。
 - T2.25 完成（53df8fb）：探针实测 2.1.319 首屏选中 No、框刚出现时第一下 Down 被吞、第二下才到 Yes；只在核对选中 Yes 后按回车，最多 3 次，之后报 `blocked.kind: trust_folder`。Rust 1203 / 0 失败 / 8 ignored，Swift 1000。用户 2026-11-09：「全部做完后合并发 0.3.10，还有 site 一起更新完发版」（站点 PR #70）。
 - A 线收尾：F65 用词与截图（9858084）、动态行与 Moss 模板（0453479，模板一版内兼容旧词）。Rust 1203 / 0 失败 / 8 ignored，Swift 1000。截图渲染命令记在 `notes/round-0310-design.md`。
+- B 线并入（62b6a90 / 07606ef，拣选后与原提交只差 CHANGELOG 冲突合并），B 工作树已回收；合并树 Rust 1210 / 0 / 8。
+- 独立评审两路（名字与静默会话 / 安全与 Moss）：无 Critical。名字去重范围过宽（用户 /rename 被编号）、无路径或读错被当没说过话等 → AMEND-1（c46f0b3：只给后台或出生带名的行编号、后台让名，新列 `yields_name` 默认 0；无记录路径、读错、斜杠与 `!` 命令、有名字都不关）；Moss 按会话而非窗格定位、attach 能开窗口、迟到的 Down 回绕到 No 等 → ee42fdb（标记在窗格、Moss 的 tmux 只留 Ctrl-b d、两次抓屏都是 Yes 才回车）。AMEND-1 测试先写代码后补，以逐项变异补证（全部变红）。
+- 过程事故：A 线一次脚本编辑锚点颠倒把 moss.rs 写成 118 MB，约 2 分钟内恢复并与 HEAD 对齐；B 线变异脚本用 mv 还原导致 mtime 变旧、cargo 沿用变异构建，误报一次红，触碰源文件后重跑全绿。
+- 公开仓：既有测试 `background_e2e` 用了私有项目名作会话标题，已换占位名（该测试 #52 起已在 main）。
+- 最终分支 Rust 1224 / 0 / 8（B 线报告），进入发版（用户 2026-11-10：「B 线提交后直接走发版」）。
