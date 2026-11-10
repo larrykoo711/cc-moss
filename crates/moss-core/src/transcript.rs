@@ -226,24 +226,42 @@ pub fn last_prompt(path: &Path) -> Option<(String, i64)> {
     scan_back(&mut file, 0, size, prompt)
 }
 
-/// Whether the user ever typed anything here (as [`last_prompt`] reads it),
-/// reading from the start and stopping at the first. A transcript that
-/// cannot be read has nothing.
-pub fn has_prompt(path: &Path) -> bool {
+/// Whether the user ever typed anything here: what [`last_prompt`] reads,
+/// and also slash commands and `!` shell commands, reading from the start
+/// and stopping at the first. An error (`NotFound` for a transcript that
+/// is gone) is the caller's to weigh.
+pub fn has_prompt(path: &Path) -> std::io::Result<bool> {
     use std::io::BufRead;
-    let Ok(file) = File::open(path) else {
-        return false;
-    };
-    let mut reader = std::io::BufReader::new(file);
+    let mut reader = std::io::BufReader::new(File::open(path)?);
     let mut line = Vec::new();
     loop {
         line.clear();
-        match reader.read_until(b'\n', &mut line) {
-            Ok(0) | Err(_) => return false,
-            Ok(_) if prompt(&line).is_some() => return true,
-            Ok(_) => {}
+        if reader.read_until(b'\n', &mut line)? == 0 {
+            return Ok(false);
+        }
+        if prompt(&line).is_some() || typed_command(&line) {
+            return Ok(true);
         }
     }
+}
+
+/// A slash command or `!` shell command the user typed (which
+/// [`last_prompt`] leaves out), not its output.
+fn typed_command(line: &[u8]) -> bool {
+    let needle = b"\"user\"";
+    if !line.windows(needle.len()).any(|w| w == needle) {
+        return false;
+    }
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(line) else {
+        return false;
+    };
+    let typed = ["<command-name>", "<command-message>", "<bash-input>"];
+    v.get("type").and_then(|t| t.as_str()) == Some("user")
+        && v.get("isMeta").and_then(|m| m.as_bool()) != Some(true)
+        && v.get("message")
+            .and_then(|m| m.get("content"))
+            .and_then(first_text)
+            .is_some_and(|t| typed.iter().any(|tag| t.trim_start().starts_with(tag)))
 }
 
 fn prompt(line: &[u8]) -> Option<(String, i64)> {

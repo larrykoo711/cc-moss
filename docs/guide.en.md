@@ -199,10 +199,11 @@ take become `-`: white space, `.`, `:` and `` ' " $ ` \ ! # ; & | < > ( ) { } [ 
 become one, and the name stops at 40 characters. With `[naming] host_prefix` on (the default), `<host>_` goes in
 front. So "api review v1.2" is `<host>_api-review-v1-2` in tmux.
 
-No two open sessions (not closed, not archived) share a name. A session Claude Code forks in the background
-shows up with the original's name; cc-moss records it as `name-2`, `name-3`, as `cc-moss new` does, and keeps that
-number even when the original name turns up in its conversation again. The original session keeps its name. If you
-`/rename` a session to a name that's taken, cc-moss leaves your choice alone and reminds you to pick another.
+A session that starts with a name another open session (not closed, not archived) already has, such as one Claude
+Code forks in the background with the original's name, is recorded as `name-2`, `name-3`, as `cc-moss new` does, and
+keeps that number when the original name turns up in its conversation again. The original keeps its name. A
+background session gives way: if a session you work in takes its name later, the background one gets the number. A
+name you give with `/rename` is always taken as you typed it; if it's taken, cc-moss reminds you to pick another.
 
 Terminal tabs show the session's own name, not the tmux name: cc-moss's tmux config turns on `set-titles` and takes
 the title from the tmux option `@cc-moss-name` (cc-moss sets it when it starts, restores or renames a session), or
@@ -968,8 +969,9 @@ missing; run `cc-moss setup` once to add them. It adds just the missing ones and
 ### What comes back
 
 A session you never said a word to has nothing to bring back: however it exits (closed normally, crashed, its process
-gone), it is closed rather than listed as stopped. Nothing is archived or deleted. After an update, the first look
-closes any such sessions an older version left as stopped.
+gone), it is closed rather than listed as stopped. Nothing is archived or deleted. A slash command or `!` command
+counts as saying something, and a session with a name, or one whose conversation file can't be checked, is always
+kept. After an update, the first look closes any such sessions an older version left as stopped.
 
 `restore` resumes the same conversation (`claude --resume <id>`) in the same folder and replays safe allowlisted flags: `--permission-mode`, `--effort`, `--add-dir`, `--agent` and `--dangerously-skip-permissions`. Ordinary recovery does not replay the old `--model`; Claude Code restores the conversation's selection. Only explicit `--provider-default` selects the current channel model. Secret-looking argument values are neither stored nor replayed, and system prompts are not automatically carried over.
 

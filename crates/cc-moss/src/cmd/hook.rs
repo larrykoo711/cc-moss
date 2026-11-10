@@ -157,6 +157,10 @@ fn handle(event: &str) -> Result<()> {
                 registry.clear_tmux(&slot.slot_id)?;
             }
         }
+        // Born in the background (a fork): its name gives way to yours.
+        if let Some(created) = registry.created_by_last_start().map(String::from) {
+            registry.mark_background(&created)?;
+        }
     }
     // Moss (started by the daemon) is recorded as such: only the session
     // the daemon started, by its id. Anything else that inherited the role

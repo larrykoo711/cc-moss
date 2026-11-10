@@ -30,9 +30,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   hours are dropped, and an update older than 15 minutes says how long ago it happened, so Moss no longer takes
   last week's "finished" for today's. The daily checkup is no longer asked for twice while one is still waiting.
 - **A session forked in the background no longer shows up with the same name as the original.** It now gets
-  `name-2`, `name-3`, like `cc-moss new`, and keeps that number; the original keeps its name.
+  `name-2`, `name-3`, like `cc-moss new`, and keeps that number; the original keeps its name. A name you give with
+  `/rename` is always kept as you typed it.
 - **A session you never said a word to is closed when it exits, instead of showing as stopped.** Bringing it back
   only failed with "empty". Ones an older version left stopped are closed at the first look after the update.
+  Sessions with a name are always kept.
 
 ## [0.3.9] - 2026-11-06
 

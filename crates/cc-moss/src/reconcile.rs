@@ -249,6 +249,12 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                     transcript_path: transcript.clone(),
                 };
                 registry.apply_with(&event, &ctx, &claude::runs_a_session)?;
+                // Born in the background (a fork): its name gives way to yours.
+                if s.background {
+                    if let Some(created) = registry.created_by_last_start().map(String::from) {
+                        registry.mark_background(&created)?;
+                    }
+                }
                 if let Some(slot) = registry.slot_for_event(&s.session_id, &ctx)? {
                     let busy = still_working(s, transcript.as_deref(), 0);
                     registry.set_busy(&slot.slot_id, busy)?;

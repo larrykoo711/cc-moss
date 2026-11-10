@@ -41,6 +41,8 @@ pub struct Registry {
     opened_changes: u64,
     /// Opened for Moss: reads only ([`opens_read_only`]).
     read_only: bool,
+    /// The slot the last SessionStart applied here created, if it did.
+    created: Option<String>,
 }
 
 /// Beside the registry: touched whenever a cc-moss process closes the
@@ -147,6 +149,7 @@ impl Registry {
             stamp: None,
             opened_changes: 0,
             read_only: true,
+            created: None,
         })
     }
 
@@ -171,6 +174,7 @@ impl Registry {
                 stamp: None,
                 opened_changes: 0,
                 read_only: false,
+                created: None,
             });
         }
         migrate(&mut conn)?;
@@ -181,6 +185,7 @@ impl Registry {
             stamp: None,
             opened_changes: 0,
             read_only: false,
+            created: None,
         })
     }
 
@@ -413,10 +418,22 @@ impl Registry {
                     let detail = serde_json::json!({ "by": "resume" });
                     record_event(&tx, &slot_id, "unarchived", &detail, ctx.now_ms)?;
                 }
-                if let Some(t) = title.as_deref().filter(|t| !t.is_empty()) {
-                    // The name a new slot is born with is part of `started`.
-                    take_title(&tx, &slot_id, t, !created, ctx.now_ms)?;
+                // A slot born with a name (in the payload, or in a transcript
+                // it starts with: a fork's) is numbered like `cc-moss new`;
+                // the name is part of `started`.
+                let born_with = match title.as_deref().filter(|t| !t.is_empty()) {
+                    Some(t) => Some(t.to_string()),
+                    None if created => transcript_path
+                        .as_deref()
+                        .and_then(|p| crate::transcript::last_custom_title(Path::new(p))),
+                    None => None,
+                };
+                match born_with {
+                    Some(t) if created => birth_title(&tx, &slot_id, &t)?,
+                    Some(t) => take_title(&tx, &slot_id, &t, true, ctx.now_ms)?,
+                    None => {}
                 }
+                self.created = created.then(|| slot_id.clone());
                 record_session(&tx, &slot_id, session_id, transcript_path.as_deref())?;
                 if let Some(args) = &ctx.launch_args {
                     tx.execute(
@@ -700,6 +717,30 @@ impl Registry {
     pub fn set_name(&self, slot_id: &str, name: &str) -> Result<()> {
         let tx = self.write_tx()?;
         rename(&tx, slot_id, name, true, crate::slot::now_ms())?;
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The slot the last SessionStart applied by this handle created, if it did.
+    pub fn created_by_last_start(&self) -> Option<&str> {
+        self.created.as_deref()
+    }
+
+    /// The slot runs in Claude Code's background host (a fork, a job): its
+    /// name gives way to the sessions you work in ([`take_title`]), now and
+    /// whenever it changes.
+    pub fn mark_background(&self, slot_id: &str) -> Result<()> {
+        let tx = self.write_tx()?;
+        tx.execute(
+            "UPDATE slots SET yields_name = 1 WHERE slot_id = ?1",
+            [slot_id],
+        )?;
+        if let Some(now) = slot_name(&tx, slot_id)? {
+            let fit = fitted(&tx, slot_id, &now)?;
+            if fit != now {
+                rename(&tx, slot_id, &fit, true, crate::slot::now_ms())?;
+            }
+        }
         tx.commit()?;
         Ok(())
     }
@@ -1406,7 +1447,7 @@ impl Registry {
         set_tmux(&tx, slot_id, None)?;
         clear_attention(&tx, slot_id)?;
         let detail = serde_json::json!({ "reason": "moved" });
-        if never_spoke(&tx, slot_id)? {
+        if never_spoke(&tx, slot_id, true)? {
             tx.execute(
                 "UPDATE slots SET status = 'closed', end_reason = 'moved', ended_at = ?2
                  WHERE slot_id = ?1",
@@ -1673,8 +1714,12 @@ fn record_interrupted(
 
 /// Whether a slot never heard a word from the user: no prompt the hooks
 /// saw, and none in any of its transcripts (an adopted slot's are only
-/// there). A transcript that is gone has none.
-fn never_spoke(conn: &Connection, slot_id: &str) -> Result<bool> {
+/// there). Only a recorded transcript that is gone counts as empty; one
+/// that can't be read proves nothing. With no transcript on record the
+/// answer is `unrecorded`: nothing is proven when a session exits, while a
+/// terminal letting go of a conversation that left with a background job
+/// goes by the prompts alone, as it always has.
+fn never_spoke(conn: &Connection, slot_id: &str, unrecorded: bool) -> Result<bool> {
     let prompt: Option<String> = conn
         .query_row(
             "SELECT last_prompt FROM slots WHERE slot_id = ?1",
@@ -1693,19 +1738,25 @@ fn never_spoke(conn: &Connection, slot_id: &str) -> Result<bool> {
     let paths = stmt
         .query_map([slot_id], |r| r.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(!paths
+    if paths.is_empty() {
+        return Ok(unrecorded);
+    }
+    Ok(paths
         .iter()
-        .any(|p| crate::transcript::has_prompt(Path::new(p))))
+        .all(|p| match crate::transcript::has_prompt(Path::new(p)) {
+            Ok(said) => !said,
+            Err(e) => e.kind() == std::io::ErrorKind::NotFound,
+        }))
 }
 
 /// [`never_spoke`] for a slot whose exit is in question: not already
-/// closed, not archived, not Moss, and not on its way back (`restart`,
-/// `restore`).
+/// closed, not archived, not Moss, without a name (one you named is kept),
+/// and not on its way back (`restart`, `restore`).
 fn silent(conn: &Connection, slot_id: &str, now_ms: i64) -> Result<bool> {
     let row: Option<(bool, Option<i64>)> = conn
         .query_row(
             "SELECT status <> 'closed' AND archived_at_ms IS NULL
-                    AND COALESCE(role, '') <> ?2,
+                    AND COALESCE(role, '') <> ?2 AND COALESCE(name, '') = '',
                     restore_started_at
              FROM slots WHERE slot_id = ?1",
             params![slot_id, crate::moss::ROLE],
@@ -1716,7 +1767,7 @@ fn silent(conn: &Connection, slot_id: &str, now_ms: i64) -> Result<bool> {
         return Ok(false);
     };
     let returning = restoring.is_some_and(|t| now_ms - t < crate::restore::PENDING_WINDOW_MS);
-    Ok(open && !returning && never_spoke(conn, slot_id)?)
+    Ok(open && !returning && never_spoke(conn, slot_id, false)?)
 }
 
 /// Close a [`silent`] slot that stopped, recorded as `ended` (no news for
@@ -1759,15 +1810,67 @@ fn slot_name(conn: &Connection, slot_id: &str) -> Result<Option<String>> {
         .filter(|n| !n.is_empty()))
 }
 
-/// A name Claude Code reports for a slot (hook payload, transcript). A forked
-/// or background session reports its parent's name, written into its own
-/// transcript under its own id (Claude Code 2.1.319), so the name is made
-/// one of a kind the first time a slot gets one: `name-2`, `name-3`, as
-/// `cc-moss new` does, against every other open slot (not closed, not
-/// archived) of another conversation. A slot already named after `title`
-/// (`title` itself or `title-N`) keeps its name, so later reports never undo
-/// the number. Any other title is a rename by the user and is taken as is
-/// (the hook warns when it is taken).
+/// Names of the other open slots (not closed, not archived) of other
+/// conversations than `slot_id`'s.
+fn names_taken(conn: &Connection, slot_id: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT o.name FROM slots o, slots me
+         WHERE me.slot_id = ?1 AND o.slot_id <> me.slot_id
+           AND o.session_id <> me.session_id AND o.name IS NOT NULL
+           AND o.status <> 'closed' AND o.archived_at_ms IS NULL",
+    )?;
+    let taken = stmt
+        .query_map([slot_id], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(taken)
+}
+
+/// `title`, or `title-2`, `title-3`… if another open slot has it.
+fn fitted(conn: &Connection, slot_id: &str, title: &str) -> Result<String> {
+    Ok(crate::naming::unique(
+        title,
+        &names_taken(conn, slot_id)?,
+        None,
+    ))
+}
+
+fn yields_name(conn: &Connection, slot_id: &str) -> Result<bool> {
+    Ok(conn
+        .query_row(
+            "SELECT yields_name FROM slots WHERE slot_id = ?1",
+            [slot_id],
+            |r| r.get::<_, bool>(0),
+        )
+        .optional()?
+        .unwrap_or(false))
+}
+
+/// The name a new slot is born with. A fork reports its parent's name,
+/// written into its own transcript under its own id (Claude Code 2.1.319):
+/// numbered `-2`, `-3` like `cc-moss new`. A slot whose name had to be
+/// numbered gives way from then on ([`take_title`]).
+fn birth_title(conn: &Connection, slot_id: &str, title: &str) -> Result<()> {
+    let title = crate::naming::clean_name(title);
+    if title.is_empty() {
+        return Ok(());
+    }
+    let fit = fitted(conn, slot_id, &title)?;
+    if fit != title {
+        conn.execute(
+            "UPDATE slots SET yields_name = 1 WHERE slot_id = ?1",
+            [slot_id],
+        )?;
+    }
+    rename(conn, slot_id, &fit, false, 0)
+}
+
+/// A name Claude Code reports for a slot later (hook payload, transcript).
+/// A slot that gives way (background, or numbered at birth) keeps a name no
+/// other open slot has: `title` numbered as needed, or its current name
+/// while that is still `title` or that number, so repeated reports change
+/// nothing. Any other slot takes `title` as is: it is your `/rename` (the
+/// hook warns when the name is taken), and a slot that gives way and holds
+/// the name is renumbered instead.
 fn take_title(
     conn: &Connection,
     slot_id: &str,
@@ -1779,32 +1882,35 @@ fn take_title(
     if title.is_empty() {
         return Ok(());
     }
-    let name = match slot_name(conn, slot_id)? {
-        None => {
-            let mut stmt = conn.prepare(
-                "SELECT o.name FROM slots o, slots me
-                 WHERE me.slot_id = ?1 AND o.slot_id <> me.slot_id
-                   AND o.session_id <> me.session_id AND o.name IS NOT NULL
-                   AND o.status <> 'closed' AND o.archived_at_ms IS NULL",
-            )?;
-            let taken = stmt
-                .query_map([slot_id], |r| r.get::<_, String>(0))?
-                .collect::<rusqlite::Result<Vec<_>>>()?;
-            crate::naming::unique(&title, &taken, None)
+    if yields_name(conn, slot_id)? {
+        let fit = fitted(conn, slot_id, &title)?;
+        let now = slot_name(conn, slot_id)?;
+        if now.as_deref() == Some(fit.as_str()) || now.as_deref() == Some(title.as_str()) {
+            return Ok(());
         }
-        Some(now) if named_after(&now, &title) => return Ok(()),
-        Some(_) => title,
-    };
-    rename(conn, slot_id, &name, announce, at_ms)
+        return rename(conn, slot_id, &fit, announce, at_ms);
+    }
+    rename(conn, slot_id, &title, announce, at_ms)?;
+    make_way(conn, slot_id, &title, at_ms)
 }
 
-/// `name` is `title` or `title-N` (N ≥ 2), as [`crate::naming::unique`] makes it.
-fn named_after(name: &str, title: &str) -> bool {
-    name == title
-        || name
-            .strip_prefix(title)
-            .and_then(|rest| rest.strip_prefix('-'))
-            .is_some_and(|n| n.parse::<u32>().is_ok_and(|i| i >= 2 && i.to_string() == n))
+/// Renumber the slots that give way and hold `name`, now that `slot_id`
+/// (one you work in) took it.
+fn make_way(conn: &Connection, slot_id: &str, name: &str, at_ms: i64) -> Result<()> {
+    let mut stmt = conn.prepare(
+        "SELECT o.slot_id FROM slots o, slots me
+         WHERE me.slot_id = ?1 AND o.slot_id <> me.slot_id
+           AND o.session_id <> me.session_id AND o.name = ?2 AND o.yields_name = 1
+           AND o.status <> 'closed' AND o.archived_at_ms IS NULL",
+    )?;
+    let holders = stmt
+        .query_map(params![slot_id, name], |r| r.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    for other in holders {
+        let fit = fitted(conn, &other, name)?;
+        rename(conn, &other, &fit, true, at_ms)?;
+    }
+    Ok(())
 }
 
 /// Set a slot's name; a change is recorded as `renamed` when `announce`.
@@ -1992,6 +2098,9 @@ fn ensure_columns(conn: &Connection) -> Result<()> {
         // provider key name seen in the settings while it ran.
         ("provider_started", "provider_started TEXT"),
         ("provider_seen_keys", "provider_seen_keys TEXT"),
+        // After 0.3.9: the slot gives way when another wants its name
+        // (background, or numbered at birth).
+        ("yields_name", "yields_name INTEGER NOT NULL DEFAULT 0"),
     ] {
         let present = conn
             .prepare("SELECT 1 FROM pragma_table_info('slots') WHERE name = ?1")?
