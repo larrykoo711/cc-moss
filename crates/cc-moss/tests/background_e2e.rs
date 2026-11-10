@@ -191,7 +191,7 @@ fn a_background_job_takes_over_the_conversation_a_terminal_handed_it() {
     let (t, j) = (terminal.pid().unwrap(), job.pid().unwrap());
     m.hook(
         "session-start",
-        &start("S-1", "startup", Some("ofoxai")),
+        &start("S-1", "startup", Some("proj-a")),
         t,
         "1",
         true,
@@ -282,7 +282,7 @@ fn a_terminal_whose_conversation_left_with_a_job_lets_go_of_it() {
     let (q, b) = (quiet.pid().unwrap(), busy.pid().unwrap());
     m.hook(
         "session-start",
-        &start("Q-1", "startup", Some("ofoxai")),
+        &start("Q-1", "startup", Some("proj-a")),
         q,
         "1",
         true,
