@@ -274,11 +274,19 @@ fn adopted_sessions_keep_their_real_last_activity() {
         .args(["ls", "--json"])
         .output()
         .unwrap();
+    let events = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .env("CLAUDE_CONFIG_DIR", &config)
+        .args(["events", "--json", "--since", "0"])
+        .output()
+        .unwrap();
     assert!(
         text.contains("1h"),
-        "{text}\nstderr: {}\nall: {}",
+        "{text}\nstderr: {}\nall: {}\nevents: {}",
         String::from_utf8_lossy(&out.stderr),
-        String::from_utf8_lossy(&all.stdout)
+        String::from_utf8_lossy(&all.stdout),
+        String::from_utf8_lossy(&events.stdout)
     );
 }
 
