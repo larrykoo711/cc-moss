@@ -266,7 +266,20 @@ fn adopted_sessions_keep_their_real_last_activity() {
         .output()
         .unwrap();
     let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("1h"), "{text}");
+    // On failure, say what the registry holds, not just what `ls` printed.
+    let all = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .env("CLAUDE_CONFIG_DIR", &config)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    assert!(
+        text.contains("1h"),
+        "{text}\nstderr: {}\nall: {}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&all.stdout)
+    );
 }
 
 /// A hook-tracked session marked busy by its last prompt; `claude agents`
