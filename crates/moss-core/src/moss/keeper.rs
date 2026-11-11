@@ -39,23 +39,28 @@ pub fn classify_has_session(success: bool, stderr: &str) -> Liveness {
     }
 }
 
-/// The `list-panes -a` format the daemon reads Moss's server with.
-pub const PANES_FORMAT: &str = "#{session_id}|#{@cc-moss-role}|#{pane_dead}";
+/// The `list-panes -a` format the daemon reads Moss's server with. The
+/// role mark is set on Moss's pane (`set-option -p`), so a window or pane
+/// someone adds in its session is not Moss. A Moss started before 0.3.10
+/// has the mark on its session, which every pane there reads the same.
+pub const PANES_FORMAT: &str = "#{session_id}|#{pane_id}|#{@cc-moss-role}|#{pane_dead}";
 
 /// What Moss's tmux server holds.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Seen {
     pub liveness: Liveness,
-    /// Moss's sessions (marked with the role option) with a live pane.
+    /// Moss's panes (marked with the role option) that have not died: what
+    /// is captured, typed into and ended (`%<n>`).
     pub live: Vec<String>,
-    /// Moss's sessions whose panes all died but stayed (`remain-on-exit`):
-    /// Claude Code is gone, so this is a dead Moss to clear away.
+    /// Sessions whose Moss pane died but stayed (`remain-on-exit`) and that
+    /// hold no live one: Claude Code is gone, so this is a dead Moss to
+    /// clear away (`$<n>`).
     pub dead: Vec<String>,
 }
 
-/// What `tmux list-panes -a -F` [`PANES_FORMAT`] said. A session counts as
-/// Moss only by its role option, whatever its name; Moss is alive when one
-/// of them has a pane that has not died. A failure is read like
+/// What `tmux list-panes -a -F` [`PANES_FORMAT`] said. A pane counts as
+/// Moss only by its role mark, whatever its session is called; Moss is
+/// alive when one of them has not died. A failure is read like
 /// [`classify_has_session`]: only a server that is plainly not there is
 /// dead.
 pub fn classify_panes(success: bool, stdout: &str, stderr: &str) -> Seen {
@@ -67,25 +72,30 @@ pub fn classify_panes(success: bool, stdout: &str, stderr: &str) -> Seen {
         };
     }
     let mut live: Vec<String> = Vec::new();
+    let mut live_sessions: Vec<String> = Vec::new();
     let mut dead: Vec<String> = Vec::new();
     for line in stdout.lines() {
-        let mut parts = line.splitn(3, '|');
-        let (Some(id), Some(role), Some(pane_dead)) = (parts.next(), parts.next(), parts.next())
+        let mut parts = line.splitn(4, '|');
+        let (Some(session), Some(pane), Some(role), Some(pane_dead)) =
+            (parts.next(), parts.next(), parts.next(), parts.next())
         else {
             continue;
         };
-        if role != super::ROLE || id.is_empty() {
+        if role != super::ROLE || session.is_empty() || pane.is_empty() {
             continue;
         }
         if pane_dead.trim() == "1" {
-            if !dead.iter().any(|d| d == id) {
-                dead.push(id.to_string());
+            if !dead.iter().any(|d| d == session) {
+                dead.push(session.to_string());
             }
-        } else if !live.iter().any(|l| l == id) {
-            live.push(id.to_string());
+        } else {
+            if !live.iter().any(|l| l == pane) {
+                live.push(pane.to_string());
+            }
+            live_sessions.push(session.to_string());
         }
     }
-    dead.retain(|d| !live.contains(d));
+    dead.retain(|d| !live_sessions.contains(d));
     Seen {
         liveness: if live.is_empty() {
             Liveness::Dead
@@ -373,25 +383,47 @@ mod tests {
 
     #[test]
     fn panes_find_moss_by_its_mark_and_see_a_dead_pane() {
-        let seen = classify_panes(true, "$0|moss|0\n$1||0\n", "");
+        // `session|pane|role|dead`: Moss is its marked pane.
+        let seen = classify_panes(true, "$0|%0|moss|0\n$1|%1||0\n", "");
         assert_eq!(seen.liveness, Liveness::Alive);
-        assert_eq!(seen.live, ["$0"]);
+        assert_eq!(seen.live, ["%0"]);
         // Renamed by hand: still Moss, because of the mark.
-        // A session without the mark (the user's own, even named moss) is not.
-        let unmarked = classify_panes(true, "$3||0\n", "");
+        // A pane without the mark (the user's own, even named moss) is not.
+        let unmarked = classify_panes(true, "$3|%3||0\n", "");
         assert_eq!(unmarked.liveness, Liveness::Dead);
         // remain-on-exit kept a dead pane: Moss is dead, and that session is
         // to be cleared away.
-        let kept = classify_panes(true, "$0|moss|1\n", "");
+        let kept = classify_panes(true, "$0|%0|moss|1\n", "");
         assert_eq!(kept.liveness, Liveness::Dead);
         assert_eq!(kept.dead, ["$0"]);
-        // One live pane in a session is enough.
-        let mixed = classify_panes(true, "$0|moss|1\n$0|moss|0\n$2|moss|1\n", "");
+        // One live Moss pane is enough; a dead one elsewhere goes.
+        let mixed = classify_panes(true, "$0|%0|moss|1\n$0|%4|moss|0\n$2|%2|moss|1\n", "");
         assert_eq!(mixed.liveness, Liveness::Alive);
         assert_eq!(
             (mixed.live, mixed.dead),
-            (vec!["$0".to_string()], vec!["$2".to_string()])
+            (vec!["%4".to_string()], vec!["$2".to_string()])
         );
+    }
+
+    #[test]
+    fn panes_a_user_adds_are_not_moss() {
+        // The user opened a window and split a pane in Moss's session (the
+        // mark is on Moss's pane only): those never count, and Moss's pane is
+        // the one to type into.
+        let seen = classify_panes(true, "$0|%0|moss|0\n$0|%5||0\n$0|%6||0\n", "");
+        assert_eq!(seen.live, ["%0"]);
+        // Claude Code exited; the user's window keeps the session: dead.
+        let left = classify_panes(true, "$0|%5||0\n", "");
+        assert_eq!(left.liveness, Liveness::Dead);
+        assert!(left.live.is_empty());
+        assert_eq!(
+            PANES_FORMAT,
+            "#{session_id}|#{pane_id}|#{@cc-moss-role}|#{pane_dead}"
+        );
+    }
+
+    #[test]
+    fn panes_classify_failures() {
         // Failures read as before.
         assert_eq!(
             classify_panes(false, "", "no server running on /tmp/tmux-501/x\n").liveness,

@@ -157,6 +157,10 @@ fn handle(event: &str) -> Result<()> {
                 registry.clear_tmux(&slot.slot_id)?;
             }
         }
+        // Born in the background (a fork): its name gives way to yours.
+        if let Some(created) = registry.created_by_last_start().map(String::from) {
+            registry.mark_background(&created)?;
+        }
     }
     // Moss (started by the daemon) is recorded as such: only the session
     // the daemon started, by its id. Anything else that inherited the role
@@ -258,7 +262,7 @@ fn fill_name_from_transcript(
         return;
     }
     if let Some(name) = moss_core::transcript::last_custom_title(std::path::Path::new(path)) {
-        if let Err(e) = registry.set_name(&slot.slot_id, &name) {
+        if let Err(e) = registry.take_name(&slot.slot_id, &name) {
             log("session-start", &format!("error: {e:#}"));
         }
     }
@@ -330,7 +334,12 @@ fn warn_if_name_taken(
     let Some(slot) = registry.slot_for_event(session_id, ctx)? else {
         return Ok(());
     };
-    if registry.name_taken_by_other(&slot.slot_id, name)? {
+    // A fork that reports its parent's name keeps its numbered one: only a
+    // name the slot really took can clash.
+    let name = &moss_core::naming::clean_name(name);
+    if slot.name.as_deref() == Some(name.as_str())
+        && registry.name_taken_by_other(&slot.slot_id, name)?
+    {
         let msg = serde_json::json!({
             "systemMessage": tr!(
                 format!("cc-moss: another session is already named `{name}`. Names are one of a kind: /rename this one."),

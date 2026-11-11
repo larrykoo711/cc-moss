@@ -50,7 +50,7 @@
    "id": "1792103100000-b00002",
    "at": "2026-10-15T22:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792103040000-a00002",
    "fallback": false,
    "buttons": []
@@ -77,7 +77,7 @@
    "id": "1792103880000-c00003",
    "at": "2026-10-15T22:38:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -148,7 +148,7 @@
    "id": "1792106700000-b00007",
    "at": "2026-10-15T23:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792106640000-a00007",
    "fallback": false,
    "buttons": []
@@ -211,7 +211,7 @@
    "id": "1792108920000-c0000a",
    "at": "2026-10-16T00:02:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -246,7 +246,7 @@
    "id": "1792110300000-b0000c",
    "at": "2026-10-16T00:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792110240000-a0000c",
    "fallback": false,
    "buttons": []
@@ -336,7 +336,7 @@
    "id": "1792113900000-b00011",
    "at": "2026-10-16T01:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792113840000-a00011",
    "fallback": false,
    "buttons": []
@@ -345,7 +345,7 @@
    "id": "1792113960000-c00011",
    "at": "2026-10-16T01:26:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -434,7 +434,7 @@
    "id": "1792117500000-b00016",
    "at": "2026-10-16T02:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792117440000-a00016",
    "fallback": false,
    "buttons": []
@@ -479,7 +479,7 @@
    "id": "1792119000000-c00018",
    "at": "2026-10-16T02:50:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -532,7 +532,7 @@
    "id": "1792121100000-b0001b",
    "at": "2026-10-16T03:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792121040000-a0001b",
    "fallback": false,
    "buttons": []
@@ -613,7 +613,7 @@
    "id": "1792124040000-c0001f",
    "at": "2026-10-16T04:14:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -630,7 +630,7 @@
    "id": "1792124700000-b00020",
    "at": "2026-10-16T04:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792124640000-a00020",
    "fallback": false,
    "buttons": []
@@ -720,7 +720,7 @@
    "id": "1792128300000-b00025",
    "at": "2026-10-16T05:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792128240000-a00025",
    "fallback": false,
    "buttons": []
@@ -747,7 +747,7 @@
    "id": "1792129080000-c00026",
    "at": "2026-10-16T05:38:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -818,7 +818,7 @@
    "id": "1792131900000-b0002a",
    "at": "2026-10-16T06:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792131840000-a0002a",
    "fallback": false,
    "buttons": []
@@ -881,7 +881,7 @@
    "id": "1792134120000-c0002d",
    "at": "2026-10-16T07:02:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -916,7 +916,7 @@
    "id": "1792135500000-b0002f",
    "at": "2026-10-16T07:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792135440000-a0002f",
    "fallback": false,
    "buttons": []
@@ -1006,7 +1006,7 @@
    "id": "1792139100000-b00034",
    "at": "2026-10-16T08:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792139040000-a00034",
    "fallback": false,
    "buttons": []
@@ -1015,7 +1015,7 @@
    "id": "1792139160000-c00034",
    "at": "2026-10-16T08:26:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   },
@@ -1104,7 +1104,7 @@
    "id": "1792142700000-b00039",
    "at": "2026-10-16T09:25:00Z",
    "from": "moss",
-   "text": "All fine, nothing dropped.",
+   "text": "All fine, nothing stopped.",
    "reply_to": "1792142640000-a00039",
    "fallback": false,
    "buttons": []
@@ -1149,7 +1149,7 @@
    "id": "1792144200000-c0003b",
    "at": "2026-10-16T09:50:00Z",
    "from": "events",
-   "text": "[Events] fix-invoice dropped",
+   "text": "[Events] fix-invoice stopped",
    "fallback": false,
    "buttons": []
   }

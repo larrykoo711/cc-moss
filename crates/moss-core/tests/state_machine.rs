@@ -8,6 +8,10 @@ use moss_core::registry::Registry;
 use moss_core::slot::{Slot, Status};
 use serde_json::json;
 
+/// A transcript with something you said: a session nobody spoke to is
+/// closed when it exits (F62), which is not what these tests are about.
+const SAID: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/said.jsonl");
+
 fn ctx(pid: u32, now_ms: i64) -> Context {
     Context {
         pid: Some(pid),
@@ -30,7 +34,7 @@ fn start(source: StartSource, id: &str, title: Option<&str>) -> Event {
         session_id: id.into(),
         cwd: "/work".into(),
         title: title.map(Into::into),
-        transcript_path: Some(format!("/t/{id}.jsonl")),
+        transcript_path: Some(SAID.into()),
     }
 }
 
@@ -160,7 +164,7 @@ fn clear_and_compact_keep_the_folder_it_started_in() {
         session_id: id.into(),
         cwd: "/work/.claude/worktrees/agent-1".into(),
         title: None,
-        transcript_path: Some(format!("/t/{id}.jsonl")),
+        transcript_path: Some(SAID.into()),
     };
     let mut reg = Registry::open_in_memory().unwrap();
     reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
@@ -816,6 +820,30 @@ fn pid_recorded_before_boot_is_dead() {
     assert_eq!(
         s.effective_status_since(|_, _| true, Some(500)),
         Status::Running
+    );
+}
+
+#[test]
+fn a_process_with_a_known_start_is_judged_by_it_across_a_reboot() {
+    // Adopted after a reboot: the transcript was last written before boot,
+    // but the process (start time on record) runs now. The start time
+    // already tells a reused pid from this one, so the boot time must not
+    // call it dead (CI runners boot minutes before the tests run).
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Resume, "X", None),
+        &proc_ctx(512, Some("s512"), 1_000),
+    )
+    .unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(
+        s.effective_status_since(|_, start| start == Some("s512"), Some(5_000)),
+        Status::Running
+    );
+    // A different process under that pid is still told apart by its start.
+    assert_eq!(
+        s.effective_status_since(|_, _| false, Some(5_000)),
+        Status::Interrupted
     );
 }
 

@@ -1,0 +1,234 @@
+{
+  "schema_version": 1,
+  "diagram_type": "sequence",
+  "meta": {
+    "title": "Moss 卡在确认框：只识别、报告，由你在它窗口里回答（T2.21）",
+    "output": ".sdd/004-moss-agent/diagrams/moss-blocked.html",
+    "column_fit": "spread",
+    "quality_profile": "showcase"
+  },
+  "participants": [
+    {
+      "id": "daemon",
+      "type": "backend",
+      "label": "守护进程",
+      "sublabel": "Looker · 每秒看一眼"
+    },
+    {
+      "id": "pane",
+      "type": "external",
+      "label": "Moss 窗格",
+      "sublabel": "tmux · Claude Code"
+    },
+    {
+      "id": "mark",
+      "type": "database",
+      "label": "卡住标记",
+      "sublabel": "daemon/moss-blocked.json"
+    },
+    {
+      "id": "status",
+      "type": "backend",
+      "label": "moss status / doctor",
+      "sublabel": "CLI"
+    },
+    {
+      "id": "app",
+      "type": "frontend",
+      "label": "App Moss 页",
+      "sublabel": "提示 + 按钮"
+    },
+    {
+      "id": "user",
+      "type": "external",
+      "label": "你",
+      "sublabel": "常用终端"
+    }
+  ],
+  "segments": [
+    {
+      "from": 160,
+      "to": 290,
+      "label": "识别"
+    },
+    {
+      "from": 300,
+      "to": 440,
+      "label": "报告"
+    },
+    {
+      "from": 450,
+      "to": 655,
+      "label": "你回答、解卡"
+    }
+  ],
+  "messages": [
+    {
+      "id": "launch",
+      "from": "daemon",
+      "to": "pane",
+      "y": 170,
+      "label": "启动 Moss",
+      "variant": "emphasis"
+    },
+    {
+      "id": "warning",
+      "from": "pane",
+      "to": "daemon",
+      "y": 205,
+      "label": "capture-pane：bypass 警告框（blocking_dialog 认出）",
+      "variant": "return"
+    },
+    {
+      "id": "write",
+      "from": "daemon",
+      "to": "mark",
+      "y": 240,
+      "label": "持续 5 秒后写 {kind, since}",
+      "variant": "emphasis"
+    },
+    {
+      "id": "nokeys",
+      "from": "daemon",
+      "to": "pane",
+      "y": 275,
+      "label": "卡住时不送消息、不发任何按键",
+      "variant": "security"
+    },
+    {
+      "id": "read",
+      "from": "status",
+      "to": "mark",
+      "y": 315,
+      "label": "读标记",
+      "variant": "default"
+    },
+    {
+      "id": "blocked",
+      "from": "status",
+      "to": "app",
+      "y": 350,
+      "label": "activity: blocked · blocked.kind",
+      "variant": "emphasis"
+    },
+    {
+      "id": "notice",
+      "from": "app",
+      "to": "user",
+      "y": 385,
+      "label": "顶部提示 · 排队消息「等 Moss 处理一个确认框」",
+      "variant": "default"
+    },
+    {
+      "id": "doctor",
+      "from": "status",
+      "to": "user",
+      "y": 420,
+      "label": "doctor：一行说明 + cc-moss moss attach",
+      "variant": "dashed"
+    },
+    {
+      "id": "click",
+      "from": "user",
+      "to": "app",
+      "y": 465,
+      "label": "点「打开 Moss 的窗口」",
+      "variant": "default"
+    },
+    {
+      "id": "attach",
+      "from": "app",
+      "to": "pane",
+      "y": 500,
+      "label": "终端里跑 cc-moss moss attach",
+      "variant": "emphasis"
+    },
+    {
+      "id": "answer",
+      "from": "user",
+      "to": "pane",
+      "y": 535,
+      "label": "在窗口里回答",
+      "variant": "security"
+    },
+    {
+      "id": "gone",
+      "from": "pane",
+      "to": "daemon",
+      "y": 570,
+      "label": "下一次 capture：输入框回来了",
+      "variant": "return"
+    },
+    {
+      "id": "clear",
+      "from": "daemon",
+      "to": "mark",
+      "y": 605,
+      "label": "删标记",
+      "variant": "dashed"
+    },
+    {
+      "id": "deliver",
+      "from": "daemon",
+      "to": "pane",
+      "y": 640,
+      "label": "排队的消息送进去",
+      "variant": "emphasis"
+    }
+  ],
+  "activations": [
+    {
+      "participant": "daemon",
+      "from": 165,
+      "to": 645,
+      "type": "backend"
+    },
+    {
+      "participant": "pane",
+      "from": 200,
+      "to": 610,
+      "type": "external"
+    },
+    {
+      "participant": "mark",
+      "from": 235,
+      "to": 610,
+      "type": "database"
+    },
+    {
+      "participant": "app",
+      "from": 345,
+      "to": 540,
+      "type": "frontend"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "orange",
+      "title": "什么时候看窗格",
+      "items": [
+        "启动或接手后 60 秒内",
+        "收件箱有待送的消息时",
+        "已经看到确认框、或标记还在时"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "不替你点同意",
+      "items": [
+        "识别 bypass 警告、登录、其他确认框",
+        "「信任此文件夹」仍由守护进程按原规则处理",
+        "卡住期间窗格收不到任何按键"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "解卡之后",
+      "items": [
+        "标记删掉，status 不再报 blocked",
+        "排队的消息按原顺序送进去",
+        "重启 Moss 或关掉它时标记也会清掉"
+      ]
+    }
+  ]
+}

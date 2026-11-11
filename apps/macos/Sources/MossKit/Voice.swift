@@ -26,7 +26,7 @@ public enum VoiceCue: Equatable, Sendable {
 /// When Mo makes a sound, and what it says (DESIGN-pet §5, §6.4, §6.5).
 ///
 /// - Which kinds, by interaction mode: quiet only "needs you"; everyday adds
-///   "dropped"; active adds "back" and "done".
+///   "stopped"; active adds "back" and "done".
 /// - Do not disturb: silent.
 /// - At most one sound every 30 s, chime or speech alike.
 /// - Only the bubble's title (a session name and our own words), never

@@ -698,7 +698,7 @@ struct BubblesSheet: View {
                     pose: .needsYou)
                 scene(
                     PetBubble(kind: .interrupted,
-                              title: L.t("fix-invoice dropped", "fix-invoice 断了"),
+                              title: L.t("fix-invoice stopped", "fix-invoice 断了"),
                               message: L.t("Nothing is lost. One click brings it back.", "别慌，进度都在。点一下就找回来。"),
                               actions: [L.t("Bring back", "找回"), L.t("Not now", "先不")]),
                     pose: .interrupted)

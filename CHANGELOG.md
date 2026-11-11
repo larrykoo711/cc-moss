@@ -6,6 +6,42 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Changed
+
+- **A session that went away is called "stopped" in English everywhere**, as in the rest of the app, instead of
+  "dropped".
+
+### Fixed
+
+- **A session you pick up again after a restart isn't taken for a stopped one.** A session cc-moss found running,
+  whose conversation was last written before the Mac started, was called stopped (and, with this version, would have
+  been closed as one that never got a word). When cc-moss knows when the process started, that now decides.
+- **A session Claude Code compacted while it sat idle no longer looks busy.** Claude Code writes its compaction
+  summary as if you had said it, so cc-moss took the session for one still working: a restart queued for it waited
+  for a turn that never ends. The summary no longer counts as the start of a turn.
+- **Moss no longer stops on Claude Code's bypass warning.** The answer to the warning was in Moss's project settings,
+  where Claude Code ignores it, so a fresh Moss could wait on the warning for days. It is now in Moss's local
+  settings, every time.
+- **When Moss is stuck on a question, it says so.** If Claude Code shows Moss a question it can't get past (a
+  warning, a sign-in), `cc-moss moss status` and `cc-moss doctor` say what it is, and the Moss page shows a note with
+  an Open Moss's window button instead of "Sending…". cc-moss never answers it for you. `cc-moss moss attach` opens
+  Moss's window from a terminal.
+- **Moss's window is only for looking.** In `cc-moss moss attach` the only tmux key left is Ctrl-b d to leave, so a
+  window opened there by accident can no longer hide Moss from cc-moss or keep a stopped Moss from starting again.
+- **Moss gets past Claude Code's "trust this folder" question again.** Newer Claude Code selects "No, exit" first,
+  so a Moss starting on a new Mac stopped there. The daemon now moves to Yes, checks that Yes is selected before
+  confirming, and never confirms No; when it can't, Moss is reported as stuck so you can answer it.
+- **Your messages to Moss go before its session updates.** When updates piled up, Moss read every one of them before
+  your message. Now yours go first, a newer update about a session replaces the older one, updates older than 6
+  hours are dropped, and an update older than 15 minutes says how long ago it happened, so Moss no longer takes
+  last week's "finished" for today's. The daily checkup is no longer asked for twice while one is still waiting.
+- **A session forked in the background no longer shows up with the same name as the original.** It now gets
+  `name-2`, `name-3`, like `cc-moss new`, and keeps that number; the original keeps its name. A name you give with
+  `/rename` is always kept as you typed it.
+- **A session you never said a word to is closed when it exits, instead of showing as stopped.** Bringing it back
+  only failed with "empty". Ones an older version left stopped are closed at the first look after the update.
+  Sessions with a name are always kept.
+
 ## [0.3.9] - 2026-11-06
 
 ### Fixed

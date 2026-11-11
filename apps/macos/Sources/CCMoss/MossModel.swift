@@ -159,4 +159,19 @@ extension AppModel {
         guard let moss, canOpenMoss else { return }
         open(moss)
     }
+
+    /// Moss's own tmux window (`cc-moss moss attach`), in the chosen terminal:
+    /// it works before Moss is in the session list too, as when it is stuck
+    /// on a choice while it starts (F59).
+    func openMossWindow() {
+        let command = MossBlockedNotice.command(cli: client?.executable ?? "cc-moss")
+        let terminal = terminals.current, style = terminals.openStyle
+        Task {
+            if let failure = await Opener.run(command: command, in: terminal, style: style) {
+                copy(failure.command)
+                say(L.t("Couldn't open \(failure.terminalName). The command is on your clipboard.",
+                        "没能打开\(failure.terminalName)。命令已经复制好了。"))
+            }
+        }
+    }
 }

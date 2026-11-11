@@ -30,7 +30,8 @@ public struct MossWaiting: Equatable, Sendable {
                     ? text.split(whereSeparator: \.isWhitespace).first.map { String($0).lowercased() } : nil
                 // In line only when Moss is busy with something else; queued with
                 // Moss free means it's being handed over right now.
-                let queued = mine.delivery == .queued && (activity == .thinking || activity == .waiting)
+                let queued = mine.delivery == .queued
+                    && (activity == .thinking || activity == .waiting || activity == .blocked)
                 return MossWaiting(command: command, queued: queued)
             }
         }

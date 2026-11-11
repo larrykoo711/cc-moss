@@ -7,7 +7,7 @@ use std::path::Path;
 use std::process::{Child, Stdio};
 use std::time::{Duration, Instant};
 
-use common::{bin, dead_pid, end_json, hook, start_json, FakeProcess};
+use common::{bin, dead_pid, end_json, hook, said, start_json, FakeProcess};
 
 const DAY_MS: i64 = 24 * 60 * 60 * 1000;
 
@@ -48,6 +48,7 @@ fn restore_all_skips_a_session_ended_on_purpose() {
         &start_json("done1", "startup", Some("done1")),
         p.pid(),
     );
+    said(state, "done1", None, p.pid());
     hook(
         state,
         "session-end",
@@ -226,12 +227,14 @@ fn cc_moss(state: &Path, args: &[&str]) -> std::process::Output {
 
 /// A session that ended (its process is gone).
 fn ended(state: &Path, sid: &str) {
+    let gone = Some(dead_pid());
     hook(
         state,
         "session-start",
         &start_json(sid, "startup", Some(sid)),
-        Some(dead_pid()),
+        gone,
     );
+    said(state, sid, None, gone);
 }
 
 /// Make a session look last used `days` ago.
@@ -388,6 +391,7 @@ fn an_ended_session_brought_back_shows_in_the_list() {
         &start_json("api", "startup", Some("api")),
         gone,
     );
+    said(state, "api", None, gone);
     hook(
         state,
         "session-end",
@@ -464,14 +468,17 @@ fn archive_by_conversation_id_when_two_share_a_name() {
     // What the app sends: the row's conversation id, not its name.
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path();
-    for sid in ["aaaa1111-twin", "bbbb2222-twin"] {
+    // The second is renamed to `twin` by hand: a name the hooks report at
+    // start is numbered, a `/rename` is taken as is.
+    for (sid, first) in [("aaaa1111-twin", "twin"), ("bbbb2222-twin", "other")] {
         let p = FakeProcess::spawn();
         hook(
             state,
             "session-start",
-            &start_json(sid, "startup", Some("twin")),
+            &start_json(sid, "startup", Some(first)),
             p.pid(),
         );
+        said(state, sid, Some("twin"), p.pid());
         drop(p);
     }
     let by_name = cc_moss(state, &["archive", "--json", "--", "twin"]);

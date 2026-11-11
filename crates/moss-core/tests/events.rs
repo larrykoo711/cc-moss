@@ -14,13 +14,17 @@ fn ctx(now_ms: i64) -> Context {
     }
 }
 
+/// A transcript with something you said: a session nobody spoke to is
+/// closed when it exits (F62), which is not what these tests are about.
+const SAID: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/said.jsonl");
+
 fn start(id: &str) -> Event {
     Event::Start {
         source: StartSource::Startup,
         session_id: id.into(),
         cwd: "/work".into(),
         title: Some("job-a".into()),
-        transcript_path: None,
+        transcript_path: Some(SAID.into()),
     }
 }
 

@@ -115,14 +115,17 @@ impl Slot {
     }
 
     /// [`Slot::effective_status`] with an explicit boot time. A pid recorded
-    /// before the machine booted belongs to a process that cannot exist any
-    /// more, whatever now runs under that number.
+    /// before the machine booted, with no start time to check it by, belongs
+    /// to a process that cannot exist any more, whatever now runs under that
+    /// number. With a start time on record the process itself decides: a
+    /// session adopted after a reboot can have been last active before it.
     pub fn effective_status_since(
         &self,
         is_alive: impl Fn(u32, Option<&str>) -> bool,
         boot_ms: Option<i64>,
     ) -> Status {
-        let before_boot = boot_ms.is_some_and(|b| self.last_active_at_ms < b);
+        let before_boot =
+            self.pid_start.is_none() && boot_ms.is_some_and(|b| self.last_active_at_ms < b);
         match (self.status, self.pid) {
             (Status::Running | Status::Interrupted, Some(_)) if before_boot => Status::Interrupted,
             // Not closed and a pid on record: the process decides, whatever the

@@ -52,9 +52,18 @@ impl Drop for SilentProcess {
     }
 }
 
+/// A transcript with what you said and the turn it finished: one nobody
+/// spoke to is closed when it exits (F62).
+const SAID: &str = concat!(
+    r#"{"type":"user","timestamp":"2026-11-09T10:00:00Z","message":{"role":"user","content":"fix the login page"}}"#,
+    "\n",
+    r#"{"type":"system","subtype":"turn_duration"}"#,
+    "\n",
+);
+
 fn start(w: &World, sid: &str, source: &str, title: Option<&str>, pid: Option<u32>) {
     let t = w.path("fifos").join(format!("{sid}.jsonl"));
-    std::fs::write(&t, "{}\n").unwrap();
+    std::fs::write(&t, SAID).unwrap();
     let j = serde_json::json!({
         "session_id": sid, "cwd": w.path("work"), "source": source,
         "session_title": title, "transcript_path": t,

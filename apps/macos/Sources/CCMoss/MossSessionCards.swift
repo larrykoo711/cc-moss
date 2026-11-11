@@ -389,7 +389,7 @@ struct MossSessionCardView: View {
         switch s.state {
         case .working: alone ? L.t("Working now", "现在在干活") : L.t("working now", "现在在干活")
         case .waiting: alone ? L.t("Idle now", "现在空闲") : L.t("idle now", "现在空闲")
-        case .interrupted: alone ? L.t("Dropped now", "现在断了") : L.t("dropped now", "现在断了")
+        case .interrupted: alone ? L.t("Stopped now", "现在断了") : L.t("stopped now", "现在断了")
         case .closed: alone ? L.t("Ended", "已结束") : L.t("ended", "已结束")
         }
     }

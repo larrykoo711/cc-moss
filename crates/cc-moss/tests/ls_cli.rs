@@ -1,6 +1,6 @@
 mod common;
 
-use common::{bin, dead_pid, end_json, hook, ls_json, start_json, FakeProcess};
+use common::{bin, dead_pid, end_json, hook, ls_json, said, start_json, FakeProcess};
 
 #[test]
 fn dead_pid_shows_interrupted() {
@@ -12,6 +12,7 @@ fn dead_pid_shows_interrupted() {
         &start_json("U1", "startup", Some("gone")),
         Some(dead_pid()),
     );
+    said(dir.path(), "U1", None, Some(dead_pid()));
     let v = ls_json(dir.path(), false);
     assert_eq!(v["sessions"][0]["status"], "interrupted");
 }
@@ -105,6 +106,7 @@ fn text_sort_order() {
         &start_json("I", "startup", Some("interrupted-one")),
         pi.pid(),
     );
+    said(dir.path(), "I", None, pi.pid());
     hook(dir.path(), "session-end", &end_json("I", "other"), pi.pid());
 
     let out = bin()
@@ -264,7 +266,28 @@ fn adopted_sessions_keep_their_real_last_activity() {
         .output()
         .unwrap();
     let text = String::from_utf8(out.stdout).unwrap();
-    assert!(text.contains("1h"), "{text}");
+    // On failure, say what the registry holds, not just what `ls` printed.
+    let all = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .env("CLAUDE_CONFIG_DIR", &config)
+        .args(["ls", "--json"])
+        .output()
+        .unwrap();
+    let events = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .env("CC_MOSS_CLAUDE_BIN", &stub)
+        .env("CLAUDE_CONFIG_DIR", &config)
+        .args(["events", "--json", "--since", "0"])
+        .output()
+        .unwrap();
+    assert!(
+        text.contains("1h"),
+        "{text}\nstderr: {}\nall: {}\nevents: {}",
+        String::from_utf8_lossy(&out.stderr),
+        String::from_utf8_lossy(&all.stdout),
+        String::from_utf8_lossy(&events.stdout)
+    );
 }
 
 /// A hook-tracked session marked busy by its last prompt; `claude agents`
@@ -537,13 +560,16 @@ fn superseded_duplicates_are_closed() {
 #[test]
 fn json_results_name_ambiguous_names() {
     let dir = tempfile::tempdir().unwrap();
-    for sid in ["aaaaaaaa-0001", "bbbbbbbb-0002"] {
+    // The second is renamed to `api` by hand: a name the hooks report at
+    // start is numbered, a `/rename` is taken as is.
+    for (sid, first) in [("aaaaaaaa-0001", "api"), ("bbbbbbbb-0002", "web")] {
         hook(
             dir.path(),
             "session-start",
-            &start_json(sid, "startup", Some("api")),
+            &start_json(sid, "startup", Some(first)),
             Some(dead_pid()),
         );
+        said(dir.path(), sid, Some("api"), Some(dead_pid()));
     }
     let run = |args: &[&str]| -> serde_json::Value {
         let out = bin()

@@ -35,7 +35,7 @@ pub const TAIL_CHARS: usize = 12;
 pub const SETTLE: Duration = Duration::from_millis(300);
 
 /// One message waiting for Moss: `<inbox>/<id>.json`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
     pub schema: u32,
     pub id: String,
@@ -43,6 +43,116 @@ pub struct Message {
     /// `you`, `events`; `slack` later.
     pub from: String,
     pub text: String,
+    /// A request of cc-moss's own among the `events` ([`KIND_CHECKUP`]):
+    /// not session news, so it never goes stale or carries an age.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<String>,
+    /// For session news: the changes it tells, each with its words, so a
+    /// newer line about the same session and change takes it over
+    /// ([`put_news`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub about: Vec<Told>,
+}
+
+/// One change a news line tells: `<slot id>/<kind>`, and its words
+/// (`api finished`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Told {
+    pub key: String,
+    pub words: String,
+}
+
+/// [`Message::kind`] of the daily checkup request.
+pub const KIND_CHECKUP: &str = "checkup";
+
+/// Session news older than this is not told any more (F60).
+pub const NEWS_STALE_MS: i64 = 6 * 60 * 60 * 1000;
+
+/// Session news older than this says how long ago it happened (F63).
+pub const NEWS_AGE_SHOWN_MS: i64 = 15 * 60 * 1000;
+
+impl Message {
+    /// Session news: from `events`, not a request of cc-moss's own.
+    pub fn is_news(&self) -> bool {
+        self.from == "events" && self.kind.is_none()
+    }
+
+    /// When it was dropped in, from its id ([`new_id`]).
+    pub fn at_ms(&self) -> Option<i64> {
+        self.id.get(..13)?.parse().ok()
+    }
+}
+
+/// What goes into Moss's terminal for `message` at `now_ms`: session news
+/// from more than [`NEWS_AGE_SHOWN_MS`] ago says how long ago, right after
+/// its `[动态]` / `[Update]` tag; everything else as it is.
+pub fn told_text(message: &Message, now_ms: i64) -> String {
+    let text = message.text.clone();
+    let Some(at) = message.at_ms().filter(|_| message.is_news()) else {
+        return text;
+    };
+    let age = now_ms - at;
+    if age <= NEWS_AGE_SHOWN_MS {
+        return text;
+    }
+    let minutes = age / 60_000;
+    let hours = minutes / 60;
+    if let Some(rest) = text.strip_prefix("[动态]") {
+        let ago = if hours > 0 {
+            format!("{hours} 小时前")
+        } else {
+            format!("{minutes} 分钟前")
+        };
+        return format!("[动态]（{ago}）{}", rest.trim_start());
+    }
+    if let Some(rest) = text.strip_prefix("[Update]") {
+        let ago = match (hours, minutes) {
+            (1, _) => "1 hour ago".to_string(),
+            (h, _) if h > 1 => format!("{h} hours ago"),
+            (_, m) => format!("{m} minutes ago"),
+        };
+        return format!("[Update] ({ago}) {}", rest.trim_start());
+    }
+    text
+}
+
+/// Drop session news in, taking over older news still waiting about the
+/// same session and change: an older line that told only those goes, one
+/// that told more keeps the rest (rebuilt from its [`Told`] words).
+/// `join` makes a line from words, in the language the line was in
+/// (`true`: Chinese).
+pub fn put_news(
+    home: &Path,
+    message: &Message,
+    join: &dyn Fn(&[String], bool) -> String,
+) -> io::Result<PathBuf> {
+    let new: Vec<&str> = message.about.iter().map(|t| t.key.as_str()).collect();
+    for (path, old) in waiting(home) {
+        let Some(old) = old.filter(|m| m.is_news() && !m.about.is_empty()) else {
+            continue;
+        };
+        let rest: Vec<Told> = old
+            .about
+            .iter()
+            .filter(|t| !new.contains(&t.key.as_str()))
+            .cloned()
+            .collect();
+        if rest.len() == old.about.len() {
+            continue;
+        }
+        take(home, &path)?;
+        if rest.is_empty() {
+            continue;
+        }
+        let words: Vec<String> = rest.iter().map(|t| t.words.clone()).collect();
+        let kept = Message {
+            text: join(&words, old.text.starts_with("[动态]")),
+            about: rest,
+            ..old
+        };
+        put(home, &kept)?;
+    }
+    put(home, message)
 }
 
 /// `<13-digit unix millis>-<6 hex>`: sorts by time, and two messages in the
@@ -92,9 +202,18 @@ pub fn put_whole(path: &Path, text: &str) -> io::Result<()> {
     linked
 }
 
-/// What waits, oldest first. A file that does not read as a message comes
-/// with `None`, so it can be put aside rather than block the rest.
+/// What waits, in the order it goes in: yours (anything but `events`)
+/// first, oldest first, then cc-moss's news and requests, oldest first
+/// (F60). A file that does not read as a message comes with `None` among
+/// the first, so it can be put aside rather than block the rest.
 pub fn waiting(home: &Path) -> Vec<(PathBuf, Option<Message>)> {
+    let mut all = in_time_order(home);
+    // Stable: each group keeps its time order.
+    all.sort_by_key(|(_, m)| m.as_ref().is_some_and(|m| m.from == "events"));
+    all
+}
+
+fn in_time_order(home: &Path) -> Vec<(PathBuf, Option<Message>)> {
     let Ok(inbox) = super::dir::Dir::open(home, "inbox") else {
         return Vec::new();
     };
@@ -542,6 +661,10 @@ pub enum Outcome {
     Sent(InFlight),
     /// Text left in Moss's input with nobody at its terminal was cleared.
     Cleared,
+    /// Session news older than [`NEWS_STALE_MS`] was dropped, not told.
+    Expired {
+        id: String,
+    },
     Failed {
         id: String,
         from: String,
@@ -677,6 +800,16 @@ impl Courier {
             return out;
         }
         for (path, message) in waiting(home) {
+            let stale = message.as_ref().is_some_and(|m| {
+                m.is_news() && m.at_ms().is_some_and(|at| now_ms - at > NEWS_STALE_MS)
+            });
+            if let (true, Some(m)) = (stale, &message) {
+                if take(home, &path).is_ok() {
+                    out.push(Outcome::Expired { id: m.id.clone() });
+                }
+            }
+        }
+        for (path, message) in waiting(home) {
             let Some(message) = message else {
                 let id = path
                     .file_stem()
@@ -707,7 +840,7 @@ impl Courier {
             }
             // Claude Code runs any input starting with `/` as a command: a
             // message that only looks like one goes in after a space.
-            let clean = printable(&message.text);
+            let clean = printable(&told_text(&message, now_ms));
             let text = if clean.starts_with('/') {
                 format!(" {clean}")
             } else {
@@ -886,6 +1019,7 @@ mod tests {
                 at: "t".into(),
                 from: "you".into(),
                 text: text.into(),
+                ..Message::default()
             },
         )
         .unwrap();
@@ -1052,6 +1186,161 @@ mod tests {
         );
     }
 
+    /// 2026-11-09T00:00:00Z.
+    const T: i64 = 1_794_182_400_000;
+    const MIN: i64 = 60_000;
+    const HOUR: i64 = 60 * MIN;
+
+    fn event(home: &Path, at_ms: i64, text: &str) -> String {
+        let id = new_id(at_ms);
+        put(
+            home,
+            &Message {
+                schema: 1,
+                id: id.clone(),
+                at: "t".into(),
+                from: "events".into(),
+                text: text.into(),
+                ..Message::default()
+            },
+        )
+        .unwrap();
+        id
+    }
+
+    fn sent(out: &[Outcome]) -> Vec<String> {
+        out.iter()
+            .filter_map(|o| match o {
+                Outcome::Sent(s) => Some(s.from.clone()),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn inbox_yours_first() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        for i in 0..10 {
+            event(h, T + i * MIN, &format!("[Update] s{i} finished"));
+        }
+        say(h, &new_id(T + 11 * MIN), "mine");
+        let mut pane = FakePane::default();
+        let mut c = Courier::default();
+        let now = T + 12 * MIN;
+        assert_eq!(sent(&c.step(h, &mut pane, Some(false), now)), ["you"]);
+        assert_eq!(pane.submitted, ["mine"]);
+        // Yours went; only news is left.
+        let head = waiting(h).into_iter().next().unwrap().1.unwrap();
+        assert_eq!(head.from, "events");
+        c.done();
+        assert_eq!(sent(&c.step(h, &mut pane, Some(false), now)), ["events"]);
+        c.done();
+        c.step(h, &mut pane, Some(false), now);
+        // Then the news, oldest first.
+        assert!(
+            pane.submitted[1].ends_with("s0 finished"),
+            "{:?}",
+            pane.submitted
+        );
+        assert!(
+            pane.submitted[2].ends_with("s1 finished"),
+            "{:?}",
+            pane.submitted
+        );
+        // Yours stays first in what `waiting` lists too.
+        say(h, &new_id(T + 20 * MIN), "later");
+        let first = waiting(h).into_iter().next().unwrap().1.unwrap();
+        assert_eq!(first.text, "later");
+    }
+
+    #[test]
+    fn inbox_drops_stale_events() {
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        let old = event(h, T - 7 * HOUR, "[Update] old finished");
+        event(h, T - HOUR, "[Update] recent finished");
+        say(h, &new_id(T - 30 * HOUR), "an old one of mine");
+        put(
+            h,
+            &Message {
+                schema: 1,
+                id: new_id(T - 8 * HOUR),
+                at: "t".into(),
+                from: "events".into(),
+                text: "Daily checkup".into(),
+                kind: Some(KIND_CHECKUP.into()),
+                ..Message::default()
+            },
+        )
+        .unwrap();
+        let mut pane = FakePane::default();
+        let mut c = Courier::default();
+        let out = c.step(h, &mut pane, Some(false), T);
+        assert!(out.contains(&Outcome::Expired { id: old }), "{out:?}");
+        assert_eq!(sent(&out), ["you"]);
+        for _ in 0..3 {
+            c.done();
+            c.step(h, &mut pane, Some(false), T);
+        }
+        assert_eq!(pane.submitted.len(), 3, "{:?}", pane.submitted);
+        assert_eq!(pane.submitted[0], "an old one of mine");
+        assert_eq!(
+            pane.submitted[1], "Daily checkup",
+            "a checkup is no news: it never goes stale"
+        );
+        assert!(
+            pane.submitted[2].ends_with("recent finished"),
+            "{:?}",
+            pane.submitted
+        );
+        assert!(!pane.submitted.iter().any(|t| t.contains("old finished")));
+        assert_eq!(count(h), 0);
+    }
+
+    #[test]
+    fn inbox_event_age_prefix() {
+        let news = |text: &str, at_ms: i64| Message {
+            schema: 1,
+            id: new_id(at_ms),
+            at: "t".into(),
+            from: "events".into(),
+            text: text.into(),
+            ..Message::default()
+        };
+        let zh = news("[动态] api 做完了", T - 20 * MIN);
+        assert_eq!(told_text(&zh, T), "[动态]（20 分钟前）api 做完了");
+        let en = news("[Update] api finished", T - 3 * HOUR - 5 * MIN);
+        assert_eq!(told_text(&en, T), "[Update] (3 hours ago) api finished");
+        assert_eq!(
+            told_text(&news("[Update] api finished", T - 61 * MIN), T),
+            "[Update] (1 hour ago) api finished"
+        );
+        assert_eq!(
+            told_text(&news("[动态] api 断了", T - 2 * HOUR), T),
+            "[动态]（2 小时前）api 断了"
+        );
+        // Within 15 minutes: as it was.
+        assert_eq!(
+            told_text(&news("[动态] api 做完了", T - 14 * MIN), T),
+            "[动态] api 做完了"
+        );
+        // Yours, and a checkup request, never change.
+        let mut mine = news("hello", T - 5 * HOUR);
+        mine.from = "you".into();
+        assert_eq!(told_text(&mine, T), "hello");
+        let mut checkup = news("Daily checkup", T - 5 * HOUR);
+        checkup.kind = Some(KIND_CHECKUP.into());
+        assert_eq!(told_text(&checkup, T), "Daily checkup");
+        // What goes into Moss's terminal carries it.
+        let dir = tempfile::tempdir().unwrap();
+        let h = dir.path();
+        event(h, T - 20 * MIN, "[Update] api finished");
+        let mut pane = FakePane::default();
+        Courier::default().step(h, &mut pane, Some(false), T);
+        assert_eq!(pane.submitted, ["[Update] (20 minutes ago) api finished"]);
+    }
+
     #[test]
     fn inbox_counts_only_your_messages() {
         let dir = tempfile::tempdir().unwrap();
@@ -1064,7 +1353,8 @@ mod tests {
                 id: "0000000000002-aaaaaa".into(),
                 at: "t".into(),
                 from: "events".into(),
-                text: "[Update] api dropped".into(),
+                text: "[Update] api stopped".into(),
+                ..Message::default()
             },
         )
         .unwrap();
@@ -1083,6 +1373,7 @@ mod tests {
             at: "t".into(),
             from: "you".into(),
             text: "again".into(),
+            ..Message::default()
         };
         assert_eq!(put(h, &m).unwrap_err().kind(), io::ErrorKind::AlreadyExists);
         let texts: Vec<String> = waiting(h)

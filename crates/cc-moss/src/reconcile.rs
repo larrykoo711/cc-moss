@@ -65,7 +65,7 @@ pub fn run() -> Result<Registry> {
     }
     label_tmux(&registry);
     registry.close_superseded_duplicates(&|s| s.effective_status(proc::is_alive), now_ms())?;
-    record_lost(&registry)?;
+    record_lost(&registry, &proc::is_alive, now_ms())?;
     registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
 }
@@ -168,14 +168,25 @@ fn save_scanned(scanned: &HashMap<String, u64>) {
 }
 
 /// Report running slots whose process is gone without a SessionEnd
-/// (SIGKILL, power loss) as interrupted, once each.
-fn record_lost(registry: &Registry) -> Result<()> {
-    let now = now_ms();
+/// (SIGKILL, power loss) as interrupted, once each. One that never heard a
+/// word from the user is closed instead, and so is a stopped one an older
+/// cc-moss left interrupted (F62).
+fn record_lost(
+    registry: &Registry,
+    is_alive: &dyn Fn(u32, Option<&str>) -> bool,
+    now: i64,
+) -> Result<()> {
     for slot in registry.slots()? {
-        if slot.status == Status::Running
-            && slot.effective_status(proc::is_alive) == Status::Interrupted
+        if slot.status == Status::Closed
+            || slot.is_archived()
+            || slot.effective_status(is_alive) != Status::Interrupted
         {
+            continue;
+        }
+        if slot.status == Status::Running {
             registry.record_lost_of(&slot.slot_id, slot.pid, now)?;
+        } else {
+            registry.close_silent(&slot.slot_id, now)?;
         }
     }
     Ok(())
@@ -238,6 +249,12 @@ fn adopt(registry: &mut Registry, live: &[LiveSession]) -> Result<()> {
                     transcript_path: transcript.clone(),
                 };
                 registry.apply_with(&event, &ctx, &claude::runs_a_session)?;
+                // Born in the background (a fork): its name gives way to yours.
+                if s.background {
+                    if let Some(created) = registry.created_by_last_start().map(String::from) {
+                        registry.mark_background(&created)?;
+                    }
+                }
                 if let Some(slot) = registry.slot_for_event(&s.session_id, &ctx)? {
                     let busy = still_working(s, transcript.as_deref(), 0);
                     registry.set_busy(&slot.slot_id, busy)?;
@@ -292,4 +309,175 @@ fn modified_ms(path: &str) -> Option<i64> {
     let modified = std::fs::metadata(path).ok()?.modified().ok()?;
     let since_epoch = modified.duration_since(std::time::UNIX_EPOCH).ok()?;
     i64::try_from(since_epoch.as_millis()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    use moss_core::event::TmuxLoc;
+
+    const SAID: &str = r#"{"type":"user","timestamp":"2026-11-09T10:00:00Z","message":{"role":"user","content":"fix the login page"}}"#;
+
+    fn ctx(pid: u32, now_ms: i64) -> Context {
+        Context {
+            pid: Some(pid),
+            pid_start: Some(format!("start-{pid}")),
+            tmux: Some(TmuxLoc {
+                socket: "/tmp/cc-moss-test-b/default".into(),
+                session_id: Some(format!("${pid}")),
+                session_name: Some(format!("host_s{pid}")),
+                pane_id: format!("%{pid}"),
+            }),
+            launch_args: None,
+            provider: None,
+            now_ms,
+        }
+    }
+
+    fn start(reg: &mut Registry, id: &str, source: StartSource, transcript: &str, pid: u32) {
+        let event = Event::Start {
+            source,
+            session_id: id.into(),
+            cwd: "/work".into(),
+            title: None,
+            transcript_path: Some(transcript.into()),
+        };
+        reg.apply(&event, &ctx(pid, now_ms())).unwrap();
+    }
+
+    fn transcript(lines: &[&str]) -> tempfile::NamedTempFile {
+        let mut t = tempfile::NamedTempFile::new().unwrap();
+        for l in lines {
+            writeln!(t, "{l}").unwrap();
+        }
+        t
+    }
+
+    fn slot(reg: &Registry, id: &str) -> moss_core::slot::Slot {
+        reg.slots()
+            .unwrap()
+            .into_iter()
+            .find(|s| s.session_id == id)
+            .unwrap()
+    }
+
+    fn kinds_of(reg: &Registry, id: &str) -> Vec<String> {
+        let slot_id = slot(reg, id).slot_id;
+        reg.events(Some(0), 1_000)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.slot_id == slot_id)
+            .map(|e| e.kind)
+            .collect()
+    }
+
+    fn gone(_: u32, _: Option<&str>) -> bool {
+        false
+    }
+
+    #[test]
+    fn reconcile_closes_silent_dead_sessions() {
+        let mut reg = Registry::open_in_memory().unwrap();
+        let quiet = transcript(&[]);
+        start(
+            &mut reg,
+            "A",
+            StartSource::Startup,
+            &quiet.path().to_string_lossy(),
+            100,
+        );
+        let said = transcript(&[SAID]);
+        start(
+            &mut reg,
+            "B",
+            StartSource::Startup,
+            &said.path().to_string_lossy(),
+            200,
+        );
+        let prompt = Event::Prompt {
+            session_id: "B".into(),
+            title: None,
+            prompt: Some("fix the login page".into()),
+        };
+        reg.apply(&prompt, &ctx(200, now_ms())).unwrap();
+        record_lost(&reg, &gone, now_ms()).unwrap();
+        assert_eq!(slot(&reg, "A").status, Status::Closed);
+        assert!(!kinds_of(&reg, "A").contains(&"interrupted".to_string()));
+        assert!(kinds_of(&reg, "A").contains(&"ended".to_string()));
+        let b = slot(&reg, "B");
+        assert_eq!(b.effective_status(gone), Status::Interrupted);
+        assert!(kinds_of(&reg, "B").contains(&"interrupted".to_string()));
+    }
+
+    #[test]
+    fn reconcile_keeps_adopted_with_messages() {
+        let mut reg = Registry::open_in_memory().unwrap();
+        // Adoption registers a running session with a resume Start and no
+        // Prompt hook: `last_prompt` stays empty, the words are in the transcript.
+        let said = transcript(&[SAID]);
+        start(
+            &mut reg,
+            "A",
+            StartSource::Resume,
+            &said.path().to_string_lossy(),
+            100,
+        );
+        assert!(slot(&reg, "A").last_prompt.is_none());
+        record_lost(&reg, &gone, now_ms()).unwrap();
+        let a = slot(&reg, "A");
+        assert_ne!(a.status, Status::Closed);
+        assert_eq!(a.effective_status(gone), Status::Interrupted);
+    }
+
+    #[test]
+    fn reconcile_closes_existing_silent_rows() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.db");
+        let quiet = transcript(&[]);
+        let said = transcript(&[SAID]);
+        {
+            let mut reg = Registry::open(&path).unwrap();
+            for (id, t, pid) in [("A", &quiet, 100), ("B", &said, 200), ("C", &quiet, 300)] {
+                start(
+                    &mut reg,
+                    id,
+                    StartSource::Resume,
+                    &t.path().to_string_lossy(),
+                    pid,
+                );
+            }
+        }
+        // As an older cc-moss left them: interrupted (SessionEnd other, its
+        // process gone, already reported), one archived.
+        let db = rusqlite::Connection::open(&path).unwrap();
+        db.execute_batch(
+            "UPDATE slots SET status='interrupted', end_reason='other', ended_at=1,
+               lost_reported_at=1;
+             UPDATE slots SET archived_at_ms=2 WHERE session_id='C';",
+        )
+        .unwrap();
+        drop(db);
+        let reg = Registry::open(&path).unwrap();
+        let before = reg.last_event_seq().unwrap();
+        record_lost(&reg, &gone, now_ms()).unwrap();
+        assert_eq!(slot(&reg, "A").status, Status::Closed);
+        assert_eq!(slot(&reg, "B").status, Status::Interrupted);
+        assert_eq!(slot(&reg, "C").status, Status::Interrupted, "archived");
+        let new: Vec<_> = reg
+            .events(Some(before), 1_000)
+            .unwrap()
+            .into_iter()
+            .filter(|e| e.seq > before)
+            .collect();
+        assert_eq!(new.len(), 1, "{new:?}");
+        assert_eq!(new[0].kind, "ended");
+        assert_eq!(new[0].slot_id, slot(&reg, "A").slot_id);
+        // Nothing for Moss: only "interrupted" becomes news.
+        assert_eq!(
+            moss_core::moss::digest::Kind::from_event(&new[0].kind),
+            None
+        );
+    }
 }

@@ -32,6 +32,10 @@ pub struct File {
 /// Folders Moss keeps its own things in; created when missing.
 pub const USER_DIRS: &[&str] = &["journal", "memory"];
 
+/// Claude Code's local settings in `.claude/`, which the daemon writes
+/// (not a [`File`]: its text comes from the user's settings).
+pub const LOCAL_SETTINGS: &str = "settings.local.json";
+
 /// The generated overview.
 pub const SESSIONS_MD: &str = "SESSIONS.md";
 
@@ -113,12 +117,18 @@ pub fn lay_out(home: &Path, files: &[File]) -> io::Result<Outcome> {
             }
         }
     }
-    // `.claude/` holds cc-moss's files and nothing else: a settings.local.json,
-    // an extra hook or skill Moss (or anyone) put there goes.
+    // `.claude/` holds cc-moss's files and nothing else: an extra hook or
+    // skill Moss (or anyone) put there goes. The local settings stay when
+    // they are a plain file: the daemon writes them (the provider and the
+    // bypass answer) right after, and keeps the last good copy when the
+    // user's settings can't be read.
+    let local = std::fs::symlink_metadata(home.join(OWN_DIR).join(LOCAL_SETTINGS))
+        .is_ok_and(|m| m.file_type().is_file());
     let keep: Vec<&Path> = files
         .iter()
         .filter(|f| f.kind == Kind::Managed)
         .filter_map(|f| Path::new(f.path).strip_prefix(OWN_DIR).ok())
+        .chain(local.then_some(Path::new(LOCAL_SETTINGS)))
         .collect();
     let own = home.join(OWN_DIR);
     if is_real_dir(&own) {
@@ -674,13 +684,23 @@ mod tests {
         std::fs::write(home.join(".claude/hooks/evil.sh"), "x").unwrap();
         std::os::unix::fs::symlink("/", home.join(".claude/agents")).unwrap();
         let out = lay_out(&home, &files("1")).unwrap();
-        assert_eq!(out.removed.len(), 3, "{out:?}");
-        let left: Vec<_> = std::fs::read_dir(home.join(".claude"))
+        assert_eq!(out.removed.len(), 2, "{out:?}");
+        let mut left: Vec<_> = std::fs::read_dir(home.join(".claude"))
             .unwrap()
             .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
             .collect();
-        assert_eq!(left, ["settings.json"]);
+        left.sort();
+        // The daemon's local settings stay (F59: the bypass answer is there).
+        assert_eq!(left, ["settings.json", "settings.local.json"]);
         assert!(std::path::Path::new("/").exists(), "only the link went");
+        // A link in their place goes, and nothing it points at.
+        let outside = dir.path().join("outside.json");
+        std::fs::write(&outside, "{}").unwrap();
+        std::fs::remove_file(home.join(".claude/settings.local.json")).unwrap();
+        std::os::unix::fs::symlink(&outside, home.join(".claude/settings.local.json")).unwrap();
+        let out = lay_out(&home, &files("1")).unwrap();
+        assert_eq!(out.removed.len(), 1, "{out:?}");
+        assert!(outside.exists());
     }
 
     fn slot(name: &str, status: Status, role: Option<&str>, at: i64) -> Slot {

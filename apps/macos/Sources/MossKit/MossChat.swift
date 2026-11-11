@@ -12,6 +12,8 @@ public enum MossActivity: String, CaseIterable, Equatable, Sendable {
     case thinking
     /// Stuck on a confirm prompt in its terminal.
     case waiting
+    /// Claude Code waits on a choice before Moss can be talked to (F59).
+    case blocked
     /// Switched on but not running (restarting, or the daemon is down).
     case offline
     /// Switched off.
@@ -48,6 +50,7 @@ extension MossStatus {
             }
         case .thinking: t("Thinking…", "正在想…")
         case .waiting: t("Waiting for your OK, check the terminal", "在等你确认，去终端看看")
+        case .blocked: t("Stopped on a question in its window", "停在它窗口里的一个确认框上")
         case .offline: offlineReason(lang: lang)
         case .off: t("Off · turn it on in Settings", "已关闭 · 去设置里打开")
         }
@@ -276,8 +279,8 @@ public struct MossAction: Identifiable, Equatable, Sendable {
                    texts: ("Which sessions are waiting on me? Most urgent first.", "现在哪些会话在等我？按急的先说。")),
         MossAction(id: "stuck", symbol: "exclamationmark.triangle",
                    titles: ("What's stuck", "谁卡住了"),
-                   details: ("Ones that dropped or stopped moving", "断了或者停着不动的"),
-                   texts: ("Which sessions dropped or got stuck, and where?", "有哪些会话断了或者卡住了？各自卡在哪？")),
+                   details: ("Ones that stopped or got stuck", "断了或者停着不动的"),
+                   texts: ("Which sessions stopped or got stuck, and where?", "有哪些会话断了或者卡住了？各自卡在哪？")),
         MossAction(id: "today", symbol: "checklist",
                    titles: ("What got done today", "今天做了什么"),
                    details: ("What each session finished", "各会话做完的事"),
@@ -285,7 +288,7 @@ public struct MossAction: Identifiable, Equatable, Sendable {
         MossAction(id: "tidy", symbol: "wand.and.stars",
                    titles: ("Tidy up", "整理会话"),
                    details: ("Names the unnamed, clears out long-quiet ones", "补名字、清理很久没动的"),
-                   texts: ("Tidy up my sessions: name the unnamed ones, and give me options for long-dropped or long-idle ones.",
+                   texts: ("Tidy up my sessions: name the unnamed ones, and give me options for ones stopped or idle for a long time.",
                            "整理一下会话：没名字的补名字，断了很久的和闲着很久的给我选项。")),
     ]
 }

@@ -19,6 +19,11 @@ struct MossPage: View {
         VStack(spacing: 0) {
             MossStatusBar(model: model, settings: settings)
             Rectangle().fill(Theme.hairline(scheme)).frame(height: 1)
+            if let notice = desk.status?.blockedNotice() {
+                MossBlockedBanner(notice: notice) { model.openMossWindow() }
+                    .padding(.horizontal, 12)
+                    .padding(.top, 8)
+            }
             if desk.messages.isEmpty {
                 MossIntro(enabled: desk.canTalk, muted: desk.activity == .off) { model.doMoss($0) }
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -89,7 +94,7 @@ enum MossTone {
         switch activity {
         case .idle: .green
         case .thinking: Theme.brand
-        case .waiting: Theme.amber
+        case .waiting, .blocked: Theme.amber
         case .offline: Theme.red
         case .off, nil: Color.secondary
         }
@@ -159,6 +164,43 @@ private struct MossStatusBar: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 7)
         .frame(minHeight: 50)
+        .accessibilityElement(children: .contain)
+    }
+}
+
+/// Moss stopped on a choice in its window (F59): where, why, and a way to
+/// its window. cc-moss never answers it for you.
+private struct MossBlockedBanner: View {
+    let notice: MossBlockedNotice
+    let open: () -> Void
+    @Environment(\.colorScheme) private var scheme
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 10) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(scheme == .dark ? 0.22 : 0.12))
+                Image(systemName: "rectangle.and.hand.point.up.left")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 24, height: 24)
+            .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(notice.title)
+                    .font(.system(size: 12.5, weight: .medium))
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(notice.detail)
+                    .font(.system(size: 11.5))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                SoftButton(title: notice.button, icon: "terminal", prominent: true, action: open)
+                    .padding(.top, 5)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.secondary.opacity(scheme == .dark ? 0.12 : 0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.secondary.opacity(0.18)))
         .accessibilityElement(children: .contain)
     }
 }
@@ -536,8 +578,7 @@ private struct MossMessageView: View {
         case .sending:
             note(L.t("Sending…", "发送中…"))
         case .queued:
-            // Queued with Moss free means it's being handed over right now.
-            note(model.mossDesk.activity == .idle ? L.t("Sending…", "发送中…") : L.t("In line", "排队中"))
+            note(model.mossDesk.status?.queuedLabel() ?? L.t("In line", "排队中"))
         case .failed:
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.circle.fill")

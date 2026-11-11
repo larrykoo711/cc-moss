@@ -491,6 +491,12 @@ const TASKS = [
   {id:'T2.17', t:'旧会话来源选择', repo:'cc-moss', dep:'T2.15,T2.16', st:'done', sdd:'—', ac:'typed来源错误、单次选择、零隐式授权', steps:[]},
   {id:'T2.18', t:'恢复选择布局重整', repo:'cc-moss', dep:'T2.17', st:'done', sdd:'—', ac:'单标题、轻量选择、相邻取消与唯一找回', steps:[]},
   {id:'T2.19', t:'原来源优先与异常更换', repo:'cc-moss', dep:'T2.18', st:'done', sdd:'—', ac:'有效原源直接恢复，灰路径，异常才更换', steps:[]},
+  {id:'T2.20', t:'Moss 跳过警告写本地级', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'隔离环境真 Claude Code 不出警告框', steps:[]},
+  {id:'T2.21', t:'Moss 卡住如实报告', repo:'cc-moss', dep:'T2.20', st:'done', sdd:'—', ac:'窗格有确认框时 status 报 blocked、页面给打开窗口', steps:[]},
+  {id:'T2.22', t:'收件箱优先与去旧', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'你的先送、动态合并过期带时间、体检不重复', steps:[]},
+  {id:'T2.23', t:'同名自动加编号', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'分叉行得 -2，补名不改回', steps:[]},
+  {id:'T2.24', t:'没说过话的会话退出即关', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'三条退出路径与对账都关掉，有对话的不受影响', steps:[]},
+  {id:'T2.25', t:'信任框默认 No 也选 Yes', repo:'cc-moss', dep:'T2.21', st:'done', sdd:'—', ac:'选中 No 时先移到 Yes 核对再回车，处理不了报卡住', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -498,7 +504,7 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
-  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19']},
+  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19','T2.20','T2.21','T2.22','T2.23','T2.24','T2.25']},
   {k:'P3', name:'Moss 派活', ids:['T3.1']},
   {k:'P4', name:'Slack 与路由', ids:['T4.1','T4.2']},
 ];

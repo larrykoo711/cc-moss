@@ -205,6 +205,45 @@ fn a_background_task_notification_opens_a_turn() {
     assert_eq!(turn_open(f.path()), Some(true));
 }
 
+/// Claude Code 2.1.319 "compacted while idle": a boundary and a summary
+/// written as the user's, with nobody's turn after it (F66).
+fn compacted() -> [String; 3] {
+    [
+        rec(serde_json::json!({"type": "system", "subtype": "compact_boundary", "isMeta": false})),
+        rec(
+            serde_json::json!({"type": "user", "isCompactSummary": true, "isVisibleInTranscriptOnly": true, "message": {"role": "user", "content": "This session is being continued from a previous conversation that ran out of context."}}),
+        ),
+        rec(serde_json::json!({"type": "system", "subtype": "informational", "isMeta": false})),
+    ]
+}
+
+#[test]
+fn compaction_while_idle_does_not_open_a_turn() {
+    let [boundary, summary, note] = compacted();
+    let f = file_with(&[
+        assistant("end_turn"),
+        rec(serde_json::json!({"type": "system", "subtype": "turn_duration"})),
+        boundary,
+        summary,
+        note,
+        rec(serde_json::json!({"type": "pr-link"})),
+    ]);
+    assert_eq!(turn_open(f.path()), Some(false));
+}
+
+#[test]
+fn compaction_in_the_middle_of_a_turn_keeps_it_open() {
+    let [boundary, summary, note] = compacted();
+    let f = file_with(&[
+        rec(serde_json::json!({"type": "user", "message": {"content": "deploy it"}})),
+        assistant("tool_use"),
+        boundary,
+        summary,
+        note,
+    ]);
+    assert_eq!(turn_open(f.path()), Some(true));
+}
+
 #[test]
 fn a_final_answer_ends_the_turn_before_the_summary_lands() {
     let f = file_with(&[assistant("tool_use"), assistant("end_turn")]);

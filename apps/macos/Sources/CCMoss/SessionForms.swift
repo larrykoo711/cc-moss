@@ -268,7 +268,7 @@ extension AppModel {
         let text = switch why {
         case .notInTmux where movable: L.t("Not in tmux", "不在 tmux 里")
         case .notInTmux: L.t("Not in tmux, so it can't be typed into from here", "不在 tmux 里，没法从这里打字")
-        case .dropped: L.t("Dropped; bring it back first", "断了，先找回")
+        case .dropped: L.t("Stopped; bring it back first", "断了，先找回")
         }
         showRowNote(id, text: text, adopt: movable)
     }

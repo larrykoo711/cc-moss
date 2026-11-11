@@ -50,7 +50,7 @@ struct NavRail: View {
         // Moss still shows, quietly, here.
         switch model.mossDesk.activity {
         case .thinking: return .busy
-        case .offline: return .trouble
+        case .offline, .blocked: return .trouble
         case .off: return .off
         default: return nil
         }

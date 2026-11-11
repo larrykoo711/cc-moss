@@ -7,7 +7,7 @@ use std::io::Write;
 use std::path::Path;
 use std::process::{Output, Stdio};
 
-use common::{bin, dead_pid, ls_json, start_json};
+use common::{bin, dead_pid, ls_json, said, start_json};
 
 /// A SessionStart from Moss's Claude Code (`CC_MOSS_ROLE=moss` and the
 /// session id the daemon gave it), or from an ordinary session.
@@ -55,6 +55,7 @@ fn moss_reads_sessions_but_changes_none() {
     let dir = tempfile::tempdir().unwrap();
     let state = dir.path().join("state");
     start(&state, "work-0000-1111", "work", false);
+    said(&state, "work-0000-1111", None, Some(dead_pid()));
     let as_moss = |args: &[&str]| {
         bin()
             .env("CC_MOSS_STATE_DIR", &state)

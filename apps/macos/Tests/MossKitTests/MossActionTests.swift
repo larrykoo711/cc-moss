@@ -37,7 +37,7 @@ import Testing
         let tidy = try #require(MossAction.all.first { $0.id == "tidy" })
         #expect(tidy.title(.zh) == "整理会话" && tidy.title(.en) == "Tidy up")
         #expect(tidy.text(.zh) == "整理一下会话：没名字的补名字，断了很久的和闲着很久的给我选项。")
-        #expect(tidy.text(.en) == "Tidy up my sessions: name the unnamed ones, and give me options for long-dropped or long-idle ones.")
+        #expect(tidy.text(.en) == "Tidy up my sessions: name the unnamed ones, and give me options for ones stopped or idle for a long time.")
         #expect(tidy.detail(.zh) == "补名字、清理很久没动的")
     }
 

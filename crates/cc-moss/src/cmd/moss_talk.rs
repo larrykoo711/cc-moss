@@ -205,6 +205,9 @@ pub struct Talk {
     quiet: std::collections::HashSet<String>,
     /// Per news line (id): what it said of each session (slot id → state).
     told: std::collections::HashMap<String, std::collections::BTreeMap<String, String>>,
+    /// Claude Code shows a choice in place of its input box (F59): nothing
+    /// is typed in, so no key ever lands on that choice.
+    pub blocked: bool,
 }
 
 /// Whether a change is still so: a session still dropped. Finished turns
@@ -250,6 +253,7 @@ impl Talk {
             compacting: None,
             quiet: Default::default(),
             told: Default::default(),
+            blocked: false,
         }
     }
 
@@ -268,6 +272,7 @@ impl Talk {
     /// At daemon start: your messages a daemon before this one sent and
     /// never saw answered get their "received".
     pub fn recover(&self, log: &dyn Fn(&str)) {
+        self.mark_legacy_checkups(log);
         for id in chat::unanswered(&self.home) {
             let sent = InFlight {
                 id,
@@ -281,6 +286,33 @@ impl Talk {
                 "the daemon restarted before the reply",
                 log,
             );
+        }
+    }
+
+    /// Checkup requests a cc-moss before 0.3.10 queued carry no `kind`:
+    /// known by their text (either language, with or without the brief),
+    /// they are marked as checkups in place, keeping their id and so their
+    /// place in line.
+    fn mark_legacy_checkups(&self, log: &dyn Fn(&str)) {
+        let texts: Vec<String> = [(false, false), (false, true), (true, false), (true, true)]
+            .iter()
+            .map(|(zh, brief)| super::checkup::daily_request(*zh, *brief))
+            .collect();
+        for (path, message) in inbox::waiting(&self.home) {
+            let Some(message) = message.filter(|m| m.is_news() && texts.contains(&m.text)) else {
+                continue;
+            };
+            let marked = inbox::Message {
+                kind: Some(inbox::KIND_CHECKUP.into()),
+                ..message
+            };
+            let done =
+                inbox::take(&self.home, &path).and_then(|()| inbox::put(&self.home, &marked));
+            if let Err(e) = done {
+                log(&format!(
+                    "moss: error: marking an older checkup request: {e}"
+                ));
+            }
         }
     }
 
@@ -343,6 +375,9 @@ impl Talk {
             return;
         }
         self.next_inbox = now + INBOX_EVERY;
+        if self.blocked {
+            return;
+        }
         // The inbox is a real folder, never a link elsewhere.
         if moss_core::moss::dir::Dir::open(&self.home, "inbox").is_err()
             || inbox::count(&self.home) == 0
@@ -374,6 +409,15 @@ impl Talk {
         }
         let outcomes = self.courier.step(&self.home, &mut pane, turn, now_ms);
         self.show_input_busy(self.courier.input_busy());
+        let expired = outcomes
+            .iter()
+            .filter(|o| matches!(o, Outcome::Expired { .. }))
+            .count();
+        if expired > 0 {
+            log(&format!(
+                "moss: {expired} session update(s) older than 6 hours dropped, not told"
+            ));
+        }
         for outcome in outcomes {
             match outcome {
                 Outcome::Sent(sent) => {
@@ -390,6 +434,7 @@ impl Talk {
                     self.claim = Some((sent, claim));
                 }
                 Outcome::Cleared => log("moss: cleared stale input"),
+                Outcome::Expired { .. } => {}
                 Outcome::Failed { id, from, error } => {
                     log(&format!("moss: error: message {id} did not go in: {error}"));
                     if from == chat::FROM_YOU {
@@ -837,14 +882,31 @@ impl Talk {
     /// A request of cc-moss's own for Moss (the daily checkup): queued like
     /// session news, so it is not shown as something the user said. True
     /// when it went in.
-    pub fn ask(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) -> bool {
-        self.tell(text, now_ms, log).is_some()
+    /// One already waiting (Moss stuck for days) counts: no second one goes
+    /// in (F60).
+    pub fn ask_checkup(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) -> bool {
+        let waiting = inbox::waiting(&self.home)
+            .into_iter()
+            .any(|(_, m)| m.is_some_and(|m| m.kind.as_deref() == Some(inbox::KIND_CHECKUP)));
+        if waiting {
+            return true;
+        }
+        let message = inbox::Message {
+            kind: Some(inbox::KIND_CHECKUP.into()),
+            ..self.event(text, now_ms)
+        };
+        self.tell(message, log).is_some()
     }
 
     /// Session news for Moss. Its answer to news that is only finished
     /// turns is kept quiet whatever it says: nothing there for the user.
     fn tell_news(&mut self, line: &str, told: &[Change], now_ms: i64, log: &dyn Fn(&str)) {
-        if let Some(id) = self.tell(line, now_ms, log) {
+        // Older news about the same session and change is taken over (F60).
+        let message = inbox::Message {
+            about: digest::told(told, line.starts_with("[动态]")),
+            ..self.event(line, now_ms)
+        };
+        if let Some(id) = self.tell(message, log) {
             // What the news said of each session, for the cards of Moss's
             // answer to it.
             if self.told.len() > 100 {
@@ -865,20 +927,30 @@ impl Talk {
         }
     }
 
-    fn tell(&self, text: &str, now_ms: i64, log: &dyn Fn(&str)) -> Option<String> {
-        let message = inbox::Message {
+    /// A message of cc-moss's own for Moss, made now.
+    fn event(&self, text: &str, now_ms: i64) -> inbox::Message {
+        inbox::Message {
             schema: 1,
             id: inbox::new_id(now_ms),
             at: rfc3339(now_ms),
             from: chat::FROM_EVENTS.to_string(),
             text: text.to_string(),
+            ..inbox::Message::default()
+        }
+    }
+
+    fn tell(&self, message: inbox::Message, log: &dyn Fn(&str)) -> Option<String> {
+        let put = if message.about.is_empty() {
+            inbox::put(&self.home, &message)
+        } else {
+            inbox::put_news(&self.home, &message, &digest::join)
         };
-        if let Err(e) = inbox::put(&self.home, &message) {
+        if let Err(e) = put {
             log(&format!("moss: error: inbox: {e}"));
             return None;
         }
         self.record(
-            &Line::message(&message.id, &message.at, chat::FROM_EVENTS, text),
+            &Line::message(&message.id, &message.at, chat::FROM_EVENTS, &message.text),
             log,
         );
         Some(message.id)
@@ -965,6 +1037,158 @@ fn ready_to_send(transcript: Option<&Path>, turn: Option<bool>) -> bool {
 mod tests {
     use super::*;
 
+    fn news(talk: &mut Talk, changes: &[(&str, digest::Kind)], now_ms: i64) {
+        let changes: Vec<Change> = changes
+            .iter()
+            .map(|(slot, kind)| Change {
+                slot_id: slot.to_string(),
+                name: slot.to_string(),
+                kind: *kind,
+            })
+            .collect();
+        let line = digest::line(&changes, false);
+        talk.tell_news(&line, &changes, now_ms, &|_| {});
+    }
+
+    fn texts(home: &Path) -> Vec<String> {
+        inbox::waiting(home)
+            .into_iter()
+            .filter_map(|(_, m)| m.map(|m| m.text))
+            .collect()
+    }
+
+    #[test]
+    fn moss_events_coalesce_per_session() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut talk = Talk::new(dir.path());
+        let home = moss::home_dir(dir.path());
+        let t = 1_794_182_400_000;
+        for i in 0..3 {
+            news(&mut talk, &[("proj-a", digest::Kind::Done)], t + i * 1_000);
+        }
+        assert_eq!(texts(&home), ["[Update] proj-a finished"]);
+        let left = inbox::waiting(&home).remove(0).1.unwrap();
+        assert_eq!(left.at_ms(), Some(t + 2_000), "the newest one stays");
+        // Another session, and another change of the same one: their own.
+        news(&mut talk, &[("proj-b", digest::Kind::Done)], t + 3_000);
+        news(
+            &mut talk,
+            &[("proj-a", digest::Kind::Disconnected)],
+            t + 4_000,
+        );
+        assert_eq!(
+            texts(&home),
+            [
+                "[Update] proj-a finished",
+                "[Update] proj-b finished",
+                "[Update] proj-a stopped"
+            ]
+        );
+        // A line about two sessions keeps the one a newer line doesn't tell.
+        news(
+            &mut talk,
+            &[
+                ("proj-c", digest::Kind::Done),
+                ("proj-d", digest::Kind::Done),
+            ],
+            t + 5_000,
+        );
+        news(&mut talk, &[("proj-c", digest::Kind::Done)], t + 6_000);
+        let all = texts(&home);
+        assert!(
+            all.contains(&"[Update] proj-d finished".to_string()),
+            "{all:?}"
+        );
+        assert_eq!(
+            all.iter().filter(|l| l.contains("proj-c")).count(),
+            1,
+            "{all:?}"
+        );
+        // Your messages are never touched.
+        say_into(&home, "proj-a finished?", t + 7_000);
+        news(&mut talk, &[("proj-a", digest::Kind::Done)], t + 8_000);
+        assert!(texts(&home).contains(&"proj-a finished?".to_string()));
+    }
+
+    fn say_into(home: &Path, text: &str, at_ms: i64) {
+        inbox::put(
+            home,
+            &inbox::Message {
+                schema: 1,
+                id: inbox::new_id(at_ms),
+                at: "t".into(),
+                from: chat::FROM_YOU.into(),
+                text: text.into(),
+                ..inbox::Message::default()
+            },
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn daily_checkup_not_doubled() {
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        let home = moss::home_dir(dir.path());
+        let t = 1_794_182_400_000;
+        assert!(talk.ask_checkup("Daily checkup", t, &|_| {}));
+        // Moss is stuck for days: the next days' checkups find it waiting.
+        assert!(talk.ask_checkup("Daily checkup", t + DAY, &|_| {}));
+        assert!(talk.ask_checkup("Daily checkup", t + 2 * DAY, &|_| {}));
+        let all = inbox::waiting(&home);
+        assert_eq!(all.len(), 1, "{all:?}");
+        assert_eq!(
+            all[0].1.as_ref().unwrap().kind.as_deref(),
+            Some(inbox::KIND_CHECKUP)
+        );
+        // Sent: the next one is asked for again.
+        inbox::take(&home, &all[0].0).unwrap();
+        assert!(talk.ask_checkup("Daily checkup", t + 3 * DAY, &|_| {}));
+        assert_eq!(inbox::count(&home), 1);
+    }
+
+    const DAY: i64 = 24 * 60 * 60 * 1000;
+
+    /// A checkup request queued by a cc-moss before 0.3.10 (no `kind`):
+    /// known by its text, so it is not asked for twice and never expires as
+    /// a session update.
+    #[test]
+    fn legacy_checkup_is_kept_as_checkup() {
+        let dir = tempfile::tempdir().unwrap();
+        let talk = Talk::new(dir.path());
+        let home = moss::home_dir(dir.path());
+        let t = now_ms() - 8 * 60 * 60 * 1000;
+        let request = super::super::checkup::daily_request(false, false);
+        say_into(&home, "a message of mine", t);
+        inbox::put(
+            &home,
+            &inbox::Message {
+                schema: 1,
+                id: inbox::new_id(t + 1),
+                at: "t".into(),
+                from: chat::FROM_EVENTS.into(),
+                text: request.clone(),
+                ..inbox::Message::default()
+            },
+        )
+        .unwrap();
+        talk.recover(&|_| {});
+        let all: Vec<inbox::Message> = inbox::waiting(&home)
+            .into_iter()
+            .filter_map(|(_, m)| m)
+            .collect();
+        let checkup = all.iter().find(|m| m.text == request).expect("still there");
+        assert_eq!(checkup.kind.as_deref(), Some(inbox::KIND_CHECKUP));
+        assert!(!checkup.is_news(), "never dropped as a stale update");
+        assert_eq!(checkup.at_ms(), Some(t + 1), "same place in line");
+        assert!(talk.ask_checkup(&request, now_ms(), &|_| {}));
+        assert_eq!(inbox::count(&home), 2, "not asked for twice");
+        // Your messages are left alone.
+        assert!(all
+            .iter()
+            .any(|m| m.text == "a message of mine" && m.kind.is_none()));
+    }
+
     fn line(id: &str, from: &str) -> Line {
         Line::message(id, "t", from, "x")
     }
@@ -987,11 +1211,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let talk = Talk::new(dir.path());
         std::fs::create_dir_all(&talk.home).unwrap();
-        assert!(talk.ask("checkup", 1, &|_| {}), "it went in");
-        // An inbox it can't write to.
+        assert!(talk.ask_checkup("checkup", 1, &|_| {}), "it went in");
+        // Handed to Moss; then an inbox it can't write to.
+        let (sent, _) = inbox::waiting(&talk.home).remove(0);
+        inbox::take(&talk.home, &sent).unwrap();
         let inbox = talk.home.join("inbox");
         std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o500)).unwrap();
-        let went = talk.ask("checkup", 2, &|_| {});
+        let went = talk.ask_checkup("checkup", 2, &|_| {});
         std::fs::set_permissions(&inbox, std::fs::Permissions::from_mode(0o700)).unwrap();
         assert!(!went);
     }
@@ -1019,6 +1245,12 @@ mod tests {
                 now_ms: 1,
             };
             reg.apply(&start, &ctx).unwrap();
+            // A name already taken comes in numbered; only a rename (as
+            // Moss's) gives two open sessions the same one.
+            let slot = reg.slot_for_event(&format!("a1b2c3d{i}-0000"), &ctx);
+            if let Some(slot) = slot.unwrap().filter(|s| s.name.as_deref() != Some(*name)) {
+                reg.set_name(&slot.slot_id, name).unwrap();
+            }
         }
         let slots = reg.slots().unwrap();
         let ids = names

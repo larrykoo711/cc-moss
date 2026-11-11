@@ -478,6 +478,9 @@ enum MossCommand {
     Start,
     /// Switch Moss off and end it; it stays off until `start`.
     Stop,
+    /// Open Moss's own window (its tmux session) in this terminal, to see
+    /// what it shows or answer what it asks.
+    Attach,
     /// Whether Moss is on and running, since when, and how often it restarted.
     Status {
         /// Machine-readable output (schema 1).
@@ -828,6 +831,7 @@ fn main() -> std::process::ExitCode {
         Command::Moss { action } => report(match action {
             MossCommand::Start => cmd::moss::start(),
             MossCommand::Stop => cmd::moss::stop(),
+            MossCommand::Attach => cmd::moss::attach(),
             MossCommand::Status { json } => cmd::moss::print_status(json),
             MossCommand::Say { json, text } => cmd::moss::say(json, &text.join(" ")),
             MossCommand::Chat { json, limit } => cmd::moss::chat(json, limit),

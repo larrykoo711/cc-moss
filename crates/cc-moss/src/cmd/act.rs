@@ -814,10 +814,7 @@ fn sync_name(registry: &Registry, slot: &Slot) -> Result<String> {
         .as_deref()
         .and_then(|p| moss_core::transcript::last_custom_title(Path::new(p)))
     {
-        if slot.name.as_deref() != Some(name.as_str()) {
-            registry.set_name(&slot.slot_id, &name)?;
-            slot.name = Some(name);
-        }
+        slot.name = registry.take_name(&slot.slot_id, &name)?;
     }
     super::hook::sync_tmux_name_of(registry, &slot)?;
     Ok(match &slot.name {

@@ -26,11 +26,13 @@ public struct MossStatus: Equatable, Sendable {
     public var account: MossAccount
     /// Moss's folder (its memory, skills and settings); nil from an older cc-moss.
     public var home: String?
+    /// What Moss is stuck on, while `activity` is `.blocked`.
+    public var blocked: MossBlocked?
 
     public init(enabled: Bool, running: Bool, since: Date? = nil, restarts: Int = 0, sessionId: String? = nil,
                 daemonRunning: Bool = true, lastError: String? = nil, activity: MossActivity? = nil,
                 queued: Int = 0, lastReplyAt: Date? = nil, inputBusy: Bool = false, account: MossAccount = .unknown,
-                home: String? = nil) {
+                home: String? = nil, blocked: MossBlocked? = nil) {
         self.enabled = enabled
         self.running = running
         self.since = since
@@ -44,6 +46,7 @@ public struct MossStatus: Equatable, Sendable {
         self.inputBusy = inputBusy
         self.account = account
         self.home = home
+        self.blocked = blocked
     }
 
     private struct Wire: Decodable {
@@ -61,6 +64,12 @@ public struct MossStatus: Equatable, Sendable {
         var input_busy: Bool?
         var account: String?
         var home: String?
+        var blocked: BlockedWire?
+    }
+
+    private struct BlockedWire: Decodable {
+        var kind: String?
+        var since: String?
     }
 
     public static func decode(_ data: Data) throws -> MossStatus {
@@ -81,7 +90,11 @@ public struct MossStatus: Equatable, Sendable {
                           lastReplyAt: wire.last_reply_at.flatMap(parseTimestamp),
                           inputBusy: wire.input_busy ?? false,
                           account: wire.account.flatMap(MossAccount.init(rawValue:)) ?? .unknown,
-                          home: wire.home.flatMap { $0.isEmpty ? nil : $0 })
+                          home: wire.home.flatMap { $0.isEmpty ? nil : $0 },
+                          blocked: wire.blocked.map {
+                              MossBlocked(kind: $0.kind.flatMap(MossBlocked.Kind.init(rawValue:)) ?? .unknownDialog,
+                                          since: $0.since.flatMap(parseTimestamp))
+                          })
     }
 
     /// `Moss · running for 2 hours (restarted once)` / `Moss · off`: the

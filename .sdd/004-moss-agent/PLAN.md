@@ -162,6 +162,30 @@ R1 ◄── 全部
 - 目标：文字状态、行内目标模型说明、一键应用、通用重开菜单；F43。
 - 依赖：T2.8 契约冻结；先 TDD，再离屏明暗验收。
 
+### T2.20 Moss 的跳过警告写进本地级设置（F59a）
+- 目标：Moss 启动不再停在 bypass 警告框；键写在 Claude Code 认的本地级设置里
+- 依赖：—；设计 `notes/round-0310-design.md`
+
+### T2.21 Moss 卡在确认框时如实报告（F59b）
+- 目标：识别 Moss 窗格里的确认框，`moss status` 报 `blocked` 与原因，Moss 页不再无限「发送中…」，给「打开 Moss 的窗口」
+- 依赖：T2.20
+
+### T2.22 收件箱：你的消息先送、动态去旧并带时间（F60、F63）
+- 目标：你的消息优先；同会话动态合并、超过 6 小时丢弃、超过 15 分钟带时间；已有待送体检时不再加
+- 依赖：—
+
+### T2.23 同名会话自动加编号（F61）
+- 目标：分叉或后台接手产生的新会话与开着的会话重名时加 `-2`、`-3`，补名不改回
+- 依赖：—
+
+### T2.24 没说过话就退出的会话直接关掉（F62）
+- 目标：各条退出路径统一关掉从没说过话的会话；对账关掉现有的这类行
+- 依赖：—
+
+### T2.25 信任此文件夹默认选 No 时也替 Moss 选 Yes（F64）
+- 目标：信任框不管默认选哪项都替 Moss 选 Yes 再确认，No 被选中时绝不按回车；处理不了就报卡住
+- 依赖：T2.21
+
 ## Kanban
 
 | Task | 仓 | 依赖 | 状态 | SDD | 验收锚点 |
@@ -189,6 +213,12 @@ R1 ◄── 全部
 | **T2.17** 旧会话来源选择 | cc-moss | T2.15,T2.16 | ✅ Done | done/T2.17-restore-source-choice.spec.md | typed来源错误、单次选择、零隐式授权 |
 | **T2.18** 恢复选择布局重整 | cc-moss | T2.17 | ✅ Done | done/T2.18-restore-choice-layout.spec.md | 单标题、轻量选择、相邻取消与唯一找回 |
 | **T2.19** 原来源优先与异常更换 | cc-moss | T2.18 | ✅ Done | done/T2.19-source-first-restore.spec.md | 有效原源直接恢复，灰路径，异常才更换 |
+| **T2.20** Moss 跳过警告写本地级 | cc-moss | — | ✅ Done | done/T2.20-moss-bypass-local.spec.md | 隔离环境真 Claude Code 不出警告框 |
+| **T2.21** Moss 卡住如实报告 | cc-moss | T2.20 | ✅ Done | done/T2.21-moss-blocked.spec.md | 窗格有确认框时 status 报 blocked、页面给打开窗口 |
+| **T2.22** 收件箱优先与去旧 | cc-moss | — | ✅ Done | done/T2.22-inbox-order.spec.md | 你的先送、动态合并过期带时间、体检不重复 |
+| **T2.23** 同名自动加编号 | cc-moss | — | ✅ Done | done/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
+| **T2.25** 信任框默认 No 也选 Yes | cc-moss | T2.21 | ✅ Done | done/T2.25-trust-prompt-yes.spec.md | 选中 No 时先移到 Yes 核对再回车，处理不了报卡住 |
+| **T2.24** 没说过话的会话退出即关 | cc-moss | — | ✅ Done | done/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -322,6 +352,14 @@ R1 ◄── 全部
 | F56 | Claude Code 自动升级后旧版本进程上的会话结束不了、归档失败：身份校验认 `versions` 目录里的较早版本 | ✅ 已修 · 0.3.6 |
 | F57 | 同一段对话两行、名字状态不一致，改名改到另一行：`/resume` 把会话交给 Claude Code 后台进程，钩子被当成 `claude -p` 丢掉 → 识别后台会话，`attach` 走 `claude attach` | ✅ 已修 · 0.3.7 |
 | F58 | 没有 UTF-8 区域设置时守护进程与 App 把中文会话名读成 `_`：读 tmux 统一 `tmux -u` | ✅ 已修 · 0.3.7 |
+| F59 | Moss 卡在 bypass 警告框三天、状态报空闲、消息一直「发送中…」：跳过键写在项目级（无效）→ 写本地级、卡住如实报告（T2.20–T2.21） | 🔧 0.3.10 |
+| F60 | Moss 积压时你的消息排在系统动态后面，旧动态不带时间被当成刚发生（含 F63「闲置天数不更新」）（T2.22） | 🔧 0.3.10 |
+| F61 | Claude Code 后台分叉出的新会话继承原名，面板两行同名（F41、F57 同族）（T2.23） | 🔧 0.3.10 |
+| F62 | 没说过话就退出的会话被列成「断了」，找回报 empty（T2.24） | 🔧 0.3.10 |
+| F64 | Claude Code 2.1.319 的「信任此文件夹」默认选中 No，新机器上 Moss 会停在这个框上且不报卡住（T2.20 探针发现，用户要求默认替它选 Yes）（T2.25） | 🔧 0.3.10 |
+| F65 | 英文界面与 Moss 动态用「dropped」，不是固定词「stopped」；演示数据有行话「reinstalled the hooks」→ 全部改为 stopped、官网四张 Moss 截图按演示数据重出（9858084 / 0453479） | 🔧 0.3.10 |
+| F66 | 闲置压缩（Claude Code 2.1.319「Compacted while idle」）后会话被当成在忙，排队的重开一直等一轮结束：压缩摘要记成你的话 → `turn_open` 跳过 `isCompactSummary` | 🔧 0.3.10 |
+| F67 | 重启后才接手的会话（对话记录最后写于开机前、进程正在跑）被当成断了；配上 F62 会被直接关掉。CI 上 `ls_cli::adopted_sessions_keep_their_real_last_activity` 双平台必挂（runner 刚开机）→ 有启动时间时由进程本身判，开机时间只在没有启动时间时用 | 🔧 0.3.10 |
 
 ## 推进节奏
 - 第一波（并行）：T1.1 探针、T1.2 bypass、T2.1 守护进程
@@ -437,3 +475,24 @@ R1 ◄── 全部
 - E2E: 2026-11-06 用户本机试用 F1–F3 与 F44 候选后「测试了没问题，合并发 0.3.8」；0.3.9 为收尾评审修补，用户「复核没问题就合并发 0.3.9」，装机后核对真实索引（schema 3、守护进程重建、`!` 记录 0、权限 600、find 正常）。设备升级交给各设备在 App 里自己选择（用户 2026-11-06）。
 - DISTILL: (1) 给人批准看的预览和存下来供搜索的文字分开脱敏：预览只遮前缀后的令牌，让整条命令可见；宽规则只用在存档，而且只遮一个干净结尾的密钥字符串，不吞表达式。(2) 多进程写同一个 SQLite：写事务一律 IMMEDIATE，「读到哪」在事务里读，单次持锁有上限；读方等锁的时间不超过它的时限，等不到就如实报「没完成」。(3) 本地缓存类数据库带 schema 版本，变了就重建；跨版本升级期间可能有旧写入方，由新守护进程按标记再重建一次。(4) FTS5 外部内容表删除只写墓碑，要彻底删须开 `secure-delete`，测试查索引碎片而非原文串。(5) 测试夹具与被测进程共写一个文件时整行一次写入。(6) 性能测试：阶数问题用规模比例测，常数问题用宽余量固定上限，取多次最快。(7) 修补本身要再过一轮独立评审：本轮第二轮复核抓到 3 处修法引入的回归。
 - REPORT: 完成 = F1–F3、F44（0.3.8）及其收尾修补（0.3.9）、#63 钩子竞态（`answered_in_session_closes_ask` 偶发根因）、#58 / #59 / #60、依赖 #54–#56；新独立 = 无；子任务 = 无；延后 = 面板已显示的会话占满 find 的 10 个名额（应多取再过滤）、超大索引上常用词冷查询报「没搜完」（应分组 SQL + FTS optimize）、原地改写且不变短的对话记录不重读（需文件指纹）、短查询 LIKE 对非 ASCII 不分大小写失效、`--render` 截图写真实偏好 `mossGuideSeen`、App 忽略 find 的 partial/indexing 提示、ubuntu `moss_status_json_activity` 偶发、P3 T3.1、P4 T4.1 / T4.2、R1 收口评审。
+
+## Round 0.3.10（里程碑，卡不归档）
+
+- 立项 2026-11-09：真机反馈 F59–F62（证据 `notes/round-0310-drivers.md`；F63 核实后并入 F60）。复发：F61 与 F41、F57 同族。
+- G1：设计批准 approved-by=user date=2026-11-09（「批准，开工」；A1 一律写键、卡住只报告；动态 6 小时过期；Moss 页给打开窗口按钮）。设计 `notes/round-0310-design.md`。
+- 实施分支 `feature/004-moss-stuck`（工作树 `../cc-moss-004r`，基于 main `3c239f3`）。
+- G2：编排双写一致（`gen_kanban.py --check` OK，32 任务）2026-11-09。
+- G3：T2.20–T2.24 spec 过 `sdd-gate.sh`，移入 `todo/`（2026-11-09）。
+- S4 两线并行：A 线（本工作树）T2.20–T2.22，B 线（`../cc-moss-004r-b`，分支 `feature/004-moss-stuck-names`）T2.23–T2.24。
+- A 线完成（0f60d15 / f4629ad / 0abc2d1 / 73a691d）：Rust 1199 通过 / 0 失败 / 7 ignored，Swift 1000 通过；探针（Claude Code 2.1.319）：键只在项目级时 20 秒内出警告，放本地级不出（`reports/moss-bypass-probe.md`）。controller 抽查：变异「去掉你的消息优先排序」→ `inbox_yours_first` 红；「卡住仍报 idle」→ `moss_status_reports_blocked` 红；还原后树干净。
+- A 线偏离（controller 认可）：(1) `lay_out` 原先会删 `settings.local.json`，改为保留普通文件、链接照删（spec Scope 的「现有行为」前提有误）；(2) 新增 `cc-moss moss attach`（Moss 卡在启动时常不在登记表里，App 的「在终端打开」用不了）；(3) 动态时间写成「[动态]（3 小时前）…」，保留 Moss 认动态用的开头；(4) 登录界面匹配未在本机实抓。
+- 新发现：Claude Code 2.1.319 的「信任此文件夹」默认选中「No, exit」，`reply::trust_prompt` 要求选中 Yes，新机器上 Moss 会停在这个框上且不报卡住（F59 同族），用户 2026-11-09 裁决「一起修，默认替它选 Yes」→ T2.25（G3 过 gate 后派给 A 线）。
+- T2.25 完成（53df8fb）：探针实测 2.1.319 首屏选中 No、框刚出现时第一下 Down 被吞、第二下才到 Yes；只在核对选中 Yes 后按回车，最多 3 次，之后报 `blocked.kind: trust_folder`。Rust 1203 / 0 失败 / 8 ignored，Swift 1000。用户 2026-11-09：「全部做完后合并发 0.3.10，还有 site 一起更新完发版」（站点 PR #70）。
+- A 线收尾：F65 用词与截图（9858084）、动态行与 Moss 模板（0453479，模板一版内兼容旧词）。Rust 1203 / 0 失败 / 8 ignored，Swift 1000。截图渲染命令记在 `notes/round-0310-design.md`。
+- B 线并入（62b6a90 / 07606ef，拣选后与原提交只差 CHANGELOG 冲突合并），B 工作树已回收；合并树 Rust 1210 / 0 / 8。
+- 独立评审两路（名字与静默会话 / 安全与 Moss）：无 Critical。名字去重范围过宽（用户 /rename 被编号）、无路径或读错被当没说过话等 → AMEND-1（c46f0b3：只给后台或出生带名的行编号、后台让名，新列 `yields_name` 默认 0；无记录路径、读错、斜杠与 `!` 命令、有名字都不关）；Moss 按会话而非窗格定位、attach 能开窗口、迟到的 Down 回绕到 No 等 → ee42fdb（标记在窗格、Moss 的 tmux 只留 Ctrl-b d、两次抓屏都是 Yes 才回车）。AMEND-1 测试先写代码后补，以逐项变异补证（全部变红）。
+- 过程事故：A 线一次脚本编辑锚点颠倒把 moss.rs 写成 118 MB，约 2 分钟内恢复并与 HEAD 对齐；B 线变异脚本用 mv 还原导致 mtime 变旧、cargo 沿用变异构建，误报一次红，触碰源文件后重跑全绿。
+- 公开仓：既有测试 `background_e2e` 用了私有项目名作会话标题，已换占位名（该测试 #52 起已在 main）。
+- 最终分支 Rust 1224 / 0 / 8（B 线报告），进入发版（用户 2026-11-10：「B 线提交后直接走发版」）。
+- 2026-11-11 真机：em 某会话「已排队」重开一天不执行；窗格空闲，对话记录末条是 `isCompactSummary` 的压缩摘要 → F66。经用户同意 `restart --cancel` 取消排队（窗口里 2 个后台子 agent 未受影响）。修复：`turn_state` 跳过压缩摘要，测试覆盖空闲压缩（变红后变绿）与一轮中途压缩（仍判进行中）。
+- 2026-11-11 PR #71 CI 双平台失败、本机与 Linux 容器都过：加诊断后 CI 事件显示接手即「ended process-gone silent」→ 根因 `effective_status_since` 用 last_active（取对话记录写入时间）对比开机时间，runner 刚开机即判死；main 上同样误判只显示为「断了」、测试只查「1h」所以没暴露 → F67。

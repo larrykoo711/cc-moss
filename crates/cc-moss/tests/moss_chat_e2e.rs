@@ -227,6 +227,124 @@ fn slash_command_not_allowed() {
     assert!(!heard(&w).starts_with("/login\n/login"), "{}", heard(&w));
 }
 
+/// F59: Moss stopped on Claude Code's bypass warning is reported as
+/// `blocked`, nothing is typed into the warning, and once the user answers
+/// it (in Moss's window) the message goes in.
+#[test]
+fn moss_status_reports_blocked() {
+    let w = World::new("chat-blocked");
+    let _d = Daemon(
+        moss_cmd(&w)
+            .env("CC_MOSS_CLAUDE_BIN", fixture("moss-claude"))
+            .env("CC_MOSS_FAKE_BYPASS", "1")
+            .args(["daemon", "run"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .expect("spawn cc-moss daemon run"),
+    );
+    let fifos = w.path("fifos");
+    wait_until("the warning on Moss's screen", 20, || {
+        w.tmux(&["capture-pane", "-p", "-t", "=moss:"])
+            .contains("Bypass Permissions mode")
+            .then_some(())
+    });
+    let shown = Instant::now();
+    let id = say(&w, "hello while stuck");
+    let st = wait_until("Moss to be reported blocked", 30, || {
+        let st = status(&w);
+        (st["activity"] == "blocked").then_some(st)
+    });
+    assert!(
+        shown.elapsed() >= Duration::from_secs(4),
+        "only once it stayed a while: {st}"
+    );
+    assert_eq!(st["blocked"]["kind"], "bypass_warning", "{st}");
+    assert!(
+        st["blocked"]["since"]
+            .as_str()
+            .is_some_and(|s| s.ends_with('Z')),
+        "{st}"
+    );
+    assert_eq!(st["queued"], 1, "{st}");
+    assert!(
+        log(&w).contains("waiting on a choice (bypass_warning)"),
+        "{}",
+        log(&w)
+    );
+    // Still stuck a while later, and nothing typed into the warning.
+    std::thread::sleep(Duration::from_secs(2));
+    assert_eq!(status(&w)["activity"], "blocked");
+    assert!(heard(&w).is_empty(), "{}", heard(&w));
+
+    // The user answers it in Moss's window.
+    std::fs::write(fifos.join("accepted"), "").unwrap();
+    let reply = reply_to(&w, &id);
+    assert_eq!(reply["text"], "echo: hello while stuck", "{reply}");
+    let st = wait_until("the mark to clear", 20, || {
+        let st = status(&w);
+        (st["activity"] != "blocked").then_some(st)
+    });
+    assert!(st.get("blocked").is_none(), "{st}");
+    assert!(
+        !fifos.join("dialog-keys.txt").exists(),
+        "keys reached the warning: {:?}",
+        std::fs::read_to_string(fifos.join("dialog-keys.txt"))
+    );
+}
+
+/// Moss's pane, by its mark.
+fn moss_pane(w: &World) -> Option<String> {
+    w.tmux(&["list-panes", "-a", "-F", "#{pane_id}|#{@cc-moss-role}"])
+        .lines()
+        .find_map(|l| l.strip_suffix("|moss").map(String::from))
+}
+
+/// Someone attached to Moss can only detach; a window opened in Moss's
+/// session (as tmux's own keys could) is not typed into, and once Moss's
+/// Claude Code exits that window does not keep a dead Moss alive.
+#[test]
+fn moss_ignores_panes_a_user_adds() {
+    let w = World::new("chat-panes");
+    let _d = daemon(&w);
+    moss_idle(&w);
+    // Only detach, in the tables a person reaches (copy mode's own keys
+    // stay, but no key leads there any more).
+    let keys = w.tmux(&["list-keys", "-T", "prefix"]) + &w.tmux(&["list-keys", "-T", "root"]);
+    assert_eq!(keys.lines().count(), 1, "{keys}");
+    assert!(
+        keys.contains("prefix") && keys.contains(" d ") && keys.contains("detach-client"),
+        "{keys}"
+    );
+    let first = moss_pane(&w).expect("Moss's pane is marked");
+    // A window of the user's own, made the active one, and a split.
+    w.tmux(&["new-window", "-t", "=moss:", "sleep 600"]);
+    w.tmux(&["split-window", "-t", "=moss:", "sleep 600"]);
+    assert_eq!(
+        moss_pane(&w).as_deref(),
+        Some(first.as_str()),
+        "only Moss's pane is marked"
+    );
+    let id = say(&w, "hello past the extra window");
+    assert_eq!(
+        reply_to(&w, &id)["text"],
+        "echo: hello past the extra window"
+    );
+    // Claude Code exits; the user's window stays, Moss comes back fresh.
+    let old = status(&w)["session_id"].as_str().unwrap().to_string();
+    w.tmux(&["kill-pane", "-t", &first]);
+    wait_until("a fresh Moss", 30, || {
+        let st = status(&w);
+        (st["running"] == true && st["session_id"].as_str().is_some_and(|s| s != old)).then_some(())
+    });
+    assert!(moss_pane(&w).is_some(), "the fresh Moss is marked");
+    // What was left of the old one went with it: only Moss's pane is there.
+    let panes = w.tmux(&["list-panes", "-a", "-F", "#{pane_id}"]);
+    assert_eq!(panes.lines().count(), 1, "{panes}");
+    assert!(log(&w).contains("without Moss in it"), "{}", log(&w));
+}
+
 #[test]
 fn say_gets_a_reply() {
     let w = World::new("chat-reply");
@@ -271,6 +389,8 @@ fn moss_hears_a_disconnect() {
     // An ordinary session, then its process is killed.
     w.new_session("api");
     let sid = w.session_id("api");
+    // You said something to it: one nobody spoke to just closes (F62).
+    w.first_prompt(&sid, "api");
     let pid = wait_until("the session's pid", 10, || {
         ls_json(&w.state(), true)["sessions"]
             .as_array()?
@@ -288,12 +408,12 @@ fn moss_hears_a_disconnect() {
             m["from"] == "events"
                 && m["text"]
                     .as_str()
-                    .is_some_and(|t| t.contains("api dropped"))
+                    .is_some_and(|t| t.contains("api stopped"))
         })
     });
-    assert_eq!(news["text"], "[Update] api dropped", "{news}");
+    assert_eq!(news["text"], "[Update] api stopped", "{news}");
     wait_until("Moss to hear it", 30, || {
-        heard(&w).contains("[Update] api dropped").then_some(())
+        heard(&w).contains("[Update] api stopped").then_some(())
     });
     // Its answer was silent: nothing from Moss shows for it.
     std::thread::sleep(Duration::from_millis(800));
