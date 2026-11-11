@@ -29,6 +29,49 @@ struct Check {
     fix: Option<String>,
 }
 
+/// Claude Code, found the way sessions are started (`launch::claude_bin`):
+/// `CC_MOSS_CLAUDE_BIN`, the PATH, then where its installers put it. A PATH
+/// lookup alone calls an installed `claude` missing in shells (agents,
+/// launchd, ssh commands) whose PATH lacks `~/.local/bin`.
+fn claude_check() -> Check {
+    let what = "Claude Code";
+    let pinned = std::env::var_os("CC_MOSS_CLAUDE_BIN").is_some_and(|v| !v.is_empty());
+    match super::launch::claude_bin() {
+        Err(e) => check(
+            Mark::Fail,
+            what,
+            if pinned {
+                e.to_string()
+            } else {
+                tr!("not found", "没找到").to_string()
+            },
+            Some("https://code.claude.com/docs".into()),
+        ),
+        Ok(_) if !pinned && on_path(&["claude"]) => {
+            check(Mark::Ok, what, tr!("installed", "已安装"), None)
+        }
+        Ok(path) => {
+            let shown = home_tilde(&path);
+            check(
+                Mark::Ok,
+                what,
+                tr!(format!("installed: {shown}"), format!("已安装：{shown}")),
+                None,
+            )
+        }
+    }
+}
+
+/// `path` with the home directory written as `~`.
+fn home_tilde(path: &str) -> String {
+    match std::env::var("HOME") {
+        Ok(home) if !home.is_empty() && path.starts_with(&format!("{home}/")) => {
+            format!("~{}", &path[home.len()..])
+        }
+        _ => path.to_string(),
+    }
+}
+
 fn check(mark: Mark, what: &str, detail: impl Into<String>, fix: Option<String>) -> Check {
     Check {
         mark,
@@ -294,16 +337,7 @@ fn checks() -> Result<Vec<Check>> {
     out.extend(provider_check());
 
     // Claude Code and the hooks that register its sessions.
-    out.push(if on_path(&["claude"]) {
-        check(Mark::Ok, "Claude Code", tr!("installed", "已安装"), None)
-    } else {
-        check(
-            Mark::Fail,
-            "Claude Code",
-            tr!("not found", "没找到"),
-            Some("https://code.claude.com/docs".into()),
-        )
-    });
+    out.push(claude_check());
     out.push(match setup::hook_status() {
         Ok(setup::HookStatus::Current) => check(
             Mark::Ok,

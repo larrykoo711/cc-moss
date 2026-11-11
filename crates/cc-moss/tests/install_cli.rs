@@ -68,6 +68,8 @@ impl Home {
             .env("CC_MOSS_PLATFORM", "other")
             // zsh unless a test says otherwise, whatever runs the tests.
             .env("SHELL", "/bin/zsh")
+            // The home's stub `claude` is on PATH: let doctor find it there.
+            .env_remove("CC_MOSS_CLAUDE_BIN")
             .env_remove("STARSHIP_CONFIG")
             .env_remove("STARSHIP_SHELL");
         // The test's own variables last, so they win.
@@ -468,6 +470,7 @@ fn doctor_speaks_chinese() {
         .env("CC_MOSS_LANG", "zh")
         .env("CC_MOSS_PLATFORM", "other")
         .env("SHELL", "/bin/zsh")
+        .env_remove("CC_MOSS_CLAUDE_BIN")
         .env_remove("STARSHIP_CONFIG")
         .arg("doctor")
         .output()

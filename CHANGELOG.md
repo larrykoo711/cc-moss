@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cc-moss doctor` finds Claude Code where sessions do.** It looked only on the PATH, so in a shell without
+  `~/.local/bin` on it (an agent's, launchd's, an ssh command's) it said Claude Code was missing while sessions
+  started fine. It now looks the way sessions are started: `CC_MOSS_CLAUDE_BIN`, the PATH, then where Claude Code's
+  installers put it, and shows the path when it isn't the PATH's `claude`.
+
 ## [0.3.10] - 2026-11-11
 
 ### Changed
