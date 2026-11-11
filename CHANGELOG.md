@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.10] - 2026-11-11
+
 ### Changed
 
 - **A session that went away is called "stopped" in English everywhere**, as in the rest of the app, instead of
@@ -612,7 +614,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.9...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.10...HEAD
+[0.3.10]: https://github.com/larrykoo711/cc-moss/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/larrykoo711/cc-moss/compare/v0.3.8...v0.3.9
 [0.3.8]: https://github.com/larrykoo711/cc-moss/compare/v0.3.7...v0.3.8
 [0.3.7]: https://github.com/larrykoo711/cc-moss/compare/v0.3.6...v0.3.7

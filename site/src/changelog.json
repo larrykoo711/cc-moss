@@ -2,6 +2,37 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.10",
+      "date": "2026-11-11",
+      "icon": "moss",
+      "short": {
+        "zh": "Moss 不再卡住，你的话先送到",
+        "en": "Moss gets unstuck, your words go first"
+      },
+      "headline": {
+        "zh": "Moss 不会再停在 Claude Code 的提示上；你发给它的话先送到；会话列表也更干净了。",
+        "en": "Moss no longer waits on Claude Code’s questions, what you say to it goes first, and your session list stays tidy."
+      },
+      "highlights": [
+        {
+          "zh": "Moss 以前会停在 Claude Code 的提醒或「信任此文件夹」上，一等好几天，消息一直显示发送中。现在它自己过得去；真过不去时，Moss 页会说清卡在哪，并给一个打开它窗口的按钮。",
+          "en": "Moss could sit on a Claude Code warning or the “trust this folder” question for days while your messages showed Sending…. Now it gets past them, and when it really can’t, the Moss page says what it’s waiting on and offers a button to open its window."
+        },
+        {
+          "zh": "积了很多会话动态时，你发给 Moss 的话先送到；旧的动态会合并，过时的不再送，送到时也会说明是多久以前的事。",
+          "en": "When session updates pile up, what you say to Moss goes first. Older updates are merged, stale ones are skipped, and each one says how long ago it happened."
+        },
+        {
+          "zh": "Claude Code 在后台分出来的会话不再和原会话同名，会自动加上 -2；一句话都没说就退出的会话，不再列成「断了」。",
+          "en": "A session Claude Code forks in the background gets its own name (with -2) instead of the original’s, and a session that closed without a word from you is no longer listed as stopped."
+        },
+        {
+          "zh": "闲着时被 Claude Code 压缩过的会话不再被当成在忙，排队的重开会照常执行；重启电脑后才接手的会话也不会被误当成断了。",
+          "en": "A session Claude Code compacted while it sat idle no longer looks busy, so a queued restart goes ahead, and a session you pick up after restarting your Mac isn’t mistaken for a stopped one."
+        }
+      ]
+    },
+    {
       "version": "0.3.9",
       "date": "2026-11-06",
       "icon": "picker",
