@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A session Claude Code compacted while it sat idle no longer looks busy.** Claude Code writes its compaction
+  summary as if you had said it, so cc-moss took the session for one still working: a restart queued for it waited
+  for a turn that never ends. The summary no longer counts as the start of a turn.
 - **Moss no longer stops on Claude Code's bypass warning.** The answer to the warning was in Moss's project settings,
   where Claude Code ignores it, so a fresh Moss could wait on the warning for days. It is now in Moss's local
   settings, every time.

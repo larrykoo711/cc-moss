@@ -62,8 +62,12 @@ fn turn_state(line: &[u8]) -> Option<bool> {
             let stop = message?.get("stop_reason")?.as_str()?;
             Some(stop != "end_turn")
         }
-        // Meta records and local slash commands (`/rename`) do not start a turn.
+        // Meta records and local slash commands (`/rename`) do not start a turn,
+        // and neither does a compaction summary: Claude Code writes it as the
+        // user's, also when it compacts an idle session (F66). Looking past
+        // it finds whether the turn before the compaction was still open.
         "user" if v.get("isMeta").and_then(|m| m.as_bool()) == Some(true) => None,
+        "user" if v.get("isCompactSummary").and_then(|m| m.as_bool()) == Some(true) => None,
         "user" => {
             let text = first_text(message?.get("content")?);
             match text {
