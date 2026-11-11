@@ -824,6 +824,30 @@ fn pid_recorded_before_boot_is_dead() {
 }
 
 #[test]
+fn a_process_with_a_known_start_is_judged_by_it_across_a_reboot() {
+    // Adopted after a reboot: the transcript was last written before boot,
+    // but the process (start time on record) runs now. The start time
+    // already tells a reused pid from this one, so the boot time must not
+    // call it dead (CI runners boot minutes before the tests run).
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(
+        &start(StartSource::Resume, "X", None),
+        &proc_ctx(512, Some("s512"), 1_000),
+    )
+    .unwrap();
+    let s = only_slot(&reg);
+    assert_eq!(
+        s.effective_status_since(|_, start| start == Some("s512"), Some(5_000)),
+        Status::Running
+    );
+    // A different process under that pid is still told apart by its start.
+    assert_eq!(
+        s.effective_status_since(|_, _| false, Some(5_000)),
+        Status::Interrupted
+    );
+}
+
+#[test]
 fn end_after_user_close_keeps_closed() {
     // T2.1: the picker kills a session (Ctrl-X) and closes its slot; claude
     // then gets SIGHUP and reports SessionEnd(other) a moment later.

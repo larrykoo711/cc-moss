@@ -13,6 +13,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ### Fixed
 
+- **A session you pick up again after a restart isn't taken for a stopped one.** A session cc-moss found running,
+  whose conversation was last written before the Mac started, was called stopped (and, with this version, would have
+  been closed as one that never got a word). When cc-moss knows when the process started, that now decides.
 - **A session Claude Code compacted while it sat idle no longer looks busy.** Claude Code writes its compaction
   summary as if you had said it, so cc-moss took the session for one still working: a restart queued for it waited
   for a turn that never ends. The summary no longer counts as the start of a turn.
