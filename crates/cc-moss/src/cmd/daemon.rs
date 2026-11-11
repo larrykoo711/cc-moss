@@ -327,23 +327,83 @@ impl RealLaunchctl {
     }
 }
 
+impl RealLaunchctl {
+    fn presence(&self) -> Presence {
+        forbid_in_tests();
+        match std::process::Command::new("/bin/launchctl")
+            .args(["print", &self.service()])
+            .stderr(std::process::Stdio::null())
+            .output()
+        {
+            Ok(o) if o.status.success() => presence_in(&String::from_utf8_lossy(&o.stdout)),
+            _ => Presence::Gone,
+        }
+    }
+}
+
+/// Where the service is in launchd, from `launchctl print`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Presence {
+    /// Not in the domain: a bootstrap can load it.
+    Gone,
+    /// Booted out, its process still finishing. `print` still shows it and
+    /// a bootstrap fails with EIO; once it has exited it is gone, and so is
+    /// any plist loaded meanwhile (seen as a daemon that install said was
+    /// updated, and that never came back).
+    Exiting,
+    Loaded,
+}
+
+/// The service's own `state` (the first line indented once; nested
+/// sections have their own, indented further).
+fn presence_in(print: &str) -> Presence {
+    let state = print
+        .lines()
+        .find_map(|l| l.strip_prefix('\t')?.strip_prefix("state = "))
+        .unwrap_or_default()
+        .trim();
+    if state.starts_with("SIG") || state == "exiting" {
+        Presence::Exiting
+    } else {
+        Presence::Loaded
+    }
+}
+
+/// How long a bootstrap keeps trying while the old instance exits: past
+/// launchd's own 20 s before it kills one that does not.
+const BOOTSTRAP_ATTEMPTS: u32 = 80;
+const BOOTSTRAP_PAUSE: Duration = Duration::from_millis(300);
+
+/// Bootstrap, trying again while a booted-out instance is still exiting.
+/// Done when a bootstrap succeeds, or fails because the service is loaded
+/// and not on its way out.
+fn bootstrap_retrying(
+    mut bootstrap: impl FnMut() -> Result<()>,
+    mut presence: impl FnMut() -> Presence,
+    mut pause: impl FnMut(),
+) -> Result<()> {
+    let mut last = None;
+    for _ in 0..BOOTSTRAP_ATTEMPTS {
+        match bootstrap() {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+        if presence() == Presence::Loaded {
+            return Ok(());
+        }
+        pause();
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("launchctl bootstrap failed")))
+}
+
 impl Launchctl for RealLaunchctl {
     fn bootstrap(&self, plist: &Path) -> Result<()> {
         let plist = plist.to_string_lossy();
-        // Right after a bootout launchd may still be letting go of the old
-        // instance and answer EIO for a moment.
-        let mut last = None;
-        for _ in 0..10 {
-            match self.call(&["bootstrap", &self.domain, &plist]) {
-                Ok(()) => return Ok(()),
-                Err(e) => last = Some(e),
-            }
-            if self.is_loaded() {
-                return Ok(());
-            }
-            std::thread::sleep(Duration::from_millis(300));
-        }
-        Err(last.unwrap_or_else(|| anyhow::anyhow!("launchctl bootstrap failed")))
+        bootstrap_retrying(
+            || self.call(&["bootstrap", &self.domain, &plist]),
+            || self.presence(),
+            || std::thread::sleep(BOOTSTRAP_PAUSE),
+        )
     }
     fn bootout(&self) -> Result<()> {
         self.call(&["bootout", &self.service()])
@@ -363,13 +423,7 @@ impl Launchctl for RealLaunchctl {
         self.call(&["disable", &self.service()])
     }
     fn is_loaded(&self) -> bool {
-        forbid_in_tests();
-        std::process::Command::new("/bin/launchctl")
-            .args(["print", &self.service()])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|s| s.success())
+        self.presence() == Presence::Loaded
     }
     fn is_disabled(&self) -> bool {
         forbid_in_tests();
@@ -631,7 +685,7 @@ fn daemon_search_path(
     let mut dirs: Vec<String> = Vec::new();
     let mut add = |d: String| {
         let d = d.trim_end_matches('/').to_string();
-        if !d.is_empty() && d.starts_with('/') && !dirs.contains(&d) {
+        if !d.is_empty() && d.starts_with('/') && !per_shell(&d) && !dirs.contains(&d) {
             dirs.push(d);
         }
     };
@@ -660,6 +714,13 @@ fn daemon_search_path(
         }
     }
     dirs.join(":")
+}
+
+/// A folder made for one shell and gone with it (fnm's `fnm_multishells/
+/// <pid>_<time>/bin`): kept, it would change the plist on every install from
+/// a new shell and leave dead folders on the daemon's PATH.
+fn per_shell(dir: &str) -> bool {
+    dir.contains("/fnm_multishells/")
 }
 
 /// Write the plist if it differs. True when it changed.
@@ -789,6 +850,20 @@ fn bring_up(launchd: &Launchd, text: &str) -> Result<()> {
             None
         }
     };
+    // Say so only once it is up: launchd accepting the calls is not the
+    // daemon running.
+    if said.is_some() && ctl.is_real() && !wait_for(true).running {
+        bail!(tr!(
+            format!(
+                "launchd did not bring it up; see {}",
+                daemon_paths().log.display()
+            ),
+            format!(
+                "launchd 没能把它拉起来；看看 {}",
+                daemon_paths().log.display()
+            )
+        ));
+    }
     if let Some(said) = said {
         println!("\n{said}");
     }
@@ -1161,6 +1236,101 @@ mod tests {
             bare,
             "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
         );
+    }
+
+    #[test]
+    fn a_booted_out_service_still_exiting_is_not_loaded() {
+        let print = |state: &str| {
+            format!("gui/501/{LABEL} = {{\n\tactive count = 1\n\tstate = {state}\n\n\tendpoints = {{\n\t\tstate = active\n\t}}\n}}\n")
+        };
+        assert_eq!(presence_in(&print("running")), Presence::Loaded);
+        assert_eq!(presence_in(&print("not running")), Presence::Loaded);
+        assert_eq!(presence_in(&print("SIGTERMed")), Presence::Exiting);
+        assert_eq!(presence_in(&print("SIGKILLed")), Presence::Exiting);
+        assert_eq!(presence_in(&print("exiting")), Presence::Exiting);
+    }
+
+    /// What launchd did on a Mac after install's bootout: the old instance
+    /// lingers as SIGTERMed, each bootstrap answers EIO, then it is gone.
+    #[test]
+    fn bootstrap_waits_out_an_exiting_instance_and_then_loads() {
+        use std::cell::{Cell, RefCell};
+        let exiting_for = 3;
+        let tries = Cell::new(0);
+        let loaded = Cell::new(false);
+        let seen = RefCell::new(Vec::new());
+        let out = bootstrap_retrying(
+            || {
+                tries.set(tries.get() + 1);
+                if tries.get() <= exiting_for {
+                    bail!("launchctl bootstrap failed: 5: Input/output error")
+                }
+                loaded.set(true);
+                Ok(())
+            },
+            || {
+                let p = if loaded.get() {
+                    Presence::Loaded
+                } else if tries.get() <= exiting_for {
+                    Presence::Exiting
+                } else {
+                    Presence::Gone
+                };
+                seen.borrow_mut().push(p);
+                p
+            },
+            || {},
+        );
+        assert!(out.is_ok(), "{out:?}");
+        assert!(loaded.get(), "the new plist was never loaded");
+        assert_eq!(tries.get(), exiting_for + 1);
+    }
+
+    #[test]
+    fn bootstrap_that_never_gets_through_fails() {
+        let out = bootstrap_retrying(
+            || bail!("launchctl bootstrap failed: 5: Input/output error"),
+            || Presence::Exiting,
+            || {},
+        );
+        assert!(out.is_err());
+    }
+
+    #[test]
+    fn bootstrap_refused_because_it_is_already_loaded_is_fine() {
+        let out = bootstrap_retrying(
+            || bail!("launchctl bootstrap failed: 37: Operation already in progress"),
+            || Presence::Loaded,
+            || {},
+        );
+        assert!(out.is_ok());
+    }
+
+    #[test]
+    fn per_shell_folders_stay_off_the_daemon_path() {
+        let path = daemon_search_path(
+            None,
+            Some(
+                "/opt/homebrew/bin:/Users/a/.local/state/fnm_multishells/23609_1794392086726/bin:\
+                 /Users/a/.orbstack/bin",
+            ),
+            None,
+            None,
+        );
+        assert!(!path.contains("fnm_multishells"), "{path}");
+        assert!(path.contains("/Users/a/.orbstack/bin"), "{path}");
+        // A new shell's fnm folder does not change what was installed.
+        let installed = path.clone();
+        let again = daemon_search_path(
+            Some(&installed),
+            Some(
+                "/opt/homebrew/bin:/Users/a/.local/state/fnm_multishells/40000_1794400000000/bin:\
+                 /Users/a/.orbstack/bin",
+            ),
+            None,
+            None,
+        );
+        assert_eq!(again, installed);
     }
 
     #[test]
