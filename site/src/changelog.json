@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.11",
+      "date": "2026-11-14",
+      "icon": "menubar",
+      "short": {
+        "zh": "更新后，守护进程和状态栏 App 都会回来",
+        "en": "After an update, the daemon and the app come back"
+      },
+      "headline": {
+        "zh": "更新 cc-moss 之后，守护进程和状态栏 App 都会好好地重新起来；体检也能找到装在常用位置的 Claude Code。",
+        "en": "After you update cc-moss, its daemon and the menubar app reliably start again, and the checkup finds Claude Code where it’s usually installed."
+      },
+      "highlights": [
+        {
+          "zh": "以前更新时，旧的守护进程还没退干净，新的偶尔就接不上，安装却说「已更新」，结果 Moss 一直不回话，得手动把守护进程再开起来。现在会等旧的退干净，确认新的跑起来了才说好了。",
+          "en": "An update could leave the daemon off when the old one hadn’t quite finished shutting down, while install said it was updated, so Moss went quiet until you started the daemon yourself. Now install waits for the old one to go and says it’s done only once the new one is running."
+        },
+        {
+          "zh": "状态栏 App 更新后，macOS 有时不让它马上打开，App 就一直没回来，安装却说「已重新打开」。现在会再试几次，真打不开会照实说。",
+          "en": "Right after an update, macOS sometimes refused to open the menubar app, so it stayed closed while install said it had restarted it. Install now tries again for a few seconds and tells you plainly if it still can’t."
+        },
+        {
+          "zh": "体检（cc-moss doctor）不再在 Claude Code 明明装好了的时候说「没找到」：它现在和开会话用同样的方式去找。",
+          "en": "The checkup (cc-moss doctor) no longer says Claude Code is missing when it’s installed: it now looks for it the same way sessions are started."
+        }
+      ]
+    },
+    {
       "version": "0.3.10",
       "date": "2026-11-11",
       "icon": "moss",
