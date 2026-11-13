@@ -6,6 +6,22 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **`cc-moss doctor` finds Claude Code where sessions do.** It looked only on the PATH, so in a shell without
+  `~/.local/bin` on it (an agent's, launchd's, an ssh command's) it said Claude Code was missing while sessions
+  started fine. It now looks the way sessions are started: `CC_MOSS_CLAUDE_BIN`, the PATH, then where Claude Code's
+  installers put it, and shows the path when it isn't the PATH's `claude`.
+- **Updating cc-moss no longer leaves the daemon off.** When `cc-moss install` swapped in a new LaunchAgent while
+  the old daemon was still shutting down, launchd refused the new one, and install took the departing one for it:
+  it said the daemon was updated, and the daemon (with Moss's messages) stayed down until `cc-moss daemon start`.
+  It now waits for the old one to be gone, and says the daemon is up only once it is running.
+- **The menubar app comes back after an update.** Right after the old copy quit, macOS sometimes refused to open the
+  new one (error -600) and the app stayed closed, while install still said it had restarted it. Install now tries
+  again for a few seconds, and says it restarted the app only when it did.
+- **Installing from a new shell doesn't rewrite the daemon's settings for nothing.** The folders fnm makes for each
+  shell are left off the daemon's PATH, so they no longer pile up there or make every install restart it.
+
 ## [0.3.10] - 2026-11-11
 
 ### Changed

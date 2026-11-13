@@ -365,14 +365,58 @@ fn quit(app: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Start the app without taking the focus.
+/// Start the app without taking the focus. Right after the old copy's
+/// process is gone, LaunchServices may still hold it as quitting and refuse
+/// the open (error -600, about every other time on a Mac): try again for a
+/// few seconds.
 fn start(app: &Path) -> Result<()> {
-    let status = Command::new("open").arg("-g").arg(app).status();
-    match status {
-        Ok(s) if s.success() => Ok(()),
-        Ok(s) => bail!("open {}: {s}", app.display()),
+    let pause = start_pause();
+    retrying(START_TRIES, || open_once(app), || std::thread::sleep(pause))
+}
+
+fn open_once(app: &Path) -> Result<()> {
+    match Command::new("open").arg("-g").arg(app).output() {
+        Ok(o) if o.status.success() => Ok(()),
+        Ok(o) => bail!(
+            "open {}: {} {}",
+            app.display(),
+            o.status,
+            String::from_utf8_lossy(&o.stderr).trim()
+        ),
         Err(e) => bail!("open {}: {e}", app.display()),
     }
+}
+
+const START_TRIES: u32 = 10;
+const START_PAUSE: Duration = Duration::from_millis(500);
+
+/// `CC_MOSS_APP_START_PAUSE_MS` shortens the pause in tests (debug builds).
+fn start_pause() -> Duration {
+    std::env::var("CC_MOSS_APP_START_PAUSE_MS")
+        .ok()
+        .filter(|_| cfg!(debug_assertions))
+        .and_then(|ms| ms.parse().ok())
+        .map_or(START_PAUSE, Duration::from_millis)
+}
+
+/// `attempt` up to `tries` times, pausing between them; the last error if
+/// none succeeds.
+fn retrying(
+    tries: u32,
+    mut attempt: impl FnMut() -> Result<()>,
+    mut pause: impl FnMut(),
+) -> Result<()> {
+    let mut last = None;
+    for i in 0..tries {
+        match attempt() {
+            Ok(()) => return Ok(()),
+            Err(e) => last = Some(e),
+        }
+        if i + 1 < tries {
+            pause();
+        }
+    }
+    Err(last.unwrap_or_else(|| anyhow::anyhow!("never tried")))
 }
 
 /// Copy a folder, keeping file modes and symbolic links as they are.
@@ -452,9 +496,10 @@ fn put_in_place_with(
 /// What happened to the app in an Applications folder.
 #[derive(Debug, PartialEq, Eq)]
 pub enum Placed {
-    /// It was not there; now it is, and running.
-    New,
-    /// An older copy was replaced; `restarted` if it had been running.
+    /// It was not there; now it is, and `started` if it opened.
+    New { started: bool },
+    /// An older copy was replaced; `restarted` if it had been running and
+    /// opened again.
     Replaced { restarted: bool },
 }
 
@@ -473,21 +518,27 @@ pub fn place(source: &Path, dest: &Path) -> Result<Placed> {
         }
         return Err(e);
     }
-    if !existed || running {
-        if let Err(e) = start(dest) {
-            println!(
-                "{}",
-                tr!(
-                    format!("Could not start the menubar app ({e:#}); open it from Applications."),
-                    format!("没能启动状态栏 App（{e:#}）；请从「应用程序」里打开它。")
-                )
-            );
+    let started = (!existed || running) && {
+        match start(dest) {
+            Ok(()) => true,
+            Err(e) => {
+                println!(
+                    "{}",
+                    tr!(
+                        format!(
+                            "Could not start the menubar app ({e:#}); open it from Applications."
+                        ),
+                        format!("没能启动状态栏 App（{e:#}）；请从「应用程序」里打开它。")
+                    )
+                );
+                false
+            }
         }
-    }
+    };
     Ok(if existed {
-        Placed::Replaced { restarted: running }
+        Placed::Replaced { restarted: started }
     } else {
-        Placed::New
+        Placed::New { started }
     })
 }
 
@@ -690,9 +741,13 @@ pub fn offer(dry_run: bool, yes: bool) -> Result<()> {
 
 fn placed_note(done: &Placed, dest: &Path, want: &str) -> String {
     match done {
-        Placed::New => tr!(
+        Placed::New { started: true } => tr!(
             format!("Put the menubar app in {} and started it.", display(dest)),
             format!("状态栏 App 已放进 {} 并启动。", display(dest))
+        ),
+        Placed::New { started: false } => tr!(
+            format!("Put the menubar app in {}.", display(dest)),
+            format!("状态栏 App 已放进 {}。", display(dest))
         ),
         Placed::Replaced { restarted: true } => tr!(
             format!("Updated the menubar app to {want} and restarted it."),
