@@ -87,6 +87,19 @@ pub fn osascript_fails(bin: &Path, logs: &Path) {
     );
 }
 
+/// `open` fails its first `times` calls the way LaunchServices does while
+/// the old copy is still quitting (error -600), then works.
+pub fn open_fails(bin: &Path, logs: &Path, times: usize) {
+    write_stub(
+        &bin.join("open"),
+        &format!(
+            "#!/bin/sh\n{}n=$(wc -l < '{}/open.log')\nif [ \"$n\" -le {times} ]; then\n  echo '_LSOpenURLsWithCompletionHandler() failed with error -600.' >&2\n  exit 1\nfi\n",
+            log_line(logs, "open"),
+            logs.display()
+        ),
+    );
+}
+
 /// The app never quits: neither asking nor `kill` stops it.
 pub fn never_quits(bin: &Path, logs: &Path) {
     write_stub(

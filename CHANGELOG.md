@@ -16,6 +16,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
   the old daemon was still shutting down, launchd refused the new one, and install took the departing one for it:
   it said the daemon was updated, and the daemon (with Moss's messages) stayed down until `cc-moss daemon start`.
   It now waits for the old one to be gone, and says the daemon is up only once it is running.
+- **The menubar app comes back after an update.** Right after the old copy quit, macOS sometimes refused to open the
+  new one (error -600) and the app stayed closed, while install still said it had restarted it. Install now tries
+  again for a few seconds, and says it restarted the app only when it did.
 - **Installing from a new shell doesn't rewrite the daemon's settings for nothing.** The folders fnm makes for each
   shell are left off the daemon's PATH, so they no longer pile up there or make every install restart it.
 

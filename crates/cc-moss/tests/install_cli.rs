@@ -852,6 +852,40 @@ fn app_running_is_restarted_after_replace() {
 }
 
 #[test]
+fn app_restart_refused_while_the_old_one_quits_is_tried_again() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::open_fails(&h.stubs, &h.logs(), 2);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    let out = ok(h.run_mac_with(
+        &["install", "--yes"],
+        Some(&keg),
+        &[("CC_MOSS_APP_START_PAUSE_MS", "1")],
+    ));
+    assert_eq!(app::log(&h.logs(), "open").lines().count(), 3, "{out}");
+    assert!(out.contains("and restarted it"), "{out}");
+    assert!(!out.contains("Could not start"), "{out}");
+}
+
+#[test]
+fn app_that_never_opens_is_not_said_to_be_restarted() {
+    let h = Home::with_all();
+    app::stubs(&h.stubs, &h.logs(), true);
+    app::open_fails(&h.stubs, &h.logs(), 1000);
+    let keg = h.bundled_app(CURRENT);
+    app::fake_app(&h.user_app(), "0.0.1");
+    let out = ok(h.run_mac_with(
+        &["install", "--yes"],
+        Some(&keg),
+        &[("CC_MOSS_APP_START_PAUSE_MS", "1")],
+    ));
+    assert!(out.contains("Could not start the menubar app"), "{out}");
+    assert!(out.contains("-600"), "the reason is shown: {out}");
+    assert!(!out.contains("restarted it"), "{out}");
+}
+
+#[test]
 fn app_skip_leaves_it_alone() {
     let h = Home::with_all();
     app::stubs(&h.stubs, &h.logs(), false);
