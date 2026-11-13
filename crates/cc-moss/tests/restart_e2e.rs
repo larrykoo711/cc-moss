@@ -28,6 +28,19 @@ fn session(w: &World, name: &str) -> serde_json::Value {
         .unwrap_or_else(|| panic!("no session {name}"))
 }
 
+/// The session once it runs as far as the registry knows: `cc-moss new`
+/// returns before Claude Code's SessionStart, and a slow machine gets here
+/// first.
+fn running(w: &World, name: &str) -> serde_json::Value {
+    wait_until(&format!("{name} to run"), || {
+        ls_json(&w.state(), true)["sessions"]
+            .as_array()?
+            .iter()
+            .find(|s| s["name"] == name && s["status"] == "running" && s["pid"].is_u64())
+            .cloned()
+    })
+}
+
 fn wait_until<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
     let until = Instant::now() + Duration::from_secs(30);
     loop {
@@ -767,7 +780,7 @@ fn provider_default_restart_overrides_old_model() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    let before = session(&w, "api");
+    let before = running(&w, "api");
     let old = before["pid"].as_u64().unwrap();
     let (v, ok) = restart(&w, &["--provider-default", "api"]);
     assert!(ok, "{v}");
@@ -858,7 +871,7 @@ fn provider_default_bad_settings_refused_before_quit() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    let before = session(&w, "api");
+    let before = running(&w, "api");
     std::fs::write(w.path("claude/settings.json"), "not json").unwrap();
     let (v, ok) = restart(&w, &["--provider-default", "api"]);
     assert!(!ok && v["results"][0]["reason"] == "settings", "{v}");
@@ -877,7 +890,7 @@ fn provider_default_project_override_is_not_ignored() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    let old = session(&w, "api")["pid"].as_u64().unwrap();
+    let old = running(&w, "api")["pid"].as_u64().unwrap();
     std::fs::create_dir_all(w.path("work/.claude")).unwrap();
     std::fs::write(
         w.path("work/.claude/settings.local.json"),
@@ -1001,7 +1014,7 @@ fn provider_default_replays_recorded_settings_directory() {
         .output()
         .unwrap();
     assert!(out.status.success(), "{out:?}");
-    let old = session(&w, "api")["pid"].as_u64().unwrap();
+    let old = running(&w, "api")["pid"].as_u64().unwrap();
     let (v, ok) = restart(&w, &["--provider-default", "api"]);
     assert!(ok, "{v}");
     let after = restarted(&w, "api", old);

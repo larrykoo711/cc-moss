@@ -310,6 +310,16 @@ fn act_syncs_names() {
             .contains(&"host_api".to_string())
             .then_some(())
     });
+    // Running as far as the registry knows: `cc-moss new` names the tmux
+    // session before Claude Code's SessionStart says it runs, and sync-names
+    // leaves alone what it doesn't know runs (CI got there first once).
+    wait_until("it to run in the registry", 10, || {
+        ls_json(&w.state(), true)["sessions"]
+            .as_array()?
+            .iter()
+            .any(|s| s["name"] == "api" && s["status"] == "running" && !s["tmux"].is_null())
+            .then_some(())
+    });
     // Renamed in tmux by hand; Moss's own stays as it is.
     w.tmux(&["rename-session", "-t", "=host_api", "scratch"]);
     let (out, ok) = act(&w, &["sync-names"]);
