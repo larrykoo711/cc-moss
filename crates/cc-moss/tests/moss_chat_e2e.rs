@@ -91,13 +91,26 @@ fn log(w: &World) -> String {
 
 /// Moss runs, its first turn is over, and the daemon sees it idle.
 fn moss_idle(w: &World) {
-    // Its first turn (the boot prompt) came in.
-    wait_until("Moss to hear its boot prompt", 20, || {
-        (!heard(w).is_empty()).then_some(())
+    // Its first turn (the boot prompt) came in and was answered. Hearing it
+    // is not enough: until the turn is in the transcript, status says idle,
+    // and a message said then waits behind the boot turn (CI saw the test
+    // take the boot turn's thinking for the next message's).
+    wait_until("Moss to answer its boot prompt", 20, || {
+        (!heard(w).is_empty() && answered_once(w)).then_some(())
     });
     wait_until("Moss to be idle", 20, || {
         (status(w)["activity"] == "idle").then_some(())
     });
+}
+
+/// Whether Moss's current transcript has a reply in it.
+fn answered_once(w: &World) -> bool {
+    let st = status(w);
+    let Some(sid) = st["session_id"].as_str() else {
+        return false;
+    };
+    std::fs::read_to_string(w.path("fifos").join(format!("{sid}.jsonl")))
+        .is_ok_and(|t| t.contains("\"type\":\"assistant\""))
 }
 
 fn reply_to(w: &World, id: &str) -> serde_json::Value {
@@ -473,6 +486,10 @@ fn moss_status_json_activity() {
     moss_idle(&w);
     // A long turn: thinking, and what comes meanwhile waits in the inbox.
     let slow = say(&w, "a slow one");
+    // Thinking about this message, not some other turn.
+    wait_until("Moss to hear the slow one", 20, || {
+        heard(&w).contains("a slow one").then_some(())
+    });
     wait_until("thinking", 20, || {
         (status(&w)["activity"] == "thinking").then_some(())
     });
