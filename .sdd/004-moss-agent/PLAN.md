@@ -512,3 +512,17 @@ R1 ◄── 全部
 - E2E: 本机装 0.3.11 正式产物（dev CLI、~/Applications App、守护进程 `kickstart -k`），App 第一次 open 就起来，守护进程 0.3.11、Moss 接着看；在当初误报的精简 shell 里 doctor 显示「已安装：~/.local/bin/claude」、一切正常。用户授权「把分支合并发 0.3.11」，未另做 human-feel 验收。
 - DISTILL: (1) 同一件事（找 Claude Code、判断服务在不在）只留一种判断方式，诊断与执行用同一个函数，否则诊断会和事实不一致。(2) launchd / LaunchServices 的「调用成功」不等于「已生效」：bootout、quit 之后先等对象真正消失，状态判断要识别「正在退出」；最后以进程真的在跑为准再报告成功。(3) 写进持久配置的值（守护进程 PATH）不要抄会话级的临时东西，否则配置每次都变、还会积累失效路径。(4) 时好时坏的系统竞态：用一次性的同构对象（假 launchd 任务、反复 quit/open）在真机上复现，再按复现结果定修法与测试。
 - REPORT: 完成 = F68、F69、F70；新独立 = 无；子任务 = 无；延后 = ubuntu `moss_status_json_activity` 偶发（本轮又出现一次）、P3 T3.1、P4 T4.1 / T4.2、R1 收口评审，以及 Round 0.3.8–0.3.10 延后项。
+
+## Round 0.3.12（里程碑，卡不归档）
+
+- 起因 2026-11-14：发 0.3.11 时 CI 两个偶发失败（ubuntu `moss_status_json_activity` 近 3 次挂 2 次，0.3.7 起的延后项；macOS `new_sessions_carry_their_own_name_for_the_tab_title` 一次），用户「把那两个偶发失败的测试查掉」，后「合并吧，钩子那处也一起修了」「发 0.3.12」。
+- F71 `moss_status_json_activity`：假 Moss 先写 heard 再写对话记录，之间 status 读成 idle，测试在启动轮里说了慢消息，把启动轮的 thinking 当成慢消息的（CI：queued 2、只听到启动提示）。只改测试：等启动轮有回复、等 Moss 听到慢消息再看 thinking。
+- F72 `/rename` 先改 tmux 会话名再改 `@cc-moss-name`，之间新名配旧标签。产品修复：先改标签名。
+- F73 PR 内第三轮 CI 挂 `act_syncs_names`：只等 tmux 名（`cc-moss new` 就起好）、没等 SessionStart 登记成在跑。把假 claude 的 SessionStart 推迟 1 秒跑全量，又暴露 5 个同类：4 个 provider-default 重开测试（new 后立刻读会话）、picker 恢复测试（假 tmux 依赖恢复窗格里没有的环境变量，钩子查不到 tmux 会话 id，把 restore 写好的 id 覆盖成空）。均改测试等登记 / 写死真 tmux 路径。
+- F74 由 F73 引出的产品问题：钩子的 tmux 查询是尽力而为，失败时 `set_tmux` 把同窗格已知的会话 id 和名覆盖成空，picker 恢复后接不上。修复：同 socket 同窗格且新值缺失时保留旧值；换窗格或清空照旧。用 F73 修复前的 picker 测试 + SessionStart 晚 1 秒：旧代码挂、新代码过。
+- 每处竞态都放大复现：修复前挂、修复后过。#79 合并前 CI 连跑 3 轮全绿，合并后 main 一轮全绿。
+- 未解：改完首次全量（本机 load≈9）`restored_process_outlives_the_pending_window` 挂一次，单跑 5 次、全量一次、4 路并发加压新旧代码各 12 次都没复现；输出未保留。
+- 发版 2026-11-14：#79 → `dcbd08c`、#80 发版 → `3d2f478`（各自合并树与分支逐字节一致），tag `v0.3.12`；#80 CI 首跑全绿。Release run 43586379944 四平台构建、归档检查、GitHub Release、Homebrew 公式全部成功；站点部署 `3d2f478`，线上冒烟全过。记录在根仓 `.sdd/releases/20261114-cc-moss-v0.3.12.md`。
+- E2E: 本机装 0.3.12 正式产物（dev CLI、~/Applications App、守护进程 `kickstart -k`），App 第一次 open 就起来，守护进程 0.3.12，doctor 一切正常，Moss 接着看。用户授权「发 0.3.12」，未另做 human-feel 验收。
+- DISTILL: (1) 测试里的「等到 X」要等真正的完成条件（回复已入记录、SessionStart 已登记），不等先于它出现的旁证（heard、tmux 名）。(2) 查偶发的办法：把怀疑的那一步人为推迟（如 SessionStart 晚 1 秒）跑全量，一次暴露同类竞态。(3) 两步写入的顺序要让「后一步可见」蕴含「前一步已完成」（先改标签再改会话名）。(4) 尽力而为的查询失败时不要覆盖已知事实。(5) 测试替身（shim）不要依赖子进程不一定继承的环境变量。
+- REPORT: 完成 = F71–F74；新独立 = 无；子任务 = 无；延后 = `restored_process_outlives_the_pending_window` 高负载偶发（一次，未复现）、P3 T3.1、P4 T4.1 / T4.2、R1 收口评审，以及 Round 0.3.8–0.3.11 延后项。
