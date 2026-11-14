@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.12",
+      "date": "2026-11-14",
+      "icon": "restore",
+      "short": {
+        "zh": "恢复的会话一定接得上",
+        "en": "Restored sessions always open"
+      },
+      "headline": {
+        "zh": "在选择器里恢复会话，即使 tmux 一时没答上来，也能直接打开；改名后终端标签先换上新名字。",
+        "en": "Restoring a session from the picker opens it even when tmux was slow to answer, and after a rename the terminal tab shows the new name first."
+      },
+      "highlights": [
+        {
+          "zh": "以前会话启动时如果一时查不到自己在哪个 tmux 会话里，会把 cc-moss 已经记下的位置抹掉，选择器恢复后就打不开它。现在同一个窗口里已知的位置会保留下来。",
+          "en": "When a starting session couldn’t tell which tmux session it was in, it used to wipe out what cc-moss already knew, so the picker had nothing to open after a restore. What’s known about the same window is now kept."
+        },
+        {
+          "zh": "给会话改名后，终端标签会先换成新名字，不会再有一瞬间新旧名字对不上。",
+          "en": "After you rename a session, the terminal tab switches to the new name first, so the two never briefly disagree."
+        },
+        {
+          "zh": "修掉了几处时好时坏的自动检查，新版本能更稳、更快地发出来。",
+          "en": "A few automatic checks that failed now and then are fixed, so new versions go out steadier and sooner."
+        }
+      ]
+    },
+    {
       "version": "0.3.11",
       "date": "2026-11-14",
       "icon": "menubar",

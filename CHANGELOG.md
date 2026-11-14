@@ -6,6 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-11-14
+
 ### Fixed
 
 - **Restoring a session from the picker opens it even when tmux was slow to answer.** When a session's start-up
@@ -640,7 +642,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.11...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.12...HEAD
+[0.3.12]: https://github.com/larrykoo711/cc-moss/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/larrykoo711/cc-moss/compare/v0.3.10...v0.3.11
 [0.3.10]: https://github.com/larrykoo711/cc-moss/compare/v0.3.9...v0.3.10
 [0.3.9]: https://github.com/larrykoo711/cc-moss/compare/v0.3.8...v0.3.9
