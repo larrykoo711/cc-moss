@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Restoring a session from the picker opens it even when tmux was slow to answer.** When a session's start-up
+  couldn't look up which tmux session it was in, it wrote that blank over what cc-moss already knew, and the picker
+  then had nothing to open. What's known about the same pane is now kept.
+- **After a rename, the terminal tab shows the new name first.** The tab's name changes before the tmux session's,
+  so the two never disagree the other way round.
+
 ## [0.3.11] - 2026-11-14
 
 ### Fixed
