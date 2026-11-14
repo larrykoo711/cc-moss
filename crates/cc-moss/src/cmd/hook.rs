@@ -316,11 +316,13 @@ pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slo
     let taken: Vec<String> = sessions.into_iter().map(|(_, name)| name).collect();
     let desired = naming::session_name(prefix.as_deref(), name);
     let target = naming::unique(&desired, &taken, Some(&current));
+    // Its own name for terminal tabs, as written (spaces, Chinese and all).
+    // Before the tmux name: whoever sees the new tmux name sees this one too,
+    // and the tab shows the new name first.
+    tmux.set_display_name(tmux_id, name)?;
     if target != current {
         tmux.rename_session(tmux_id, &target)?;
     }
-    // Its own name for terminal tabs, as written (spaces, Chinese and all).
-    tmux.set_display_name(tmux_id, name)?;
     registry.set_tmux_session_name(&slot.slot_id, &target)
 }
 

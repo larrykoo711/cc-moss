@@ -1407,3 +1407,33 @@ fn restart_terminal_failure_claim_release_is_identity_and_time_bound() {
     assert!(reg.clear_restore_claim(&planned, 3000).unwrap());
     assert_eq!(reg.slots().unwrap()[0].restore_started_at_ms, None);
 }
+
+/// A SessionStart whose tmux lookup came back without the session (tmux
+/// busy, a shim in the way) keeps what the registry knew about that pane:
+/// the picker attaches by it. Another pane's empty answer is no evidence.
+#[test]
+fn a_failed_tmux_lookup_keeps_the_known_session_of_the_same_pane() {
+    let mut reg = Registry::open_in_memory().unwrap();
+    reg.apply(&start(StartSource::Startup, "U1", None), &ctx(100, 1_000))
+        .unwrap();
+    let blind = |pane: &str, at: i64| {
+        let mut c = ctx(100, at);
+        let loc = c.tmux.as_mut().unwrap();
+        loc.session_id = None;
+        loc.session_name = None;
+        loc.pane_id = pane.into();
+        c
+    };
+    reg.apply(&start(StartSource::Resume, "U1", None), &blind("%0", 2_000))
+        .unwrap();
+    let tmux = only_slot(&reg).tmux.unwrap();
+    assert_eq!(tmux.session_id.as_deref(), Some("$1"));
+    assert_eq!(tmux.session_name.as_deref(), Some("host_job-a"));
+    // Another pane: what was known about the old one does not carry over.
+    reg.apply(&start(StartSource::Resume, "U1", None), &blind("%5", 3_000))
+        .unwrap();
+    let tmux = only_slot(&reg).tmux.unwrap();
+    assert_eq!(tmux.pane_id, "%5");
+    assert_eq!(tmux.session_id, None);
+    assert_eq!(tmux.session_name, None);
+}

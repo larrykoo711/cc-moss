@@ -2352,10 +2352,20 @@ fn touch_and_repair(
     Ok(())
 }
 
+/// Where a slot runs in tmux; `None` forgets it. A location whose session
+/// id or name could not be looked up (the hook's lookup is best effort)
+/// keeps what was known about the same socket and pane, rather than
+/// erasing what restore or an earlier hook recorded.
 fn set_tmux(conn: &Connection, slot_id: &str, tmux: Option<&TmuxLoc>) -> Result<()> {
+    // SET expressions read the row as it was before this update.
     conn.execute(
-        "UPDATE slots SET tmux_socket=?2, tmux_session_id=?3, tmux_session_name=?4, tmux_pane=?5
-         WHERE slot_id=?1",
+        "UPDATE slots SET
+           tmux_session_id = CASE WHEN ?3 IS NULL AND tmux_socket IS ?2 AND tmux_pane IS ?5
+                             THEN tmux_session_id ELSE ?3 END,
+           tmux_session_name = CASE WHEN ?4 IS NULL AND tmux_socket IS ?2 AND tmux_pane IS ?5
+                               THEN tmux_session_name ELSE ?4 END,
+           tmux_socket = ?2, tmux_pane = ?5
+         WHERE slot_id = ?1",
         params![
             slot_id,
             tmux.map(|t| &t.socket),

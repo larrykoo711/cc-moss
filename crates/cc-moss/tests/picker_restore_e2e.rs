@@ -83,16 +83,21 @@ fn picker_named_restore_ignores_uuid_shadow_and_attaches_exact_original() {
     std::fs::create_dir(&shim_dir).unwrap();
     let attach_log = w.path("attach.args");
     let shim = shim_dir.join("tmux");
+    // The real tmux is written in, not read from the environment: the
+    // restored session's panes get this PATH but not the picker's variables,
+    // and its SessionStart hook looks up its tmux session through here.
     std::fs::write(
         &shim,
-        r#"#!/bin/sh
+        format!(
+            r#"#!/bin/sh
 case " $* " in
   *" switch-client "*|*" attach-session "*)
     printf '%s\000' "$@" > "$CC_MOSS_PICK_ATTACH_LOG"
     exit 0 ;;
 esac
-exec "$CC_MOSS_PICK_REAL_TMUX" "$@"
-"#,
+exec '{real_tmux}' "$@"
+"#
+        ),
     )
     .unwrap();
     std::fs::set_permissions(&shim, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -121,7 +126,6 @@ exec "$CC_MOSS_PICK_REAL_TMUX" "$@"
             shim_dir.display(),
             std::env::var("PATH").unwrap()
         ),
-        format!("CC_MOSS_PICK_REAL_TMUX={real_tmux}"),
         format!("CC_MOSS_PICK_ATTACH_LOG={}", attach_log.display()),
         "TERM=xterm-256color".into(),
         env!("CARGO_BIN_EXE_cc-moss").into(),
