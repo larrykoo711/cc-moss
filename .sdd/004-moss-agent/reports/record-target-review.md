@@ -20,7 +20,8 @@ Two independent reads covered registry lifecycle safety and Rust/Swift target re
 
 - Rust review run: 1243 passed, 0 failed, 8 ignored; fmt and clippy passed. Ledger check `twin-records-rust-review`, tree `785bd3e6` (2026-11-17). The earlier run had one failing newly revised test because its unnamed, silent fixture was closed by the existing silent-session rule. The fixture was corrected to represent two named copies; targeted and full reruns passed.
 - Swift review run: 1002 tests in 135 suites passed via `apps/macos/scripts/swift.sh test`. Ledger check `twin-records-swift-review`, tree `6576323f`.
-- These are development-tree results. Final clean-commit L2 evidence and PR checks must be recorded before merge.
+- Final clean-commit L2: check `twin-records-final`, tree `ca5a0fb8f3e62ed5ad6d650ae1d37590ba3a1f77`, rc=0, 170.1 seconds. Rust 1243/0/8, Swift 1002, website 70/0; fmt, clippy, website build passed. Aggregating `0b2ab02` plus `8b87fb4` to `fb70a1f` preserved this tree byte-for-byte. Main is not merged and remote PR checks are not claimed.
+- Current off-screen capability probe: legacy CLI snapshot produced zero launch calls plus an update notice; the supported snapshot produced exactly `restart --json -- 01A` once, through the demo runner and an isolated home. This demonstrates the real App action guard, not only capability decoding.
 - No tests operated on the user's real session registry or default tmux server. No mouse or keyboard automation was used.
 
 ## Public-content and history audit

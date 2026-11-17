@@ -544,3 +544,6 @@ R1 ◄── 全部
 - DISTILL: 唯一记录与共享对话 id 是不同身份；自动关闭必须证明可替代性，不能只看时间；公开夹具须合成，禁词零命中不代表现场标识未泄漏；历史 Done 状态不能替代逐条验收证据。
 - REPORT: 完成 = 精确定位主要路径、安全撤回、能力门禁、历史补查与脱敏审查；新独立 = 无；后续缺陷 = T2.26 批量回执、T2.27 既有清理 CAS、T2.28 显式定位；验收欠账 = T2.29 的 16 条；P3/P4/R1 与旧轮次延期项不变。
 - 用户最终裁决 2026-11-17：先整理推送 feature，暂缓合并；main 不动，stage-clean 明确未通过，不开启新 feature。不因本轮代码测试通过改写旧验收状态。
+- 聚合台账 2026-11-18：feature/004-twin-records，2→1（`0b2ab02` + `8b87fb4` → `fb70a1f`），备份 `refs/backup/pre-aggregate-20261118-record-target-review` 只在本地；dry-run 呈报后 apply，tree `ca5a0fb8f3e62ed5ad6d650ae1d37590ba3a1f77` 逐字节一致。另加一条独立收尾记录提交，不改 main/tags。
+- 最终 L2：`twin-records-final`，上述 tree，rc=0/170.1 秒；Rust 1243/0/8，Swift 1002，site 70/0；fmt/clippy/build 通过。聚合后新提交差异 Gitleaks rc=0，无新增秘密命中。
+- STAGE-CLEAN: 2026-11-18 status=blocked commits=[cc-moss:2→1+收尾记录] review=[自动收拢撤回,身份碰撞拒绝,CLI能力门禁,私有夹具修正; held:T2.26–T2.29] kanban=ok(37) acceptance=81/97。机制脚本 rc=1：真实阻塞为 16 项旧验收证据未齐；另将已跟踪的 `ScratchDefaults.swift` 与 `ScratchDefaultsTests.swift` 按 `/scratch` 名称误识为杂散文件，实读确认是偏好隔离测试及其回归保护，保留，不为了过门禁删测试。未加 SKIP-GATE、未改 gate。
