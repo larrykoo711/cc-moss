@@ -637,12 +637,12 @@ struct PanelView: View {
             }
         case .copyCommand:
             return PanelAction(title: L.t("Copy Command", "复制命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                copy(model.attachCommand(s))
+                if model.permitsRecordTarget(s) { copy(model.attachCommand(s)) }
             }
         case .copyRestoreCommand:
             // The way back that needs no app: paste it in a terminal.
             return PanelAction(title: L.t("Copy Restore Command", "复制找回命令"), icon: Icons.copy, shortcut: "⇧⌘C") {
-                copy(model.restoreCommand(s))
+                if model.permitsRecordTarget(s) { copy(model.restoreCommand(s)) }
             }
         case .message:
             return PanelAction(title: L.t("Send a Message…", "发消息…"), icon: Icons.message, shortcut: "⌘E",
@@ -903,7 +903,9 @@ struct PanelView: View {
         case "q": NSApplication.shared.terminate(nil)
         case ",": showSettings()
         case "c" where press.modifiers.contains(.shift):
-            if let s = model.selected { copy(s.state == .interrupted ? model.restoreCommand(s) : model.attachCommand(s)) }
+            if let s = model.selected, model.permitsRecordTarget(s) {
+                copy(s.state == .interrupted ? model.restoreCommand(s) : model.attachCommand(s))
+            }
         default: return .ignored
         }
         return .handled

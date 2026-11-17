@@ -23,7 +23,7 @@ extension AppModel {
 
     /// Put a session that isn't running away in Archived.
     func archive(_ s: Session) {
-        guard let client else { return }
+        guard let client, permitsRecordTarget(s, action: .archive) else { return }
         Task {
             do {
                 let results = try await client.archive([s.target])
@@ -46,7 +46,7 @@ extension AppModel {
 
     /// Second click: end it, then archive it.
     func confirmEndAndArchive() {
-        guard let s = endArchiveGate.confirm(), let client else { return }
+        guard let s = endArchiveGate.confirm(), let client, permitsRecordTarget(s, action: .endAndArchive) else { return }
         Task {
             do {
                 let results = try await client.archiveEnding([s.target])
@@ -61,7 +61,7 @@ extension AppModel {
 
     /// Back into the list, at once.
     func unarchive(_ s: Session) {
-        guard let client else { return }
+        guard let client, permitsRecordTarget(s, action: .unarchive) else { return }
         Task {
             do {
                 let results = try await client.unarchive([s.target])
@@ -89,7 +89,8 @@ extension AppModel {
     /// Every single-session recovery goes through the same tokened operation.
     func restart(_ s: Session, applyingProvider: Bool = false, cancelling: Bool = false) {
         guard client != nil, let current = session(s.id), current.sessionId == s.sessionId else { return }
-        guard cancelling || permitsLaunch(current, action: .restart) else { return }
+        guard permitsRecordTarget(current, action: .restart),
+              cancelling || permitsLaunch(current, action: .restart) else { return }
         let intent: RecoveryIntent = cancelling ? .cancelQueue : applyingProvider ? .applyProvider : .restart
         guard let request = recoveryOperations.begin(current, intent: intent) else { return }
         showRecovery(current.id)
@@ -137,7 +138,8 @@ extension AppModel {
             recoveryOperations.cancelConfirmation(id)
             return
         }
-        guard permitsLaunch(current, action: .restart), let request = recoveryOperations.confirm(current) else { return }
+        guard permitsRecordTarget(current, action: .restart), permitsLaunch(current, action: .restart),
+              let request = recoveryOperations.confirm(current) else { return }
         showRecovery(id)
         runRecovery(request, session: current)
     }

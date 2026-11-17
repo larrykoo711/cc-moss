@@ -56,6 +56,7 @@ fn json_schema_v1_and_all_flag() {
 
     let v = ls_json(dir.path(), false);
     assert_eq!(v["schema"], 1);
+    assert_eq!(v["capabilities"]["record_target"], 1);
     let slots = v["sessions"].as_array().unwrap();
     assert_eq!(slots.len(), 1, "closed slots hidden without --all");
     let s = &slots[0];
@@ -555,6 +556,139 @@ fn superseded_duplicates_are_closed() {
             .len(),
         1
     );
+}
+
+/// Stopped copies remain selectable: recency alone does not prove which
+/// directory or settings source is still restorable.
+#[test]
+fn stopped_copies_remain_selectable_and_archive_by_record_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "startup", Some("api")),
+        a.pid(),
+    );
+    let first = ls_json(dir.path(), true)["sessions"][0]["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let b = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "resume", Some("api")),
+        b.pid(),
+    );
+    // Both copies are named, so the unrelated silent-session cleanup does
+    // not close one before this test checks duplicate handling.
+    // The first copy is the one talked to last.
+    std::thread::sleep(std::time::Duration::from_millis(20));
+    let prompt = serde_json::json!({"session_id": "S1", "prompt": "go on"}).to_string();
+    hook(dir.path(), "user-prompt-submit", &prompt, a.pid());
+    assert_eq!(
+        ls_json(dir.path(), true)["sessions"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    drop(a);
+    drop(b);
+    let all = ls_json(dir.path(), true);
+    let sessions = all["sessions"].as_array().unwrap();
+    let open: Vec<_> = sessions
+        .iter()
+        .filter(|s| s["status"] != "closed")
+        .collect();
+    assert_eq!(open.len(), 2, "{all}");
+    assert!(open.iter().all(|s| s["status"] == "interrupted"), "{all}");
+    // Archive precisely the selected record, leaving its twin untouched.
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .args(["archive", "--json", &first])
+        .output()
+        .unwrap();
+    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(v["results"][0]["result"], "archived", "{v}");
+    let registry = moss_core::registry::Registry::open(&dir.path().join("registry.db")).unwrap();
+    let rows = registry.slots().unwrap();
+    assert!(rows
+        .iter()
+        .find(|s| s.slot_id == first)
+        .unwrap()
+        .is_archived());
+    assert!(rows
+        .iter()
+        .filter(|s| s.slot_id != first)
+        .all(|s| !s.is_archived()));
+}
+
+/// A record id names one copy when two share a name and a conversation.
+#[test]
+fn a_record_id_names_one_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "startup", Some("api")),
+        a.pid(),
+    );
+    let b = FakeProcess::spawn();
+    hook(
+        dir.path(),
+        "session-start",
+        &start_json("S1", "resume", Some("api")),
+        b.pid(),
+    );
+    let all = ls_json(dir.path(), true);
+    let ids: Vec<String> = all["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(ids.len(), 2, "{all}");
+    let run = |args: &[&str]| -> serde_json::Value {
+        let out = bin()
+            .env("CC_MOSS_STATE_DIR", dir.path())
+            .args(args)
+            .output()
+            .unwrap();
+        serde_json::from_slice(&out.stdout).unwrap_or_else(|e| panic!("{e}: {out:?}"))
+    };
+    // By name: both, and the ids to use are the record ids.
+    let v = run(&["restart", "--json", "api"]);
+    let r = &v["results"][0];
+    assert_eq!(r["reason"], "ambiguous", "{v}");
+    let mut c: Vec<String> = r["candidates"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|x| x.as_str().unwrap().to_string())
+        .collect();
+    c.sort();
+    let mut want = ids.clone();
+    want.sort();
+    assert_eq!(c, want, "{v}");
+    // By a record id: that one.
+    let out = bin()
+        .env("CC_MOSS_STATE_DIR", dir.path())
+        .args(["note", &ids[1], "the second copy"])
+        .output()
+        .unwrap();
+    assert!(out.status.success(), "{out:?}");
+    let all = ls_json(dir.path(), true);
+    let noted: Vec<_> = all["sessions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|s| s["notes"]["note"] == "the second copy")
+        .map(|s| s["id"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(noted, [ids[1].clone()], "{all}");
 }
 
 #[test]

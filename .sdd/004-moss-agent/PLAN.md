@@ -219,6 +219,10 @@ R1 ◄── 全部
 | **T2.23** 同名自动加编号 | cc-moss | — | ✅ Done | done/T2.23-unique-names.spec.md | 分叉行得 -2，补名不改回 |
 | **T2.25** 信任框默认 No 也选 Yes | cc-moss | T2.21 | ✅ Done | done/T2.25-trust-prompt-yes.spec.md | 选中 No 时先移到 Yes 核对再回车，处理不了报卡住 |
 | **T2.24** 没说过话的会话退出即关 | cc-moss | — | ✅ Done | done/T2.24-silent-sessions.spec.md | 三条退出路径与对账都关掉，有对话的不受影响 |
+| **T2.26** 批量重启回执按记录定位 | cc-moss | T2.6 | ⬜ Backlog | — | 同对话多个运行副本的回执逐记录匹配，不误报失败 |
+| **T2.27** 既有活跃副本清理的身份保护 | cc-moss | T2.14 | ⬜ Backlog | — | 清理写入前复核身份和恢复声明，不用旧快照关闭新状态 |
+| **T2.28** 名称冲突的显式记录定位 | cc-moss | — | ⬜ Backlog | — | 无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道 |
+| **T2.29** 旧 Done 视觉与真机证据补齐 | cc-moss | — | ⬜ Backlog | — | 16 条未勾验收逐条补证，不能以 Done 或已发布替代 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -526,3 +530,17 @@ R1 ◄── 全部
 - E2E: 本机装 0.3.12 正式产物（dev CLI、~/Applications App、守护进程 `kickstart -k`），App 第一次 open 就起来，守护进程 0.3.12，doctor 一切正常，Moss 接着看。用户授权「发 0.3.12」，未另做 human-feel 验收。
 - DISTILL: (1) 测试里的「等到 X」要等真正的完成条件（回复已入记录、SessionStart 已登记），不等先于它出现的旁证（heard、tmux 名）。(2) 查偶发的办法：把怀疑的那一步人为推迟（如 SessionStart 晚 1 秒）跑全量，一次暴露同类竞态。(3) 两步写入的顺序要让「后一步可见」蕴含「前一步已完成」（先改标签再改会话名）。(4) 尽力而为的查询失败时不要覆盖已知事实。(5) 测试替身（shim）不要依赖子进程不一定继承的环境变量。
 - REPORT: 完成 = F71–F74；新独立 = 无；子任务 = 无；延后 = `restored_process_outlives_the_pending_window` 高负载偶发（一次，未复现）、P3 T3.1、P4 T4.1 / T4.2、R1 收口评审，以及 Round 0.3.8–0.3.11 延后项。
+
+## Round record-target（未发布，合并暂停）
+
+- 起因 2026-11-16：同名且同对话 id 的两个停止记录无法通过 App 归档，Moss 使用完整记录 id 也报找不到。初版 `0b2ab02` 支持完整记录 id，并新增按最近活动自动关闭重复停止记录；本机试用，版本号仍为 0.3.12。
+- 2026-11-17 用户要求 Git/历史脱敏审查和 stage-clean。两路独立评审发现：自动关闭忽略可恢复性、归档和并发身份；裸记录 id 与其他行名字可能碰撞；App 缺旧 CLI 能力门禁。报告 `reports/record-target-review.md`。
+- AMEND: approved-by=user date=2026-11-17，撤掉新增的“两条都停止时自动关闭旧副本”；保留按记录定位，Registry 实现回到本轮基线。停止副本留给用户选择，不以最近活动证明可恢复性。
+- 修补：`IdentityConflict` 防止名称/记录 id 误选；`capabilities.record_target=1` 与 App 统一能力门禁；指南中英同步；实机记录 id 和私有项目名替换为合成夹具。独立复核仍发现无唯一名称/tmux 的极端冲突无法定位，登记 T2.28，不冒称完全解决。
+- 验证：修补树 Rust 1243/0/8（fmt、clippy 通过），Swift 1002，站点构建与测试通过；日志按 tree 存 `.git/sdd/`。初次 Rust 全量的一条新测试因未命名静默夹具被既有规则关闭而失败，修正夹具并重跑全量通过。旧 CLI 离屏负控 `launch-calls=0` 且提示升级；带 record_target 的样例按记录 id 调用一次。
+- 历史补查：用户选择本轮也补查旧 Done；16 份 spec 共 97 条验收，81 条有原报告/源码/测试证据，16 条仍未勾选，逐份 Notes 记录来源；总账 `reports/historical-acceptance-review.md`。未批准跳过门禁，stage-clean 仍未通过。
+- 隐私：Gitleaks 8.30.1 全 refs 118 commits/15.74 MB/11 个测试假凭据命中，逐项核实；公开 refs 103 commits。词表与历史 blobs 检查发现旧公开私有标签残留和本地未推送备份，当前源码已清理。本轮不重写 main/tags，不将 tip 修复冒充远端历史删除；私有扫描报告只在 `.git/stage-clean/`。
+- E2E: 2026-11-17 本机试用版已换成撤回自动收拢后的修正版，CLI 产物哈希一致、App 签名通过、守护进程运行、Moss idle/queued=0；没有更新其他设备、没有发版。本轮离屏只验证 record-target 能力，不充当旧 spec 缺失的真机/视觉矩阵。
+- DISTILL: 唯一记录与共享对话 id 是不同身份；自动关闭必须证明可替代性，不能只看时间；公开夹具须合成，禁词零命中不代表现场标识未泄漏；历史 Done 状态不能替代逐条验收证据。
+- REPORT: 完成 = 精确定位主要路径、安全撤回、能力门禁、历史补查与脱敏审查；新独立 = 无；后续缺陷 = T2.26 批量回执、T2.27 既有清理 CAS、T2.28 显式定位；验收欠账 = T2.29 的 16 条；P3/P4/R1 与旧轮次延期项不变。
+- 用户最终裁决 2026-11-17：先整理推送 feature，暂缓合并；main 不动，stage-clean 明确未通过，不开启新 feature。不因本轮代码测试通过改写旧验收状态。

@@ -142,6 +142,67 @@ fn resolve_cases() {
     assert!(resolve(&slots, "nope").is_err());
 }
 
+/// Two copies of one conversation (a second Claude Code resumed it while
+/// the first still ran): same name, same session id. Only the record id
+/// tells them apart, and the ambiguity says which ids to use.
+#[test]
+fn resolve_tells_copies_of_one_conversation_apart() {
+    let mut a = slot("talk", Status::Interrupted);
+    a.slot_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV".into();
+    let mut b = slot("talk", Status::Interrupted);
+    b.slot_id = "01ARZ3NDEKTSV4RRFFQ69G5FAW".into();
+    b.tmux.as_mut().unwrap().session_name = Some("host_talk-2".into());
+    let slots = vec![a, b];
+
+    for query in ["talk", "talk-0000-1111", "talk-0"] {
+        match resolve(&slots, query).unwrap_err() {
+            moss_core::restore::ResolveError::Ambiguous {
+                candidates,
+                matches,
+                ..
+            } => {
+                assert_eq!(
+                    candidates,
+                    ["01ARZ3NDEKTSV4RRFFQ69G5FAV", "01ARZ3NDEKTSV4RRFFQ69G5FAW"],
+                    "{query}"
+                );
+                assert!(
+                    matches[1].contains("01ARZ3NDEKTSV4RRFFQ69G5FAW"),
+                    "{matches:?}"
+                );
+            }
+            e => panic!("{query}: {e}"),
+        }
+    }
+    let id = "01ARZ3NDEKTSV4RRFFQ69G5FAW";
+    assert_eq!(resolve(&slots, id).unwrap().slot_id, id);
+    assert_eq!(resolve(&slots, &id.to_lowercase()).unwrap().slot_id, id);
+    // A record id is whole: a prefix of one is not a handle.
+    assert!(resolve(&slots, "01ARZ3ND").is_err());
+}
+
+#[test]
+fn record_id_conflicting_with_a_name_never_picks_either_row() {
+    let mut record = slot("first", Status::Closed);
+    record.slot_id = "01ARZ3NDEKTSV4RRFFQ69G5FAV".into();
+    let mut named = slot("second", Status::Running);
+    named.name = Some(record.slot_id.clone());
+    let query = record.slot_id.clone();
+    let mut slots = vec![record, named];
+    assert!(matches!(
+        resolve(&slots, &query),
+        Err(moss_core::restore::ResolveError::IdentityConflict(_))
+    ));
+    // The same collision through a tmux name must also fail closed.
+    slots[1].name = Some("second".into());
+    slots[1].tmux.as_mut().unwrap().session_name = Some(query.clone());
+    assert!(matches!(
+        resolve(&slots, &query),
+        Err(moss_core::restore::ResolveError::IdentityConflict(_))
+    ));
+    assert_eq!(resolve(&slots, "second").unwrap().slot_id, slots[1].slot_id);
+}
+
 #[test]
 fn duplicates_pick_the_newest_restorable_copy() {
     // Reviewer (d2): the newest copy's directory is gone; the older one is restored.

@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+### Fixed
+
+- **Two rows for one conversation can be managed separately.** Commands now accept the full record id (`id` in
+  `cc-moss ls --json`), and ambiguous names show record ids when conversation ids cannot distinguish the rows.
+  The app targets the selected record and asks for a CLI update when that capability is unavailable. If a record
+  id is also another session's name, commands refuse rather than guess; use a unique tmux name instead.
+  Stopped copies are not automatically closed just because another copy was used more recently: their working
+  directories and settings sources may differ.
+
 ## [0.3.12] - 2026-11-14
 
 ### Fixed

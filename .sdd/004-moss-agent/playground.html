@@ -348,9 +348,9 @@
   </section>
 
   <section id="progress">
-    <h2>进展 <span class="badge ok">0.3.3 已发布</span></h2>
-    <p class="lede">10-21：第二轮 F46–F48 候选已装到本机：紧凑短按钮、确认式重建、成功模型证据更新。Rust 978 与 Swift 865 测试通过，等待真机验收；没有发布新版本。</p>
-    <p class="lede">0.3.0 已发布。0.3.1 加了会话归档（T2.5）和换 API 供应商后原地重开（T2.6），并修完 0.3.0 之后的真机反馈 F19–F34；三路评审修复全部合入，T2.5、T2.6 完成，v0.3.1 已发布，网站与更新记录页上线，四台设备已升级。下一轮：P3 派发、P4 Slack 与在场路由（Backlog）。</p>
+    <h2>进展 <span class="badge ok">0.3.12 已发布</span></h2>
+    <p class="lede">2026-11-17：重复记录精确定位进入阶段收尾，尚未发布新版本。命令与 App 使用完整记录 ID；旧 CLI 缺少能力时拒绝操作；记录 ID 与别的会话名称冲突时不猜测。经用户裁决撤掉新增的“仅按最近活动自动关闭已停止副本”。</p>
+    <p class="lede">P1、P2 已有任务完成；0.3.4–0.3.12 的逐轮证据以 PLAN 的 Round 节为准，下表保留早期历史。旧 Done 验收补查结果：81/97 条有证据，16 条仍待补齐，stage-clean 未通过；用户决定只整理推送 feature，暂缓合并 main。后续缺陷与证据欠账见 T2.26–T2.29，P3、P4 与 R1 不在本轮冒称完成。</p>
     <table><thead><tr><th>日期</th><th>做了什么</th></tr></thead><tbody>
       <tr><td>10-18</td><td>S0–S2 立项与设计（G1、G2）；T1.1 探针、T1.2 默认 bypass（PR #36 进 main）、T1.3 代答中枢、T2.1 守护进程、T2.2 Moss 常驻完成；T1.4 桌面答题合入待真机</td></tr>
       <tr><td>10-19 上午</td><td>P1 先发版分支 <code>release/p1</code> 装本机验收；按反馈加面板侧栏、「待处理」队列页、小莫答题气泡重做；随后并回本分支</td></tr>
@@ -497,6 +497,10 @@ const TASKS = [
   {id:'T2.23', t:'同名自动加编号', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'分叉行得 -2，补名不改回', steps:[]},
   {id:'T2.24', t:'没说过话的会话退出即关', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'三条退出路径与对账都关掉，有对话的不受影响', steps:[]},
   {id:'T2.25', t:'信任框默认 No 也选 Yes', repo:'cc-moss', dep:'T2.21', st:'done', sdd:'—', ac:'选中 No 时先移到 Yes 核对再回车，处理不了报卡住', steps:[]},
+  {id:'T2.26', t:'批量重启回执按记录定位', repo:'cc-moss', dep:'T2.6', st:'backlog', sdd:'—', ac:'同对话多个运行副本的回执逐记录匹配，不误报失败', steps:[]},
+  {id:'T2.27', t:'既有活跃副本清理的身份保护', repo:'cc-moss', dep:'T2.14', st:'backlog', sdd:'—', ac:'清理写入前复核身份和恢复声明，不用旧快照关闭新状态', steps:[]},
+  {id:'T2.28', t:'名称冲突的显式记录定位', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道', steps:[]},
+  {id:'T2.29', t:'旧 Done 视觉与真机证据补齐', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'16 条未勾验收逐条补证，不能以 Done 或已发布替代', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -504,7 +508,7 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
-  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19','T2.20','T2.21','T2.22','T2.23','T2.24','T2.25']},
+  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19','T2.20','T2.21','T2.22','T2.23','T2.24','T2.25','T2.26','T2.27','T2.28','T2.29']},
   {k:'P3', name:'Moss 派活', ids:['T3.1']},
   {k:'P4', name:'Slack 与路由', ids:['T4.1','T4.2']},
 ];

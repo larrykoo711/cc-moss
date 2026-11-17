@@ -101,7 +101,7 @@ extension AppModel {
     /// when its turn changed or the last answer lapsed; "none" asked again
     /// at 2 s and 6 s after the turn's first try.
     func suggestion(key: String, marker: String, busy: Bool, handle: String) async -> String? {
-        guard let client else { return nil }
+        guard let client, cliCapabilities.resolvesRecordTargets else { return nil }
         return await SuggestionAsk.run(
             lookup: { suggestionCache.lookup(key, marker: marker, busy: busy, now: Date()) },
             ask: { await client.suggest(handle) },
