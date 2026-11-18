@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.13",
+      "date": "2026-11-18",
+      "icon": "rows",
+      "short": {
+        "zh": "同一段对话的两条记录，能分开管了",
+        "en": "Two rows for one chat, handled one at a time"
+      },
+      "headline": {
+        "zh": "同一段对话在列表里留下两条记录时，现在可以分别归档、找回，不会动到另一条。",
+        "en": "When one conversation leaves two rows in the list, you can now archive or bring back each one on its own, without touching the other."
+      },
+      "highlights": [
+        {
+          "zh": "以前两条记录名字一样、对话也一样时，归档或找回会失败，Moss 也说找不到。现在 App 和命令都按每条记录自己的编号来认。",
+          "en": "When two rows shared a name and a conversation, archiving or bringing one back failed, and Moss said it couldn’t find it. The app and the commands now tell the rows apart by each row’s own id."
+        },
+        {
+          "zh": "停下的那条不会因为另一条刚用过就被自动关掉：两条的文件夹和设置可能不一样，留给你来选。",
+          "en": "A stopped copy is no longer closed just because the other one was used more recently. Their folders and settings may differ, so the choice stays yours."
+        },
+        {
+          "zh": "如果终端里的 cc-moss 还是旧版本、分不清这两条，App 会先请你更新，而不是猜着去动另一条。",
+          "en": "If the cc-moss in your terminal is too old to tell the rows apart, the app asks you to update it instead of guessing."
+        }
+      ]
+    },
+    {
       "version": "0.3.12",
       "date": "2026-11-14",
       "icon": "restore",
