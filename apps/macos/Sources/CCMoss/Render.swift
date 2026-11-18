@@ -12,7 +12,7 @@ import SwiftUI
 ///          [--update <version> [--changelog <file> --whats-new <version>]] [--update-bubble <version>]
 ///          [--said <find --json file>] [--expand-older] [--expand-archived] [--provider live|restart [--provider-host h]] [--restarting <id>] [--provider-plan SLOT] [--provider-card-width N] [--restart-result starting|queued|refused|restarted] [--restore working|done|partial] [--failure <id>:<reason>]
 ///          [--form new|note|close|message|rename|end-archive [--form-name <name>]]
-///          [--access-lost] [--folders [query]]
+///          [--access-lost] [--folders [query]] [--archive-action unarchive|clean-all|restart-stale [--action-session <id>]]
 ///          [--settings general|menuBar|mo|notifications|shortcuts|permissions|moss|about [--daemon running|stopped|unknown] [--moss running|restarted|off|failing|nodaemon] [--grants mixed|allowed] [--aliases <alias ls --json file>] [--auth allowed|denied|unavailable] [--pet-on [--voice off|chime|speak]] [--height pt]]
 ///          [--asks <ask list --json file> [--ask <id>[,<id>…]] [--choose <label>]… [--write [text]] [--focus <id>]
 ///                  [--page queue] [--waiting-input <session id>] [--bubble <id>] [--hover-option <label>] [--answer answered|late|not-waiting|refused]
@@ -87,6 +87,29 @@ enum Render {
                 }
                 for notice in model.failures.list { print("restore-notice: \(notice.subject?.name ?? "-") \(notice.why)") }
                 if let summary = model.restoreSummary { print("restore-summary: \(summary.title)") }
+            }
+            // `--archive-action unarchive|clean-all|restart-stale [--action-session <id>]`: the
+            // archive group's and the provider banner's buttons, pressed in this process; prints
+            // the commands they sent and where the panel ended up.
+            if let action = value("--archive-action") {
+                let archived = { model.archived.count }
+                let before = archived()
+                switch action {
+                case "unarchive":
+                    let id = value("--action-session")
+                    if let s = model.archived.first(where: { id == nil || $0.id == id }) {
+                        model.unarchive(s)
+                    }
+                case "clean-all": model.cleanUpAll()
+                case "restart-stale": model.restartStale()
+                default: break
+                }
+                try? await Task.sleep(for: .milliseconds(600))
+                await model.loadNow()
+                print("archive-action: \(action); archived=\(before)->\(archived()); page=\(model.page); notice=\(model.notice ?? "none"); failure=\(model.failures.current?.why ?? "none")")
+                for s in Restart.stale(model.sessions) {
+                    print("recovery: \(s.id) \(model.recoveryOperations[s.id]?.title ?? "none")")
+                }
             }
             if let id = value("--waiting-input"), let i = model.sessions.firstIndex(where: { $0.id == id }) {
                 model.sessions[i].attention = "input"
@@ -1023,6 +1046,13 @@ actor DemoRunner: CommandRunner {
             print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
             fflush(stdout)
             let list = (try? Snapshot.decode(sessions).sessions) ?? []
+            // `restart --stale`: one line per flagged session, as the CLI answers.
+            if arguments.contains("--stale") {
+                let results: [[String: Any]] = Restart.stale(list).map {
+                    ["name": $0.title, "session_id": $0.sessionId, "result": $0.busy ? "queued" : "starting"]
+                }
+                return CommandResult(status: 0, stdout: try JSONSerialization.data(withJSONObject: ["schema": 1, "results": results]), stderr: "")
+            }
             let target = arguments.last
             let session = list.first { $0.id == target || $0.target == target || $0.name == target }
             let rebuilding = arguments.contains("--rebuild-pane")
@@ -1062,6 +1092,23 @@ actor DemoRunner: CommandRunner {
             }
             let data = try JSONSerialization.data(withJSONObject: ["schema": 1, "results": [result]])
             return CommandResult(status: outcome == "refused" ? 1 : 0, stdout: data, stderr: "")
+        }
+        if arguments.first == "unarchive" {
+            // Back into the list: the next `ls` shows it unarchived.
+            print("cc-moss " + arguments.map(Self.quoted).joined(separator: " "))
+            fflush(stdout)
+            let targets = Set(arguments.drop(while: { $0 != "--" }).dropFirst())
+            var results: [[String: Any]] = []
+            if var top = try JSONSerialization.jsonObject(with: sessions) as? [String: Any],
+               var rows = top["sessions"] as? [[String: Any]] {
+                for i in rows.indices where targets.contains(rows[i]["id"] as? String ?? "") {
+                    rows[i]["archived_at"] = NSNull()
+                    results.append(["name": rows[i]["name"] ?? "demo", "result": "unarchived"])
+                }
+                top["sessions"] = rows
+                sessions = try JSONSerialization.data(withJSONObject: top)
+            }
+            return ok(String(decoding: try JSONSerialization.data(withJSONObject: ["schema": 1, "results": results]), as: UTF8.self))
         }
         switch Array(arguments.prefix(2)) {
         case ["ask", "list"]:
