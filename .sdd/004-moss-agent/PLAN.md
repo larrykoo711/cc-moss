@@ -531,7 +531,7 @@ R1 ◄── 全部
 - DISTILL: (1) 测试里的「等到 X」要等真正的完成条件（回复已入记录、SessionStart 已登记），不等先于它出现的旁证（heard、tmux 名）。(2) 查偶发的办法：把怀疑的那一步人为推迟（如 SessionStart 晚 1 秒）跑全量，一次暴露同类竞态。(3) 两步写入的顺序要让「后一步可见」蕴含「前一步已完成」（先改标签再改会话名）。(4) 尽力而为的查询失败时不要覆盖已知事实。(5) 测试替身（shim）不要依赖子进程不一定继承的环境变量。
 - REPORT: 完成 = F71–F74；新独立 = 无；子任务 = 无；延后 = `restored_process_outlives_the_pending_window` 高负载偶发（一次，未复现）、P3 T3.1、P4 T4.1 / T4.2、R1 收口评审，以及 Round 0.3.8–0.3.11 延后项。
 
-## Round record-target（未发布，合并暂停）
+## Round record-target → 0.3.13（2026-11-18 发布）
 
 - 起因 2026-11-16：同名且同对话 id 的两个停止记录无法通过 App 归档，Moss 使用完整记录 id 也报找不到。初版 `0b2ab02` 支持完整记录 id，并新增按最近活动自动关闭重复停止记录；本机试用，版本号仍为 0.3.12。
 - 2026-11-17 用户要求 Git/历史脱敏审查和 stage-clean。两路独立评审发现：自动关闭忽略可恢复性、归档和并发身份；裸记录 id 与其他行名字可能碰撞；App 缺旧 CLI 能力门禁。报告 `reports/record-target-review.md`。
@@ -551,3 +551,9 @@ R1 ◄── 全部
 - T2.29 2026-11-18 完成：152 张离屏图 + 48 次离屏探针（临时 HOME、演示/测试夹具、全部 rc=0），按 spec 拼成对照图，证据与复现脚本在 `reports/acceptance-20261118/`。为取得 App 动作回执，`Render.swift` 加 `--archive-action unarchive|clean-all|restart-stale` 探针，演示替身补 `unarchive` 与 `restart --stale` 逐行回执；产品代码不变。真机三项由用户本机实测：T1.4 ⑦「T1.4 真机验收通过」、T2.4 ⑧「T2.4 也验证过了」、T2.4 ⑥ 发送简报关闭时的每日原文「安静，没弹通知」。T2.14 以本轮最终合并树本机 L2 代替借机核对。97/97。
 - gate 修正 2026-11-18：larry-sdd `stage_clean_check.sh` 杂散规则 `/scratch` → `(^|/)scratch/`，新增 4 条单测（改前 2 红）；`ScratchDefaults*.swift` 不再被误报，仓根 `scratch/` 目录改为能抓到。
 - REPORT（更新）: 完成 = 上述 + T2.29 验收补齐；后续缺陷 = T2.26、T2.27、T2.28；P3/P4/R1 与旧轮次延期项不变。
+- 最终 L2 2026-11-18：`acceptance-final`，tree `22cca307`，rc=0/247 秒；Rust 1243/0/8，Swift 1002/135 suites，site 70/0；fmt/clippy/build 通过。Gitleaks 新提交无命中，私有词扫描零命中。
+- STAGE-CLEAN: 2026-11-18 status=pass commits=[cc-moss:feature 4 提交 → #82 squash] review=[同上 + T2.29 证据] kanban=ok(37) acceptance=97/97。`stage_clean_check.sh` 全部 PASS；仅提示本地备份 ref `backup/main-before-p1-squash`（含发布前私有材料，永不推送，留待用户裁决）。证据日志改名为 `.txt` 后不再被当作杂散文件。
+- 发版 2026-11-18：#82 → `f09e800`（合并树 = L2 树 `22cca307`）；#83 发版首跑被站点依赖审计拦下：picomatch GHSA-fc5q-39xc-vjpf 于 11-17 扩到 ≤4.0.7，上游无修复版，只经 Tailwind CLI 构建期文件监听引入。用户批准限期豁免：#84 → `db915d5`，按公告 id + 包名、2026-12-18 到期、出现修复版即失效，7 条单测，其他公告照常拦。#83 变基后全绿 → `e860a74`（合并树 = 分支树），tag `v0.3.13`；Release run 44268827946 四平台构建、归档检查、GitHub Release、Homebrew 公式全部成功；站点部署成功，中英 /changelog/ 已显示 0.3.13。
+- E2E: 本机换 0.3.13 正式产物（校验和一致；dev CLI 备份 `cc-moss.bak-20261118174844-trial`，App 签名通过、旧 App 移入 backups/）；`kickstart -k` 后守护进程第一次没接上（last exit -9，日志无记录），再 kickstart 一次即运行 0.3.13，Moss idle/queued=0，doctor 无坏项。这是第二次见到（上次 11-17），未定位。真机验收见 T2.29。
+- DISTILL: (1) 视觉验收要逐条对应 criterion 的维度（状态×宽度×明暗×语言），一张总数不算矩阵；对照图 + 探针回执 + 复现脚本一起入档。(2) 探针夹具要声明 CLI 能力，否则 App 的能力门禁会把动作挡掉——这是门禁生效的证据，不是失败。(3) 演示替身的批量回执要与真 CLI 同形（逐行带 session_id），否则探针报的「失败」是替身造成的。(4) 上游无修复版的公告用限期、限定范围、出修复即失效的豁免，不关掉审计。
+- REPORT: 完成 = 记录定位、能力门禁、撤回自动收拢、97/97 历史验收、gate 误报修正、0.3.13 发布与本机升级；新独立 = 无；子任务 = 无；延后 = T2.26 批量回执、T2.27 既有清理 CAS、T2.28 显式定位、picomatch 豁免到期复查（2026-12-18 前）、`kickstart -k` 后守护进程偶发未接上、P3 T3.1、P4 T4.1/T4.2、R1。
