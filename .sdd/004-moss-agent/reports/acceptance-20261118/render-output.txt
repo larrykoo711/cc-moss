@@ -1,0 +1,216 @@
+T2.16/NORMAL-320-light rc=0  
+T2.16/NORMAL-320-dark rc=0  
+T2.16/NORMAL-540-light rc=0  
+T2.16/NORMAL-540-dark rc=0  
+T2.16/PLAN-320-light rc=0  
+T2.16/PLAN-320-dark rc=0  
+T2.16/PLAN-540-light rc=0  
+T2.16/PLAN-540-dark rc=0  
+T2.16/BUSY-320-light rc=0  
+T2.16/BUSY-320-dark rc=0  
+T2.16/BUSY-540-light rc=0  
+T2.16/BUSY-540-dark rc=0  
+T2.16/QUEUED-320-light rc=0  
+T2.16/QUEUED-320-dark rc=0  
+T2.16/QUEUED-540-light rc=0  
+T2.16/QUEUED-540-dark rc=0  
+T2.16/UNKNOWN-320-light rc=0  
+T2.16/UNKNOWN-320-dark rc=0  
+T2.16/UNKNOWN-540-light rc=0  
+T2.16/UNKNOWN-540-dark rc=0  
+T2.16/FAILURE-320-light rc=0  
+T2.16/FAILURE-320-dark rc=0  
+T2.16/FAILURE-540-light rc=0  
+T2.16/FAILURE-540-dark rc=0  
+T2.16/ORDINARY-320-light rc=0  
+T2.16/ORDINARY-320-dark rc=0  
+T2.16/ORDINARY-540-light rc=0  
+T2.16/ORDINARY-540-dark rc=0  
+T2.17/none-320-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.17/none-320-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.17/none-540-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.17/none-540-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.17/default-320-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/default-320-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/default-540-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/default-540-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/directory-320-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/directory-320-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/directory-540-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/directory-540-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.17/cancel-320-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.17/cancel-320-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.17/cancel-540-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.17/cancel-540-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.18/unselected-320-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.18/unselected-320-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.18/unselected-540-light rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.18/unselected-540-dark rc=0 restore-source: choice=none; calls=0; failure=config_source_unknown; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.18/default-320-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/default-320-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/default-540-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/default-540-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/directory-320-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/directory-320-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/directory-540-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/directory-540-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/longpath-320-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/longpath-320-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/longpath-540-light rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.18/longpath-540-dark rc=0 restore-source: choice=selected; calls=0; failure=config_source_unknown; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.19/READY-320-light rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/READY-320-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/READY-540-light rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/READY-540-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/UNSET-320-light rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/UNSET-320-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/UNSET-540-light rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/UNSET-540-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=false; primary-enabled=false; proposal=false; notice=none 
+T2.19/UNKNOWN-320-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.19/UNKNOWN-320-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.19/UNKNOWN-540-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.19/UNKNOWN-540-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=true; proposal=true; notice=none 
+T2.19/MISSING-320-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/MISSING-320-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/MISSING-540-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/MISSING-540-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/DAMAGED-320-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/DAMAGED-320-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/DAMAGED-540-light rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/DAMAGED-540-dark rc=0 restore-source: choice=none; calls=0; failure=none; card=true; primary-enabled=false; proposal=false; notice=none 
+T2.19/DIRCHOICE-320-light rc=0 restore-source: choice=selected; calls=0; failure=none; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.19/DIRCHOICE-320-dark rc=0 restore-source: choice=selected; calls=0; failure=none; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.19/DIRCHOICE-540-light rc=0 restore-source: choice=selected; calls=0; failure=none; card=true; primary-enabled=true; proposal=false; notice=none 
+T2.19/DIRCHOICE-540-dark rc=0 restore-source: choice=selected; calls=0; failure=none; card=true; primary-enabled=true; proposal=false; notice=none 
+T1.4/cards-zh-light rc=0  
+T1.4/cards-zh-dark rc=0  
+T1.4/cards-en-light rc=0  
+T1.4/cards-en-dark rc=0  
+T2.2/settings-moss-running-zh-light rc=0  
+T2.2/settings-moss-running-zh-dark rc=0  
+T2.2/settings-moss-restarted-zh-light rc=0  
+T2.2/settings-moss-restarted-zh-dark rc=0  
+T2.2/settings-moss-off-zh-light rc=0  
+T2.2/settings-moss-off-zh-dark rc=0  
+T2.2/settings-moss-failing-zh-light rc=0  
+T2.2/settings-moss-failing-zh-dark rc=0  
+T2.2/settings-moss-nodaemon-zh-light rc=0  
+T2.2/settings-moss-nodaemon-zh-dark rc=0  
+T2.1/settings-daemon-running-zh-light rc=0  
+T2.1/settings-daemon-running-zh-dark rc=0  
+T2.1/settings-daemon-stopped-zh-light rc=0  
+T2.1/settings-daemon-stopped-zh-dark rc=0  
+T2.1/settings-daemon-unknown-zh-light rc=0  
+T2.1/settings-daemon-unknown-zh-dark rc=0  
+T2.2/settings-moss-running-en-light rc=0  
+T2.2/settings-moss-running-en-dark rc=0  
+T2.2/settings-moss-restarted-en-light rc=0  
+T2.2/settings-moss-restarted-en-dark rc=0  
+T2.2/settings-moss-off-en-light rc=0  
+T2.2/settings-moss-off-en-dark rc=0  
+T2.2/settings-moss-failing-en-light rc=0  
+T2.2/settings-moss-failing-en-dark rc=0  
+T2.2/settings-moss-nodaemon-en-light rc=0  
+T2.2/settings-moss-nodaemon-en-dark rc=0  
+T2.1/settings-daemon-running-en-light rc=0  
+T2.1/settings-daemon-running-en-dark rc=0  
+T2.1/settings-daemon-stopped-en-light rc=0  
+T2.1/settings-daemon-stopped-en-dark rc=0  
+T2.1/settings-daemon-unknown-en-light rc=0  
+T2.1/settings-daemon-unknown-en-dark rc=0  
+T2.3/empty-zh-light rc=0  
+T2.3/empty-zh-dark rc=0  
+T2.3/chat-actions-zh-light rc=0  
+T2.3/chat-actions-zh-dark rc=0  
+T2.3/chat-typing-zh-light rc=0  
+T2.3/chat-typing-zh-dark rc=0  
+T2.3/queued-zh-light rc=0  
+T2.3/queued-zh-dark rc=0  
+T2.3/thinking-zh-light rc=0  
+T2.3/thinking-zh-dark rc=0  
+T2.3/failing-zh-light rc=0  
+T2.3/failing-zh-dark rc=0  
+T2.3/off-zh-light rc=0  
+T2.3/off-zh-dark rc=0  
+T2.3/empty-en-light rc=0  
+T2.3/empty-en-dark rc=0  
+T2.3/chat-actions-en-light rc=0  
+T2.3/chat-actions-en-dark rc=0  
+T2.3/chat-typing-en-light rc=0  
+T2.3/chat-typing-en-dark rc=0  
+T2.3/queued-en-light rc=0  
+T2.3/queued-en-dark rc=0  
+T2.3/thinking-en-light rc=0  
+T2.3/thinking-en-dark rc=0  
+T2.3/failing-en-light rc=0  
+T2.3/failing-en-dark rc=0  
+T2.3/off-en-light rc=0  
+T2.3/off-en-dark rc=0  
+T2.4/checkup-zh-light rc=0  
+T2.4/checkup-zh-dark rc=0  
+T2.4/checkup-en-light rc=0  
+T2.4/checkup-en-dark rc=0  
+T2.2/settings-moss-running-zh-light rc=0  
+T2.2/settings-moss-running-zh-dark rc=0  
+T2.2/settings-moss-restarted-zh-light rc=0  
+T2.2/settings-moss-restarted-zh-dark rc=0  
+T2.2/settings-moss-off-zh-light rc=0  
+T2.2/settings-moss-off-zh-dark rc=0  
+T2.2/settings-moss-failing-zh-light rc=0  
+T2.2/settings-moss-failing-zh-dark rc=0  
+T2.2/settings-moss-nodaemon-zh-light rc=0  
+T2.2/settings-moss-nodaemon-zh-dark rc=0  
+T2.1/settings-daemon-running-zh-light rc=0  
+T2.1/settings-daemon-running-zh-dark rc=0  
+T2.1/settings-daemon-stopped-zh-light rc=0  
+T2.1/settings-daemon-stopped-zh-dark rc=0  
+T2.1/settings-daemon-unknown-zh-light rc=0  
+T2.1/settings-daemon-unknown-zh-dark rc=0  
+T2.2/settings-moss-running-en-light rc=0  
+T2.2/settings-moss-running-en-dark rc=0  
+T2.2/settings-moss-restarted-en-light rc=0  
+T2.2/settings-moss-restarted-en-dark rc=0  
+T2.2/settings-moss-off-en-light rc=0  
+T2.2/settings-moss-off-en-dark rc=0  
+T2.2/settings-moss-failing-en-light rc=0  
+T2.2/settings-moss-failing-en-dark rc=0  
+T2.2/settings-moss-nodaemon-en-light rc=0  
+T2.2/settings-moss-nodaemon-en-dark rc=0  
+T2.1/settings-daemon-running-en-light rc=0  
+T2.1/settings-daemon-running-en-dark rc=0  
+T2.1/settings-daemon-stopped-en-light rc=0  
+T2.1/settings-daemon-stopped-en-dark rc=0  
+T2.1/settings-daemon-unknown-en-light rc=0  
+T2.1/settings-daemon-unknown-en-dark rc=0  
+T2.2/settings-moss-running-zh-light rc=0  
+T2.2/settings-moss-running-zh-dark rc=0  
+T2.2/settings-moss-restarted-zh-light rc=0  
+T2.2/settings-moss-restarted-zh-dark rc=0  
+T2.2/settings-moss-off-zh-light rc=0  
+T2.2/settings-moss-off-zh-dark rc=0  
+T2.2/settings-moss-failing-zh-light rc=0  
+T2.2/settings-moss-failing-zh-dark rc=0  
+T2.2/settings-moss-nodaemon-zh-light rc=0  
+T2.2/settings-moss-nodaemon-zh-dark rc=0  
+T2.1/settings-daemon-running-zh-light rc=0  
+T2.1/settings-daemon-running-zh-dark rc=0  
+T2.1/settings-daemon-stopped-zh-light rc=0  
+T2.1/settings-daemon-stopped-zh-dark rc=0  
+T2.1/settings-daemon-unknown-zh-light rc=0  
+T2.1/settings-daemon-unknown-zh-dark rc=0  
+T2.2/settings-moss-running-en-light rc=0  
+T2.2/settings-moss-running-en-dark rc=0  
+T2.2/settings-moss-restarted-en-light rc=0  
+T2.2/settings-moss-restarted-en-dark rc=0  
+T2.2/settings-moss-off-en-light rc=0  
+T2.2/settings-moss-off-en-dark rc=0  
+T2.2/settings-moss-failing-en-light rc=0  
+T2.2/settings-moss-failing-en-dark rc=0  
+T2.2/settings-moss-nodaemon-en-light rc=0  
+T2.2/settings-moss-nodaemon-en-dark rc=0  
+T2.1/settings-daemon-running-en-light rc=0  
+T2.1/settings-daemon-running-en-dark rc=0  
+T2.1/settings-daemon-stopped-en-light rc=0  
+T2.1/settings-daemon-stopped-en-dark rc=0  
+T2.1/settings-daemon-unknown-en-light rc=0  
+T2.1/settings-daemon-unknown-en-dark rc=0  

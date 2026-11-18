@@ -32,3 +32,7 @@ No missing screenshot was fabricated and no checkbox was changed merely because 
 On 2026-11-17 the user chose to organize and push the feature branch, leaving main unchanged and stage-clean explicitly incomplete. No skip-gate approval was granted. T2.29 tracks the 16 outstanding evidence items. Existing P3/P4/R1 backlog remains open.
 
 The old HTML board also carries pre-existing design-hook warnings (gradient text, contrast and small text). This round changes status text only: no new ignore rules or suppression were added, and those design warnings are not claimed resolved.
+
+## Follow-up — 2026-11-18
+
+The user chose to close the 16 remaining criteria with evidence. All 16 are now ticked: off-screen render matrices and in-process probes for the visual and app-action items, the final merge tree's local L2 for T2.14, and the user's own checks on this Mac for the three real-device items. Evidence, reproduction scripts and limits: `acceptance-20261118/README.md`. Result: 97 of 97.

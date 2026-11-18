@@ -222,7 +222,7 @@ R1 ◄── 全部
 | **T2.26** 批量重启回执按记录定位 | cc-moss | T2.6 | ⬜ Backlog | — | 同对话多个运行副本的回执逐记录匹配，不误报失败 |
 | **T2.27** 既有活跃副本清理的身份保护 | cc-moss | T2.14 | ⬜ Backlog | — | 清理写入前复核身份和恢复声明，不用旧快照关闭新状态 |
 | **T2.28** 名称冲突的显式记录定位 | cc-moss | — | ⬜ Backlog | — | 无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道 |
-| **T2.29** 旧 Done 视觉与真机证据补齐 | cc-moss | — | ⬜ Backlog | — | 16 条未勾验收逐条补证，不能以 Done 或已发布替代 |
+| **T2.29** 旧 Done 视觉与真机证据补齐 | cc-moss | — | ✅ Done | — | 16 条未勾验收逐条补证，不能以 Done 或已发布替代 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -547,3 +547,7 @@ R1 ◄── 全部
 - 聚合台账 2026-11-18：feature/004-twin-records，2→1（`0b2ab02` + `8b87fb4` → `fb70a1f`），备份 `refs/backup/pre-aggregate-20261118-record-target-review` 只在本地；dry-run 呈报后 apply，tree `ca5a0fb8f3e62ed5ad6d650ae1d37590ba3a1f77` 逐字节一致。另加一条独立收尾记录提交，不改 main/tags。
 - 最终 L2：`twin-records-final`，上述 tree，rc=0/170.1 秒；Rust 1243/0/8，Swift 1002，site 70/0；fmt/clippy/build 通过。聚合后新提交差异 Gitleaks rc=0，无新增秘密命中。
 - STAGE-CLEAN: 2026-11-18 status=blocked commits=[cc-moss:2→1+收尾记录] review=[自动收拢撤回,身份碰撞拒绝,CLI能力门禁,私有夹具修正; held:T2.26–T2.29] kanban=ok(37) acceptance=81/97。机制脚本 rc=1：真实阻塞为 16 项旧验收证据未齐；另将已跟踪的 `ScratchDefaults.swift` 与 `ScratchDefaultsTests.swift` 按 `/scratch` 名称误识为杂散文件，实读确认是偏好隔离测试及其回归保护，保留，不为了过门禁删测试。未加 SKIP-GATE、未改 gate。
+- 用户裁决 2026-11-18：选 A——补齐 16 条证据并修正 gate 误报，完成后合并并发版，做好新 feature 的准备。
+- T2.29 2026-11-18 完成：152 张离屏图 + 48 次离屏探针（临时 HOME、演示/测试夹具、全部 rc=0），按 spec 拼成对照图，证据与复现脚本在 `reports/acceptance-20261118/`。为取得 App 动作回执，`Render.swift` 加 `--archive-action unarchive|clean-all|restart-stale` 探针，演示替身补 `unarchive` 与 `restart --stale` 逐行回执；产品代码不变。真机三项由用户本机实测：T1.4 ⑦「T1.4 真机验收通过」、T2.4 ⑧「T2.4 也验证过了」、T2.4 ⑥ 发送简报关闭时的每日原文「安静，没弹通知」。T2.14 以本轮最终合并树本机 L2 代替借机核对。97/97。
+- gate 修正 2026-11-18：larry-sdd `stage_clean_check.sh` 杂散规则 `/scratch` → `(^|/)scratch/`，新增 4 条单测（改前 2 红）；`ScratchDefaults*.swift` 不再被误报，仓根 `scratch/` 目录改为能抓到。
+- REPORT（更新）: 完成 = 上述 + T2.29 验收补齐；后续缺陷 = T2.26、T2.27、T2.28；P3/P4/R1 与旧轮次延期项不变。
