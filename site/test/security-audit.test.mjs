@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { runSecurityAudit } from "../scripts/security-audit.mjs";
+import { runSecurityAudit, WAIVERS } from "../scripts/security-audit.mjs";
 
 const clean = () => ({
   advisories: {},
@@ -110,4 +110,58 @@ test("malformed output preserves failure status and stderr", () => {
   const result = audit({ status: 9, stdout: "", stderr: "registry request failed" });
   assert.equal(result.code, 9);
   assert.match(result.output, /registry request failed/);
+});
+
+// Waivers: one reviewed advisory with no fix yet, until a date.
+const waiver = { id: "GHSA-test-0000-0000", module: "picomatch", expires: "2026-12-18", reason: "build-time only" };
+const before = new Date("2026-11-20T00:00:00Z");
+
+function waivable(extra = {}) {
+  const body = clean();
+  body.metadata.vulnerabilities.high = 1;
+  body.advisories = { 1: { github_advisory_id: waiver.id, module_name: "picomatch", severity: "high", patched_versions: null, ...extra } };
+  return body;
+}
+
+function auditWith(result, { now = before, waivers = [waiver] } = {}) {
+  const messages = [];
+  const code = runSecurityAudit({ run: () => result, log: (m) => messages.push(m), now, waivers });
+  return { code, output: messages.join("\n") };
+}
+
+test("a waived advisory with no fix passes and says it was waived", () => {
+  const result = auditWith(response(waivable(), 1));
+  assert.equal(result.code, 0);
+  assert.match(result.output, /waived.*GHSA-test-0000-0000.*2026-12-18/);
+});
+
+test("a waiver stops working on its expiry date", () => {
+  assert.notEqual(auditWith(response(waivable(), 1), { now: new Date("2026-12-18T00:00:00Z") }).code, 0);
+});
+
+for (const patched of [">=4.0.8", ">=2.3.3 <3.0.0"]) {
+  test(`a waiver stops working once a fix exists (${patched})`, () => {
+    assert.notEqual(auditWith(response(waivable({ patched_versions: patched }), 1)).code, 0);
+  });
+}
+
+test("a waiver for one package does not cover another with the same id", () => {
+  assert.notEqual(auditWith(response(waivable({ module_name: "micromatch" }), 1)).code, 0);
+});
+
+test("an unwaived advisory alongside a waived one still fails", () => {
+  const body = waivable();
+  body.metadata.vulnerabilities.moderate = 1;
+  body.advisories[2] = { github_advisory_id: "GHSA-other", module_name: "other", severity: "moderate", patched_versions: ">=1.0.1" };
+  const result = auditWith(response(body, 1));
+  assert.notEqual(result.code, 0);
+  assert.match(result.output, /GHSA-other/);
+});
+
+test("the shipped waivers each name a reason and an expiry", () => {
+  for (const w of WAIVERS) {
+    assert.match(w.id, /^GHSA-/);
+    assert.ok(w.module && w.reason.length > 20, w.id);
+    assert.ok(!Number.isNaN(Date.parse(w.expires)), w.id);
+  }
 });
