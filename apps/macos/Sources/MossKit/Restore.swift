@@ -1,12 +1,12 @@
 import Foundation
 
 extension Session {
-    /// How cc-moss commands that change a session find it: its full
-    /// conversation id, which `cc-moss` resolves by prefix. Never the name:
-    /// two open sessions can share one, and the command then can't tell
-    /// which row was clicked. The slot id in `id` is not something the CLI
-    /// looks sessions up by.
-    public var target: String { sessionId }
+    /// How cc-moss commands that change a session find it: its record id
+    /// (`id`), which `cc-moss` takes whole. Not the name, and not the
+    /// conversation id either: two rows can share both (a conversation a
+    /// second Claude Code resumed), and the command then can't tell which
+    /// row was clicked.
+    public var target: String { id }
 }
 
 /// The exact session a restore click meant: its slot and full conversation id,

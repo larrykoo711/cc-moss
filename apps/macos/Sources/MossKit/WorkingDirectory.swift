@@ -6,21 +6,33 @@ public struct CLICapabilities: Decodable, Equatable, Sendable {
     public var newReceipt: Int?
     /// `restore --exact-slot-id`: restores by slot and full UUID, never by name.
     public var exactRestore: Int?
-    public init(workingDirectory: Int? = nil, newReceipt: Int? = nil, exactRestore: Int? = nil) {
+    /// Ordinary session commands accept the whole record id as a target.
+    public var recordTarget: Int?
+    public init(workingDirectory: Int? = nil, newReceipt: Int? = nil, exactRestore: Int? = nil, recordTarget: Int? = nil) {
         self.workingDirectory = workingDirectory
         self.newReceipt = newReceipt
         self.exactRestore = exactRestore
+        self.recordTarget = recordTarget
     }
     public var checksWorkingDirectory: Bool { workingDirectory == 1 }
     public var returnsNewReceipt: Bool { newReceipt == 1 }
     public var restoresExactly: Bool { exactRestore == 1 }
+    public var resolvesRecordTargets: Bool { recordTarget == 1 }
 
-    enum CodingKeys: String, CodingKey { case workingDirectory, newReceipt, exactRestore }
+    enum CodingKeys: String, CodingKey { case workingDirectory, newReceipt, exactRestore, recordTarget }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         workingDirectory = try? c.decodeIfPresent(Int.self, forKey: .workingDirectory)
         newReceipt = try? c.decodeIfPresent(Int.self, forKey: .newReceipt)
         exactRestore = try? c.decodeIfPresent(Int.self, forKey: .exactRestore)
+        recordTarget = try? c.decodeIfPresent(Int.self, forKey: .recordTarget)
+    }
+}
+
+public enum RecordTargetPolicy {
+    public static var updateRequired: String {
+        L.t("Update cc-moss in Terminal before using this session. This version can't select a session by its record id.",
+            "请先更新终端里的 cc-moss；当前版本无法按记录 ID 精确选择会话，未执行操作。")
     }
 }
 

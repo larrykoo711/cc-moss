@@ -35,7 +35,8 @@ extension AppModel {
             showRowNote(s.id, text: wait)
             return
         }
-        guard Adopt.availability(s) == .ready, !adopting.contains(s.id) else { return }
+        guard Adopt.availability(s) == .ready, !adopting.contains(s.id),
+              permitsRecordTarget(s, action: .adopt) else { return }
         closeReply()
         rowNote = nil
         selectedID = s.id
@@ -68,7 +69,8 @@ extension AppModel {
     /// row (its new name, its summary), still selected and in view.
     func adopt(_ s: Session) {
         guard let client, !adopting.contains(s.id), let current = session(s.id),
-              current.sessionId == s.sessionId, permitsLaunch(current, action: .adopt) else { return }
+              current.sessionId == s.sessionId, permitsRecordTarget(current, action: .adopt),
+              permitsLaunch(current, action: .adopt) else { return }
         adoptAsk = nil
         adoptProblems[s.id] = nil
         adopting.insert(s.id)

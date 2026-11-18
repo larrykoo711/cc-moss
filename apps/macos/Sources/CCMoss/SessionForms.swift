@@ -200,7 +200,7 @@ extension AppModel {
     /// Type `text` into the session, as if in its terminal. One at a time:
     /// the form stays, locked, until it went; on failure it keeps the text.
     func sendMessage(_ s: Session, text: String, done: String) {
-        guard let client, sendFlow.begin() else { return }
+        guard let client, permitsRecordTarget(s, action: .send), sendFlow.begin() else { return }
         Task {
             do {
                 try await client.send(target: s.target, text: text)
@@ -290,7 +290,8 @@ extension AppModel {
     /// Return in the line: send what's in it. Then on to the next session
     /// waiting for you, its line open, so a run of replies is just Return.
     func sendReply(_ s: Session) {
-        guard let text = ReplyLine.toSend(replyDraft), let client, replyFlow.begin() else { return }
+        guard let text = ReplyLine.toSend(replyDraft), let client,
+              permitsRecordTarget(s, action: .answer), replyFlow.begin() else { return }
         Task {
             do {
                 try await client.send(target: s.target, text: text)
@@ -330,7 +331,7 @@ extension AppModel {
     }
 
     func saveNote(_ s: Session, text: String) {
-        guard let client else { return }
+        guard let client, permitsRecordTarget(s, action: .note) else { return }
         form = nil
         Task {
             do {

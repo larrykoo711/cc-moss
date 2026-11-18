@@ -250,7 +250,7 @@ public struct RebuildPlan: Equatable, Sendable {
         let json = String(decoding: try encoder.encode(identity), as: UTF8.self)
         return ["restart", "--rebuild-pane", "--yes", "--rebuild-identity", json]
             + (applyingProvider ? ["--provider-default"] : [])
-            + ["--json", "--", identity.sessionId]
+            + ["--json", "--", identity.slotId]
     }
 }
 

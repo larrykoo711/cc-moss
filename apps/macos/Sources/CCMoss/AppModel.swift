@@ -655,8 +655,9 @@ final class AppModel {
 
     /// Open `s` in the chosen terminal, off the main thread (AppleScript and
     /// `open` can take a while, or wait on a permission prompt). `done` gets
-    /// true when it opened; otherwise `openProblem` says why.
+    /// true when it opened; otherwise `openProblem` or the notice says why.
     func open(_ s: Session, done: (@MainActor (Bool) -> Void)? = nil) {
+        guard permitsRecordTarget(s) else { done?(false); return }
         terminals.settle()
         let handle = s.handle, cli = cli, terminal = terminals.current, style = terminals.openStyle
         Task {

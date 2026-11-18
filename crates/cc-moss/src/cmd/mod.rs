@@ -77,7 +77,11 @@ pub fn resolve_item<'a>(
                 }
                 _ => Vec::new(),
             };
-            let ambiguous = matches!(e, moss_core::restore::ResolveError::Ambiguous { .. });
+            let ambiguous = matches!(
+                e,
+                moss_core::restore::ResolveError::Ambiguous { .. }
+                    | moss_core::restore::ResolveError::IdentityConflict(_)
+            );
             Err(Unresolved {
                 ambiguous,
                 message: resolve_message(&e, name),
@@ -104,10 +108,14 @@ fn resolve_message(e: &moss_core::restore::ResolveError, name: &str) -> String {
                 e.to_string(),
                 format!("没有叫 `{name}` 的会话（看看 `cc-moss ls --all`）")
             ),
+            ResolveError::IdentityConflict(_) => tr!(
+                e.to_string(),
+                format!("`{name}` 既是一条记录的 id，也是另一条会话的名字；请改用唯一的 tmux 名字")
+            ),
             ResolveError::Ambiguous { matches, .. } => tr!(
                 e.to_string(),
                 format!(
-                    "`{name}` 对上了好几个会话：{}（换成 id 前缀试试）",
+                    "`{name}` 对上了好几个会话：{}（换成括号里的 id 试试）",
                     matches.join("、")
                 )
             ),

@@ -11,6 +11,6 @@ public enum Shell {
 
 extension Session {
     /// What to hand cc-moss commands (`attach` in a terminal too): the
-    /// conversation id, as `target`; a name can be shared.
+    /// record id, as `target`; a name, even a conversation id, can be shared.
     public var handle: String { target }
 }

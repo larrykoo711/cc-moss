@@ -71,7 +71,7 @@ pub fn run(all: bool, archived: bool, as_json: bool) -> Result<()> {
             "{}",
             serde_json::to_string_pretty(&json!({
                 "schema": JSON_SCHEMA,
-                "capabilities": {"working_directory": 1, "new_receipt": 1, "exact_restore": 1},
+                "capabilities": {"working_directory": 1, "new_receipt": 1, "exact_restore": 1, "record_target": 1},
                 "state_dir": store_dir::state_dir(),
                 "provider": { "host": settings.as_ref().and_then(|s| s.host.clone()) },
                 "sessions": sessions,

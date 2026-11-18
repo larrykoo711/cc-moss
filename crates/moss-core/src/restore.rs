@@ -102,11 +102,27 @@ fn verdict(slot: &Slot, now_ms: i64, exists: &impl Fn(&Path) -> bool) -> Verdict
 /// Shortest session id prefix accepted as a name.
 const MIN_ID_PREFIX: usize = 6;
 
-/// Find one slot by Claude session name, else tmux session name, else a
-/// session id prefix of at least six characters. Open slots (running or
-/// interrupted) win over closed ones with the same name.
+/// Find one slot by its record id (the slot id, whole), else Claude
+/// session name, else tmux session name, else a session id prefix of at
+/// least six characters. Open slots (running or interrupted) win over
+/// closed ones with the same name. The record id is the one handle two
+/// copies of one conversation never share.
 pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Slot, ResolveError> {
-    let tiers: [&dyn Fn(&Slot) -> bool; 3] = [
+    // A name can legally look like another row's record id. Neither the
+    // name nor the id may silently win: a click and a typed name must both
+    // fail closed instead of changing the other row.
+    if let Some(record) = slots.iter().find(|s| s.slot_id.eq_ignore_ascii_case(query)) {
+        let conflicts = slots.iter().any(|s| {
+            s.slot_id != record.slot_id
+                && (s.name.as_deref() == Some(query)
+                    || s.tmux.as_ref().and_then(|t| t.session_name.as_deref()) == Some(query))
+        });
+        if conflicts {
+            return Err(ResolveError::IdentityConflict(query.to_string()));
+        }
+    }
+    let tiers: [&dyn Fn(&Slot) -> bool; 4] = [
+        &|s| s.slot_id.eq_ignore_ascii_case(query),
         &|s| s.name.as_deref() == Some(query),
         &|s| s.tmux.as_ref().and_then(|t| t.session_name.as_deref()) == Some(query),
         &|s| {
@@ -128,25 +144,20 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Sl
             [] => continue,
             [one] => return Ok(one),
             many => {
-                let mut candidates: Vec<String> = Vec::new();
-                for s in many {
-                    let id: String = s.session_id.chars().take(8).collect();
-                    if !candidates.contains(&id) {
-                        candidates.push(id);
-                    }
-                }
+                let prefix = |s: &Slot| s.session_id.chars().take(8).collect::<String>();
+                // Copies of one conversation share its id: only their
+                // record ids tell them apart.
+                let mut prefixes: Vec<String> = many.iter().map(|s| prefix(s)).collect();
+                prefixes.sort();
+                prefixes.dedup();
+                let twins = prefixes.len() < many.len();
+                let handle = |s: &Slot| if twins { s.slot_id.clone() } else { prefix(s) };
                 return Err(ResolveError::Ambiguous {
                     query: query.to_string(),
-                    candidates,
+                    candidates: many.iter().map(|s| handle(s)).collect(),
                     matches: many
                         .iter()
-                        .map(|s| {
-                            format!(
-                                "{} ({})",
-                                s.name.as_deref().unwrap_or("-"),
-                                s.session_id.chars().take(8).collect::<String>()
-                            )
-                        })
+                        .map(|s| format!("{} ({})", s.name.as_deref().unwrap_or("-"), handle(s)))
                         .collect(),
                 });
             }
@@ -159,8 +170,10 @@ pub fn resolve<'a>(slots: &'a [Slot], query: &str) -> std::result::Result<&'a Sl
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ResolveError {
     NotFound(String),
-    /// `matches` are "name (id prefix)"; `candidates` the id prefixes
-    /// alone, each once.
+    /// A record id also names a different row. Never guess which was meant.
+    IdentityConflict(String),
+    /// `matches` are "name (identifier)"; candidates are conversation id
+    /// prefixes, or full record ids when the prefixes do not distinguish rows.
     Ambiguous {
         query: String,
         matches: Vec<String>,
@@ -174,9 +187,13 @@ impl std::fmt::Display for ResolveError {
             ResolveError::NotFound(q) => {
                 write!(f, "no session named `{q}` (see `cc-moss ls --all`)")
             }
+            ResolveError::IdentityConflict(q) => write!(
+                f,
+                "`{q}` is a record id and another session's name; use a unique tmux name instead"
+            ),
             ResolveError::Ambiguous { query, matches, .. } => write!(
                 f,
-                "`{query}` matches several sessions: {} (use an id prefix)",
+                "`{query}` matches several sessions: {} (use the id in brackets)",
                 matches.join(", ")
             ),
         }

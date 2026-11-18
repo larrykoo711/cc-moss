@@ -64,14 +64,25 @@ private let mixedJSON = """
         #expect(await runner.calls == [["restore", "--yes", "--json", "--exact-slot-id", "01A", "--", "job-a"]])
     }
 
-    @Test func targetsByConversationIdNeverName() {
+    @Test func targetsByRecordIdNeverName() {
         let s = sessions([sessionJSON(id: "01A", name: "job-a"), sessionJSON(id: "01B", name: nil)])
-        #expect(s[0].target == "01A-sid-0000")
-        #expect(s[1].target == "01B-sid-0000")
+        #expect(s[0].target == "01A")
+        #expect(s[1].target == "01B")
     }
 
     @Test func twoSessionsWithOneNameStayApart() {
         let s = sessions([sessionJSON(id: "01A", name: "job"), sessionJSON(id: "01B", name: "job")])
+        #expect(s[0].target != s[1].target)
+    }
+
+    /// Two copies of one conversation share its name and its id: only the
+    /// record id tells the CLI which row was clicked.
+    @Test func copiesOfOneConversationStayApart() {
+        var two = sessionJSON(id: "01B", name: "job")
+        two["session_id"] = "01A-sid-0000"
+        two["session_ids"] = ["01A-sid-0000"]
+        let s = sessions([sessionJSON(id: "01A", name: "job"), two])
+        #expect(s[0].sessionId == s[1].sessionId)
         #expect(s[0].target != s[1].target)
     }
 

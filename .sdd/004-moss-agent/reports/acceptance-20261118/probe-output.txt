@@ -1,0 +1,128 @@
+## T1.4/card-3f2a9c4e81d07b55-zh-light rc=0
+
+## T1.4/card-3f2a9c4e81d07b55-zh-dark rc=0
+
+## T1.4/card-7b1e44d0a9c35f12-zh-light rc=0
+
+## T1.4/card-7b1e44d0a9c35f12-zh-dark rc=0
+
+## T1.4/card-c40d8e2f6b1a9375-zh-light rc=0
+
+## T1.4/card-c40d8e2f6b1a9375-zh-dark rc=0
+
+## T1.4/card-e9a51b7c3d2f8064-zh-light rc=0
+
+## T1.4/card-e9a51b7c3d2f8064-zh-dark rc=0
+
+## T1.4/card-52c7e0b9f4a1d683-zh-light rc=0
+
+## T1.4/card-52c7e0b9f4a1d683-zh-dark rc=0
+
+## T1.4/card-3f2a9c4e81d07b55-en-light rc=0
+
+## T1.4/card-3f2a9c4e81d07b55-en-dark rc=0
+
+## T1.4/card-7b1e44d0a9c35f12-en-light rc=0
+
+## T1.4/card-7b1e44d0a9c35f12-en-dark rc=0
+
+## T1.4/card-c40d8e2f6b1a9375-en-light rc=0
+
+## T1.4/card-c40d8e2f6b1a9375-en-dark rc=0
+
+## T1.4/card-e9a51b7c3d2f8064-en-light rc=0
+
+## T1.4/card-e9a51b7c3d2f8064-en-dark rc=0
+
+## T1.4/card-52c7e0b9f4a1d683-en-light rc=0
+
+## T1.4/card-52c7e0b9f4a1d683-en-dark rc=0
+
+## T1.4/click-answered rc=0
+--click: pressed "放在路径里"
+cc-moss ask answer 3f2a9c4e81d07b55 --choice 放在路径里 --by desktop --json
+## T1.4/click-late rc=0
+--click: pressed "放在路径里"
+cc-moss ask answer 3f2a9c4e81d07b55 --choice 放在路径里 --by desktop --json
+## T1.4/click-not-waiting rc=0
+--click: pressed "放在路径里"
+cc-moss ask answer 3f2a9c4e81d07b55 --choice 放在路径里 --by desktop --json
+## T1.4/click-refused rc=0
+--click: pressed "放在路径里"
+cc-moss ask answer 3f2a9c4e81d07b55 --choice 放在路径里 --by desktop --json
+## T2.5/archived-zh-light rc=0
+
+## T2.5/archived-zh-dark rc=0
+
+## T2.5/unarchive-zh rc=0
+cc-moss unarchive --json -- 01C
+archive-action: unarchive; archived=2->1; page=sessions; notice=修发票 回到列表了。; failure=none
+recovery: 01B none
+recovery: 01D none
+## T2.5/clean-all-zh rc=0
+cc-moss moss say --json -- 清理全部归档会话
+archive-action: clean-all; archived=2->2; page=moss; notice=none; failure=none
+recovery: 01B none
+recovery: 01D none
+## T2.6/to-api-banner-zh-light rc=0
+
+## T2.6/to-api-banner-zh-dark rc=0
+
+## T2.6/to-api-row-restart-zh rc=0
+cc-moss restart --json -- 01B
+provider-action: restart; operation: 等待会话确认; loading: false; notice: none; global-failure: none
+## T2.6/to-api-restart-all-zh rc=0
+cc-moss restart --stale --provider-default --json
+archive-action: restart-stale; archived=2->2; page=sessions; notice=none; failure=none
+recovery: 01B 等待会话确认
+recovery: 01D 等待会话确认
+## T2.6/to-subscription-banner-zh-light rc=0
+
+## T2.6/to-subscription-banner-zh-dark rc=0
+
+## T2.6/to-subscription-row-restart-zh rc=0
+cc-moss restart --json -- 01B
+provider-action: restart; operation: 等待会话确认; loading: false; notice: none; global-failure: none
+## T2.6/to-subscription-restart-all-zh rc=0
+cc-moss restart --stale --provider-default --json
+archive-action: restart-stale; archived=2->2; page=sessions; notice=none; failure=none
+recovery: 01B 等待会话确认
+recovery: 01D 等待会话确认
+## T2.5/archived-en-light rc=0
+
+## T2.5/archived-en-dark rc=0
+
+## T2.5/unarchive-en rc=0
+cc-moss unarchive --json -- 01C
+archive-action: unarchive; archived=2->1; page=sessions; notice=fix-invoice is back in the list.; failure=none
+recovery: 01B none
+recovery: 01D none
+## T2.5/clean-all-en rc=0
+cc-moss moss say --json -- 'Clean up all archived sessions'
+archive-action: clean-all; archived=2->2; page=moss; notice=none; failure=none
+recovery: 01B none
+recovery: 01D none
+## T2.6/to-api-banner-en-light rc=0
+
+## T2.6/to-api-banner-en-dark rc=0
+
+## T2.6/to-api-row-restart-en rc=0
+cc-moss restart --json -- 01B
+provider-action: restart; operation: Waiting for Session Confirmation; loading: false; notice: none; global-failure: none
+## T2.6/to-api-restart-all-en rc=0
+cc-moss restart --stale --provider-default --json
+archive-action: restart-stale; archived=2->2; page=sessions; notice=none; failure=none
+recovery: 01B Waiting for Session Confirmation
+recovery: 01D Waiting for Session Confirmation
+## T2.6/to-subscription-banner-en-light rc=0
+
+## T2.6/to-subscription-banner-en-dark rc=0
+
+## T2.6/to-subscription-row-restart-en rc=0
+cc-moss restart --json -- 01B
+provider-action: restart; operation: Waiting for Session Confirmation; loading: false; notice: none; global-failure: none
+## T2.6/to-subscription-restart-all-en rc=0
+cc-moss restart --stale --provider-default --json
+archive-action: restart-stale; archived=2->2; page=sessions; notice=none; failure=none
+recovery: 01B Waiting for Session Confirmation
+recovery: 01D Waiting for Session Confirmation

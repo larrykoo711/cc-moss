@@ -7,6 +7,20 @@ import SwiftUI
 extension AppModel {
     var restoreGroups: RestoreGroups { RestoreGroups(sessions) }
 
+    /// Use the capability from the latest snapshot; never try a name or shared conversation id instead.
+    func permitsRecordTarget(_ session: Session?, action: FailureNotice.Action? = nil) -> Bool {
+        guard cliCapabilities.resolvesRecordTargets else {
+            if let action {
+                report(FailureNotice(action: action, subject: session.map(FailureNotice.Subject.init),
+                                     reason: RestorePolicy.updateRequiredCode, message: RecordTargetPolicy.updateRequired))
+            } else {
+                say(RecordTargetPolicy.updateRequired)
+            }
+            return false
+        }
+        return true
+    }
+
     /// Snapshot denials explain the block; the CLI still rechecks the final source context.
     func permitsLaunch(_ current: Session, action: FailureNotice.Action) -> Bool {
         guard cliCapabilities.checksWorkingDirectory else {
@@ -227,7 +241,7 @@ extension AppModel {
     /// "Stop reminding" for `list`: `cc-moss close`. The panel asks first
     /// where more than one session or anything restorable is at stake.
     func close(_ list: [Session]) {
-        guard let client, !list.isEmpty else { return }
+        guard let client, !list.isEmpty, permitsRecordTarget(list.count == 1 ? list.first : nil, action: .close) else { return }
         Task {
             do {
                 try await client.close(list.map(\.target))

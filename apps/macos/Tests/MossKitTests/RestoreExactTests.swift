@@ -31,6 +31,15 @@ private func restored(_ slot: String, ok: Bool = true, reason: String? = nil) ->
         #expect(try !capabilities(#"{"exact_restore":"1"}"#).restoresExactly)
         #expect(!(try Snapshot.decode(snapshotData([])).capabilities.restoresExactly))
     }
+
+    @Test func onlyRecordTargetOneAllowsRowCommands() throws {
+        #expect(try capabilities(#"{"record_target":1}"#).resolvesRecordTargets)
+        #expect(try !capabilities(#"{"working_directory":1,"exact_restore":1}"#).resolvesRecordTargets)
+        #expect(try !capabilities(#"{"record_target":2}"#).resolvesRecordTargets)
+        #expect(try !capabilities(#"{"record_target":"1"}"#).resolvesRecordTargets)
+        #expect(!(try Snapshot.decode(snapshotData([])).capabilities.resolvesRecordTargets))
+        L.$override.withValue(.zh) { #expect(RecordTargetPolicy.updateRequired.contains("更新终端里的 cc-moss")) }
+    }
 }
 
 @Suite struct RestoreExactArgumentTests {

@@ -29,7 +29,7 @@
 | `diagrams/architecture-moss-agent.html` | 架构图 |
 | `diagrams/sequence-ask.html` | 代答时序图 |
 | `diagrams/src/` | 两张图的 archify 源 JSON |
-| `PLAN.md` ⭐ | 4 Phase × 11 Task + R1、依赖图、Kanban |
+| `PLAN.md` ⭐ | 当前任务表、依赖图、Kanban 与各发布轮次里程碑 |
 | `playground.html` | 可视化档案（背景、缺口、方案、锚点、进展、反馈车道、Kanban） |
 | `notes/session-names.md` | 会话名与 tmux 名的调研与规则（2026-10-19） |
 | `notes/provider-switch-probe.md` | 运行中切换 API 供应商的实测（2026-10-20） |
@@ -39,7 +39,9 @@
 - S1 调研 + 设计 ✅：G1 用户批准（2026-10-18），D1–D4 已拍板
 - S2 编排：4 Phase × 11 Task + R1，P1 是 MVP（T1.1–T1.4）；G2 已过（2026-10-18）
 - S4 实施：P1（T1.1–T1.4）与 P2（T2.1–T2.4）✅（2026-10-19）；P3/P4 待下一轮
-- 第一波可并行：T1.1 探针、T1.2 bypass、T2.1 守护进程
+- 当前（2026-11-17）：0.3.12 已发布；重复记录精确定位已修主要路径并撤回新增自动收拢。旧 Done 验收 2026-11-18 补齐 97/97（T2.29），按用户裁决合并并发版；后续 T2.26–T2.28 已登记，P3/P4/R1 不变，下一轮功能尚未开始。
+- [本轮代码与隐私评审](reports/record-target-review.md)：发现、修补、已知限制与公开历史边界。
+- [历史验收总账](reports/historical-acceptance-review.md)：逐 spec 证据覆盖；16 条缺口的补证见 [acceptance-20261118](reports/acceptance-20261118/README.md)。
 
 ## 开发笔记
 - 公开仓：档案正文不得出现主机名、内网地址、账号、私有仓名

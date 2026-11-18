@@ -95,6 +95,8 @@ cc-moss ls                           # interrupted sessions first, then running 
 cc-moss restore                      # after a crash: bring everything back
 ```
 
+**When rows share a name or conversation**, use the full `id` from `cc-moss ls --all --json` to select one, for example `cc-moss archive <full-record-id>`. This is not the conversation's `session_id`, and record ids cannot be shortened. Ambiguity messages list record ids when conversation ids cannot distinguish the rows. If a record id is also another session's name, the command refuses to guess; use a unique tmux name instead. The app checks `capabilities.record_target=1` before targeting a record and asks for an update if the CLI lacks it. Once both copies have stopped, recency alone does not automatically close either one: their working folders or settings sources may differ.
+
 In the picker:
 
 | Mark | Meaning |

@@ -96,7 +96,7 @@ extension CloseTests {
         gate.cancel()
         #expect(gate.confirm() == nil, "cancelled: nothing to run")
         gate.request(s.map(\.target))
-        #expect(gate.confirm() == ["A-sid-0000"])
+        #expect(gate.confirm() == ["A"])
         #expect(gate.confirm() == nil, "runs once")
         #expect(Close.question(s).contains("job-a"))
     }
