@@ -7,7 +7,28 @@ import { fileURLToPath } from "node:url";
 const severities = ["info", "low", "moderate", "high", "critical"];
 const isObject = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 
-export function runSecurityAudit({ run = spawnSync, log = console.log } = {}) {
+// Reviewed advisories that have no fixed version yet. A waiver covers one advisory in one package,
+// ends on its expiry date, and ends as soon as the registry lists a fixed version.
+export const WAIVERS = [
+  {
+    id: "GHSA-fc5q-39xc-vjpf",
+    module: "picomatch",
+    expires: "2026-12-18",
+    reason: "ReDoS in extglob matching. Reached only through @tailwindcss/cli > @parcel/watcher > micromatch, " +
+      "a build-time file watcher with fixed patterns; nothing on the site runs it. No fixed version exists (2026-11-18).",
+  },
+];
+
+const hasFix = (advisory) => {
+  const patched = typeof advisory.patched_versions === "string" ? advisory.patched_versions.trim() : "";
+  return patched !== "" && patched !== "<0.0.0";
+};
+
+const waiverFor = (advisory, waivers, now) =>
+  waivers.find((w) => w.id === advisory?.github_advisory_id && w.module === advisory?.module_name &&
+    now < new Date(`${w.expires}T00:00:00Z`) && !hasFix(advisory));
+
+export function runSecurityAudit({ run = spawnSync, log = console.log, now = new Date(), waivers = WAIVERS } = {}) {
   const result = run("pnpm", ["audit", "--json", "--registry=https://registry.npmjs.org"], {
     encoding: "utf8",
     shell: false,
@@ -41,7 +62,18 @@ export function runSecurityAudit({ run = spawnSync, log = console.log } = {}) {
   }
   const total = severities.reduce((sum, severity) => sum + counts[severity], 0);
   const advisoryCount = Object.keys(report.advisories).length;
+  const advisories = Object.values(report.advisories);
+  const open = advisories.filter((a) => !waiverFor(a, waivers, now));
+  if (advisoryCount > 0 && open.length === 0) {
+    for (const a of advisories) {
+      const w = waiverFor(a, waivers, now);
+      log(`Security audit: waived ${w.id} (${w.module}) until ${w.expires}: ${w.reason}`);
+    }
+    log(`Security audit: ${total} vulnerabilities, all from waived advisories; nothing else found.`);
+    return 0;
+  }
   if (total > 0 || advisoryCount > 0) {
+    for (const a of open) log(`Security audit: ${a?.github_advisory_id ?? "advisory"} (${a?.module_name ?? "?"}, ${a?.severity ?? "?"})`);
     log(`Security audit: ${total} vulnerabilities (${severities.map((s) => `${s}=${counts[s]}`).join(", ")}); ${advisoryCount} advisories.`);
     return failureCode;
   }
