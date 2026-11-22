@@ -404,21 +404,100 @@ struct SessionRow: View {
 /// A small turning arc in the brand colour: Claude is on it.
 struct WorkingRing: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.panelShown) private var panelShown
 
-    /// The angle comes from the clock, not from a repeating animation: a
-    /// `repeatForever` animation also carried along the ring's position when
-    /// its row appeared or moved, so it drifted off the icon's centre,
-    /// towards its bottom-left corner.
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { context in
-            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 1.1) / 1.1
-            Circle()
-                .trim(from: 0, to: 0.72)
-                .stroke(Theme.brand, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
-                .frame(width: 11, height: 11)
-                .rotationEffect(.degrees(turn * 360))
+        RingSpinner(turning: WorkingSpin.runs(panelShown: panelShown, reduceMotion: reduceMotion))
+            .frame(width: 11, height: 11)
+    }
+}
+
+/// The ring is turned by Core Animation, not by SwiftUI. A `TimelineView`
+/// asked SwiftUI for a new frame 30 times a second, and every frame laid out
+/// the whole panel again, its rows and their times included. A
+/// `repeatForever` SwiftUI animation was no better: it also carried along the
+/// ring's position when its row appeared or moved, so it drifted off the
+/// icon's centre. Here the render server turns one layer, centred in
+/// `layout()`, and the app does nothing between frames.
+private struct RingSpinner: NSViewRepresentable {
+    var turning: Bool
+
+    func makeNSView(context: Context) -> RingView { RingView() }
+
+    func updateNSView(_ view: RingView, context: Context) {
+        view.turning = turning
+    }
+}
+
+final class RingView: NSView {
+    private let arc = CAShapeLayer()
+
+    var turning = false {
+        didSet { if turning != oldValue { applyTurning() } }
+    }
+
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        arc.fillColor = nil
+        arc.strokeColor = NSColor(Theme.brand).cgColor
+        arc.lineWidth = 1.8
+        arc.lineCap = .round
+        arc.strokeEnd = 0.72
+        layer?.addSublayer(arc)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+
+    /// Top-left origin, as in SwiftUI: the arc starts at three o'clock and
+    /// runs clockwise, and a positive turn is clockwise too.
+    override var isFlipped: Bool { true }
+
+    override func layout() {
+        super.layout()
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        arc.bounds = bounds
+        arc.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        arc.path = CGPath(ellipseIn: bounds, transform: nil)
+        CATransaction.commit()
+    }
+
+    override func viewDidChangeBackingProperties() {
+        super.viewDidChangeBackingProperties()
+        arc.contentsScale = window?.backingScaleFactor ?? 2
+    }
+
+    /// Removed, not paused, when it stops: nothing is left for the render
+    /// server to play.
+    private func applyTurning() {
+        if turning {
+            guard arc.animation(forKey: "turn") == nil else { return }
+            let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+            turn.fromValue = 0
+            turn.toValue = 2 * Double.pi
+            turn.duration = 1.1
+            turn.repeatCount = .infinity
+            turn.isRemovedOnCompletion = false
+            turn.preferredFrameRateRange = CAFrameRateRange(minimum: 10, maximum: 30, preferred: 30)
+            arc.add(turn, forKey: "turn")
+        } else {
+            arc.removeAnimation(forKey: "turn")
         }
-        .frame(width: 11, height: 11)
+    }
+}
+
+/// Whether the sessions panel is on screen. Hidden, its window is only
+/// ordered out and its views stay alive. Anywhere else (previews, Settings)
+/// counts as shown.
+private struct PanelShownKey: EnvironmentKey {
+    static let defaultValue = true
+}
+
+extension EnvironmentValues {
+    var panelShown: Bool {
+        get { self[PanelShownKey.self] }
+        set { self[PanelShownKey.self] = newValue }
     }
 }
 
