@@ -223,7 +223,7 @@ R1 ◄── 全部
 | **T2.27** 既有活跃副本清理的身份保护 | cc-moss | T2.14 | ⬜ Backlog | — | 清理写入前复核身份和恢复声明，不用旧快照关闭新状态 |
 | **T2.28** 名称冲突的显式记录定位 | cc-moss | — | ⬜ Backlog | — | 无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道 |
 | **T2.29** 旧 Done 视觉与真机证据补齐 | cc-moss | — | ✅ Done | — | 16 条未勾验收逐条补证，不能以 Done 或已发布替代 |
-| **T2.30** 面板关着时工作小环不耗 CPU | cc-moss | — | 🟨 In Progress | in-progress/T2.30-working-ring-cpu.spec.md | 面板隐藏时小环停转、改由 Core Animation 转，App 空闲 CPU 42%→0.1% |
+| **T2.30** 面板关着时工作小环不耗 CPU | cc-moss | — | ✅ Done | done/T2.30-working-ring-cpu.spec.md | 面板隐藏时小环停转、改由 Core Animation 转，App 空闲 CPU 42%→0.1% |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -558,3 +558,5 @@ R1 ◄── 全部
 - E2E: 本机换 0.3.13 正式产物（校验和一致；dev CLI 备份 `cc-moss.bak-20261118174844-trial`，App 签名通过、旧 App 移入 backups/）；`kickstart -k` 后守护进程第一次没接上（last exit -9，日志无记录），再 kickstart 一次即运行 0.3.13，Moss idle/queued=0，doctor 无坏项。这是第二次见到（上次 11-17），未定位。真机验收见 T2.29。
 - DISTILL: (1) 视觉验收要逐条对应 criterion 的维度（状态×宽度×明暗×语言），一张总数不算矩阵；对照图 + 探针回执 + 复现脚本一起入档。(2) 探针夹具要声明 CLI 能力，否则 App 的能力门禁会把动作挡掉——这是门禁生效的证据，不是失败。(3) 演示替身的批量回执要与真 CLI 同形（逐行带 session_id），否则探针报的「失败」是替身造成的。(4) 上游无修复版的公告用限期、限定范围、出修复即失效的豁免，不关掉审计。
 - REPORT: 完成 = 记录定位、能力门禁、撤回自动收拢、97/97 历史验收、gate 误报修正、0.3.13 发布与本机升级；新独立 = 无；子任务 = 无；延后 = T2.26 批量回执、T2.27 既有清理 CAS、T2.28 显式定位、picomatch 豁免到期复查（2026-12-18 前）、`kickstart -k` 后守护进程偶发未接上、P3 T3.1、P4 T4.1/T4.2、R1。
+
+- T2.30 2026-11-22 完成：用户「查一下 cc-moss 为什么空闲也占 30%」→「按 1 + 2 修」。根因是面板隐藏只 `orderOut`，工作中小环的 30 fps `TimelineView` 仍在跑且每帧重排整个面板。小环改由 Core Animation 转、面板隐藏或减少动态效果时移除动画（`WorkingSpin`，3 条单测）。真机 3 个会话工作中：面板关着 42%→0.1%，打开 0.6%。延后：`ls --json` 单次 1.8 秒 / 141 KB、守护进程每秒一次 `ps`。
