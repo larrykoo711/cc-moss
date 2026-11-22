@@ -197,6 +197,7 @@ fn kernel_says_zombie(pid: libc::pid_t) -> bool {
 }
 
 /// What the kernel says about a pid, without starting `ps`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, PartialEq, Eq)]
 enum Kernel {
     /// The process, its start time as `ps -o lstart=` prints it.
@@ -246,6 +247,7 @@ fn kernel_info(_pid: u32) -> Kernel {
 
 /// A start time in seconds, written as `ps -o lstart=` writes it under
 /// `LC_ALL=C TZ=UTC0` (`%c`), so it compares equal to times recorded by `ps`.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 fn ps_lstart(secs: i64) -> Option<String> {
     let at = time::OffsetDateTime::from_unix_timestamp(secs).ok()?;
     let short = |name: String| name.chars().take(3).collect::<String>();
