@@ -1736,6 +1736,34 @@ mod tests {
     }
 
     #[test]
+    fn provider_model_ignores_arguments_of_a_process_the_session_no_longer_runs() {
+        // A process whose own arguments would make the plan refuse.
+        let mut child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 30; :", "--settings"])
+            .spawn()
+            .unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let settings = dir.path().join("settings.json");
+        std::fs::write(&settings, "{}").unwrap();
+        let mut s = slot(&[]);
+        s.cwd = dir.path().to_string_lossy().into_owned();
+        s.provider_started = Some(
+            serde_json::json!({"keys": [], "source": settings, "launch_source": "unset"})
+                .to_string(),
+        );
+        s.pid = Some(child.id());
+        // Its pid now belongs to another process: the session's has ended.
+        s.pid_start = Some("Thu Jan  1 00:00:00 1970".into());
+        let reused = super::super::provider::model_plan(&s);
+        s.pid_start = moss_core::proc::start_time(child.id());
+        let own = super::super::provider::model_plan(&s);
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(reused.is_ok(), "{reused:?}");
+        assert!(own.is_err(), "the session's own --settings still refuses");
+    }
+
+    #[test]
     fn provider_model_control_cwd_is_rejected() {
         let mut s = slot(&[]);
         s.cwd = "/nonexistent/work\nunsafe".into();

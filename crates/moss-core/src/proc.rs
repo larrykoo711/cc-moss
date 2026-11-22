@@ -65,8 +65,15 @@ fn compare(now: &str, recorded_start: Option<&str>) -> Liveness {
     }
 }
 
-/// Liveness from `ps`, plus the start time it printed.
+/// Liveness from `ps`, plus the start time it printed. On macOS the kernel
+/// answers first, with the same start time `ps` would print: `ls` asked `ps`
+/// once per session, about 8 ms each, most of its 1.5 s with 90 sessions.
 fn ps_liveness(pid: u32, recorded_start: Option<&str>) -> (Liveness, Option<String>) {
+    match kernel_info(pid) {
+        Kernel::Found { zombie: true, .. } | Kernel::Gone => return (Liveness::Dead, None),
+        Kernel::Found { start, .. } => return (compare(&start, recorded_start), Some(start)),
+        Kernel::Unavailable => {}
+    }
     let out = run_with_timeout(
         Command::new("ps")
             .args(["-o", "stat=", "-o", "lstart=", "-p", &pid.to_string()])
@@ -180,27 +187,78 @@ pub fn may_be_running(pid: u32) -> bool {
     exists && !kernel_says_zombie(raw)
 }
 
-#[cfg(target_os = "macos")]
+/// Exited but not reaped, or not answering (a zombie has no task to
+/// describe): either way, let the closer look decide.
 fn kernel_says_zombie(pid: libc::pid_t) -> bool {
+    if !cfg!(target_os = "macos") {
+        return false;
+    }
+    !matches!(kernel_info(pid as u32), Kernel::Found { zombie: false, .. })
+}
+
+/// What the kernel says about a pid, without starting `ps`.
+#[derive(Debug, PartialEq, Eq)]
+enum Kernel {
+    /// The process, its start time as `ps -o lstart=` prints it.
+    Found { zombie: bool, start: String },
+    /// No such process.
+    Gone,
+    /// Not answered (another user's process, another system): ask `ps`.
+    Unavailable,
+}
+
+#[cfg(target_os = "macos")]
+fn kernel_info(pid: u32) -> Kernel {
+    let Ok(raw) = libc::pid_t::try_from(pid) else {
+        return Kernel::Unavailable;
+    };
     let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
     let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
     // SAFETY: the buffer is a zeroed proc_bsdinfo of exactly `size` bytes.
     let got = unsafe {
         libc::proc_pidinfo(
-            pid,
+            raw,
             libc::PROC_PIDTBSDINFO,
             0,
             (&mut info as *mut libc::proc_bsdinfo).cast(),
             size,
         )
     };
-    // No answer (a zombie has no task to describe): let the closer look decide.
-    got != size || info.pbi_status == libc::SZOMB
+    if got != size {
+        return match std::io::Error::last_os_error().raw_os_error() {
+            Some(libc::ESRCH) => Kernel::Gone,
+            _ => Kernel::Unavailable,
+        };
+    }
+    match i64::try_from(info.pbi_start_tvsec).ok().and_then(ps_lstart) {
+        Some(start) => Kernel::Found {
+            zombie: info.pbi_status == libc::SZOMB,
+            start,
+        },
+        None => Kernel::Unavailable,
+    }
 }
 
 #[cfg(not(target_os = "macos"))]
-fn kernel_says_zombie(_pid: libc::pid_t) -> bool {
-    false
+fn kernel_info(_pid: u32) -> Kernel {
+    Kernel::Unavailable
+}
+
+/// A start time in seconds, written as `ps -o lstart=` writes it under
+/// `LC_ALL=C TZ=UTC0` (`%c`), so it compares equal to times recorded by `ps`.
+fn ps_lstart(secs: i64) -> Option<String> {
+    let at = time::OffsetDateTime::from_unix_timestamp(secs).ok()?;
+    let short = |name: String| name.chars().take(3).collect::<String>();
+    Some(format!(
+        "{} {} {:>2} {:02}:{:02}:{:02} {}",
+        short(at.weekday().to_string()),
+        short(at.month().to_string()),
+        at.day(),
+        at.hour(),
+        at.minute(),
+        at.second(),
+        at.year()
+    ))
 }
 
 /// When the machine booted, in Unix milliseconds; cached. `None` if unknown.
@@ -292,6 +350,57 @@ mod tests {
     }
 
     const START: &str = "Thu Oct 15 09:14:48 2026";
+
+    #[test]
+    fn start_time_is_written_the_way_ps_writes_it() {
+        // `%c` in the C locale: the day of the month padded with a space.
+        assert_eq!(ps_lstart(0).as_deref(), Some("Thu Jan  1 00:00:00 1970"));
+        assert_eq!(
+            ps_lstart(1_792_056_888).as_deref(),
+            Some("Thu Oct 15 09:34:48 2026")
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn kernel_start_time_matches_ps() {
+        let pid = std::process::id();
+        let out = Command::new("ps")
+            .args(["-o", "lstart=", "-p", &pid.to_string()])
+            .env("LC_ALL", "C")
+            .env("LANG", "C")
+            .env("TZ", "UTC0")
+            .output()
+            .unwrap();
+        let ps = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        assert_eq!(
+            kernel_info(pid),
+            Kernel::Found {
+                zombie: false,
+                start: ps
+            }
+        );
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn kernel_knows_a_reaped_child_is_gone() {
+        let mut child = Command::new("/usr/bin/true").spawn().unwrap();
+        let pid = child.id();
+        child.wait().unwrap();
+        assert_eq!(kernel_info(pid), Kernel::Gone);
+        assert_eq!(liveness(pid, Some(START)), Liveness::Dead);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn kernel_sees_a_zombie_as_dead() {
+        let mut child = Command::new("/usr/bin/true").spawn().unwrap();
+        let pid = child.id();
+        std::thread::sleep(Duration::from_millis(300)); // exited, not reaped
+        assert_eq!(liveness(pid, None), Liveness::Dead);
+        child.wait().unwrap();
+    }
 
     #[test]
     fn ps_that_rejects_the_flags_is_unknown_not_dead() {
