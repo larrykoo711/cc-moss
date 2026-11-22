@@ -223,6 +223,7 @@ R1 ◄── 全部
 | **T2.27** 既有活跃副本清理的身份保护 | cc-moss | T2.14 | ⬜ Backlog | — | 清理写入前复核身份和恢复声明，不用旧快照关闭新状态 |
 | **T2.28** 名称冲突的显式记录定位 | cc-moss | — | ⬜ Backlog | — | 无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道 |
 | **T2.29** 旧 Done 视觉与真机证据补齐 | cc-moss | — | ✅ Done | — | 16 条未勾验收逐条补证，不能以 Done 或已发布替代 |
+| **T2.30** 面板关着时工作小环不耗 CPU | cc-moss | — | 🟨 In Progress | in-progress/T2.30-working-ring-cpu.spec.md | 面板隐藏时小环停转、改由 Core Animation 转，App 空闲 CPU 42%→0.1% |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |

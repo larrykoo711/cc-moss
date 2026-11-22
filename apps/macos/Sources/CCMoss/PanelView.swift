@@ -37,7 +37,7 @@ struct PanelView: View {
             if let renderedSession {
                 row(renderedSession).padding(8).background(Theme.surface(scheme))
             } else {
-                panel
+                panel.environment(\.panelShown, model.panelShown)
             }
         }
     }
