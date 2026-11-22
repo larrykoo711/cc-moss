@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.14",
+      "date": "2026-11-22",
+      "icon": "menubar",
+      "short": {
+        "zh": "面板关着时，App 不再占着 CPU",
+        "en": "A quiet app while the panel is closed"
+      },
+      "headline": {
+        "zh": "有会话在工作时，菜单栏 App 以前即使面板关着，也一直占着不少 CPU，现在几乎为零。",
+        "en": "While sessions were working, the menu bar app kept using a lot of CPU even with its panel closed. Now it uses next to none."
+      },
+      "highlights": [
+        {
+          "zh": "面板关着时，「工作中」的小圈会停下来；打开面板，它照常转。",
+          "en": "The little “working” ring stops while the panel is closed, and turns again when you open it."
+        },
+        {
+          "zh": "面板开着时，小圈转动也不再让整个列表跟着重画，更省电。",
+          "en": "With the panel open, the turning ring no longer redraws the whole list, so it’s easier on your battery."
+        },
+        {
+          "zh": "小圈的样子、大小和颜色都和以前一样。",
+          "en": "The ring looks just as it did: same size, same colour."
+        }
+      ]
+    },
+    {
       "version": "0.3.13",
       "date": "2026-11-18",
       "icon": "rows",
