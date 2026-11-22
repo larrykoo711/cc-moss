@@ -6,6 +6,15 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.14] - 2026-11-22
+
+### Fixed
+
+- **The menu bar app no longer uses CPU while its panel is closed.** Closing the panel only hid its window, and the
+  turning "working" ring kept redrawing the whole panel 30 times a second: with a few sessions working, the app sat
+  at around 40% CPU while nobody was looking. The ring now stops while the panel is closed (and with Reduce
+  Motion), and when the panel is open it turns without redrawing the list.
+
 ## [0.3.13] - 2026-11-18
 
 ### Fixed
@@ -653,7 +662,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.13...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.14...HEAD
+[0.3.14]: https://github.com/larrykoo711/cc-moss/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/larrykoo711/cc-moss/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/larrykoo711/cc-moss/compare/v0.3.11...v0.3.12
 [0.3.11]: https://github.com/larrykoo711/cc-moss/compare/v0.3.10...v0.3.11
