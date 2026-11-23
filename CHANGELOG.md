@@ -6,6 +6,21 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-11-23
+
+### Fixed
+
+- **The menu bar app's session list refreshes fast again with many sessions.** Listing sessions (`cc-moss ls --json`,
+  which the app runs on every refresh) started `ps` once or twice per session: with 89 sessions that was 186 `ps` runs
+  and about 1.5 seconds. On macOS the liveness check now asks the kernel directly and writes the start time exactly as
+  `ps` does, so recorded sessions still match; the same list now takes about 0.05 seconds. `ps` remains the fallback.
+- **Sessions no longer show "the working directory could not be checked" by mistake.** The slow listing used up the
+  working-directory checks' time budget, so many sessions came back unchecked. They are checked again, and a folder
+  that is really gone is reported as such.
+- **A stopped session's old process id is no longer read.** Restarting a session on its provider's default model read
+  the launch arguments of whatever process now held a stopped session's old pid, and could refuse because of that
+  other process's `--settings`. Only the session's own running process is read now.
+
 ## [0.3.14] - 2026-11-22
 
 ### Fixed
@@ -662,7 +677,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.14...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.15...HEAD
+[0.3.15]: https://github.com/larrykoo711/cc-moss/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/larrykoo711/cc-moss/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/larrykoo711/cc-moss/compare/v0.3.12...v0.3.13
 [0.3.12]: https://github.com/larrykoo711/cc-moss/compare/v0.3.11...v0.3.12
