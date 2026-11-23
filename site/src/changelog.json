@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.15",
+      "date": "2026-11-23",
+      "icon": "rows",
+      "short": {
+        "zh": "会话多时，列表也秒开",
+        "en": "A quick list, even with many sessions"
+      },
+      "headline": {
+        "zh": "会话一多，菜单栏 App 每次刷新列表都要等一秒多；现在几十条会话也几乎是瞬间。",
+        "en": "With many sessions, the menu bar app took over a second to refresh its list. Now dozens of sessions load almost instantly."
+      },
+      "highlights": [
+        {
+          "zh": "89 条会话的列表，从约 1.5 秒缩短到约 0.05 秒。",
+          "en": "A list of 89 sessions now loads in about 0.05 seconds, down from about 1.5."
+        },
+        {
+          "zh": "不再误报「工作目录没来得及检查」；目录真的不在了，会如实告诉你。",
+          "en": "No more false “the working directory could not be checked”; if a folder is really gone, it says so."
+        },
+        {
+          "zh": "已停止的会话不会再被别的进程的设置牵连，按默认模型重启时不再无故被拒。",
+          "en": "A stopped session is no longer mixed up with another process that reused its id, so restarting it on the default model isn’t refused for no reason."
+        }
+      ]
+    },
+    {
       "version": "0.3.14",
       "date": "2026-11-22",
       "icon": "menubar",
