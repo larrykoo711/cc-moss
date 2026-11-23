@@ -117,3 +117,43 @@ fn bypass_in_pane() {
     let safe = pane_command(&w, "host_job-b");
     assert!(!safe.contains(BYPASS), "{safe}");
 }
+
+/// Who the session says manages it (`@managed-by`).
+fn manager(w: &World, tmux_name: &str) -> String {
+    let target = format!("={tmux_name}:");
+    w.tmux(&["display-message", "-p", "-t", &target, "#{@managed-by}"])
+        .trim()
+        .to_string()
+}
+
+#[test]
+fn new_sessions_tell_other_tools_who_manages_them() {
+    let w = World::new("new-managed");
+    w.new_session("api");
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&"host_api".to_string())
+            .then_some(())
+    });
+    assert_eq!(manager(&w, "host_api"), "cc-moss");
+    // Per session, never server-wide.
+    let global = w.tmux(&["show-options", "-g", "-v", "-q", "@managed-by"]);
+    assert_eq!(global.trim(), "");
+}
+
+#[test]
+fn running_sessions_get_the_mark_when_listed() {
+    let w = World::new("ls-managed");
+    w.new_session("api");
+    common::wait_for(|| {
+        w.session_names()
+            .contains(&"host_api".to_string())
+            .then_some(())
+    });
+    w.session_id("api");
+    // A session from before the mark.
+    w.tmux(&["set-option", "-u", "-t", "=host_api:", "@managed-by"]);
+    assert_eq!(manager(&w, "host_api"), "");
+    common::ls_json(&w.state(), false);
+    assert_eq!(manager(&w, "host_api"), "cc-moss");
+}

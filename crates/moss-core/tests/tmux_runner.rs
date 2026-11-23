@@ -124,3 +124,28 @@ fn pane_fields_survive_tmux_sanitising_tabs() {
         (77, "%2", "claude --name=a_b")
     );
 }
+
+#[test]
+fn marking_is_per_session() {
+    let t = Tmux::new(Recorder::default());
+    t.mark_managed("$3").unwrap();
+    assert_eq!(
+        t.runner().calls.borrow()[0],
+        ["set-option", "-t", "$3", "@managed-by", "cc-moss"]
+    );
+}
+
+#[test]
+fn managers_are_read_in_one_call() {
+    let t = Tmux::new(Recorder {
+        reply: "$1|:|cc-moss\n$2|:|\n".into(),
+        ..Default::default()
+    });
+    let marks = t.managers().unwrap();
+    assert_eq!(marks["$1"], "cc-moss");
+    assert_eq!(marks["$2"], "");
+    assert_eq!(
+        t.runner().calls.borrow()[0],
+        ["list-sessions", "-F", "#{session_id}|:|#{@managed-by}"]
+    );
+}

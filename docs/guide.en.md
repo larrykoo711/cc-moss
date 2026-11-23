@@ -212,6 +212,11 @@ the title from the tmux option `@cc-moss-name` (cc-moss sets it when it starts, 
 the tmux session name when there's none. Coming from an older version, run `cc-moss install` once for the new tmux
 config.
 
+Each cc-moss tmux session also carries the session option `@managed-by cc-moss` (set when cc-moss starts or restores
+it; sessions already running from before an upgrade get it the next time sessions are listed). It tells other tools on
+the same tmux server that cc-moss manages the session: [ta](https://github.com/larrykoo711/tmux-haha), for one, then
+only goes to it and never renames or closes it. The option is set on the session only, never globally.
+
 A `/rename` inside a session fires no hook, so whenever cc-moss lists sessions (`cc-moss ls`, the picker, the panel
 refreshing) it reads the latest `/rename` from the session's log, and the name and tmux name follow. Idle sessions
 included.
