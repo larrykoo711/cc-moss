@@ -502,6 +502,7 @@ const TASKS = [
   {id:'T2.28', t:'名称冲突的显式记录定位', repo:'cc-moss', dep:'—', st:'backlog', sdd:'—', ac:'无 tmux 的同对话副本与记录 ID 名称冲突仍有安全定位通道', steps:[]},
   {id:'T2.29', t:'旧 Done 视觉与真机证据补齐', repo:'cc-moss', dep:'—', st:'done', sdd:'—', ac:'16 条未勾验收逐条补证，不能以 Done 或已发布替代', steps:[]},
   {id:'T2.30', t:'面板关着时工作小环不耗 CPU', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T2.30-working-ring-cpu.spec.md', ac:'面板隐藏时小环停转、改由 Core Animation 转，App 空闲 CPU 42%→0.1%', steps:[]},
+  {id:'T2.31', t:'ls --json 不再逐会话起 ps', repo:'cc-moss', dep:'—', st:'done', sdd:'done/T2.31-ls-json-speed.spec.md', ac:'89 条会话 1.55 秒→0.05 秒，ps 186 次→1 次；工作目录不再超时误报', steps:[]},
   {id:'T3.1', t:'派发', repo:'cc-moss', dep:'T2.3,T1.3', st:'backlog', sdd:'—', ac:'派发 → 完成 → 回报', steps:[]},
   {id:'T4.1', t:'Slack', repo:'cc-moss', dep:'T2.3', st:'backlog', sdd:'—', ac:'频道 @Moss 有线程回复、私聊不回', steps:[]},
   {id:'T4.2', t:'在场与路由', repo:'cc-moss', dep:'T4.1,T1.4', st:'backlog', sdd:'—', ac:'离开时问题去 Slack、答完桌面撤回', steps:[]},
@@ -509,7 +510,7 @@ const TASKS = [
 ];
 const PHASES = [
   {k:'P1', name:'放手干 + 替你接住问题', ids:['T1.1','T1.2','T1.3','T1.4','R1']},
-  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19','T2.20','T2.21','T2.22','T2.23','T2.24','T2.25','T2.26','T2.27','T2.28','T2.29','T2.30']},
+  {k:'P2', name:'Moss 常驻与会话恢复', ids:['T2.1','T2.2','T2.3','T2.4','T2.5','T2.6','T2.7','T2.8','T2.9','T2.10','T2.11','T2.12','T2.13','T2.14','T2.15','T2.16','T2.17','T2.18','T2.19','T2.20','T2.21','T2.22','T2.23','T2.24','T2.25','T2.26','T2.27','T2.28','T2.29','T2.30','T2.31']},
   {k:'P3', name:'Moss 派活', ids:['T3.1']},
   {k:'P4', name:'Slack 与路由', ids:['T4.1','T4.2']},
 ];

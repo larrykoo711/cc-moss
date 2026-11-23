@@ -48,8 +48,12 @@ pub fn model_plan(slot: &Slot) -> anyhow::Result<(provider::ModelPlan, PathBuf)>
     if !path.is_absolute() || path.to_string_lossy().chars().any(char::is_control) {
         anyhow::bail!("the settings path is not safe to replay");
     }
+    // Only the session's own process says how it was started: a pid that has
+    // ended (or now runs something else) has nothing to tell, and asking it
+    // cost a `ps` per stopped session on every `ls --json`.
     let args = slot
         .pid
+        .filter(|&pid| moss_core::proc::is_alive(pid, slot.pid_start.as_deref()))
         .and_then(moss_core::launch_args::argv)
         .unwrap_or_default();
     if args.iter().chain(slot.launch_args.iter()).any(|a| {
