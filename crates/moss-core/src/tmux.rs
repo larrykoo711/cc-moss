@@ -48,6 +48,15 @@ pub trait Runner {
 /// (spaces, Chinese and all), for terminal tab titles.
 pub const NAME_OPTION: &str = "@cc-moss-name";
 
+/// The tmux session option a tool sets on the sessions it manages, so other
+/// tools leave them alone (the `ta` session tool only goes to such a session,
+/// never renames or closes it). Protocol literal shared with tmux-haha
+/// (its README, "Living with other tools").
+pub const MANAGED_OPTION: &str = "@managed-by";
+
+/// Our name in [`MANAGED_OPTION`].
+pub const MANAGER: &str = "cc-moss";
+
 /// The terminal title: the session's own name, else tmux's.
 pub const TITLE_FORMAT: &str = "#{?#{@cc-moss-name},#{@cc-moss-name},#{session_name}}";
 
@@ -296,14 +305,31 @@ impl<R: Runner> Tmux<R> {
     /// Each session's display name ([`NAME_OPTION`]) by session id, empty
     /// where none is set; `None` when tmux did not answer.
     pub fn display_names(&self) -> Option<std::collections::HashMap<String, String>> {
-        let format = format!("#{{session_id}}{SEP}#{{{NAME_OPTION}}}");
+        self.session_option(NAME_OPTION)
+    }
+
+    /// Who manages each session ([`MANAGED_OPTION`]) by session id, empty
+    /// where nobody says; `None` when tmux did not answer.
+    pub fn managers(&self) -> Option<std::collections::HashMap<String, String>> {
+        self.session_option(MANAGED_OPTION)
+    }
+
+    /// One user option of every session, by session id, in one tmux call.
+    fn session_option(&self, option: &str) -> Option<std::collections::HashMap<String, String>> {
+        let format = format!("#{{session_id}}{SEP}#{{{option}}}");
         let out = self.run(&["list-sessions", "-F", &format]).ok()?;
         Some(
             out.lines()
                 .filter_map(|l| l.split_once(SEP))
-                .map(|(id, name)| (id.to_string(), name.to_string()))
+                .map(|(id, value)| (id.to_string(), value.to_string()))
                 .collect(),
         )
+    }
+
+    /// Say on session `$N` itself (never globally) that cc-moss manages it.
+    pub fn mark_managed(&self, session_id: &str) -> Result<()> {
+        self.run(&["set-option", "-t", session_id, MANAGED_OPTION, MANAGER])
+            .map(drop)
     }
 
     /// Give session `session_id` (`$N`) its own display name, for terminal

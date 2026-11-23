@@ -164,6 +164,7 @@ fn create(args: NewArgs, json_out: bool) -> Result<()> {
             ));
         }
         let _ = tmux.set_display_name(&pane.session_id, &name);
+        let _ = tmux.mark_managed(&pane.session_id);
         if json_out {
             println!(
                 "{}",

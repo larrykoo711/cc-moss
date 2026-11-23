@@ -168,6 +168,8 @@ cc-moss 用会话自己的名字（`cc-moss new` 时起的，或者在 Claude Co
 
 终端标签页显示的是会话自己的名字，不是 tmux 名：cc-moss 的 tmux 配置打开了 `set-titles`，标题取 tmux 选项 `@cc-moss-name`（cc-moss 在新建、找回、改名时写进去），没有就用 tmux 会话名。从旧版本升级上来，运行一次 `cc-moss install` 换上新的 tmux 配置。
 
+cc-moss 的每个 tmux 会话还带一个会话级选项 `@managed-by cc-moss`（新建、找回时写入；升级前就在运行的会话，下次列会话时补上），告诉同一个 tmux server 上的别的工具「这个会话由 cc-moss 管理」。比如 [ta](https://github.com/larrykoo711/tmux-haha) 看到它，就只会进入这个会话，不会改名或关闭。这个选项只设在会话上，不改全局 tmux 设置。
+
 在会话里 `/rename` 不会触发钩子，所以 cc-moss 在每次列会话（`cc-moss ls`、选择器、面板刷新）时从对话记录里读最近一次 `/rename`，名字和 tmux 名都跟着改；会话闲着也一样。
 
 ### 移进 tmux

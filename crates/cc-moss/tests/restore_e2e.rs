@@ -781,3 +781,23 @@ fn empty_session_is_not_restored() {
     assert!(!out.contains("Started"), "{out}");
     assert!(w.session_names().is_empty());
 }
+
+#[test]
+fn restored_sessions_are_marked_too() {
+    let w = World::new("restore-managed");
+    w.new_session("job-b");
+    let sid = w.session_id("job-b");
+    w.first_prompt(&sid, "job-b");
+    crash(&w);
+    let out = restore(&w);
+    assert!(out.contains("Started job-b"), "{out}");
+    // Straight from restore, before anything lists sessions again.
+    let mark = w.tmux(&[
+        "display-message",
+        "-p",
+        "-t",
+        "=host_job-b:",
+        "#{@managed-by}",
+    ]);
+    assert_eq!(mark.trim(), "cc-moss");
+}
