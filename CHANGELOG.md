@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-11-23
+
+### Added
+
+- **cc-moss's tmux sessions now say that cc-moss manages them.** Each one carries the tmux session option
+  `@managed-by cc-moss`, so other tools on the same tmux server can leave it alone. The `ta` session tool
+  ([tmux-haha](https://github.com/larrykoo711/tmux-haha)) then only goes to such a session and never renames or closes
+  it under Claude Code. Sessions already running from before the upgrade get the option the next time sessions are
+  listed, without a restart. It is set on each session only, never globally.
+
 ## [0.3.15] - 2026-11-23
 
 ### Fixed
@@ -677,7 +687,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.15...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.16...HEAD
+[0.3.16]: https://github.com/larrykoo711/cc-moss/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/larrykoo711/cc-moss/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/larrykoo711/cc-moss/compare/v0.3.13...v0.3.14
 [0.3.13]: https://github.com/larrykoo711/cc-moss/compare/v0.3.12...v0.3.13
