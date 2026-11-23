@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.16",
+      "date": "2026-11-23",
+      "icon": "tabs",
+      "short": {
+        "zh": "别的 tmux 工具不会误关你的会话",
+        "en": "Other tmux tools leave your sessions alone"
+      },
+      "headline": {
+        "zh": "cc-moss 的每个 tmux 会话都会注明「由 cc-moss 管理」，同一台机器上的别的 tmux 工具看到就不会去改名或关掉它。",
+        "en": "Every cc-moss tmux session now says that cc-moss manages it, so other tmux tools on the same machine don't rename or close it."
+      },
+      "highlights": [
+        {
+          "zh": "比如 ta 这个 tmux 会话工具，会列出 cc-moss 的会话、标出是谁管的，但只让你进入。",
+          "en": "The ta session tool, for one, lists cc-moss's sessions with who manages them, and only lets you go to them."
+        },
+        {
+          "zh": "升级前就在运行的会话也会补上这个标记，不用重启。",
+          "en": "Sessions already running before the upgrade get the mark too, without a restart."
+        },
+        {
+          "zh": "标记只写在每个会话自己身上，不改你的 tmux 全局设置。",
+          "en": "The mark is set on each session only; your global tmux settings stay as they are."
+        }
+      ]
+    },
+    {
       "version": "0.3.15",
       "date": "2026-11-23",
       "icon": "rows",

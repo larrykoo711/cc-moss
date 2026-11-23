@@ -118,7 +118,7 @@ dependencies = [
 
 [[package]]
 name = "cc-moss"
-version = "0.3.15"
+version = "0.3.16"
 dependencies = [
  "anyhow",
  "clap",
@@ -621,7 +621,7 @@ dependencies = [
 
 [[package]]
 name = "moss-core"
-version = "0.3.15"
+version = "0.3.16"
 dependencies = [
  "anyhow",
  "libc",
