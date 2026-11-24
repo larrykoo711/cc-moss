@@ -282,7 +282,7 @@ fn sync_tmux_name(registry: &Registry, session_id: &str, ctx: &Context) -> Resul
 /// `/rename` from the transcript).
 pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slot) -> Result<()> {
     // Moss keeps the tmux name it was started with.
-    if slot.is_moss() {
+    if slot.is_moss() || slot.effective_status(proc::is_alive) != moss_core::slot::Status::Running {
         return Ok(());
     }
     let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
@@ -291,7 +291,22 @@ pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slo
     let Some(tmux_id) = loc.session_id.as_deref() else {
         return Ok(());
     };
-    if !registry.is_tmux_primary(slot)? {
+    // Only live slots compete to own the tmux session: dead slots left over
+    // from before a tmux server restart must not block a live session that
+    // reused the same `$N` session id.
+    let live_primary = registry
+        .slots()?
+        .into_iter()
+        .filter(|s| {
+            !s.is_moss()
+                && s.effective_status(proc::is_alive) == moss_core::slot::Status::Running
+                && s.tmux.as_ref().is_some_and(|t| {
+                    t.socket == loc.socket && t.session_id.as_deref() == Some(tmux_id)
+                })
+        })
+        .min_by(|a, b| (a.created_at_ms, &a.slot_id).cmp(&(b.created_at_ms, &b.slot_id)))
+        .is_some_and(|first| first.slot_id == slot.slot_id);
+    if !live_primary {
         return Ok(());
     }
     let config = Config::load().unwrap_or_else(|e| {
@@ -320,6 +335,7 @@ pub(crate) fn sync_tmux_name_of(registry: &Registry, slot: &moss_core::slot::Slo
     // Before the tmux name: whoever sees the new tmux name sees this one too,
     // and the tab shows the new name first.
     tmux.set_display_name(tmux_id, name)?;
+    let _ = tmux.mark_managed(tmux_id);
     if target != current {
         tmux.rename_session(tmux_id, &target)?;
     }

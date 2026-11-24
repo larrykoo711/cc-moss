@@ -314,6 +314,24 @@ impl<R: Runner> Tmux<R> {
         self.session_option(MANAGED_OPTION)
     }
 
+    /// Both [`NAME_OPTION`] and [`MANAGED_OPTION`] of every session, by
+    /// session id, in one tmux call; `None` when tmux did not answer.
+    pub fn session_marks(&self) -> Option<std::collections::HashMap<String, (String, String)>> {
+        let format = format!("#{{session_id}}{SEP}#{{{NAME_OPTION}}}{SEP}#{{{MANAGED_OPTION}}}");
+        let out = self.run(&["list-sessions", "-F", &format]).ok()?;
+        Some(
+            out.lines()
+                .filter_map(|l| {
+                    let mut f = l.splitn(3, SEP);
+                    Some((
+                        f.next()?.to_string(),
+                        (f.next()?.to_string(), f.next()?.to_string()),
+                    ))
+                })
+                .collect(),
+        )
+    }
+
     /// One user option of every session, by session id, in one tmux call.
     fn session_option(&self, option: &str) -> Option<std::collections::HashMap<String, String>> {
         let format = format!("#{{session_id}}{SEP}#{{{option}}}");
@@ -332,10 +350,22 @@ impl<R: Runner> Tmux<R> {
             .map(drop)
     }
 
+    /// Clear [`MANAGED_OPTION`] on session `$N` itself (never globally).
+    pub fn unmark_managed(&self, session_id: &str) -> Result<()> {
+        self.run(&["set-option", "-u", "-t", session_id, MANAGED_OPTION])
+            .map(drop)
+    }
+
     /// Give session `session_id` (`$N`) its own display name, for terminal
     /// titles ([`NAME_OPTION`]).
     pub fn set_display_name(&self, session_id: &str, name: &str) -> Result<()> {
         self.run(&["set-option", "-t", session_id, NAME_OPTION, name])
+            .map(drop)
+    }
+
+    /// Clear [`NAME_OPTION`] on session `$N` itself (never globally).
+    pub fn unset_display_name(&self, session_id: &str) -> Result<()> {
+        self.run(&["set-option", "-u", "-t", session_id, NAME_OPTION])
             .map(drop)
     }
 
@@ -372,21 +402,28 @@ impl<R: Runner> Tmux<R> {
 
     /// `(pane pid, session id, session name, pane id)` for every pane.
     pub fn panes(&self) -> Vec<(u32, String, String, String)> {
+        self.panes_checked().unwrap_or_default()
+    }
+
+    /// Like [`Tmux::panes`], distinguishing a tmux error (`None`) from a server
+    /// with no panes (`Some(vec![])`), so callers do not treat a failed query as
+    /// proof that no session belongs to them.
+    pub fn panes_checked(&self) -> Option<Vec<(u32, String, String, String)>> {
         let fmt = "#{pane_pid}|:|#{session_id}|:|#{session_name}|:|#{pane_id}";
-        let Ok(out) = self.run(&["list-panes", "-a", "-F", fmt]) else {
-            return Vec::new();
-        };
-        out.lines()
-            .filter_map(|l| {
-                let mut f = l.splitn(4, SEP);
-                Some((
-                    f.next()?.parse().ok()?,
-                    f.next()?.to_string(),
-                    f.next()?.to_string(),
-                    f.next()?.to_string(),
-                ))
-            })
-            .collect()
+        let out = self.run(&["list-panes", "-a", "-F", fmt]).ok()?;
+        Some(
+            out.lines()
+                .filter_map(|l| {
+                    let mut f = l.splitn(4, SEP);
+                    Some((
+                        f.next()?.parse().ok()?,
+                        f.next()?.to_string(),
+                        f.next()?.to_string(),
+                        f.next()?.to_string(),
+                    ))
+                })
+                .collect(),
+        )
     }
 
     /// Every session with its last activity; empty when no server runs.
