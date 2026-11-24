@@ -2,6 +2,33 @@
   "$comment": "The site's Changelog page, written for people: what each version lets you do, in plain words. Newest first. Every version in ../../CHANGELOG.md needs an entry here (test/changelog.test.mjs checks); the full technical notes stay in CHANGELOG.md. icon: archive, moss, rows, tabs, menubar, picker, restore. short: the hero badge, newest entry only.",
   "versions": [
     {
+      "version": "0.3.17",
+      "date": "2026-11-24",
+      "icon": "tabs",
+      "short": {
+        "zh": "重启 tmux 后不再把别的会话错标成 cc-moss",
+        "en": "Other tmux sessions are no longer mis-marked after a server restart"
+      },
+      "headline": {
+        "zh": "tmux server 重启后会话编号会重新分配；cc-moss 现在会先确认 Claude 进程还活着且真的在这个会话里，再写标题和标记，并自动撤掉历史错标。",
+        "en": "After a tmux server restart reuses session ids, cc-moss now checks that its Claude process is still alive in that session before setting titles or marks, and clears stale ones automatically."
+      },
+      "highlights": [
+        {
+          "zh": "不再把重启后重用编号的其他会话错标成「由 cc-moss 管理」或写上旧标题。",
+          "en": "New sessions that reuse an old tmux session id no longer get tagged as cc-moss or given an old session's title."
+        },
+        {
+          "zh": "升级后列出或刷新会话时，先前留在无关会话上的错标会自动撤掉，且不碰其他工具的标记。",
+          "en": "Stale cc-moss marks left on unrelated sessions clear automatically on the next refresh, while other tools' marks stay untouched."
+        },
+        {
+          "zh": "重用旧编号的新 Claude 会话也能正常更新自己的终端标题，不再被旧记录压住。",
+          "en": "Fresh Claude sessions that reuse an older id update their own terminal title without being blocked by dead records."
+        }
+      ]
+    },
+    {
       "version": "0.3.16",
       "date": "2026-11-23",
       "icon": "tabs",

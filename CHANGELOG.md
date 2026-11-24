@@ -6,6 +6,18 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-11-24
+
+### Fixed
+
+- **tmux sessions are no longer mis-labeled or mis-marked after a tmux server restart.** When a tmux server restarts,
+  session ids start again from `$0`. Stale registry records from before the restart could stamp `@managed-by cc-moss`
+  and old `@cc-moss-name` titles onto newly created unrelated sessions that reused those ids, or block newer live
+  Claude Code sessions from updating their own title. cc-moss now verifies that the recorded Claude process is still
+  alive and actually lives inside that tmux session's panes before setting either option, and automatically clears
+  stale cc-moss marks from sessions that no longer hold a live cc-moss session (leaving other tools' `@managed-by`
+  values untouched).
+
 ## [0.3.16] - 2026-11-23
 
 ### Added
@@ -687,7 +699,8 @@ The first release: Claude Code sessions that survive crashes, reboots and closed
 - **The Continuum mark**: a coral ∞ in the README, the picker and `cc-moss --version`.
 - Prebuilt binaries for macOS (Apple silicon, Intel) and Linux (x86_64, arm64, static musl), plus a Homebrew formula.
 
-[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.16...HEAD
+[Unreleased]: https://github.com/larrykoo711/cc-moss/compare/v0.3.17...HEAD
+[0.3.17]: https://github.com/larrykoo711/cc-moss/compare/v0.3.16...v0.3.17
 [0.3.16]: https://github.com/larrykoo711/cc-moss/compare/v0.3.15...v0.3.16
 [0.3.15]: https://github.com/larrykoo711/cc-moss/compare/v0.3.14...v0.3.15
 [0.3.14]: https://github.com/larrykoo711/cc-moss/compare/v0.3.13...v0.3.14
