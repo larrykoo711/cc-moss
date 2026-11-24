@@ -226,6 +226,7 @@ R1 ◄── 全部
 | **T2.30** 面板关着时工作小环不耗 CPU | cc-moss | — | ✅ Done | done/T2.30-working-ring-cpu.spec.md | 面板隐藏时小环停转、改由 Core Animation 转，App 空闲 CPU 42%→0.1% |
 | **T2.31** `ls --json` 不再逐会话起 ps | cc-moss | — | ✅ Done | done/T2.31-ls-json-speed.spec.md | 89 条会话 1.55 秒→0.05 秒，ps 186 次→1 次；工作目录不再超时误报 |
 | **T2.32** tmux 会话打上 `@managed-by cc-moss` | cc-moss | — | ✅ Done | done/T2.32-managed-by.spec.md | 新建 / 恢复即带标记；旧会话列会话时补上；只设会话级选项 |
+| **T2.33** 核实活进程归属再打标，并清理过期标记 | cc-moss | T2.32 | ✅ Done | done/T2.33-verify-tmux-owner.spec.md | server 重启重用 `$N` 不再误标；过期 `@managed-by cc-moss` / `@cc-moss-name` 自动撤回；他工具标记不碰 |
 | **T3.1** 派发 | cc-moss | T2.3,T1.3 | ⬜ Backlog | — | 派发 → 完成 → 回报 |
 | **T4.1** Slack | cc-moss | T2.3 | ⬜ Backlog | — | 频道 @Moss 有线程回复、私聊不回 |
 | **T4.2** 在场与路由 | cc-moss | T4.1,T1.4 | ⬜ Backlog | — | 离开时问题去 Slack、答完桌面撤回 |
@@ -563,5 +564,6 @@ R1 ◄── 全部
 
 - T2.30 2026-11-22 完成：用户「查一下 cc-moss 为什么空闲也占 30%」→「按 1 + 2 修」。根因是面板隐藏只 `orderOut`，工作中小环的 30 fps `TimelineView` 仍在跑且每帧重排整个面板。小环改由 Core Animation 转、面板隐藏或减少动态效果时移除动画（`WorkingSpin`，3 条单测）。真机 3 个会话工作中：面板关着 42%→0.1%，打开 0.6%。延后：`ls --json` 单次 1.8 秒 / 141 KB、守护进程每秒一次 `ps`。
 
+- T2.33 2026-11-24 完成：tmux server 重启后会话编号重用（`$0` 等），旧死记录在库里仍为 `running`，导致 `label_tmux`/`mark_tmux` 误标无关会话、旧死记录还压住新活会话的标题同步。改为统一 `sync_tmux_marks`：核对进程存活且在对应会话窗格树内才认领；无活 Claude 归属时自动撤掉过期 `@managed-by cc-moss` 与 `@cc-moss-name`（不动其他工具的 `@managed-by`）；`sync_tmux_name_of` 仅在活会话间选主。新增 `tmux_runner` 与 server 重启重用 `$0`/`$1` 端到端测试。
 - T2.32 2026-11-23 完成：用户批准独立 tmux 工具 ta 的标识方案「都按建议执行」。cc-moss 新建、恢复的 tmux 会话设会话级选项 `@managed-by cc-moss`；reconcile 给运行中缺标记的会话补上（每个 server 一次读）。ta 看到它只进入、不改名不关闭。Rust 全量 1253/0/8。
 - T2.31 2026-11-22 完成：用户「把 ls --json 慢的问题也修了」。一次 `ls --json` 起 `ps` 186 次（107 次存活检查 + 79 次读已结束会话旧 pid 的启动参数）。`model_plan` 只读仍在运行的会话进程的参数（顺带修正 pid 被复用时读错进程）；macOS 存活检查改问内核（`proc_pidinfo`），启动时间按 `ps` 原样格式化。89 条会话 1.55 秒→0.05 秒；连带修好工作目录检查 200 ms 预算被拖光、59 条误报「无法检查」。Rust 全量 1248/0/8。

@@ -149,3 +149,32 @@ fn managers_are_read_in_one_call() {
         ["list-sessions", "-F", "#{session_id}|:|#{@managed-by}"]
     );
 }
+
+#[test]
+fn unmarking_and_unsetting_name_are_per_session() {
+    let t = Tmux::new(Recorder::default());
+    t.unmark_managed("$3").unwrap();
+    t.unset_display_name("$3").unwrap();
+    let calls = t.runner().calls.borrow();
+    assert_eq!(calls[0], ["set-option", "-u", "-t", "$3", "@managed-by"]);
+    assert_eq!(calls[1], ["set-option", "-u", "-t", "$3", "@cc-moss-name"]);
+}
+
+#[test]
+fn session_marks_are_read_in_one_call() {
+    let t = Tmux::new(Recorder {
+        reply: "$1|:|api|:|cc-moss\n$2|:||:|\n".into(),
+        ..Default::default()
+    });
+    let marks = t.session_marks().unwrap();
+    assert_eq!(marks["$1"], ("api".into(), "cc-moss".into()));
+    assert_eq!(marks["$2"], ("".into(), "".into()));
+    assert_eq!(
+        t.runner().calls.borrow()[0],
+        [
+            "list-sessions",
+            "-F",
+            "#{session_id}|:|#{@cc-moss-name}|:|#{@managed-by}"
+        ]
+    );
+}

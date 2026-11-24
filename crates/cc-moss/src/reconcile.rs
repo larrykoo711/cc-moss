@@ -60,106 +60,148 @@ pub fn run() -> Result<Registry> {
         // The panel's rename goes through `/rename`, which fires no hook: the
         // tmux name follows here instead.
         if let Some(slot) = registry.slots()?.into_iter().find(|s| s.slot_id == slot_id) {
-            let _ = crate::cmd::hook::sync_tmux_name_of(&registry, &slot);
+            if slot_runs_in_recorded_tmux(&slot) {
+                let _ = crate::cmd::hook::sync_tmux_name_of(&registry, &slot);
+            }
         }
     }
-    label_tmux(&registry);
-    mark_tmux(&registry);
     registry.close_superseded_duplicates(&|s| s.effective_status(proc::is_alive), now_ms())?;
     record_lost(&registry, &proc::is_alive, now_ms())?;
+    sync_tmux_marks(&registry);
     registry.prune_events_batched(now_ms() - EVENT_RETENTION_MS, PRUNE_SLACK_MS)?;
     Ok(registry)
 }
 
-/// Give every running session's tmux session its own name for terminal
-/// titles where it is missing or out of date (sessions from before titles,
-/// and idle ones that fire no hook). One tmux call per server, then only the
-/// ones that differ; by session id, the slot that owns the tmux session
-/// only. Moss's server is the keeper's. Nothing goes to the registry.
-fn label_tmux(registry: &Registry) {
-    let Ok(slots) = registry.slots() else {
-        return;
-    };
-    let moss_sockets: Vec<&str> = slots
-        .iter()
-        .filter(|s| s.is_moss())
-        .filter_map(|s| s.tmux.as_ref().map(|t| t.socket.as_str()))
-        .collect();
-    let mut servers: std::collections::HashMap<
-        String,
-        Option<std::collections::HashMap<String, String>>,
-    > = std::collections::HashMap::new();
-    for slot in &slots {
-        if slot.is_moss() || slot.status != Status::Running {
-            continue;
-        }
-        let (Some(loc), Some(name)) = (slot.tmux.as_ref(), slot.name.as_deref()) else {
-            continue;
-        };
-        let Some(id) = loc.session_id.as_deref() else {
-            continue;
-        };
-        if moss_sockets.contains(&loc.socket.as_str())
-            || !registry.is_tmux_primary(slot).unwrap_or(false)
-        {
-            continue;
-        }
-        let tmux = Tmux::with_socket(Socket::Path(loc.socket.clone()));
-        let shown = servers
-            .entry(loc.socket.clone())
-            .or_insert_with(|| tmux.display_names());
-        let Some(shown) = shown else {
-            continue;
-        };
-        // Only a session tmux has, and only when it says something else.
-        if shown.get(id).is_some_and(|now| now != name) {
-            let _ = tmux.set_display_name(id, name);
-        }
+/// Whether `slot`'s recorded Claude process is still alive and actually lives
+/// inside the tmux session (`socket`, `session_id`) recorded on the slot.
+/// Guards against tmux session ids (`$0`, `$1`, …) reused after a server restart.
+fn slot_runs_in_recorded_tmux(slot: &moss_core::slot::Slot) -> bool {
+    if slot.is_moss() || slot.effective_status(proc::is_alive) != Status::Running {
+        return false;
     }
+    let (Some(pid), Some(loc)) = (slot.pid, slot.tmux.as_ref()) else {
+        return false;
+    };
+    let Some(sid) = loc.session_id.as_deref() else {
+        return false;
+    };
+    if !std::path::Path::new(&loc.socket).exists() {
+        return false;
+    }
+    let tmux = Tmux::with_socket(Socket::Path(loc.socket.clone()));
+    let Some(panes) = tmux.panes_checked() else {
+        return false;
+    };
+    let mut parents = None;
+    pid_in_session(pid, sid, &panes, &loc.socket, &mut parents)
 }
 
-/// Say on every running session's tmux session that cc-moss manages it
-/// (`@managed-by cc-moss`), where it doesn't yet: sessions from before the
-/// mark, or whose mark was cleared. One tmux call per server, then only the
-/// missing ones; the slot that owns the tmux session only; never Moss's server.
-fn mark_tmux(registry: &Registry) {
+/// True when `pid` is the pane root of a pane in `session_id` (fast path, no
+/// `ps`), or descends from one via `parents` (loaded lazily once).
+fn pid_in_session(
+    pid: u32,
+    session_id: &str,
+    panes: &[(u32, String, String, String)],
+    socket: &str,
+    parents: &mut Option<HashMap<u32, u32>>,
+) -> bool {
+    if panes.iter().any(|p| p.0 == pid && p.1 == session_id) {
+        return true;
+    }
+    let parents = parents.get_or_insert_with(proc::parents);
+    locate_in_panes(pid, parents, panes, socket)
+        .is_some_and(|found| found.session_id.as_deref() == Some(session_id))
+}
+
+/// Keep every non-Moss tmux server's `@cc-moss-name` and `@managed-by` options
+/// true to what actually runs there:
+/// - Only a slot whose live Claude process is verified inside that tmux session
+///   can own it (so a reused `$N` after a tmux server restart is never tagged).
+/// - Among verified live slots in the same tmux session, the earliest-created
+///   one owns its display name.
+/// - Any session carrying `@managed-by cc-moss` or `@cc-moss-name` with no
+///   verified live cc-moss Claude inside it has those stale options cleared;
+///   another tool's `@managed-by` value is never touched.
+fn sync_tmux_marks(registry: &Registry) {
     let Ok(slots) = registry.slots() else {
         return;
     };
-    let moss_sockets: Vec<&str> = slots
+    let moss_sockets: std::collections::HashSet<&str> = slots
         .iter()
         .filter(|s| s.is_moss())
         .filter_map(|s| s.tmux.as_ref().map(|t| t.socket.as_str()))
         .collect();
-    let mut servers: std::collections::HashMap<
-        String,
-        Option<std::collections::HashMap<String, String>>,
-    > = std::collections::HashMap::new();
+    let mut sockets: Vec<String> = Vec::new();
     for slot in &slots {
-        if slot.is_moss() || slot.status != Status::Running {
-            continue;
-        }
         let Some(loc) = slot.tmux.as_ref() else {
             continue;
         };
-        let Some(id) = loc.session_id.as_deref() else {
-            continue;
-        };
-        if moss_sockets.contains(&loc.socket.as_str())
-            || !registry.is_tmux_primary(slot).unwrap_or(false)
-        {
+        if moss_sockets.contains(loc.socket.as_str()) {
             continue;
         }
-        let tmux = Tmux::with_socket(Socket::Path(loc.socket.clone()));
-        let marks = servers
-            .entry(loc.socket.clone())
-            .or_insert_with(|| tmux.managers());
-        let Some(marks) = marks else {
+        if !sockets.contains(&loc.socket) && std::path::Path::new(&loc.socket).exists() {
+            sockets.push(loc.socket.clone());
+        }
+    }
+    let mut parents: Option<HashMap<u32, u32>> = None;
+    for socket in sockets {
+        let tmux = Tmux::with_socket(Socket::Path(socket.clone()));
+        let Some(marks) = tmux.session_marks() else {
             continue;
         };
-        // Only a session tmux has, and only when it isn't marked yet.
-        if marks.get(id).is_some_and(String::is_empty) {
-            let _ = tmux.mark_managed(id);
+        let Some(panes) = tmux.panes_checked() else {
+            continue;
+        };
+        // Verified live owner per session id: earliest (created_at_ms, slot_id).
+        let mut owners: HashMap<&str, &moss_core::slot::Slot> = HashMap::new();
+        for slot in &slots {
+            if slot.is_moss() || slot.effective_status(proc::is_alive) != Status::Running {
+                continue;
+            }
+            let (Some(pid), Some(loc)) = (slot.pid, slot.tmux.as_ref()) else {
+                continue;
+            };
+            if loc.socket != socket {
+                continue;
+            }
+            let Some(sid) = loc.session_id.as_deref() else {
+                continue;
+            };
+            if !marks.contains_key(sid) {
+                continue;
+            }
+            if !pid_in_session(pid, sid, &panes, &socket, &mut parents) {
+                continue;
+            }
+            owners
+                .entry(sid)
+                .and_modify(|cur| {
+                    if (slot.created_at_ms, slot.slot_id.as_str())
+                        < (cur.created_at_ms, cur.slot_id.as_str())
+                    {
+                        *cur = slot;
+                    }
+                })
+                .or_insert(slot);
+        }
+        for (sid, (current_name, current_manager)) in &marks {
+            if let Some(primary) = owners.get(sid.as_str()) {
+                if current_manager.is_empty() {
+                    let _ = tmux.mark_managed(sid);
+                }
+                if let Some(name) = primary.name.as_deref() {
+                    if current_name != name {
+                        let _ = tmux.set_display_name(sid, name);
+                    }
+                }
+            } else {
+                if current_manager == moss_core::tmux::MANAGER {
+                    let _ = tmux.unmark_managed(sid);
+                }
+                if !current_name.is_empty() {
+                    let _ = tmux.unset_display_name(sid);
+                }
+            }
         }
     }
 }
